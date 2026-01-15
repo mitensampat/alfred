@@ -5,6 +5,7 @@ class BriefingOrchestrator {
     private let imessageReader: iMessageReader
     private let whatsappReader: WhatsAppReader
     private let signalReader: SignalReader
+    private let gmailReader: GmailReader?
     private let calendarService: MultiCalendarService
     private let aiService: ClaudeAIService
     private let researchService: ResearchService
@@ -17,6 +18,7 @@ class BriefingOrchestrator {
         self.imessageReader = iMessageReader(dbPath: config.messaging.imessage.dbPath)
         self.whatsappReader = WhatsAppReader(dbPath: config.messaging.whatsapp.dbPath)
         self.signalReader = SignalReader(dbPath: config.messaging.signal.dbPath)
+        self.gmailReader = config.messaging.email.map { GmailReader(config: $0) }
         self.calendarService = MultiCalendarService(configs: config.calendar.google)
         self.aiService = ClaudeAIService(config: config.ai)
         self.researchService = ResearchService(config: config, aiService: aiService)
@@ -28,10 +30,10 @@ class BriefingOrchestrator {
 
     func generateMorningBriefing() async throws -> DailyBriefing {
         let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
-        return try await generateBriefing(for: tomorrow, sendEmail: true)
+        return try await generateBriefing(for: tomorrow, sendNotifications: true)
     }
 
-    func generateBriefing(for date: Date, sendEmail: Bool = false) async throws -> DailyBriefing {
+    func generateBriefing(for date: Date, sendNotifications: Bool = false) async throws -> DailyBriefing {
         print("\n🚀 Generating briefing for \(date.formatted(date: .abbreviated, time: .omitted))...\n")
 
         // 1. Fetch messages from last 24 hours
@@ -75,10 +77,10 @@ class BriefingOrchestrator {
         )
 
         // 5. Send notifications only if requested
-        if sendEmail {
-            print("📧 Sending briefing via email...")
+        if sendNotifications {
+            print("📬 Sending briefing notifications...")
             try await notificationService.sendBriefing(briefing)
-            print("✓ Email sent successfully\n")
+            print("✓ Notifications sent successfully\n")
         }
 
         return briefing
@@ -234,7 +236,7 @@ class BriefingOrchestrator {
 
     // MARK: - Attention Defense Alert (3pm)
 
-    func generateAttentionDefenseAlert(sendEmail: Bool = true) async throws -> AttentionDefenseReport {
+    func generateAttentionDefenseAlert(sendNotifications: Bool = true) async throws -> AttentionDefenseReport {
         print("Generating attention defense alert...")
 
         // 1. Get current action items
@@ -253,7 +255,7 @@ class BriefingOrchestrator {
         )
 
         // 3. Send alert only if requested
-        if sendEmail {
+        if sendNotifications {
             try await notificationService.sendAttentionDefenseReport(report)
         }
 
@@ -264,15 +266,17 @@ class BriefingOrchestrator {
 
     private func fetchAndAnalyzeMessages() async throws -> MessagingSummary {
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+        let twoDaysAgo = Calendar.current.date(byAdding: .hour, value: -48, to: Date())!
 
-        var allThreads: [MessageThread] = []
+        var messagingThreads: [MessageThread] = []
+        var emailThreads: [MessageThread] = []
 
-        // Fetch from all enabled platforms
+        // Fetch from all enabled messaging platforms
         if config.messaging.imessage.enabled {
             do {
                 try imessageReader.connect()
                 let threads = try imessageReader.fetchThreads(since: yesterday)
-                allThreads.append(contentsOf: threads)
+                messagingThreads.append(contentsOf: threads)
                 imessageReader.disconnect()
             } catch {
                 print("Warning: Failed to fetch iMessages: \(error)")
@@ -283,7 +287,7 @@ class BriefingOrchestrator {
             do {
                 try whatsappReader.connect()
                 let threads = try whatsappReader.fetchThreads(since: yesterday)
-                allThreads.append(contentsOf: threads)
+                messagingThreads.append(contentsOf: threads)
                 whatsappReader.disconnect()
             } catch {
                 print("Warning: Failed to fetch WhatsApp messages: \(error)")
@@ -294,19 +298,38 @@ class BriefingOrchestrator {
             do {
                 try signalReader.connect()
                 let threads = try signalReader.fetchThreads(since: yesterday)
-                allThreads.append(contentsOf: threads)
+                messagingThreads.append(contentsOf: threads)
                 signalReader.disconnect()
             } catch {
                 print("Warning: Failed to fetch Signal messages: \(error)")
             }
         }
 
-        // Smart filtering: prioritize threads for analysis
-        let filteredThreads = prioritizeThreads(allThreads, maxCount: config.ai.effectiveMaxThreads)
-        print("  📊 Filtered to top \(filteredThreads.count) threads for analysis (from \(allThreads.count) total)")
+        // Fetch from email (48 hour lookback) - only if user wants email analysis in briefing
+        if let gmailReader = gmailReader,
+           let emailConfig = config.messaging.email,
+           emailConfig.enabled && emailConfig.shouldAnalyze {
+            do {
+                let threads = try await gmailReader.fetchThreads(since: twoDaysAgo)
+                emailThreads.append(contentsOf: threads)
+            } catch {
+                print("Warning: Failed to fetch emails: \(error)")
+            }
+        }
+
+        // Smart filtering: separate quotas for messaging vs email
+        let filteredMessagingThreads = prioritizeThreads(messagingThreads, maxCount: config.ai.effectiveMaxThreads)
+        let filteredEmailThreads = prioritizeEmailThreads(emailThreads, maxCount: config.ai.effectiveMaxEmailThreads)
+
+        print("  📊 Filtered to top \(filteredMessagingThreads.count) messaging threads (from \(messagingThreads.count) total)")
+        print("  📧 Filtered to top \(filteredEmailThreads.count) email threads (from \(emailThreads.count) total)")
+
+        // Combine for analysis
+        let allFilteredThreads = filteredMessagingThreads + filteredEmailThreads
+        let allThreads = messagingThreads + emailThreads
 
         // Analyze threads with AI
-        let summaries = try await aiService.analyzeMessages(filteredThreads)
+        let summaries = try await aiService.analyzeMessages(allFilteredThreads)
 
         // Categorize summaries
         let keyInteractions = summaries.filter { $0.urgency >= .medium }.prefix(10)
@@ -353,6 +376,53 @@ class BriefingOrchestrator {
             // Factor 5: Penalize very old threads
             if hoursSinceLastMessage > 24 {
                 score *= 0.5 // Cut score in half for messages over 24h old
+            }
+
+            return (thread: thread, score: score)
+        }
+
+        // Sort by score and take top N
+        return scoredThreads
+            .sorted { $0.score > $1.score }
+            .prefix(maxCount)
+            .map { $0.thread }
+    }
+
+    private func prioritizeEmailThreads(_ threads: [MessageThread], maxCount: Int) -> [MessageThread] {
+        // Keywords that indicate critical emails (HR, resignations, departures)
+        let criticalKeywords = [
+            "resignation", "last working day", "exit", "leaving", "farewell",
+            "offboarding", "transition", "notice period", "final day",
+            "last day", "departed", "resignation letter", "stepping down"
+        ]
+
+        // Score threads based on multiple factors
+        let scoredThreads = threads.map { thread -> (thread: MessageThread, score: Double) in
+            var score: Double = 0
+
+            // Factor 1: Recency (most recent message)
+            let hoursSinceLastMessage = Date().timeIntervalSince(thread.lastMessageDate) / 3600
+            score += max(0, 100 - hoursSinceLastMessage) // Up to 100 points for very recent
+
+            // Factor 2: Message volume in thread
+            score += Double(min(thread.messages.count, 3)) * 10 // Up to 30 points
+
+            // Factor 3: Check for critical keywords (MASSIVE boost)
+            let allContent = thread.messages.map { $0.content.lowercased() }.joined(separator: " ")
+            let hasSubject = thread.contactName?.lowercased() ?? ""
+            let searchableText = allContent + " " + hasSubject
+
+            for keyword in criticalKeywords {
+                if searchableText.contains(keyword) {
+                    score += 10000 // Guaranteed to be at top
+                    break
+                }
+            }
+
+            // Factor 4: Not from bots or automated services
+            let sender = thread.contactName?.lowercased() ?? ""
+            if sender.contains("noreply") || sender.contains("[bot]") || sender.contains("notification") {
+                score *= 0.1 // Heavily penalize automated emails
             }
 
             return (thread: thread, score: score)

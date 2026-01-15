@@ -34,9 +34,11 @@
   },
   "ai": {
     "anthropic_api_key": "YOUR_ANTHROPIC_API_KEY",
+    "base_url": "https://api.anthropic.com/v1/messages",
     "model": "claude-sonnet-4-5-20250929",
     "message_analysis_model": "claude-haiku-4-5-20250929",
-    "max_threads_to_analyze": 20
+    "max_threads_to_analyze": 20,
+    "max_email_threads_to_analyze": 20
   },
   "messaging": {
     "imessage": {
@@ -50,6 +52,14 @@
     "signal": {
       "enabled": true,
       "db_path": "~/Library/Application Support/Signal/sql/db.sqlite"
+    },
+    "email": {
+      "enabled": true,
+      "analyze_in_briefing": true,
+      "client_id": "YOUR_GOOGLE_CLIENT_ID",
+      "client_secret": "YOUR_GOOGLE_CLIENT_SECRET",
+      "redirect_uri": "http://localhost:8080/auth/callback",
+      "max_emails_to_analyze": 100
     }
   },
   "notifications": {

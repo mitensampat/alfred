@@ -4,6 +4,7 @@ enum MessagePlatform: String, Codable {
     case imessage
     case whatsapp
     case signal
+    case email
 }
 
 enum MessageDirection: String, Codable {

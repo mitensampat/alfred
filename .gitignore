@@ -12,6 +12,8 @@ Package.resolved
 Config/config.json
 Config/google_tokens*.json
 **/google_tokens*.json
+**/gmail_tokens.json
+client_secret*.json
 
 # macOS
 .DS_Store
