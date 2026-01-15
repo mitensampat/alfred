@@ -188,6 +188,38 @@ class BriefingOrchestrator {
         return summaries
     }
 
+    func getFocusedWhatsAppThread(contactName: String, timeframe: String) async throws -> FocusedThreadAnalysis {
+        let hours = parseTimeframe(timeframe)
+        let since = Calendar.current.date(byAdding: .hour, value: -hours, to: Date())!
+
+        print("💬 Searching for WhatsApp thread: \"\(contactName)\" (last \(timeframe))...\n")
+
+        guard config.messaging.whatsapp.enabled else {
+            throw MessageReaderError.notConnected
+        }
+
+        print("  ↳ Connecting to WhatsApp database...")
+        try whatsappReader.connect()
+        defer {
+            whatsappReader.disconnect()
+        }
+
+        print("  ↳ Searching for contact/group: \"\(contactName)\"...")
+        guard let thread = try whatsappReader.fetchThreadByName(contactName, since: since) else {
+            print("  ✗ No matching WhatsApp thread found for \"\(contactName)\"")
+            throw MessageReaderError.queryFailed("No WhatsApp thread found matching '\(contactName)'")
+        }
+
+        print("  ✓ Found thread with \(thread.messages.count) message(s)")
+        print("  ✓ Contact: \(thread.contactName ?? "Unknown")\n")
+
+        print("🤖 Analyzing thread with AI...")
+        let analysis = try await aiService.analyzeFocusedThread(thread)
+        print("✓ Analysis complete\n")
+
+        return analysis
+    }
+
     private func parseTimeframe(_ timeframe: String) -> Int {
         let value = Int(timeframe.dropLast()) ?? 24
         let unit = timeframe.last?.lowercased()

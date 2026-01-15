@@ -41,8 +41,29 @@ struct AlfredApp {
                 await runBriefing(orchestrator, for: date, sendEmail: shouldSendEmail)
             case "messages":
                 let platform = filteredArgs.count > 2 ? filteredArgs[2] : "all"
-                let timeframe = filteredArgs.count > 3 ? filteredArgs[3] : "24h"
-                await runMessagesSummary(orchestrator, platform: platform, timeframe: timeframe)
+
+                // Check if this is a focused thread query (whatsapp + contact name)
+                // Format: alfred messages whatsapp "Name" [timeframe]
+                // vs: alfred messages whatsapp 24h (general)
+                if platform.lowercased() == "whatsapp" && filteredArgs.count > 3 {
+                    let thirdArg = filteredArgs[3]
+                    // Check if third arg is a timeframe pattern (e.g., 1h, 24h, 7d) or a contact name
+                    let timeframePattern = try? NSRegularExpression(pattern: "^\\d+[hdw]$", options: .caseInsensitive)
+                    let isTimeframe = timeframePattern?.firstMatch(in: thirdArg, range: NSRange(thirdArg.startIndex..., in: thirdArg)) != nil
+
+                    if isTimeframe {
+                        // General query: alfred messages whatsapp 24h
+                        await runMessagesSummary(orchestrator, platform: platform, timeframe: thirdArg)
+                    } else {
+                        // Focused query: alfred messages whatsapp "Name" [timeframe]
+                        let contactName = thirdArg
+                        let timeframe = filteredArgs.count > 4 ? filteredArgs[4] : "24h"
+                        await runFocusedWhatsAppThread(orchestrator, contactName: contactName, timeframe: timeframe)
+                    }
+                } else {
+                    let timeframe = filteredArgs.count > 3 ? filteredArgs[3] : "24h"
+                    await runMessagesSummary(orchestrator, platform: platform, timeframe: timeframe)
+                }
             case "calendar":
                 let firstArg = filteredArgs.count > 2 ? filteredArgs[2] : nil
                 let secondArg = filteredArgs.count > 3 ? filteredArgs[3] : nil
@@ -128,6 +149,16 @@ struct AlfredApp {
             printMessagesSummary(summary)
         } catch {
             print("Error fetching messages: \(error)")
+        }
+    }
+
+    static func runFocusedWhatsAppThread(_ orchestrator: BriefingOrchestrator, contactName: String, timeframe: String) async {
+        do {
+            let analysis = try await orchestrator.getFocusedWhatsAppThread(contactName: contactName, timeframe: timeframe)
+            print("=== WHATSAPP THREAD ANALYSIS ===\n")
+            printFocusedThreadAnalysis(analysis)
+        } catch {
+            print("Error analyzing WhatsApp thread: \(error)")
         }
     }
 
@@ -331,6 +362,53 @@ struct AlfredApp {
         }
     }
 
+    static func printFocusedThreadAnalysis(_ analysis: FocusedThreadAnalysis) {
+        print("Contact: \(analysis.thread.contactName ?? "Unknown")")
+        print("Messages: \(analysis.thread.messages.count)")
+        print("Timeframe: \(analysis.thread.messages.last?.timestamp.formatted() ?? "Unknown") - \(analysis.thread.messages.first?.timestamp.formatted() ?? "Unknown")")
+        print("\n" + String(repeating: "=", count: 60))
+
+        print("\nCONTEXT")
+        print(String(repeating: "-", count: 60))
+        print(analysis.context)
+
+        print("\n\nSUMMARY")
+        print(String(repeating: "-", count: 60))
+        print(analysis.summary)
+
+        if !analysis.actionItems.isEmpty {
+            print("\n\nTOP ACTION ITEMS FOR YOU")
+            print(String(repeating: "-", count: 60))
+            for (index, item) in analysis.actionItems.enumerated() {
+                let priorityEmoji = item.priority.lowercased() == "high" ? "🔴" : (item.priority.lowercased() == "medium" ? "🟡" : "🟢")
+                print("\n\(index + 1). \(priorityEmoji) \(item.item)")
+                print("   Priority: \(item.priority)")
+                if let deadline = item.deadline {
+                    print("   Deadline: \(deadline)")
+                }
+            }
+        }
+
+        if !analysis.keyQuotes.isEmpty {
+            print("\n\nKEY MESSAGES")
+            print(String(repeating: "-", count: 60))
+            for quote in analysis.keyQuotes {
+                print("\n[\(quote.timestamp)] \(quote.speaker):")
+                print("  \"\(quote.quote)\"")
+            }
+        }
+
+        if !analysis.timeSensitive.isEmpty {
+            print("\n\n⏰ TIME-SENSITIVE INFORMATION")
+            print(String(repeating: "-", count: 60))
+            for info in analysis.timeSensitive {
+                print("  • \(info)")
+            }
+        }
+
+        print("\n" + String(repeating: "=", count: 60) + "\n")
+    }
+
     static func printCalendarBriefing(_ calendarBriefing: CalendarBriefing) {
         let schedule = calendarBriefing.schedule
 
@@ -410,6 +488,12 @@ struct AlfredApp {
                                  Examples: messages imessage 1h
                                           messages all 24h
 
+          messages whatsapp "Name" [timeframe]
+                                 Get focused analysis of specific WhatsApp contact/group
+                                 with action items and key quotes
+                                 Examples: messages whatsapp "Family Group" 24h
+                                          messages whatsapp "John Doe" 7d
+
           calendar [calendar] [date]
                                  Get calendar briefing for specific date
                                  Calendars: all, primary, work (default: all)
@@ -435,6 +519,7 @@ struct AlfredApp {
           alfred briefing
           alfred briefing tomorrow --email
           alfred messages imessage 1h
+          alfred messages whatsapp "Family Group" 24h
           alfred calendar tomorrow
           alfred calendar primary tomorrow
           alfred calendar work

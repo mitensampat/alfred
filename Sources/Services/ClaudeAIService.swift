@@ -44,6 +44,58 @@ class ClaudeAIService {
         return summaries.sorted { $0.urgency > $1.urgency }
     }
 
+    func analyzeFocusedThread(_ thread: MessageThread) async throws -> FocusedThreadAnalysis {
+        let messagesText = thread.messages.map { msg in
+            "[\(msg.timestamp.formatted())] \(msg.direction == .incoming ? thread.contactName ?? "Unknown" : "You"): \(msg.content)"
+        }.joined(separator: "\n")
+
+        let prompt = """
+        Analyze this entire WhatsApp message thread and provide a detailed analysis.
+
+        IMPORTANT: In this thread, "You" refers to the user (Miten), and "\(thread.contactName ?? "Unknown")" is the other person/group.
+
+        Provide:
+        1. A comprehensive summary (3-5 sentences) - be clear about who said what
+        2. Top 3 action items for MITEN (the user marked as "You") based ONLY on what the OTHER PERSON (\(thread.contactName ?? "Unknown")) has asked, requested, or expects from him
+        3. Key quotes or messages from the OTHER PERSON that are most important (include exact quotes with timestamps)
+        4. Overall context and what this conversation is about
+        5. Any deadlines, commitments, or time-sensitive information that the OTHER PERSON mentioned or that MITEN committed to
+
+        If "You" (Miten) sent messages but hasn't received a response yet, there are NO action items - just summarize what was shared.
+
+        Message thread:
+        \(messagesText)
+
+        Respond in JSON format:
+        {
+            "summary": "comprehensive summary of the conversation",
+            "actionItems": [
+                {"item": "action description", "priority": "high|medium|low", "deadline": "optional deadline if mentioned"},
+                {"item": "action description", "priority": "high|medium|low", "deadline": "optional deadline if mentioned"},
+                {"item": "action description", "priority": "high|medium|low", "deadline": "optional deadline if mentioned"}
+            ],
+            "keyQuotes": [
+                {"timestamp": "timestamp", "speaker": "name", "quote": "exact quote"},
+                {"timestamp": "timestamp", "speaker": "name", "quote": "exact quote"}
+            ],
+            "context": "overall context of the conversation",
+            "timeSensitive": ["any deadlines or time-sensitive info"]
+        }
+        """
+
+        let response = try await sendRequest(prompt: prompt)
+        let analysis = try parseFocusedThreadAnalysis(response)
+
+        return FocusedThreadAnalysis(
+            thread: thread,
+            summary: analysis.summary,
+            actionItems: analysis.actionItems.map { FocusedThreadAnalysis.FocusedActionItem(item: $0.item, priority: $0.priority, deadline: $0.deadline) },
+            keyQuotes: analysis.keyQuotes.map { FocusedThreadAnalysis.KeyQuote(timestamp: $0.timestamp, speaker: $0.speaker, quote: $0.quote) },
+            context: analysis.context,
+            timeSensitive: analysis.timeSensitive
+        )
+    }
+
     private func analyzeThread(_ thread: MessageThread, useModel: String? = nil) async throws -> MessageSummary {
         let recentMessages = thread.messages.prefix(20)
         let messagesText = recentMessages.map { msg in
@@ -240,6 +292,29 @@ class ClaudeAIService {
         }
     }
 
+    private func parseFocusedThreadAnalysis(_ response: String) throws -> FocusedThreadAnalysisData {
+        guard let jsonString = extractJSON(from: response) else {
+            print("ERROR: Could not extract JSON from response:")
+            print(response)
+            throw AIError.parsingFailed
+        }
+
+        guard let jsonData = jsonString.data(using: .utf8) else {
+            print("ERROR: Could not convert JSON string to data")
+            throw AIError.parsingFailed
+        }
+
+        do {
+            let analysis = try JSONDecoder().decode(FocusedThreadAnalysisData.self, from: jsonData)
+            return analysis
+        } catch {
+            print("ERROR: JSON decoding failed:")
+            print("Extracted JSON:", jsonString)
+            print("Decode error:", error)
+            throw AIError.parsingFailed
+        }
+    }
+
     private func parseBriefingData(_ response: String) throws -> BriefingData {
         guard let jsonData = extractJSON(from: response)?.data(using: .utf8),
               let data = try? JSONDecoder().decode(BriefingData.self, from: jsonData) else {
@@ -413,11 +488,52 @@ private struct TodoDetection: Codable {
     }
 }
 
+private struct FocusedThreadAnalysisData: Codable {
+    let summary: String
+    let actionItems: [ActionItemData]
+    let keyQuotes: [KeyQuoteData]
+    let context: String
+    let timeSensitive: [String]
+
+    struct ActionItemData: Codable {
+        let item: String
+        let priority: String
+        let deadline: String?
+    }
+
+    struct KeyQuoteData: Codable {
+        let timestamp: String
+        let speaker: String
+        let quote: String
+    }
+}
+
 struct TodoItem {
     let title: String
     let description: String?
     let dueDate: Date?
     let sourceMessage: Message
+}
+
+struct FocusedThreadAnalysis {
+    let thread: MessageThread
+    let summary: String
+    let actionItems: [FocusedActionItem]
+    let keyQuotes: [KeyQuote]
+    let context: String
+    let timeSensitive: [String]
+
+    struct FocusedActionItem {
+        let item: String
+        let priority: String
+        let deadline: String?
+    }
+
+    struct KeyQuote {
+        let timestamp: String
+        let speaker: String
+        let quote: String
+    }
 }
 
 enum AIError: Error, LocalizedError {
