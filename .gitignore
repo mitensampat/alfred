@@ -1,0 +1,38 @@
+# Build artifacts
+.build/
+*.xcodeproj
+*.xcworkspace
+
+# Swift Package Manager
+Packages/
+.swiftpm/
+Package.resolved
+
+# Configuration (contains sensitive data)
+Config/config.json
+Config/google_tokens*.json
+**/google_tokens*.json
+
+# macOS
+.DS_Store
+xcuserdata/
+
+# Logs
+*.log
+
+# API Keys and Secrets
+*.key
+*.pem
+credentials.json
+
+# IDE
+.vscode/
+.idea/
+
+# Temporary files
+*.swp
+*.swo
+*~
+
+# Notion database backups
+notion_backup/

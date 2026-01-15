@@ -1,0 +1,438 @@
+import Foundation
+
+class ClaudeAIService {
+    private let apiKey: String
+    private let model: String
+    private let messageModel: String
+    private let baseURL = "https://api.anthropic.com/v1/messages"
+
+    init(config: AIConfig) {
+        self.apiKey = config.anthropicApiKey
+        self.model = config.model
+        self.messageModel = config.effectiveMessageModel
+    }
+
+    func analyzeMessages(_ threads: [MessageThread]) async throws -> [MessageSummary] {
+        print("  ⚡ Using \(messageModel) for fast message analysis")
+        var summaries: [MessageSummary] = []
+
+        // Process threads in parallel batches for speed
+        let batchSize = 5
+        for batchStart in stride(from: 0, to: threads.count, by: batchSize) {
+            let batchEnd = min(batchStart + batchSize, threads.count)
+            let batch = Array(threads[batchStart..<batchEnd])
+
+            // Analyze batch in parallel
+            let batchSummaries = try await withThrowingTaskGroup(of: MessageSummary.self) { group in
+                for thread in batch {
+                    group.addTask {
+                        try await self.analyzeThread(thread, useModel: self.messageModel)
+                    }
+                }
+
+                var results: [MessageSummary] = []
+                for try await summary in group {
+                    results.append(summary)
+                }
+                return results
+            }
+
+            summaries.append(contentsOf: batchSummaries)
+            print("  ✓ Analyzed batch \(batchStart/batchSize + 1) (\(batchSummaries.count) threads)")
+        }
+
+        return summaries.sorted { $0.urgency > $1.urgency }
+    }
+
+    private func analyzeThread(_ thread: MessageThread, useModel: String? = nil) async throws -> MessageSummary {
+        let recentMessages = thread.messages.prefix(20)
+        let messagesText = recentMessages.map { msg in
+            "[\(msg.timestamp.formatted())] \(msg.direction == .incoming ? thread.contactName ?? "Unknown" : "You"): \(msg.content)"
+        }.joined(separator: "\n")
+
+        let prompt = """
+        Analyze this message thread and provide:
+        1. A concise summary (2-3 sentences max)
+        2. Urgency level (critical/high/medium/low)
+        3. Key action items if any
+        4. Sentiment (positive/neutral/negative/urgent)
+        5. Whether it needs a response and suggested response if applicable
+
+        Message thread:
+        \(messagesText)
+
+        Respond in JSON format:
+        {
+            "summary": "brief summary",
+            "urgency": "critical|high|medium|low",
+            "actionItems": ["item1", "item2"],
+            "sentiment": "sentiment analysis",
+            "needsResponse": true|false,
+            "suggestedResponse": "optional suggested response"
+        }
+        """
+
+        let response = try await sendRequest(prompt: prompt, useModel: useModel)
+        let analysis = try parseMessageAnalysis(response)
+
+        return MessageSummary(
+            thread: thread,
+            summary: analysis.summary,
+            urgency: analysis.urgency,
+            suggestedResponse: analysis.suggestedResponse,
+            actionItems: analysis.actionItems,
+            sentiment: analysis.sentiment
+        )
+    }
+
+    func generateMeetingBriefing(_ event: CalendarEvent, attendees: [AttendeeBriefing]) async throws -> MeetingBriefing {
+        let attendeesInfo = attendees.map { briefing in
+            """
+            - \(briefing.attendee.name ?? briefing.attendee.email)
+              Bio: \(briefing.bio)
+              Recent Activity: \(briefing.recentActivity.joined(separator: ", "))
+              \(briefing.companyInfo.map { "Company: \($0.name) - \($0.description ?? "")" } ?? "")
+              \(briefing.notes ?? "")
+            """
+        }.joined(separator: "\n\n")
+
+        let prompt = """
+        Create a 45-60 second executive briefing for this meeting:
+
+        Meeting: \(event.title)
+        Time: \(event.startTime.formatted()) - \(event.endTime.formatted())
+        Duration: \(Int(event.duration / 60)) minutes
+        \(event.location.map { "Location: \($0)" } ?? "")
+
+        Attendees:
+        \(attendeesInfo)
+
+        Meeting Description:
+        \(event.description ?? "No description provided")
+
+        Provide:
+        1. Context: What is this meeting about and why it matters (2-3 sentences)
+        2. Key preparation points: What should I review or prepare before this meeting
+        3. Suggested topics: 3-4 topics that should be discussed
+        4. Quick takes on each attendee: Most relevant facts I should remember
+
+        Format as JSON:
+        {
+            "context": "brief context",
+            "preparation": "preparation notes",
+            "suggestedTopics": ["topic1", "topic2", "topic3"],
+            "attendeeInsights": {"email": "key insight"}
+        }
+        """
+
+        let response = try await sendRequest(prompt: prompt)
+        let briefingData = try parseBriefingData(response)
+
+        return MeetingBriefing(
+            event: event,
+            attendeeBriefings: attendees,
+            preparation: briefingData.preparation,
+            suggestedTopics: briefingData.suggestedTopics,
+            context: briefingData.context
+        )
+    }
+
+    func generateAttentionDefenseReport(
+        actionItems: [ActionItem],
+        schedule: DailySchedule,
+        currentTime: Date
+    ) async throws -> AttentionDefenseReport {
+        let calendar = Calendar.current
+        let endOfDay = calendar.date(bySettingHour: 18, minute: 0, second: 0, of: currentTime)!
+        let timeRemaining = endOfDay.timeIntervalSince(currentTime)
+
+        let itemsText = actionItems.map { item in
+            "- [\(item.priority.rawValue)] \(item.title): \(item.description) (Source: \(item.source.rawValue), Est: \(item.estimatedDuration.map { "\(Int($0/60))min" } ?? "unknown"))"
+        }.joined(separator: "\n")
+
+        let upcomingMeetings = schedule.events.filter { $0.startTime > currentTime }
+        let meetingsText = upcomingMeetings.map { event in
+            "- \(event.startTime.formatted(.dateTime.hour().minute())): \(event.title) (\(Int(event.duration/60))min)"
+        }.joined(separator: "\n")
+
+        let prompt = """
+        It's currently \(currentTime.formatted()) and the workday ends at 18:00.
+        Time remaining: \(Int(timeRemaining/3600))h \(Int((timeRemaining.truncatingRemainder(dividingBy: 3600))/60))m
+
+        Upcoming meetings:
+        \(meetingsText)
+
+        Action items to evaluate:
+        \(itemsText)
+
+        Analyze and provide:
+        1. Which tasks MUST be done before end of day (critical deadlines, time-sensitive responses)
+        2. Which tasks can be pushed to tomorrow with low impact
+        3. Prioritized list for rest of day
+        4. Strategic recommendations
+
+        Format as JSON:
+        {
+            "mustDoToday": ["task_id1", "task_id2"],
+            "canPushOff": [
+                {"taskId": "id", "reason": "why it can wait", "suggestedDate": "2024-01-12", "impact": "low|medium|high"}
+            ],
+            "recommendations": ["recommendation1", "recommendation2"]
+        }
+        """
+
+        let response = try await sendRequest(prompt: prompt)
+        let analysis = try parseAttentionDefenseAnalysis(response, actionItems: actionItems)
+
+        return analysis
+    }
+
+    // MARK: - Private Helpers
+
+    private func sendRequest(prompt: String, useModel: String? = nil) async throws -> String {
+        let url = URL(string: baseURL)!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+
+        let body: [String: Any] = [
+            "model": useModel ?? model,
+            "max_tokens": 4096,
+            "messages": [
+                ["role": "user", "content": prompt]
+            ]
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw AIError.requestFailed
+        }
+
+        let apiResponse = try JSONDecoder().decode(ClaudeResponse.self, from: data)
+        return apiResponse.content.first?.text ?? ""
+    }
+
+    private func parseMessageAnalysis(_ response: String) throws -> MessageAnalysis {
+        guard let jsonString = extractJSON(from: response) else {
+            print("ERROR: Could not extract JSON from response:")
+            print(response)
+            throw AIError.parsingFailed
+        }
+
+        guard let jsonData = jsonString.data(using: .utf8) else {
+            print("ERROR: Could not convert JSON string to data")
+            throw AIError.parsingFailed
+        }
+
+        do {
+            let analysis = try JSONDecoder().decode(MessageAnalysis.self, from: jsonData)
+            return analysis
+        } catch {
+            print("ERROR: JSON decoding failed:")
+            print("Extracted JSON:", jsonString)
+            print("Decode error:", error)
+            throw AIError.parsingFailed
+        }
+    }
+
+    private func parseBriefingData(_ response: String) throws -> BriefingData {
+        guard let jsonData = extractJSON(from: response)?.data(using: .utf8),
+              let data = try? JSONDecoder().decode(BriefingData.self, from: jsonData) else {
+            throw AIError.parsingFailed
+        }
+        return data
+    }
+
+    private func parseAttentionDefenseAnalysis(_ response: String, actionItems: [ActionItem]) throws -> AttentionDefenseReport {
+        guard let jsonData = extractJSON(from: response)?.data(using: .utf8),
+              let analysis = try? JSONDecoder().decode(AttentionDefenseAnalysis.self, from: jsonData) else {
+            throw AIError.parsingFailed
+        }
+
+        let itemsById = Dictionary(uniqueKeysWithValues: actionItems.map { ($0.id, $0) })
+
+        let mustDoToday = analysis.mustDoToday.compactMap { itemsById[$0] }
+        let canPushOff = analysis.canPushOff.compactMap { suggestion -> PushOffSuggestion? in
+            guard let item = itemsById[suggestion.taskId] else { return nil }
+            let dateFormatter = ISO8601DateFormatter()
+            let newDate = dateFormatter.date(from: suggestion.suggestedDate) ?? Date().addingTimeInterval(86400)
+            return PushOffSuggestion(
+                item: item,
+                reason: suggestion.reason,
+                suggestedNewDate: newDate,
+                impact: PushOffSuggestion.ImpactLevel(rawValue: suggestion.impact) ?? .low
+            )
+        }
+
+        let upcomingDeadlines = actionItems.filter { item in
+            guard let dueDate = item.dueDate else { return false }
+            return dueDate.timeIntervalSinceNow < 3600 * 3
+        }
+
+        return AttentionDefenseReport(
+            currentTime: Date(),
+            upcomingDeadlines: upcomingDeadlines,
+            criticalTasks: mustDoToday,
+            canPushOff: canPushOff,
+            mustDoToday: mustDoToday,
+            timeAvailable: 0,
+            recommendations: analysis.recommendations
+        )
+    }
+
+    // MARK: - Todo Detection
+
+    func extractTodoFromMessage(_ message: Message) async throws -> TodoItem? {
+        // Only process messages from yourself (Miten Sampat)
+        guard message.direction == .outgoing,
+              !message.content.isEmpty else {
+            return nil
+        }
+
+        let content = message.content
+        let prompt = """
+        Analyze this message I sent to myself to see if it contains a todo item or action item.
+
+        Message: "\(content)"
+
+        If this is a todo/action item, extract:
+        1. Title (concise summary)
+        2. Description (optional details)
+        3. Due date (if mentioned, otherwise null)
+
+        Return JSON format:
+        {
+          "is_todo": true/false,
+          "title": "...",
+          "description": "...",
+          "due_date": "YYYY-MM-DD" or null
+        }
+
+        Examples of todo items:
+        - "Remember to call John tomorrow"
+        - "Need to review Q4 metrics by Friday"
+        - "Follow up with Sarah about the proposal"
+        - "Buy milk"
+
+        Not todo items:
+        - Regular conversations
+        - Questions
+        - Status updates without action
+        """
+
+        let response = try await sendRequest(prompt: prompt)
+
+        guard let jsonData = extractJSON(from: response)?.data(using: .utf8),
+              let todoData = try? JSONDecoder().decode(TodoDetection.self, from: jsonData),
+              todoData.isTodo else {
+            return nil
+        }
+
+        var dueDate: Date?
+        if let dueDateString = todoData.dueDate {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withFullDate]
+            dueDate = formatter.date(from: dueDateString)
+        }
+
+        return TodoItem(
+            title: todoData.title,
+            description: todoData.description,
+            dueDate: dueDate,
+            sourceMessage: message
+        )
+    }
+
+    private func extractJSON(from text: String) -> String? {
+        // Try to find JSON between curly braces
+        if let range = text.range(of: "\\{[\\s\\S]*\\}", options: .regularExpression) {
+            return String(text[range])
+        }
+        // If no match, maybe the whole response is JSON
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") {
+            return text
+        }
+        return nil
+    }
+}
+
+// MARK: - Supporting Types
+
+private struct ClaudeResponse: Codable {
+    let content: [Content]
+
+    struct Content: Codable {
+        let text: String
+    }
+}
+
+private struct MessageAnalysis: Codable {
+    let summary: String
+    let urgency: UrgencyLevel
+    let actionItems: [String]
+    let sentiment: String
+    let needsResponse: Bool
+    let suggestedResponse: String?
+}
+
+private struct BriefingData: Codable {
+    let context: String
+    let preparation: String
+    let suggestedTopics: [String]
+}
+
+private struct AttentionDefenseAnalysis: Codable {
+    let mustDoToday: [String]
+    let canPushOff: [PushOffItem]
+    let recommendations: [String]
+
+    struct PushOffItem: Codable {
+        let taskId: String
+        let reason: String
+        let suggestedDate: String
+        let impact: String
+    }
+}
+
+private struct TodoDetection: Codable {
+    let isTodo: Bool
+    let title: String
+    let description: String?
+    let dueDate: String?
+
+    enum CodingKeys: String, CodingKey {
+        case isTodo = "is_todo"
+        case title
+        case description
+        case dueDate = "due_date"
+    }
+}
+
+struct TodoItem {
+    let title: String
+    let description: String?
+    let dueDate: Date?
+    let sourceMessage: Message
+}
+
+enum AIError: Error, LocalizedError {
+    case requestFailed
+    case parsingFailed
+    case invalidResponse
+
+    var errorDescription: String? {
+        switch self {
+        case .requestFailed:
+            return "AI API request failed"
+        case .parsingFailed:
+            return "Failed to parse AI response"
+        case .invalidResponse:
+            return "Invalid response from AI"
+        }
+    }
+}

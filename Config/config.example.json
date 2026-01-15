@@ -1,0 +1,81 @@
+{
+  "app": {
+    "name": "Exec Assistant",
+    "version": "1.0.0",
+    "briefing_time": "07:00",
+    "attention_alert_time": "15:00",
+    "timezone": "Asia/Kolkata"
+  },
+  "user": {
+    "name": "Your Name",
+    "email": "your.email@cred.club",
+    "company_domain": "cred.club",
+    "company_domains": ["cred.club", "credavenue.com"]
+  },
+  "calendar": {
+    "google": [
+      {
+        "name": "primary",
+        "client_id": "YOUR_GOOGLE_CLIENT_ID",
+        "client_secret": "YOUR_GOOGLE_CLIENT_SECRET",
+        "redirect_uri": "http://localhost:8080/auth/callback"
+      },
+      {
+        "name": "secondary",
+        "client_id": "YOUR_SECOND_GOOGLE_CLIENT_ID",
+        "client_secret": "YOUR_SECOND_GOOGLE_CLIENT_SECRET",
+        "redirect_uri": "http://localhost:8080/auth/callback"
+      }
+    ]
+  },
+  "notion": {
+    "api_key": "YOUR_NOTION_API_KEY",
+    "database_id": "YOUR_CONTACTS_DATABASE_ID"
+  },
+  "ai": {
+    "anthropic_api_key": "YOUR_ANTHROPIC_API_KEY",
+    "model": "claude-sonnet-4-5-20250929",
+    "message_analysis_model": "claude-haiku-4-5-20250929",
+    "max_threads_to_analyze": 20
+  },
+  "messaging": {
+    "imessage": {
+      "enabled": true,
+      "db_path": "~/Library/Messages/chat.db"
+    },
+    "whatsapp": {
+      "enabled": true,
+      "db_path": "~/Library/Application Support/WhatsApp/Databases/ChatStorage.sqlite"
+    },
+    "signal": {
+      "enabled": true,
+      "db_path": "~/Library/Application Support/Signal/sql/db.sqlite"
+    }
+  },
+  "notifications": {
+    "email": {
+      "enabled": true,
+      "smtp_host": "smtp.gmail.com",
+      "smtp_port": 587,
+      "smtp_username": "your.email@gmail.com",
+      "smtp_password": "YOUR_APP_PASSWORD"
+    },
+    "push": {
+      "enabled": true
+    },
+    "slack": {
+      "enabled": true,
+      "webhook_url": "YOUR_SLACK_WEBHOOK_URL",
+      "bot_token": "YOUR_SLACK_BOT_TOKEN"
+    }
+  },
+  "research": {
+    "linkedin": {
+      "enabled": true,
+      "access_token": "YOUR_LINKEDIN_ACCESS_TOKEN"
+    },
+    "search": {
+      "enabled": true
+    }
+  }
+}
