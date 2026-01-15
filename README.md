@@ -2,6 +2,8 @@
 
 Your AI-powered personal assistant that analyzes messages, prepares meeting briefings, and defends your attention. Like Alfred to Batman. 🦇
 
+Available as both a **CLI tool** and a **native macOS menu bar app** with sleek Slack-inspired UI.
+
 ## Features
 
 ### Morning Briefing
@@ -23,16 +25,29 @@ Your AI-powered personal assistant that analyzes messages, prepares meeting brie
 - **Time Management**: Calculates available time vs. required work
 - **Strategic Recommendations**: Actionable advice for the rest of your day
 
-### Command-Line Interface
+### Dual Interface
+
+**CLI (Command-Line Interface)**
 - **Date-specific briefings**: Generate briefings for tomorrow, specific dates, or +N days from now
 - **Message summaries**: Query messages by platform and timeframe (e.g., last 1h, 24h, 7d)
+- **Focused thread analysis**: Deep-dive into specific WhatsApp conversations
 - **Email delivery**: Optional `--email` flag to send briefings via email
 - **Multi-calendar auth**: Easy authentication flow for multiple calendar accounts
+
+**GUI (Menu Bar App)**
+- **Always accessible**: Quick access from your menu bar
+- **Slack-inspired design**: Clean, familiar aubergine theme
+- **Platform selection**: Choose between all messages, iMessage only, or WhatsApp only
+- **Focused search**: Search specific WhatsApp contacts/groups with custom timeframes
+- **Calendar filtering**: View all calendars, primary only, or work calendar only
+- **Date navigation**: Easily view briefings and calendars for today, tomorrow, or specific dates
+- **WhatsApp todos**: Scan messages to yourself for action items and add to Notion
 
 ## Quick Start
 
 ### Installation
 
+**CLI Tool:**
 ```bash
 # Navigate to the project directory
 cd "/Users/mitensampat/Documents/Claude apps/Alfred"
@@ -45,6 +60,17 @@ This will:
 - Build the release binary
 - Install `alfred` command to `~/.local/bin`
 - Add `~/.local/bin` to your PATH
+
+**GUI Menu Bar App:**
+```bash
+# Build the GUI app
+swift build --product alfred-app
+
+# Run the menu bar app
+.build/debug/alfred-app
+```
+
+The app will appear in your menu bar with a lightning bolt icon ⚡
 
 ### Configure
 
@@ -96,8 +122,12 @@ alfred messages all 1h
 # iMessages from last 24 hours
 alfred messages imessage 24h
 
-# All messages from last week
-alfred messages all 7d
+# WhatsApp messages from last week
+alfred messages whatsapp 7d
+
+# Focused WhatsApp thread analysis
+alfred messages whatsapp "John Doe" 8h
+alfred messages whatsapp "Team Group" 24h
 ```
 
 ### Attention Defense
@@ -186,18 +216,37 @@ Alfred/
 ├── Sources/
 │   ├── App/                    # Main CLI application
 │   │   └── main.swift
-│   ├── Core/                   # Core orchestration
+│   ├── GUI/                    # Menu bar GUI application
+│   │   ├── AlfredMenuBarApp.swift
+│   │   ├── Views/              # SwiftUI views
+│   │   │   ├── MainMenuView.swift
+│   │   │   ├── MessagesOptionsView.swift
+│   │   │   ├── MessagesListView.swift
+│   │   │   ├── MessageDetailView.swift
+│   │   │   ├── BriefingOptionsView.swift
+│   │   │   ├── BriefingDetailView.swift
+│   │   │   ├── CalendarOptionsView.swift
+│   │   │   ├── CalendarDetailView.swift
+│   │   │   ├── AttentionCheckView.swift
+│   │   │   └── NotionTodosView.swift
+│   │   ├── ViewModels/
+│   │   │   └── MainMenuViewModel.swift
+│   │   ├── Services/           # GUI-specific services
+│   │   │   └── AlfredService.swift
+│   │   ├── Models/             # GUI data models
+│   │   └── SlackTheme.swift    # Design system
+│   ├── Core/                   # Shared orchestration logic
 │   │   └── BriefingOrchestrator.swift
-│   ├── Models/                 # Data models
+│   ├── Models/                 # Shared data models
 │   │   ├── Message.swift
 │   │   ├── Calendar.swift
 │   │   ├── Briefing.swift
 │   │   └── Config.swift
-│   ├── Services/               # External integrations
+│   ├── Services/               # Shared external integrations
 │   │   ├── MessageReaders/
 │   │   │   ├── iMessageReader.swift
-│   │   │   ├── WhatsAppReader.swift  (disabled)
-│   │   │   └── SignalReader.swift    (disabled)
+│   │   │   ├── WhatsAppReader.swift
+│   │   │   └── SignalReader.swift
 │   │   ├── GoogleCalendarService.swift
 │   │   ├── MultiCalendarService.swift
 │   │   ├── ClaudeAIService.swift
@@ -312,7 +361,12 @@ swift build -c release
 - [x] CLI interface with date-specific briefings
 - [x] Email delivery on demand
 - [x] Message querying by platform/timeframe
-- [ ] Native macOS menu bar app with UI
+- [x] Focused WhatsApp thread analysis
+- [x] Native macOS menu bar app with UI
+- [x] Platform selection in GUI (all/iMessage/WhatsApp)
+- [x] Focused search with custom timeframes
+- [x] WhatsApp todo scanning to Notion
+- [ ] Calendar view (native UI)
 - [ ] Web dashboard
 - [ ] Email inbox integration
 - [ ] Task management integration (Todoist, Things)
