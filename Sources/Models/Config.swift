@@ -106,6 +106,8 @@ struct AIConfig: Codable {
     let model: String
     let messageAnalysisModel: String?
     let maxThreadsToAnalyze: Int?
+    let maxEmailThreadsToAnalyze: Int?
+    let baseUrl: String?
 
     var effectiveMessageModel: String {
         messageAnalysisModel ?? "claude-haiku-4-5-20250929"
@@ -115,11 +117,21 @@ struct AIConfig: Codable {
         maxThreadsToAnalyze ?? 20
     }
 
+    var effectiveMaxEmailThreads: Int {
+        maxEmailThreadsToAnalyze ?? 25
+    }
+
+    var effectiveBaseUrl: String {
+        baseUrl ?? "https://api.anthropic.com/v1/messages"
+    }
+
     enum CodingKeys: String, CodingKey {
         case anthropicApiKey = "anthropic_api_key"
         case model
         case messageAnalysisModel = "message_analysis_model"
         case maxThreadsToAnalyze = "max_threads_to_analyze"
+        case maxEmailThreadsToAnalyze = "max_email_threads_to_analyze"
+        case baseUrl = "base_url"
     }
 }
 
@@ -127,6 +139,7 @@ struct MessagingConfig: Codable {
     let imessage: MessagePlatformConfig
     let whatsapp: MessagePlatformConfig
     let signal: MessagePlatformConfig
+    let email: EmailPlatformConfig?
 
     struct MessagePlatformConfig: Codable {
         let enabled: Bool
@@ -139,6 +152,32 @@ struct MessagingConfig: Codable {
 
         var expandedPath: String {
             (dbPath as NSString).expandingTildeInPath
+        }
+    }
+
+    struct EmailPlatformConfig: Codable {
+        let enabled: Bool
+        let analyzeInBriefing: Bool?
+        let clientId: String
+        let clientSecret: String
+        let redirectUri: String
+        let maxEmailsToAnalyze: Int?
+
+        var shouldAnalyze: Bool {
+            analyzeInBriefing ?? true  // Default to true for backward compatibility
+        }
+
+        var effectiveMaxEmails: Int {
+            maxEmailsToAnalyze ?? 50
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case enabled
+            case analyzeInBriefing = "analyze_in_briefing"
+            case clientId = "client_id"
+            case clientSecret = "client_secret"
+            case redirectUri = "redirect_uri"
+            case maxEmailsToAnalyze = "max_emails_to_analyze"
         }
     }
 }

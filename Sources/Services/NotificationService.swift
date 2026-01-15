@@ -6,31 +6,40 @@ class NotificationService {
 
     init(config: NotificationConfig) {
         self.config = config
+        print("  [DEBUG] NotificationService config - email:\(config.email.enabled) slack:\(config.slack.enabled) push:\(config.push.enabled)")
     }
 
     func sendBriefing(_ briefing: DailyBriefing) async throws {
+        print("  [DEBUG] sendBriefing called")
         let formatted = formatBriefing(briefing)
+        print("  [DEBUG] Formatted briefing ready")
 
         if config.email.enabled {
+            print("  → Sending email notification...")
             try await sendEmail(
                 subject: "Daily Briefing - \(briefing.date.formatted(date: .abbreviated, time: .omitted))",
                 body: formatted.html
             )
+            print("  ✓ Email sent")
         }
 
         if config.push.enabled {
             do {
+                print("  → Sending push notification...")
                 try await sendPushNotification(
                     title: "Morning Briefing Ready",
                     body: "Your briefing for \(briefing.date.formatted(date: .abbreviated, time: .omitted)) is ready"
                 )
+                print("  ✓ Push notification sent")
             } catch {
-                print("Note: Push notifications not available in command-line mode")
+                print("  ⊗ Push notifications not available in command-line mode")
             }
         }
 
         if config.slack.enabled {
+            print("  → Sending Slack notification...")
             try await sendSlackMessage(formatted.markdown)
+            print("  ✓ Slack notification sent")
         }
     }
 

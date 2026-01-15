@@ -30,15 +30,19 @@ struct AlfredApp {
         // Parse command line arguments
         let arguments = CommandLine.arguments
 
-        // Check for --email flag
-        let shouldSendEmail = arguments.contains("--email")
-        let filteredArgs = arguments.filter { $0 != "--email" }
+        // Check for --notify flag (sends to all enabled notification channels: email, Slack, push)
+        let shouldSendNotifications = arguments.contains("--notify")
+        let filteredArgs = arguments.filter { $0 != "--notify" }
+
+        if shouldSendNotifications {
+            print("🔔 Notifications enabled - will send to configured channels\n")
+        }
 
         if filteredArgs.count > 1 {
             switch filteredArgs[1] {
             case "briefing":
                 let date = filteredArgs.count > 2 ? parseDate(filteredArgs[2]) : nil
-                await runBriefing(orchestrator, for: date, sendEmail: shouldSendEmail)
+                await runBriefing(orchestrator, for: date, sendNotifications: shouldSendNotifications)
             case "messages":
                 let platform = filteredArgs.count > 2 ? filteredArgs[2] : "all"
 
@@ -81,12 +85,14 @@ struct AlfredApp {
                 let date = dateArg.flatMap { parseDate($0) }
                 await runCalendar(orchestrator, for: date, calendar: calendarFilter)
             case "attention":
-                await runAttentionDefense(orchestrator, sendEmail: shouldSendEmail)
+                await runAttentionDefense(orchestrator, sendNotifications: shouldSendNotifications)
             case "schedule":
                 print("Starting scheduled mode...")
                 await scheduler.start()
             case "auth":
                 await runGoogleAuth(config)
+            case "auth-gmail":
+                await runGmailAuth(config)
             case "notion-todos":
                 await runNotionTodos(orchestrator)
             case "test-notion":
@@ -127,15 +133,25 @@ struct AlfredApp {
         return nil
     }
 
-    static func runBriefing(_ orchestrator: BriefingOrchestrator, for date: Date?, sendEmail: Bool) async {
+    static func runBriefing(_ orchestrator: BriefingOrchestrator, for date: Date?, sendNotifications: Bool) async {
         let targetDate = date ?? Calendar.current.date(byAdding: .day, value: 1, to: Date())!
         print("\nGenerating briefing for \(targetDate.formatted(date: .long, time: .omitted))...\n")
         do {
-            let briefing = try await orchestrator.generateBriefing(for: targetDate, sendEmail: sendEmail)
+            let briefing = try await orchestrator.generateBriefing(for: targetDate, sendNotifications: sendNotifications)
             print("\n=== DAILY BRIEFING ===\n")
             printBriefing(briefing)
-            if sendEmail {
-                print("\n✓ Briefing sent via email to \(orchestrator.config.notifications.email.smtpUsername)")
+            if sendNotifications {
+                var channels: [String] = []
+                if orchestrator.config.notifications.email.enabled {
+                    channels.append("email")
+                }
+                if orchestrator.config.notifications.slack.enabled {
+                    channels.append("Slack")
+                }
+                if orchestrator.config.notifications.push.enabled {
+                    channels.append("push")
+                }
+                print("\n✓ Briefing sent via \(channels.joined(separator: ", "))")
             }
         } catch {
             print("Error generating briefing: \(error)")
@@ -173,14 +189,24 @@ struct AlfredApp {
         }
     }
 
-    static func runAttentionDefense(_ orchestrator: BriefingOrchestrator, sendEmail: Bool) async {
+    static func runAttentionDefense(_ orchestrator: BriefingOrchestrator, sendNotifications: Bool) async {
         print("\nGenerating attention defense report...\n")
         do {
-            let report = try await orchestrator.generateAttentionDefenseAlert(sendEmail: sendEmail)
+            let report = try await orchestrator.generateAttentionDefenseAlert(sendNotifications: sendNotifications)
             print("\n=== ATTENTION DEFENSE REPORT ===\n")
             printAttentionReport(report)
-            if sendEmail {
-                print("\n✓ Report sent via email to \(orchestrator.config.notifications.email.smtpUsername)")
+            if sendNotifications {
+                var channels: [String] = []
+                if orchestrator.config.notifications.email.enabled {
+                    channels.append("email")
+                }
+                if orchestrator.config.notifications.slack.enabled {
+                    channels.append("Slack")
+                }
+                if orchestrator.config.notifications.push.enabled {
+                    channels.append("push")
+                }
+                print("\n✓ Report sent via \(channels.joined(separator: ", "))")
             }
         } catch {
             print("Error generating report: \(error)")
@@ -225,6 +251,35 @@ struct AlfredApp {
         }
         
         print("\nAuthentication complete. You can now use the calendar features.")
+    }
+
+    static func runGmailAuth(_ config: AppConfig) async {
+        guard let emailConfig = config.messaging.email else {
+            print("Error: Email not configured in config.json")
+            return
+        }
+
+        print("\nGmail Authentication")
+        print("====================\n")
+
+        let gmailReader = GmailReader(config: emailConfig)
+        let authURL = gmailReader.getAuthorizationURL()
+
+        print("Please visit this URL to authorize Gmail access:")
+        print("\(authURL)")
+        print("\nAfter authorizing, you'll be redirected. Copy the 'code' parameter from the URL and paste it here:")
+
+        if let code = readLine() {
+            do {
+                try await gmailReader.exchangeCodeForToken(code: code)
+                print("\n✓ Gmail authentication successful!")
+                print("\nYou can now use email reading features:")
+                print("  alfred messages email 24h")
+                print("  alfred briefing  (will include email analysis)")
+            } catch {
+                print("\n✗ Gmail authentication failed: \(error)")
+            }
+        }
     }
 
     static func runNotionTodos(_ orchestrator: BriefingOrchestrator) async {
