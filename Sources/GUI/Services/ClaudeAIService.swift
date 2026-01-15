@@ -4,13 +4,19 @@ class ClaudeAIService {
     private let apiKey: String
     private let model: String
     private let messageModel: String
-    private let baseURL: String
+    private let baseURL = "https://api.anthropic.com/v1/messages"
 
     init(config: AIConfig) {
         self.apiKey = config.anthropicApiKey
         self.model = config.model
         self.messageModel = config.effectiveMessageModel
-        self.baseURL = config.effectiveBaseUrl
+        NSLog("🤖 ClaudeAIService initialized with model: \(model), messageModel: \(messageModel)")
+
+        // Write to file for debugging
+        let logMsg = "ClaudeAIService initialized - model: \(model), messageModel: \(messageModel)\n"
+        if let logData = logMsg.data(using: .utf8) {
+            try? logData.write(to: URL(fileURLWithPath: "/tmp/alfred_init.log"), options: .atomic)
+        }
     }
 
     func analyzeMessages(_ threads: [MessageThread]) async throws -> [MessageSummary] {
@@ -263,15 +269,31 @@ class ClaudeAIService {
         let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            print("ERROR: Invalid HTTP response")
+            NSLog("❌ ERROR: Invalid HTTP response")
             throw AIError.requestFailed
         }
 
         if httpResponse.statusCode != 200 {
-            print("ERROR: HTTP \(httpResponse.statusCode)")
-            if let errorBody = String(data: data, encoding: .utf8) {
-                print("Response body:", errorBody)
+            let errorMsg = "HTTP \(httpResponse.statusCode)"
+            let errorBody = String(data: data, encoding: .utf8) ?? "No body"
+            let logMsg = "❌ ERROR: \(errorMsg)\n❌ Response: \(errorBody)"
+            NSLog("%@", logMsg)
+
+            // Also write to file for debugging
+            if let logData = logMsg.data(using: .utf8) {
+                let logPath = "/tmp/alfred_error.log"
+                if FileManager.default.fileExists(atPath: logPath) {
+                    if let handle = FileHandle(forWritingAtPath: logPath) {
+                        handle.seekToEndOfFile()
+                        handle.write(logData)
+                        handle.write("\n\n".data(using: .utf8)!)
+                        handle.closeFile()
+                    }
+                } else {
+                    try? logData.write(to: URL(fileURLWithPath: logPath))
+                }
             }
+
             throw AIError.requestFailed
         }
 

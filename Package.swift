@@ -10,6 +10,10 @@ let package = Package(
         .executable(
             name: "alfred",
             targets: ["Alfred"]
+        ),
+        .executable(
+            name: "alfred-app",
+            targets: ["AlfredApp"]
         )
     ],
     dependencies: [
@@ -19,7 +23,18 @@ let package = Package(
         .executableTarget(
             name: "Alfred",
             dependencies: [],
-            path: "Sources"
+            path: "Sources",
+            exclude: ["GUI"]
+        ),
+        .executableTarget(
+            name: "AlfredApp",
+            dependencies: [],
+            path: "Sources/GUI"
+        ),
+        .testTarget(
+            name: "AlfredTests",
+            dependencies: ["Alfred"],
+            path: "Tests"
         )
     ]
 )
