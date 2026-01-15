@@ -7,8 +7,9 @@ Thanks for your interest in Alfred! This guide will help you get started.
 ### Prerequisites
 - macOS 13.0 or later
 - Swift 5.9 or later (comes with Xcode Command Line Tools)
-- Anthropic API key
+- Anthropic API key (or LiteLLM API key)
 - Google Calendar API credentials (optional)
+- Gmail API credentials (optional, for email integration)
 
 ### Installation for Development
 
@@ -24,8 +25,9 @@ cp Config/config.example.json Config/config.json
 ```
 
 3. Edit `Config/config.json` with your credentials:
-   - Add your Anthropic API key
+   - Add your Anthropic API key (or LiteLLM API key with `base_url`)
    - Add Google Calendar OAuth credentials (if using calendar features)
+   - Add Gmail OAuth credentials (if using email features)
    - Configure other settings as needed
 
 4. Build and run:
@@ -81,11 +83,21 @@ The app uses a JSON configuration file with these sections:
 - `app`: Application settings
 - `user`: User information
 - `calendar`: Calendar configurations
-- `ai`: AI model settings
-- `messaging`: Message platform settings
-- `notifications`: Email/notification settings
+- `ai`: AI model settings (includes LiteLLM support via `base_url`)
+- `messaging`: Message platform settings (iMessage, WhatsApp, Signal, Email/Gmail)
+- `notifications`: Notification settings (Email, Slack, Push)
 
 See `Config/config.example.json` for details.
+
+### Authentication Commands
+
+```bash
+# Authenticate Google Calendar
+alfred auth
+
+# Authenticate Gmail (for email integration)
+alfred auth-gmail
+```
 
 ## Submitting Changes
 

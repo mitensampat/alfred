@@ -4,12 +4,13 @@ class ClaudeAIService {
     private let apiKey: String
     private let model: String
     private let messageModel: String
-    private let baseURL = "https://api.anthropic.com/v1/messages"
+    private let baseURL: String
 
     init(config: AIConfig) {
         self.apiKey = config.anthropicApiKey
         self.model = config.model
         self.messageModel = config.effectiveMessageModel
+        self.baseURL = config.effectiveBaseUrl
     }
 
     func analyzeMessages(_ threads: [MessageThread]) async throws -> [MessageSummary] {

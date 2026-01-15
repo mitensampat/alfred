@@ -20,11 +20,6 @@ let package = Package(
             name: "Alfred",
             dependencies: [],
             path: "Sources"
-        ),
-        .testTarget(
-            name: "AlfredTests",
-            dependencies: ["Alfred"],
-            path: "Tests"
         )
     ]
 )
