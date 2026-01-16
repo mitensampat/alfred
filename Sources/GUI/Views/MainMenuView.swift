@@ -34,7 +34,11 @@ struct MainMenuView: View {
                 }
             }
         }
-        .frame(width: 340, height: 380)
+        .frame(
+            width: viewModel.shouldExpandPopover ? 680 : 340,
+            height: viewModel.shouldExpandPopover ? 760 : 380
+        )
+        .animation(.easeInOut(duration: 0.2), value: viewModel.shouldExpandPopover)
         .onAppear {
             viewModel.loadData()
         }

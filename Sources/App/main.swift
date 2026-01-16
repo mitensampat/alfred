@@ -163,6 +163,33 @@ struct AlfredApp {
             let summary = try await orchestrator.getMessagesSummary(platform: platform, timeframe: timeframe)
             print("=== MESSAGES SUMMARY ===\n")
             printMessagesSummary(summary)
+
+            // Extract recommended actions
+            let recommendedActions = orchestrator.extractRecommendedActions(from: summary)
+
+            if !recommendedActions.isEmpty {
+                print("\n" + String(repeating: "=", count: 60))
+                print("\n💡 RECOMMENDED ACTIONS FOR NOTION")
+                print(String(repeating: "-", count: 60))
+                print("\nI found \(recommendedActions.count) critical action item(s) from your messages:\n")
+
+                for (index, action) in recommendedActions.enumerated() {
+                    print("\(index + 1). \(action.priority.emoji) \(action.title)")
+                    print("   Source: \(action.source.displayName)")
+                    print("   \(action.description)")
+                    print("")
+                }
+
+                print("Would you like to add these to your Notion todo list? (yes/no): ", terminator: "")
+
+                if let response = readLine()?.lowercased(), response == "yes" || response == "y" {
+                    print("\n📓 Adding actions to Notion...")
+                    let createdIds = try await orchestrator.addRecommendedActionsToNotion(recommendedActions)
+                    print("\n✓ Successfully added \(createdIds.count) action item(s) to Notion\n")
+                } else {
+                    print("\n⏭️  Skipped adding actions to Notion\n")
+                }
+            }
         } catch {
             print("Error fetching messages: \(error)")
         }
@@ -173,6 +200,35 @@ struct AlfredApp {
             let analysis = try await orchestrator.getFocusedWhatsAppThread(contactName: contactName, timeframe: timeframe)
             print("=== WHATSAPP THREAD ANALYSIS ===\n")
             printFocusedThreadAnalysis(analysis)
+
+            // Extract recommended actions
+            let recommendedActions = orchestrator.extractRecommendedActions(from: analysis)
+
+            if !recommendedActions.isEmpty {
+                print("\n" + String(repeating: "=", count: 60))
+                print("\n💡 RECOMMENDED ACTIONS FOR NOTION")
+                print(String(repeating: "-", count: 60))
+                print("\nI found \(recommendedActions.count) critical action item(s) from this conversation:\n")
+
+                for (index, action) in recommendedActions.enumerated() {
+                    print("\(index + 1). \(action.priority.emoji) \(action.title)")
+                    print("   \(action.description)")
+                    if let dueDate = action.dueDate {
+                        print("   Due: \(dueDate.formatted(date: .abbreviated, time: .omitted))")
+                    }
+                    print("")
+                }
+
+                print("Would you like to add these to your Notion todo list? (yes/no): ", terminator: "")
+
+                if let response = readLine()?.lowercased(), response == "yes" || response == "y" {
+                    print("\n📓 Adding actions to Notion...")
+                    let createdIds = try await orchestrator.addRecommendedActionsToNotion(recommendedActions)
+                    print("\n✓ Successfully added \(createdIds.count) action item(s) to Notion\n")
+                } else {
+                    print("\n⏭️  Skipped adding actions to Notion\n")
+                }
+            }
         } catch {
             print("Error analyzing WhatsApp thread: \(error)")
         }
@@ -363,7 +419,32 @@ struct AlfredApp {
             }
         }
 
-        print("\n\nACTION ITEMS (\(briefing.actionItems.count))")
+        // Notion Context
+        if let notionContext = briefing.notionContext {
+            if !notionContext.tasks.isEmpty {
+                print("\n\nACTIVE TASKS")
+                print("------------")
+                for task in notionContext.tasks.prefix(5) {
+                    print("• \(task.title)")
+                    print("  Status: \(task.status)")
+                    if let dueDate = task.dueDate {
+                        print("  Due: \(dueDate.formatted(date: .abbreviated, time: .omitted))")
+                    }
+                    print("")
+                }
+            }
+
+            if !notionContext.notes.isEmpty {
+                print("\nRELEVANT NOTES")
+                print("--------------")
+                for note in notionContext.notes.prefix(3) {
+                    print("• \(note.title)")
+                }
+                print("")
+            }
+        }
+
+        print("\nACTION ITEMS (\(briefing.actionItems.count))")
         print("------------")
         for item in briefing.actionItems.prefix(10) {
             print("[\(item.priority.rawValue)] \(item.title)")

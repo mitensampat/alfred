@@ -144,7 +144,12 @@ class ClaudeAIService {
         )
     }
 
-    func generateMeetingBriefing(_ event: CalendarEvent, attendees: [AttendeeBriefing]) async throws -> MeetingBriefing {
+    func generateMeetingBriefing(
+        _ event: CalendarEvent,
+        attendees: [AttendeeBriefing],
+        notionNotes: [NotionNote] = [],
+        notionTasks: [NotionTask] = []
+    ) async throws -> MeetingBriefing {
         let attendeesInfo = attendees.map { briefing in
             """
             - \(briefing.attendee.name ?? briefing.attendee.email)
@@ -154,6 +159,17 @@ class ClaudeAIService {
               \(briefing.notes ?? "")
             """
         }.joined(separator: "\n\n")
+
+        // Build Notion context section
+        var notionContext = ""
+        if !notionNotes.isEmpty {
+            notionContext += "\n\nRelevant Notion Notes:\n"
+            notionContext += notionNotes.prefix(3).map { "- \($0.title)" }.joined(separator: "\n")
+        }
+        if !notionTasks.isEmpty {
+            notionContext += "\n\nActive Tasks:\n"
+            notionContext += notionTasks.prefix(5).map { "- \($0.title) (\($0.status))" }.joined(separator: "\n")
+        }
 
         let prompt = """
         Create a 45-60 second executive briefing for this meeting:
@@ -168,10 +184,11 @@ class ClaudeAIService {
 
         Meeting Description:
         \(event.description ?? "No description provided")
+        \(notionContext)
 
         Provide:
-        1. Context: What is this meeting about and why it matters (2-3 sentences)
-        2. Key preparation points: What should I review or prepare before this meeting
+        1. Context: What is this meeting about and why it matters (2-3 sentences). If relevant Notion notes or tasks are provided, reference them to show connections.
+        2. Key preparation points: What should I review or prepare before this meeting. Include any relevant tasks or notes from Notion.
         3. Suggested topics: 3-4 topics that should be discussed
         4. Quick takes on each attendee: Most relevant facts I should remember
 

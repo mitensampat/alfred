@@ -63,14 +63,44 @@ class BriefingOrchestrator {
             recommendations: generateScheduleRecommendations(schedule)
         )
 
-        // 4. Extract action items
-        let actionItems = extractActionItems(from: messagingSummary, and: calendarBriefing)
+        // 4. Query Notion for context (if configured)
+        var notionNotes: [NotionNote] = []
+        var notionTasks: [NotionTask] = []
+
+        if let briefingSources = config.notion.briefingSources {
+            // Query notes database
+            if let notesDatabaseId = briefingSources.notesDatabaseId, notesDatabaseId != "YOUR_NOTES_DATABASE_ID" {
+                print("📓 Querying Notion notes for context...")
+                do {
+                    let context = generateBriefingContext(messagingSummary: messagingSummary, schedule: schedule)
+                    notionNotes = try await notionService.queryRelevantNotes(context: context, databaseId: notesDatabaseId)
+                    print("✓ Found \(notionNotes.count) relevant note(s)\n")
+                } catch {
+                    print("⚠️  Failed to query notes: \(error)\n")
+                }
+            }
+
+            // Query tasks database
+            if let tasksDatabaseId = briefingSources.tasksDatabaseId, tasksDatabaseId != "YOUR_TASKS_DATABASE_ID" {
+                print("✅ Querying Notion for active tasks...")
+                do {
+                    notionTasks = try await notionService.queryActiveTasks(databaseId: tasksDatabaseId)
+                    print("✓ Found \(notionTasks.count) active task(s)\n")
+                } catch {
+                    print("⚠️  Failed to query tasks: \(error)\n")
+                }
+            }
+        }
+
+        // 5. Extract action items
+        let actionItems = extractActionItems(from: messagingSummary, and: calendarBriefing, notionTasks: notionTasks)
 
         let briefing = DailyBriefing(
             date: date,
             messagingSummary: messagingSummary,
             calendarBriefing: calendarBriefing,
             actionItems: actionItems,
+            notionContext: NotionContext(notes: notionNotes, tasks: notionTasks),
             generatedAt: Date()
         )
 
@@ -93,6 +123,35 @@ class BriefingOrchestrator {
         let schedule = try await calendarService.fetchEvents(for: date, userSettings: config.user, calendarFilter: calendar)
         print("")
 
+        // Query Notion for context (if configured)
+        var notionNotes: [NotionNote] = []
+        var notionTasks: [NotionTask] = []
+
+        if let briefingSources = config.notion.briefingSources {
+            // Query notes database
+            if let notesDatabaseId = briefingSources.notesDatabaseId, notesDatabaseId != "YOUR_NOTES_DATABASE_ID" {
+                print("📓 Querying Notion notes for context...")
+                do {
+                    let context = generateCalendarContext(schedule: schedule)
+                    notionNotes = try await notionService.queryRelevantNotes(context: context, databaseId: notesDatabaseId)
+                    print("✓ Found \(notionNotes.count) relevant note(s)\n")
+                } catch {
+                    print("⚠️  Failed to query notes: \(error)\n")
+                }
+            }
+
+            // Query tasks database
+            if let tasksDatabaseId = briefingSources.tasksDatabaseId, tasksDatabaseId != "YOUR_TASKS_DATABASE_ID" {
+                print("✅ Querying Notion for active tasks...")
+                do {
+                    notionTasks = try await notionService.queryActiveTasks(databaseId: tasksDatabaseId)
+                    print("✓ Found \(notionTasks.count) active task(s)\n")
+                } catch {
+                    print("⚠️  Failed to query tasks: \(error)\n")
+                }
+            }
+        }
+
         // Generate meeting briefings for external meetings
         var meetingBriefings: [MeetingBriefing] = []
         if !schedule.externalMeetings.isEmpty {
@@ -100,7 +159,14 @@ class BriefingOrchestrator {
             for (index, event) in schedule.externalMeetings.enumerated() {
                 print("  ↳ Researching attendees for '\(event.title)' (\(index + 1)/\(schedule.externalMeetings.count))...")
                 let attendeeBriefings = try await researchService.researchAttendees(event.externalAttendees)
-                let briefing = try await aiService.generateMeetingBriefing(event, attendees: attendeeBriefings)
+
+                // Include Notion context in meeting briefing
+                let briefing = try await aiService.generateMeetingBriefing(
+                    event,
+                    attendees: attendeeBriefings,
+                    notionNotes: notionNotes,
+                    notionTasks: notionTasks
+                )
                 meetingBriefings.append(briefing)
             }
             print("✓ Meeting briefings complete\n")
@@ -116,6 +182,14 @@ class BriefingOrchestrator {
         print("✓ Calendar briefing ready\n")
 
         return calendarBriefing
+    }
+
+    private func generateCalendarContext(schedule: DailySchedule) -> String {
+        var context = "Calendar context:\n"
+        context += "- Total meetings: \(schedule.events.count)\n"
+        context += "- External meetings: \(schedule.externalMeetings.map { $0.title }.joined(separator: ", "))\n"
+        context += "- Focus time: \(schedule.freeSlots.reduce(0) { $0 + $1.duration } / 3600) hours\n"
+        return context
     }
 
     // MARK: - Messages Summary
@@ -389,7 +463,15 @@ class BriefingOrchestrator {
         return recommendations
     }
 
-    private func extractActionItems(from messaging: MessagingSummary, and calendar: CalendarBriefing) -> [ActionItem] {
+    private func generateBriefingContext(messagingSummary: MessagingSummary, schedule: DailySchedule) -> String {
+        var context = "Briefing context:\n"
+        context += "- Meetings today: \(schedule.events.count)\n"
+        context += "- Critical messages: \(messagingSummary.criticalMessages.count)\n"
+        context += "- External meetings: \(schedule.externalMeetings.map { $0.title }.joined(separator: ", "))\n"
+        return context
+    }
+
+    private func extractActionItems(from messaging: MessagingSummary, and calendar: CalendarBriefing, notionTasks: [NotionTask] = []) -> [ActionItem] {
         var items: [ActionItem] = []
 
         // Extract from critical messages
@@ -539,5 +621,92 @@ class BriefingOrchestrator {
         let url = try await notionService.saveBriefing(briefing)
         print("✓ Briefing saved to Notion\n")
         return url
+    }
+
+    // MARK: - Recommended Actions from Analysis
+
+    /// Extract critical action items from focused thread analysis
+    func extractRecommendedActions(from analysis: FocusedThreadAnalysis) -> [RecommendedAction] {
+        // Only extract critical/high priority items
+        return analysis.actionItems.filter { item in
+            item.priority.lowercased() == "high" || item.priority.lowercased() == "critical"
+        }.map { item in
+            let priority: ActionPriority = item.priority.lowercased() == "critical" ? .critical : .high
+            let dueDate = parseDueDate(from: item.deadline)
+
+            return RecommendedAction(
+                title: item.item,
+                description: "From thread with \(analysis.thread.contactName ?? "Unknown")",
+                priority: priority,
+                source: .focusedAnalysis(contact: analysis.thread.contactName ?? "Unknown"),
+                dueDate: dueDate,
+                context: "Action identified from message analysis"
+            )
+        }
+    }
+
+    /// Extract critical action items from message summaries
+    func extractRecommendedActions(from summaries: [MessageSummary]) -> [RecommendedAction] {
+        var actions: [RecommendedAction] = []
+
+        for summary in summaries {
+            // Only extract from critical/high urgency messages
+            guard summary.urgency == .critical || summary.urgency == .high else { continue }
+
+            // Only take first 2 most critical action items per thread
+            for actionItem in summary.actionItems.prefix(2) {
+                let priority: ActionPriority = summary.urgency == .critical ? .critical : .high
+
+                actions.append(RecommendedAction(
+                    title: actionItem,
+                    description: summary.summary,
+                    priority: priority,
+                    source: .messageThread(contact: summary.thread.contactName ?? "Unknown", platform: summary.thread.platform),
+                    dueDate: nil,
+                    context: "From \(summary.thread.platform.rawValue) conversation"
+                ))
+            }
+        }
+
+        return actions
+    }
+
+    /// Add recommended actions to Notion
+    func addRecommendedActionsToNotion(_ actions: [RecommendedAction]) async throws -> [String] {
+        var createdIds: [String] = []
+
+        for action in actions {
+            do {
+                let pageId = try await notionService.createTodo(
+                    title: action.title,
+                    description: action.description + "\n\nSource: " + action.source.displayName,
+                    dueDate: action.dueDate,
+                    assignee: config.user.name
+                )
+                createdIds.append(pageId)
+                print("  ✓ Added: \(action.title)")
+            } catch {
+                print("  ✗ Failed to add '\(action.title)': \(error)")
+            }
+        }
+
+        return createdIds
+    }
+
+    private func parseDueDate(from deadline: String?) -> Date? {
+        guard let deadline = deadline?.lowercased() else { return nil }
+
+        let calendar = Calendar.current
+        let now = Date()
+
+        if deadline.contains("today") {
+            return calendar.date(bySettingHour: 23, minute: 59, second: 0, of: now)
+        } else if deadline.contains("tomorrow") {
+            return calendar.date(byAdding: .day, value: 1, to: now)
+        } else if deadline.contains("week") {
+            return calendar.date(byAdding: .day, value: 7, to: now)
+        }
+
+        return nil
     }
 }

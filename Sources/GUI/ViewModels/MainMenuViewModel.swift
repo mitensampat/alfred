@@ -33,6 +33,7 @@ class MainMenuViewModel: ObservableObject {
     @Published var selectedContact: String?
     @Published var messageSummaries: [MessageSummary] = []
     @Published var unreadCount: Int = 0
+    @Published var shouldExpandPopover: Bool = false
 
     // Calendar parameters
     @Published var selectedCalendarDate: Date = Date()
@@ -290,28 +291,44 @@ class MainMenuViewModel: ObservableObject {
 
     func navigateBack() {
         currentView = .main
+        shouldExpandPopover = false
     }
 
     func navigate(to destination: ViewDestination) {
         currentView = destination
+        updatePopoverSize(for: destination)
+    }
+
+    private func updatePopoverSize(for destination: ViewDestination) {
+        // Expand popover for content-heavy views
+        switch destination {
+        case .briefing, .calendar, .messages, .messageDetail, .notionTodos:
+            shouldExpandPopover = true
+        case .main, .briefingOptions, .calendarOptions, .messagesOptions, .attentionCheck:
+            shouldExpandPopover = false
+        }
     }
 
     func showBriefingOptions() {
         currentView = .briefingOptions
+        shouldExpandPopover = false
     }
 
     func showCalendarOptions() {
         currentView = .calendarOptions
+        shouldExpandPopover = false
     }
 
     func showMessagesOptions() {
         currentView = .messagesOptions
+        shouldExpandPopover = false
     }
 
     func openMessageDetail(contact: String) {
         selectedContact = contact
         selectedMessageContact = contact
         currentView = .messageDetail
+        shouldExpandPopover = true
     }
 
     func showMoreOptions() {

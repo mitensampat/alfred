@@ -94,10 +94,22 @@ struct CalendarConfig: Codable {
 struct NotionConfig: Codable {
     let apiKey: String
     let databaseId: String
+    let briefingSources: BriefingSources?
+
+    struct BriefingSources: Codable {
+        let tasksDatabaseId: String?
+        let notesDatabaseId: String?
+
+        enum CodingKeys: String, CodingKey {
+            case tasksDatabaseId = "tasks_database_id"
+            case notesDatabaseId = "notes_database_id"
+        }
+    }
 
     enum CodingKeys: String, CodingKey {
         case apiKey = "api_key"
         case databaseId = "database_id"
+        case briefingSources = "briefing_sources"
     }
 }
 

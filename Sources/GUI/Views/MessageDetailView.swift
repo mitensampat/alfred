@@ -7,6 +7,9 @@ struct MessageDetailView: View {
     @State private var isLoading = false
     @State private var threadAnalysis: FocusedThreadAnalysis?
     @State private var errorMessage: String?
+    @State private var recommendedActions: [RecommendedAction] = []
+    @State private var showRecommendations = false
+    @State private var isAddingToNotion = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -126,6 +129,92 @@ struct MessageDetailView: View {
                             }
                         }
 
+                        // Recommended Actions for Notion
+                        if !recommendedActions.isEmpty && showRecommendations {
+                            VStack(alignment: .leading, spacing: SlackTheme.paddingMedium) {
+                                Text("💡 RECOMMENDED FOR NOTION")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(SlackTheme.accentPrimary)
+                                    .tracking(1)
+
+                                Text("Found \(recommendedActions.count) critical action item(s). Add to your Notion todo list?")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(SlackTheme.secondaryText)
+                                    .lineSpacing(3)
+
+                                ForEach(recommendedActions) { action in
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Text(action.priority.emoji)
+                                            .font(.system(size: 14))
+
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(action.title)
+                                                .font(.system(size: 12, weight: .semibold))
+                                                .foregroundColor(SlackTheme.primaryText)
+
+                                            if let dueDate = action.dueDate {
+                                                Text("Due: \(dueDate.formatted(date: .abbreviated, time: .omitted))")
+                                                    .font(.system(size: 10))
+                                                    .foregroundColor(SlackTheme.secondaryText)
+                                            }
+                                        }
+                                    }
+                                    .padding(SlackTheme.paddingSmall)
+                                    .background(Color.white)
+                                    .cornerRadius(SlackTheme.cornerRadiusSmall)
+                                    .shadow(color: SlackTheme.shadowColor, radius: 1, x: 0, y: 1)
+                                }
+
+                                if isAddingToNotion {
+                                    HStack {
+                                        ProgressView()
+                                            .scaleEffect(0.8)
+                                        Text("Adding to Notion...")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(SlackTheme.secondaryText)
+                                    }
+                                    .padding(.vertical, 8)
+                                } else {
+                                    HStack(spacing: 8) {
+                                        Button(action: {
+                                            addToNotion()
+                                        }) {
+                                            Text("Yes, Add All")
+                                                .font(.system(size: 12, weight: .semibold))
+                                                .foregroundColor(.white)
+                                                .frame(maxWidth: .infinity)
+                                                .padding(.vertical, 10)
+                                                .background(SlackTheme.accentPrimary)
+                                                .cornerRadius(SlackTheme.cornerRadiusSmall)
+                                        }
+                                        .buttonStyle(PlainButtonStyle())
+
+                                        Button(action: {
+                                            withAnimation {
+                                                showRecommendations = false
+                                            }
+                                        }) {
+                                            Text("No Thanks")
+                                                .font(.system(size: 12, weight: .semibold))
+                                                .foregroundColor(SlackTheme.primaryText)
+                                                .frame(maxWidth: .infinity)
+                                                .padding(.vertical, 10)
+                                                .background(Color.white)
+                                                .cornerRadius(SlackTheme.cornerRadiusSmall)
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: SlackTheme.cornerRadiusSmall)
+                                                        .stroke(SlackTheme.shadowColor, lineWidth: 1)
+                                                )
+                                        }
+                                        .buttonStyle(PlainButtonStyle())
+                                    }
+                                }
+                            }
+                            .padding(SlackTheme.paddingSmall)
+                            .background(SlackTheme.accentPrimary.opacity(0.05))
+                            .cornerRadius(SlackTheme.cornerRadiusMedium)
+                        }
+
                         // Key messages (collapsible)
                         if !analysis.thread.messages.isEmpty {
                             VStack(alignment: .leading, spacing: SlackTheme.paddingMedium) {
@@ -183,10 +272,38 @@ struct MessageDetailView: View {
             let analysis = try await viewModel.alfredService.fetchFocusedThread(contactName: contact, timeframe: viewModel.selectedMessageTimeframe)
             await MainActor.run {
                 self.threadAnalysis = analysis
+
+                // Extract recommended actions
+                let actions = viewModel.alfredService.extractRecommendedActions(from: analysis)
+                if !actions.isEmpty {
+                    self.recommendedActions = actions
+                    self.showRecommendations = true
+                }
             }
         } catch {
             await MainActor.run {
                 errorMessage = "Failed to load thread: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func addToNotion() {
+        Task {
+            await MainActor.run {
+                isAddingToNotion = true
+            }
+
+            do {
+                _ = try await viewModel.alfredService.addRecommendedActionsToNotion(recommendedActions)
+                await MainActor.run {
+                    isAddingToNotion = false
+                    showRecommendations = false
+                }
+            } catch {
+                await MainActor.run {
+                    isAddingToNotion = false
+                    errorMessage = "Failed to add to Notion: \(error.localizedDescription)"
+                }
             }
         }
     }

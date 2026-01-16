@@ -26,7 +26,7 @@ struct NotionTodosView: View {
                 Text("SCAN FOR TODOS")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(SlackTheme.primaryText)
-                    .tracking(1)
+                    .tracking(1.5)
 
                 Spacer()
 

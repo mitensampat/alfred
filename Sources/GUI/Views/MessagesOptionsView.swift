@@ -92,8 +92,8 @@ struct MessagesOptionsView: View {
                                 Text("Timeframe:")
                                     .font(.system(size: 11))
                                     .foregroundColor(SlackTheme.secondaryText)
-                                
-                                ForEach(["8h", "24h", "3d", "7d"], id: \.self) { option in
+
+                                ForEach(["30m", "2h", "8h", "24h", "3d", "7d"], id: \.self) { option in
                                     Button(action: {
                                         timeframe = option
                                     }) {
