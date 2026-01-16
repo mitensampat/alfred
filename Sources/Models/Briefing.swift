@@ -5,7 +5,27 @@ struct DailyBriefing: Codable {
     let messagingSummary: MessagingSummary
     let calendarBriefing: CalendarBriefing
     let actionItems: [ActionItem]
+    let notionContext: NotionContext?
     let generatedAt: Date
+}
+
+struct NotionContext: Codable {
+    let notes: [NotionNote]
+    let tasks: [NotionTask]
+}
+
+struct NotionNote: Codable {
+    let id: String
+    let title: String
+    let content: String
+    let lastEdited: Date
+}
+
+struct NotionTask: Codable {
+    let id: String
+    let title: String
+    let status: String
+    let dueDate: Date?
 }
 
 struct MessagingSummary: Codable {

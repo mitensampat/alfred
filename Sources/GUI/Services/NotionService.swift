@@ -91,7 +91,7 @@ class NotionService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("2025-09-03", forHTTPHeaderField: "Notion-Version")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let body: [String: Any] = [
@@ -147,7 +147,7 @@ class NotionService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("2025-09-03", forHTTPHeaderField: "Notion-Version")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         var properties: [String: Any] = [:]
@@ -235,7 +235,7 @@ class NotionService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("2025-09-03", forHTTPHeaderField: "Notion-Version")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let body: [String: Any] = [
@@ -290,7 +290,7 @@ class NotionService {
         let url = URL(string: "https://api.notion.com/v1/blocks/\(pageId)/children")!
         var request = URLRequest(url: url)
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("2025-09-03", forHTTPHeaderField: "Notion-Version")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -327,7 +327,7 @@ class NotionService {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("2025-09-03", forHTTPHeaderField: "Notion-Version")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let formatter = DateFormatter()
@@ -411,6 +411,171 @@ class NotionService {
 
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         return json?["url"] as? String ?? ""
+    }
+
+    // MARK: - Briefing Sources
+
+    /// Format Notion ID to include dashes in standard UUID format (8-4-4-4-12)
+    private func formatNotionId(_ id: String) -> String {
+        let cleaned = id.replacingOccurrences(of: "-", with: "")
+        guard cleaned.count == 32 else { return id }
+
+        let index8 = cleaned.index(cleaned.startIndex, offsetBy: 8)
+        let index12 = cleaned.index(cleaned.startIndex, offsetBy: 12)
+        let index16 = cleaned.index(cleaned.startIndex, offsetBy: 16)
+        let index20 = cleaned.index(cleaned.startIndex, offsetBy: 20)
+
+        return "\(cleaned[..<index8])-\(cleaned[index8..<index12])-\(cleaned[index12..<index16])-\(cleaned[index16..<index20])-\(cleaned[index20...])"
+    }
+
+    /// Query notes database for contextually relevant notes
+    func queryRelevantNotes(context: String, databaseId: String) async throws -> [NotionNote] {
+        let formattedId = formatNotionId(databaseId)
+        let url = URL(string: "https://api.notion.com/v1/databases/\(formattedId)/query")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Query for recent notes (last 30 days)
+        let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
+        let dateString = ISO8601DateFormatter().string(from: thirtyDaysAgo)
+
+        let body: [String: Any] = [
+            "filter": [
+                "property": "Date",
+                "date": [
+                    "on_or_after": dateString
+                ]
+            ],
+            "sorts": [
+                [
+                    "property": "Date",
+                    "direction": "descending"
+                ]
+            ],
+            "page_size": 20
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw NSError(domain: "NotionService", code: 4, userInfo: [NSLocalizedDescriptionKey: "Failed to query notes: \(errorBody)"])
+        }
+
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let results = json?["results"] as? [[String: Any]] ?? []
+
+        return results.compactMap { result -> NotionNote? in
+            guard let id = result["id"] as? String,
+                  let properties = result["properties"] as? [String: Any] else {
+                return nil
+            }
+
+            // Extract title
+            var title = ""
+            if let titleProp = properties["Name"] as? [String: Any] ?? properties["Title"] as? [String: Any],
+               let titleArray = titleProp["title"] as? [[String: Any]],
+               let firstTitle = titleArray.first,
+               let text = firstTitle["plain_text"] as? String {
+                title = text
+            }
+
+            // Extract content preview (first block)
+            var content = ""
+            // Note: We'd need to fetch block children for full content, but for now just use title
+
+            return NotionNote(id: id, title: title, content: content, lastEdited: Date())
+        }
+    }
+
+    /// Query tasks database for active/upcoming tasks
+    func queryActiveTasks(databaseId: String) async throws -> [NotionTask] {
+        let formattedId = formatNotionId(databaseId)
+        let url = URL(string: "https://api.notion.com/v1/databases/\(formattedId)/query")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Query for incomplete tasks
+        let body: [String: Any] = [
+            "filter": [
+                "or": [
+                    [
+                        "property": "Status",
+                        "status": [
+                            "does_not_equal": "Done"
+                        ]
+                    ],
+                    [
+                        "property": "Status",
+                        "status": [
+                            "does_not_equal": "✅ Done"
+                        ]
+                    ]
+                ]
+            ],
+            "sorts": [
+                [
+                    "property": "Due",
+                    "direction": "ascending"
+                ]
+            ],
+            "page_size": 10
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw NSError(domain: "NotionService", code: 5, userInfo: [NSLocalizedDescriptionKey: "Failed to query tasks: \(errorBody)"])
+        }
+
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let results = json?["results"] as? [[String: Any]] ?? []
+
+        return results.compactMap { result -> NotionTask? in
+            guard let id = result["id"] as? String,
+                  let properties = result["properties"] as? [String: Any] else {
+                return nil
+            }
+
+            // Extract title
+            var title = ""
+            if let titleProp = properties["Name"] as? [String: Any] ?? properties["Title"] as? [String: Any],
+               let titleArray = titleProp["title"] as? [[String: Any]],
+               let firstTitle = titleArray.first,
+               let text = firstTitle["plain_text"] as? String {
+                title = text
+            }
+
+            // Extract status
+            var status = "To Do"
+            if let statusProp = properties["Status"] as? [String: Any],
+               let statusData = statusProp["status"] as? [String: Any],
+               let statusName = statusData["name"] as? String {
+                status = statusName
+            }
+
+            // Extract due date
+            var dueDate: Date?
+            if let dateProp = properties["Due"] as? [String: Any] ?? properties["Due Date"] as? [String: Any],
+               let dateData = dateProp["date"] as? [String: Any],
+               let dateString = dateData["start"] as? String {
+                let formatter = ISO8601DateFormatter()
+                dueDate = formatter.date(from: dateString)
+            }
+
+            return NotionTask(id: id, title: title, status: status, dueDate: dueDate)
+        }
     }
 }
 

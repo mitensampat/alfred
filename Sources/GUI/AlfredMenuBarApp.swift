@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 
 @main
 struct AlfredMenuBarApp: App {
@@ -15,6 +16,8 @@ struct AlfredMenuBarApp: App {
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     var popover: NSPopover?
+    var viewModel: MainMenuViewModel?
+    private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         print("🚀 Alfred GUI app starting...")
@@ -30,9 +33,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Create popover
         popover = NSPopover()
-        popover?.contentSize = NSSize(width: 360, height: 500)
+        popover?.contentSize = NSSize(width: 340, height: 380)
         popover?.behavior = .transient
-        popover?.contentViewController = NSHostingController(rootView: MainMenuView())
+
+        // Initialize ViewModel on MainActor and observe size changes
+        Task { @MainActor in
+            let vm = MainMenuViewModel()
+            self.viewModel = vm
+            popover?.contentViewController = NSHostingController(rootView: MainMenuView())
+
+            vm.$shouldExpandPopover
+                .sink { [weak self] shouldExpand in
+                    Task { @MainActor in
+                        self?.updatePopoverSize(expanded: shouldExpand)
+                    }
+                }
+                .store(in: &cancellables)
+        }
+    }
+
+    private func updatePopoverSize(expanded: Bool) {
+        let newSize = expanded
+            ? NSSize(width: 680, height: 760)
+            : NSSize(width: 340, height: 380)
+
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.2
+            popover?.contentSize = newSize
+        })
     }
 
     @objc func togglePopover() {

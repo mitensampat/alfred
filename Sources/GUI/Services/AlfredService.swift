@@ -79,6 +79,25 @@ class AlfredService: ObservableObject {
         }
         return try await orchestrator.processWhatsAppTodos()
     }
+
+    // MARK: - Recommended Actions
+
+    func extractRecommendedActions(from analysis: FocusedThreadAnalysis) -> [RecommendedAction] {
+        guard let orchestrator = orchestrator else { return [] }
+        return orchestrator.extractRecommendedActions(from: analysis)
+    }
+
+    func extractRecommendedActions(from summaries: [MessageSummary]) -> [RecommendedAction] {
+        guard let orchestrator = orchestrator else { return [] }
+        return orchestrator.extractRecommendedActions(from: summaries)
+    }
+
+    func addRecommendedActionsToNotion(_ actions: [RecommendedAction]) async throws -> [String] {
+        guard let orchestrator = orchestrator else {
+            throw ServiceError.notInitialized
+        }
+        return try await orchestrator.addRecommendedActionsToNotion(actions)
+    }
 }
 
 enum ServiceError: Error, LocalizedError {
