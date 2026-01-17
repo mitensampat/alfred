@@ -2,11 +2,9 @@ import Foundation
 
 class ExecutionEngine {
     private let appConfig: AppConfig
-    private let messageSender: MessageSender
 
     init(appConfig: AppConfig) {
         self.appConfig = appConfig
-        self.messageSender = MessageSender(config: appConfig)
     }
 
     // MARK: - Execution
@@ -66,12 +64,6 @@ class ExecutionEngine {
         try data.write(to: draftsFile)
 
         return .success(details: "Draft saved for \(draft.recipient) on \(draft.platform.rawValue)")
-    }
-
-    // MARK: - Message Sending (for CLI commands)
-
-    func sendDraft(_ draft: MessageDraft) async throws -> SendResult {
-        return try await messageSender.sendMessage(draft: draft)
     }
 
     private func executeTaskAdjustment(_ adjustment: TaskAdjustment) async throws -> ExecutionResult {

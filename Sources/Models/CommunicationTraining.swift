@@ -92,30 +92,36 @@ struct CommunicationTraining: Codable {
 
 class CommunicationTrainingLoader {
     static func load(from configPath: String = "Config/communication_training.json") -> CommunicationTraining? {
-        let fileURL: URL
+        // Try multiple paths like AppConfig does
+        let paths = [
+            // 1. Current directory
+            configPath,
+            // 2. User config directory
+            (NSString(string: "~/.config/alfred/communication_training.json").expandingTildeInPath),
+            // 3. Original project location
+            (NSString(string: "~/Documents/Claude apps/Alfred/Config/communication_training.json").expandingTildeInPath)
+        ]
 
-        // Try absolute path first
-        if configPath.hasPrefix("/") {
-            fileURL = URL(fileURLWithPath: configPath)
-        } else {
-            // Try relative to current directory
-            let currentDir = FileManager.default.currentDirectoryPath
-            fileURL = URL(fileURLWithPath: currentDir).appendingPathComponent(configPath)
+        for path in paths {
+            let expandedPath = (path as NSString).expandingTildeInPath
+            let fileURL = URL(fileURLWithPath: expandedPath)
+
+            guard FileManager.default.fileExists(atPath: fileURL.path) else {
+                continue
+            }
+
+            do {
+                let data = try Data(contentsOf: fileURL)
+                let training = try JSONDecoder().decode(CommunicationTraining.self, from: data)
+                return training
+            } catch {
+                print("⚠️  Failed to load communication training from \(fileURL.path): \(error)")
+                continue
+            }
         }
 
-        guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            print("⚠️  Communication training file not found at: \(fileURL.path)")
-            return nil
-        }
-
-        do {
-            let data = try Data(contentsOf: fileURL)
-            let training = try JSONDecoder().decode(CommunicationTraining.self, from: data)
-            return training
-        } catch {
-            print("⚠️  Failed to load communication training: \(error)")
-            return nil
-        }
+        print("⚠️  Communication training file not found in any standard location")
+        return nil
     }
 
     /// Find similar training examples based on message content

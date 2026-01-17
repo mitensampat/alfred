@@ -923,4 +923,26 @@ class BriefingOrchestrator {
         print("✓ Briefing saved to Notion\n")
         return url
     }
+
+    // MARK: - Public Helpers for Attention System
+
+    /// Fetch calendar events for a date range (public accessor)
+    func fetchCalendarEvents(from start: Date, to end: Date) async throws -> [CalendarEvent] {
+        // Fetch events day by day and combine
+        var allEvents: [CalendarEvent] = []
+        var currentDate = start
+
+        while currentDate <= end {
+            let schedule = try await calendarService.fetchEventsFromAllCalendars(for: currentDate, userSettings: config.user)
+            allEvents.append(contentsOf: schedule.events)
+            currentDate = Calendar.current.date(byAdding: .day, value: 1, to: currentDate) ?? end
+        }
+
+        return allEvents
+    }
+
+    /// Access the agent manager (public accessor)
+    var publicAgentManager: AgentManager? {
+        return agentManager
+    }
 }
