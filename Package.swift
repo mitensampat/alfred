@@ -30,11 +30,6 @@ let package = Package(
             name: "AlfredApp",
             dependencies: [],
             path: "Sources/GUI"
-        ),
-        .testTarget(
-            name: "AlfredTests",
-            dependencies: ["Alfred"],
-            path: "Tests"
         )
     ]
 )

@@ -9,6 +9,7 @@ struct AppConfig: Codable {
     let messaging: MessagingConfig
     let notifications: NotificationConfig
     let research: ResearchConfig
+    let agents: AgentsConfig?
 
     static func load(from path: String = "Config/config.json") -> AppConfig? {
         // Try multiple config locations in order of preference
@@ -248,5 +249,95 @@ struct ResearchConfig: Codable {
 
     struct SearchConfig: Codable {
         let enabled: Bool
+    }
+}
+
+struct AgentsConfig: Codable {
+    let enabled: Bool
+    let autonomyLevel: String
+    let capabilities: CapabilitiesConfig
+    let learningMode: String
+    let thresholds: ThresholdsConfig?
+    let audit: AuditConfig?
+
+    struct CapabilitiesConfig: Codable {
+        let autoDraft: Bool
+        let smartPriority: Bool
+        let proactiveMeetingPrep: Bool
+        let intelligentFollowups: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case autoDraft = "auto_draft"
+            case smartPriority = "smart_priority"
+            case proactiveMeetingPrep = "proactive_meeting_prep"
+            case intelligentFollowups = "intelligent_followups"
+        }
+    }
+
+    struct ThresholdsConfig: Codable {
+        let autoExecuteConfidence: Double
+        let maxDailyAutoExecutions: Int
+
+        enum CodingKeys: String, CodingKey {
+            case autoExecuteConfidence = "auto_execute_confidence"
+            case maxDailyAutoExecutions = "max_daily_auto_executions"
+        }
+    }
+
+    struct AuditConfig: Codable {
+        let retentionDays: Int
+        let logAllDecisions: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case retentionDays = "retention_days"
+            case logAllDecisions = "log_all_decisions"
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case enabled
+        case autonomyLevel = "autonomy_level"
+        case capabilities
+        case learningMode = "learning_mode"
+        case thresholds
+        case audit
+    }
+
+    func toAgentConfig() -> AgentConfig {
+        let autonomy: AutonomyLevel
+        switch autonomyLevel.lowercased() {
+        case "conservative":
+            autonomy = .conservative
+        case "moderate":
+            autonomy = .moderate
+        case "aggressive":
+            autonomy = .aggressive
+        default:
+            autonomy = .moderate
+        }
+
+        let learning: AgentConfig.LearningMode
+        switch learningMode.lowercased() {
+        case "explicit_only":
+            learning = .explicitOnly
+        case "implicit_only":
+            learning = .implicitOnly
+        case "hybrid":
+            learning = .hybrid
+        default:
+            learning = .hybrid
+        }
+
+        return AgentConfig(
+            enabled: enabled,
+            autonomyLevel: autonomy,
+            capabilities: AgentConfig.AgentCapabilities(
+                autoDraft: capabilities.autoDraft,
+                smartPriority: capabilities.smartPriority,
+                proactiveMeetingPrep: capabilities.proactiveMeetingPrep,
+                intelligentFollowups: capabilities.intelligentFollowups
+            ),
+            learningMode: learning
+        )
     }
 }

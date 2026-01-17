@@ -38,3 +38,11 @@ credentials.json
 
 # Notion database backups
 notion_backup/
+
+# Agent learning databases
+~/.alfred/decisions.db
+~/.alfred/learning.db
+~/.alfred/message_drafts.json
+
+# Cleanup directory
+.cleanup/

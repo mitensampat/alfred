@@ -6,6 +6,7 @@ struct DailyBriefing: Codable {
     let calendarBriefing: CalendarBriefing
     let actionItems: [ActionItem]
     let notionContext: NotionContext?
+    let agentDecisions: [AgentDecision]?
     let generatedAt: Date
 }
 

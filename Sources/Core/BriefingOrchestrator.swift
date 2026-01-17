@@ -11,6 +11,7 @@ class BriefingOrchestrator {
     private let researchService: ResearchService
     private let notificationService: NotificationService
     private let notionService: NotionService
+    private var agentManager: AgentManager?
 
     init(config: AppConfig) {
         self.config = config
@@ -24,6 +25,16 @@ class BriefingOrchestrator {
         self.researchService = ResearchService(config: config, aiService: aiService)
         self.notificationService = NotificationService(config: config.notifications)
         self.notionService = NotionService(config: config.notion)
+
+        // Initialize agent manager if agents are enabled
+        if let agentsConfig = config.agents, agentsConfig.enabled {
+            do {
+                self.agentManager = try AgentManager(config: agentsConfig.toAgentConfig(), appConfig: config)
+            } catch {
+                print("⚠️  Failed to initialize agent manager: \(error)")
+                self.agentManager = nil
+            }
+        }
     }
 
     // MARK: - Morning Briefing
@@ -97,16 +108,38 @@ class BriefingOrchestrator {
         // 5. Extract action items
         let actionItems = extractActionItems(from: messagingSummary, and: calendarBriefing, notionTasks: notionTasks)
 
+        // 6. Let agents evaluate the context and make decisions
+        var agentDecisions: [AgentDecision]? = nil
+        if let agentManager = agentManager {
+            print("🤖 Agents evaluating context...")
+            let context = AgentContext(
+                briefing: nil,  // Will be set after creation
+                messagingSummary: messagingSummary,
+                calendarBriefing: calendarBriefing,
+                notionContext: NotionContext(notes: notionNotes, tasks: notionTasks)
+            )
+
+            do {
+                let allDecisions = try await agentManager.evaluateContext(context)
+                // Filter for decisions that require approval (others were auto-executed)
+                agentDecisions = allDecisions.filter { $0.requiresApproval }
+                print("✓ Agents generated \(allDecisions.count) decision(s) (\(allDecisions.filter { !$0.requiresApproval }.count) auto-executed, \(agentDecisions?.count ?? 0) pending approval)\n")
+            } catch {
+                print("⚠️  Agent evaluation failed: \(error)\n")
+            }
+        }
+
         let briefing = DailyBriefing(
             date: date,
             messagingSummary: messagingSummary,
             calendarBriefing: calendarBriefing,
             actionItems: actionItems,
             notionContext: NotionContext(notes: notionNotes, tasks: notionTasks),
+            agentDecisions: agentDecisions,
             generatedAt: Date()
         )
 
-        // 5. Send notifications only if requested
+        // 7. Send notifications only if requested
         if sendNotifications {
             print("📬 Sending briefing notifications...")
             try await notificationService.sendBriefing(briefing)
@@ -264,6 +297,52 @@ class BriefingOrchestrator {
         return summaries
     }
 
+    func generateDraftsForMessages(_ summaries: [MessageSummary]) async throws -> Int {
+        guard let agentManager = agentManager else {
+            print("⚠️  Agents not enabled - skipping draft creation\n")
+            return 0
+        }
+
+        print("🤖 Agents analyzing messages for draft responses...")
+
+        // Filter messages needing response (by checking thread.needsResponse)
+        let needsResponse = summaries.filter { $0.thread.needsResponse }
+
+        // Create messaging stats
+        let stats = MessagingSummary.MessagingStats(
+            totalMessages: summaries.reduce(0) { $0 + $1.thread.messages.count },
+            unreadMessages: summaries.reduce(0) { $0 + $1.thread.unreadCount },
+            threadsNeedingResponse: needsResponse.count,
+            byPlatform: Dictionary(grouping: summaries, by: { $0.thread.platform }).mapValues { $0.count }
+        )
+
+        // Create a minimal context for the communication agent
+        let context = AgentContext(
+            messagingSummary: MessagingSummary(
+                keyInteractions: needsResponse,
+                needsResponse: needsResponse,
+                criticalMessages: summaries.filter { $0.urgency == .critical },
+                stats: stats
+            )
+        )
+
+        do {
+            let decisions = try await agentManager.evaluateContext(context)
+            let draftDecisions = decisions.filter { if case .draftResponse = $0.action { return true }; return false }
+
+            if draftDecisions.isEmpty {
+                print("ℹ️  No draft responses needed\n")
+            } else {
+                print("✓ Created \(draftDecisions.count) draft response(s)\n")
+            }
+
+            return draftDecisions.count
+        } catch {
+            print("⚠️  Failed to generate drafts: \(error)\n")
+            return 0
+        }
+    }
+
     func getFocusedWhatsAppThread(contactName: String, timeframe: String) async throws -> FocusedThreadAnalysis {
         let hours = parseTimeframe(timeframe)
         let since = Calendar.current.date(byAdding: .hour, value: -hours, to: Date())!
@@ -294,6 +373,71 @@ class BriefingOrchestrator {
         print("✓ Analysis complete\n")
 
         return analysis
+    }
+
+    func generateDraftForThread(_ analysis: FocusedThreadAnalysis) async throws -> Int {
+        guard let agentManager = agentManager else {
+            print("⚠️  Agents not enabled - skipping draft creation\n")
+            return 0
+        }
+
+        print("🤖 Agents analyzing thread for draft response...")
+
+        // Parse urgency from action items
+        let urgency: UrgencyLevel
+        if analysis.actionItems.contains(where: { $0.priority.lowercased() == "critical" }) {
+            urgency = .critical
+        } else if analysis.actionItems.contains(where: { $0.priority.lowercased() == "high" }) {
+            urgency = .high
+        } else if !analysis.actionItems.isEmpty {
+            urgency = .medium
+        } else {
+            urgency = .low
+        }
+
+        // Create a message summary from the thread analysis
+        let summary = MessageSummary(
+            thread: analysis.thread,
+            summary: analysis.summary,
+            urgency: urgency,
+            suggestedResponse: nil,
+            actionItems: analysis.actionItems.map { $0.item },
+            sentiment: "neutral"  // FocusedThreadAnalysis doesn't have sentiment
+        )
+
+        // Create messaging stats
+        let stats = MessagingSummary.MessagingStats(
+            totalMessages: analysis.thread.messages.count,
+            unreadMessages: analysis.thread.unreadCount,
+            threadsNeedingResponse: 1,
+            byPlatform: [analysis.thread.platform: 1]
+        )
+
+        // Create context with single thread
+        let context = AgentContext(
+            messagingSummary: MessagingSummary(
+                keyInteractions: [summary],
+                needsResponse: [summary],
+                criticalMessages: urgency == .critical ? [summary] : [],
+                stats: stats
+            )
+        )
+
+        do {
+            let decisions = try await agentManager.evaluateContext(context)
+            let draftDecisions = decisions.filter { if case .draftResponse = $0.action { return true }; return false }
+
+            if draftDecisions.isEmpty {
+                print("ℹ️  No draft response needed\n")
+            } else {
+                print("✓ Created draft response\n")
+            }
+
+            return draftDecisions.count
+        } catch {
+            print("⚠️  Failed to generate draft: \(error)\n")
+            return 0
+        }
     }
 
     // MARK: - Recommended Actions from Analysis
