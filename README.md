@@ -4,6 +4,20 @@ Your AI-powered personal assistant that analyzes messages, prepares meeting brie
 
 Available as both a **CLI tool** and a **native macOS menu bar app** with sleek Slack-inspired UI.
 
+## 🤖 What's New in v1.1: Autonomous Agents
+
+Alfred now features an **intelligent agent system** that learns your communication style and acts autonomously:
+
+- **AI-Powered Draft Generation**: Automatically creates personalized message drafts that match your writing style
+- **Training-Based Learning**: Teach Alfred your communication patterns with simple training examples
+- **Context-Aware Responses**: Drafts consider message history, calendar context, and tone requirements
+- **Automatic Workflow**: View messages → agents analyze → drafts ready for review
+- **Multi-Agent System**: Specialized agents for communication, tasks, calendar, and follow-ups
+
+**Quality Improvement**: Generic templates → Personalized, context-aware responses that sound like you.
+
+See [Agent Training Guide](docs/guides/AGENT_TRAINING_GUIDE.md) for customization.
+
 ## Features
 
 ### Morning Briefing
@@ -31,6 +45,8 @@ Available as both a **CLI tool** and a **native macOS menu bar app** with sleek 
 - **Date-specific briefings**: Generate briefings for tomorrow, specific dates, or +N days from now
 - **Message summaries**: Query messages by platform and timeframe (e.g., last 1h, 24h, 7d)
 - **Focused thread analysis**: Deep-dive into specific WhatsApp conversations
+- **Autonomous draft creation**: Agents automatically generate personalized drafts for messages needing responses
+- **Draft management**: Review, edit, and approve AI-generated drafts with `alfred drafts`
 - **Email delivery**: Optional `--email` flag to send briefings via email
 - **Multi-calendar auth**: Easy authentication flow for multiple calendar accounts
 
@@ -129,6 +145,20 @@ alfred messages whatsapp 7d
 alfred messages whatsapp "John Doe" 8h
 alfred messages whatsapp "Team Group" 24h
 ```
+
+### Manage AI-Generated Drafts (NEW in v1.1)
+
+```bash
+# View all pending drafts
+alfred drafts
+
+# Agents automatically create drafts when you view messages
+# Example workflow:
+alfred messages whatsapp 2h    # Agents analyze and create drafts
+alfred drafts                  # Review, edit, and approve drafts
+```
+
+Drafts are personalized based on your communication training in `Config/communication_training.json`.
 
 ### Attention Defense
 
@@ -235,13 +265,27 @@ Alfred/
 │   │   │   └── AlfredService.swift
 │   │   ├── Models/             # GUI data models
 │   │   └── SlackTheme.swift    # Design system
+│   ├── Agents/                 # 🤖 Autonomous agent system (NEW)
+│   │   ├── Core/
+│   │   │   ├── AgentProtocol.swift
+│   │   │   ├── AgentManager.swift
+│   │   │   ├── AgentDecision.swift
+│   │   │   └── ExecutionEngine.swift
+│   │   ├── Specialized/
+│   │   │   ├── CommunicationAgent.swift
+│   │   │   ├── TaskAgent.swift
+│   │   │   ├── CalendarAgent.swift
+│   │   │   └── FollowupAgent.swift
+│   │   └── Learning/
+│   │       └── LearningEngine.swift
 │   ├── Core/                   # Shared orchestration logic
 │   │   └── BriefingOrchestrator.swift
 │   ├── Models/                 # Shared data models
 │   │   ├── Message.swift
 │   │   ├── Calendar.swift
 │   │   ├── Briefing.swift
-│   │   └── Config.swift
+│   │   ├── Config.swift
+│   │   └── CommunicationTraining.swift  # 🤖 NEW
 │   ├── Services/               # Shared external integrations
 │   │   ├── MessageReaders/
 │   │   │   ├── iMessageReader.swift
@@ -256,6 +300,7 @@ Alfred/
 ├── Config/                     # Configuration files
 │   ├── config.json            # Your credentials (gitignored)
 │   ├── config.example.json    # Template
+│   ├── communication_training.json  # 🤖 Agent training data (NEW)
 │   └── google_tokens_*.json   # OAuth tokens (gitignored)
 └── install.sh                 # Installation script
 ```
@@ -366,6 +411,9 @@ swift build -c release
 - [x] Platform selection in GUI (all/iMessage/WhatsApp)
 - [x] Focused search with custom timeframes
 - [x] WhatsApp todo scanning to Notion
+- [x] **v1.1: Autonomous agent system** 🤖
+- [x] **v1.1: AI-powered draft generation** 🤖
+- [x] **v1.1: Communication training & learning** 🤖
 - [ ] Calendar view (native UI)
 - [ ] Web dashboard
 - [ ] Email inbox integration
@@ -375,11 +423,18 @@ swift build -c release
 
 ## Documentation
 
+### Core Documentation
 - [README.md](README.md) - This file
-- [QUICKSTART.md](QUICKSTART.md) - Quick start guide
+- [QUICK_START.md](docs/QUICK_START.md) - Quick start guide
 - [MULTIPLE_CALENDARS.md](MULTIPLE_CALENDARS.md) - Multiple calendar setup
-- [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) - Technical overview
-- [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) - Implementation details
+
+### Agent System (NEW in v1.1) 🤖
+- [Agent Training Guide](docs/guides/AGENT_TRAINING_GUIDE.md) - Customize agent communication style
+- [Agent Messaging Overview](docs/guides/AGENT_MESSAGING.md) - How the agent system works
+
+### Technical Details
+- [Project Overview](docs/archive/PROJECT_OVERVIEW.md) - Technical architecture
+- [Implementation Summary](docs/archive/IMPLEMENTATION_SUMMARY.md) - Implementation details
 
 ## License
 

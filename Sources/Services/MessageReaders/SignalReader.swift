@@ -1,5 +1,6 @@
 import Foundation
 import SQLite3
+import Security
 
 class SignalReader {
     private let dbPath: String
@@ -18,9 +19,51 @@ class SignalReader {
         var db: OpaquePointer?
         if sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK {
             self.db = db
+
+            // Signal uses SQLCipher encryption - retrieve key from Keychain
+            if let encryptionKey = getSignalEncryptionKey() {
+                // Set the encryption key using PRAGMA key
+                let keyStatement = "PRAGMA key = \"x'\(encryptionKey)'\";"
+                var errorMsg: UnsafeMutablePointer<Int8>?
+                if sqlite3_exec(db, keyStatement, nil, nil, &errorMsg) != SQLITE_OK {
+                    if let error = errorMsg {
+                        let errorString = String(cString: error)
+                        sqlite3_free(errorMsg)
+                        throw MessageReaderError.connectionFailed("Signal (encryption key): \(errorString)")
+                    }
+                    throw MessageReaderError.connectionFailed("Signal (encryption key)")
+                }
+            }
         } else {
             throw MessageReaderError.connectionFailed("Signal")
         }
+    }
+
+    private func getSignalEncryptionKey() -> String? {
+        // Retrieve Signal's encryption key from macOS Keychain
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "Signal Safe Storage",
+            kSecAttrAccount as String: "Signal",
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+
+        guard status == errSecSuccess,
+              let data = result as? Data,
+              let base64Key = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+
+        // Decode base64 to hex for SQLCipher
+        guard let keyData = Data(base64Encoded: base64Key) else {
+            return nil
+        }
+
+        return keyData.map { String(format: "%02x", $0) }.joined()
     }
 
     func disconnect() {

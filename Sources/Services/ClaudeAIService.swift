@@ -259,7 +259,12 @@ class ClaudeAIService {
 
     // MARK: - Private Helpers
 
-    private func sendRequest(prompt: String, useModel: String? = nil) async throws -> String {
+    /// Generate text from a prompt (public method for agents)
+    func generateText(prompt: String, maxTokens: Int = 4096, useModel: String? = nil) async throws -> String {
+        return try await sendRequest(prompt: prompt, maxTokens: maxTokens, useModel: useModel)
+    }
+
+    private func sendRequest(prompt: String, maxTokens: Int = 4096, useModel: String? = nil) async throws -> String {
         let url = URL(string: baseURL)!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -269,7 +274,7 @@ class ClaudeAIService {
 
         let body: [String: Any] = [
             "model": useModel ?? model,
-            "max_tokens": 4096,
+            "max_tokens": maxTokens,
             "messages": [
                 ["role": "user", "content": prompt]
             ]

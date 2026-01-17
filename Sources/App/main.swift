@@ -97,6 +97,13 @@ struct AlfredApp {
                 await runNotionTodos(orchestrator)
             case "test-notion":
                 await testNotion(orchestrator)
+            case "drafts":
+                await runShowDrafts()
+            case "send-draft":
+                let draftNumber = filteredArgs.count > 2 ? Int(filteredArgs[2]) : nil
+                await runSendDraft(orchestrator, draftNumber: draftNumber)
+            case "clear-drafts":
+                await runClearDrafts()
             default:
                 printUsage()
             }
@@ -164,6 +171,12 @@ struct AlfredApp {
             print("=== MESSAGES SUMMARY ===\n")
             printMessagesSummary(summary)
 
+            // Generate drafts for messages needing responses
+            let draftCount = try await orchestrator.generateDraftsForMessages(summary)
+            if draftCount > 0 {
+                print("💡 Tip: Run 'alfred drafts' to review and send the \(draftCount) draft(s)\n")
+            }
+
             // Extract recommended actions
             let recommendedActions = orchestrator.extractRecommendedActions(from: summary)
 
@@ -200,6 +213,12 @@ struct AlfredApp {
             let analysis = try await orchestrator.getFocusedWhatsAppThread(contactName: contactName, timeframe: timeframe)
             print("=== WHATSAPP THREAD ANALYSIS ===\n")
             printFocusedThreadAnalysis(analysis)
+
+            // Generate draft response for this thread
+            let draftCount = try await orchestrator.generateDraftForThread(analysis)
+            if draftCount > 0 {
+                print("💡 Tip: Run 'alfred drafts' to review and send the draft\n")
+            }
 
             // Extract recommended actions
             let recommendedActions = orchestrator.extractRecommendedActions(from: analysis)
@@ -385,6 +404,140 @@ struct AlfredApp {
         print("✓ Notion integration test complete")
     }
 
+    static func runShowDrafts() async {
+        print("\n📨 MESSAGE DRAFTS")
+        print(String(repeating: "=", count: 60))
+
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        let draftsFile = homeDir.appendingPathComponent(".alfred/message_drafts.json")
+
+        guard FileManager.default.fileExists(atPath: draftsFile.path) else {
+            print("\nNo drafts found. Agents will create drafts when they detect messages needing responses.\n")
+            return
+        }
+
+        do {
+            let data = try Data(contentsOf: draftsFile)
+            let drafts = try JSONDecoder().decode([MessageDraft].self, from: data)
+
+            if drafts.isEmpty {
+                print("\nNo drafts found. Agents will create drafts when they detect messages needing responses.\n")
+                return
+            }
+
+            print("\nYou have \(drafts.count) draft message(s) ready to send:\n")
+
+            for (index, draft) in drafts.enumerated() {
+                print("[\(index + 1)] \(draft.platform.rawValue.uppercased()) → \(draft.recipient)")
+                print("    Tone: \(draft.tone.rawValue)")
+                print("    Message:")
+
+                // Format message with proper indentation
+                let lines = draft.content.split(separator: "\n")
+                for line in lines {
+                    print("    \"\(line)\"")
+                }
+
+                print("")
+            }
+
+            print("Commands:")
+            print("  alfred send-draft <number>  - Send a specific draft")
+            print("  alfred send-draft all       - Send all drafts")
+            print("  alfred clear-drafts         - Remove all drafts without sending\n")
+
+        } catch {
+            print("Error reading drafts: \(error)\n")
+        }
+    }
+
+    static func runSendDraft(_ orchestrator: BriefingOrchestrator, draftNumber: Int?) async {
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        let draftsFile = homeDir.appendingPathComponent(".alfred/message_drafts.json")
+
+        guard FileManager.default.fileExists(atPath: draftsFile.path) else {
+            print("❌ No drafts found\n")
+            return
+        }
+
+        do {
+            let data = try Data(contentsOf: draftsFile)
+            var drafts = try JSONDecoder().decode([MessageDraft].self, from: data)
+
+            if drafts.isEmpty {
+                print("❌ No drafts found\n")
+                return
+            }
+
+            // Determine which drafts to send
+            let draftsToSend: [MessageDraft]
+            let remainingDrafts: [MessageDraft]
+
+            if let number = draftNumber, number > 0, number <= drafts.count {
+                // Send specific draft
+                draftsToSend = [drafts[number - 1]]
+                remainingDrafts = drafts.enumerated().filter { $0.offset != number - 1 }.map { $0.element }
+            } else {
+                print("❌ Invalid draft number. Use 'alfred drafts' to see available drafts.\n")
+                return
+            }
+
+            // Send drafts
+            let messageSender = MessageSender(config: orchestrator.config)
+            var successCount = 0
+            var failedCount = 0
+
+            for draft in draftsToSend {
+                print("\n📤 Sending to \(draft.recipient) via \(draft.platform.rawValue)...")
+                do {
+                    let result = try await messageSender.sendMessage(draft: draft)
+                    if result.isSuccess {
+                        successCount += 1
+                    } else {
+                        failedCount += 1
+                    }
+                } catch {
+                    print("❌ Failed: \(error)")
+                    failedCount += 1
+                }
+            }
+
+            // Update drafts file
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .prettyPrinted
+            let updatedData = try encoder.encode(remainingDrafts)
+            try updatedData.write(to: draftsFile)
+
+            // Summary
+            print("\n" + String(repeating: "=", count: 60))
+            print("✓ Sent: \(successCount)")
+            if failedCount > 0 {
+                print("❌ Failed: \(failedCount)")
+            }
+            print("\(remainingDrafts.count) draft(s) remaining\n")
+
+        } catch {
+            print("Error: \(error)\n")
+        }
+    }
+
+    static func runClearDrafts() async {
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        let draftsFile = homeDir.appendingPathComponent(".alfred/message_drafts.json")
+
+        guard FileManager.default.fileExists(atPath: draftsFile.path) else {
+            print("No drafts to clear.\n")
+            return
+        }
+
+        do {
+            try "[]".write(to: draftsFile, atomically: true, encoding: .utf8)
+            print("✓ All drafts cleared\n")
+        } catch {
+            print("Error clearing drafts: \(error)\n")
+        }
+    }
+
     static func printBriefing(_ briefing: DailyBriefing) {
         print("Date: \(briefing.date.formatted(date: .long, time: .omitted))\n")
 
@@ -442,6 +595,52 @@ struct AlfredApp {
                 }
                 print("")
             }
+        }
+
+        // Agent Decisions
+        if let agentDecisions = briefing.agentDecisions, !agentDecisions.isEmpty {
+            print("\n🤖 AGENT RECOMMENDATIONS")
+            print("========================")
+            print("Your AI agents have \(agentDecisions.count) suggestion(s) pending your approval:\n")
+
+            for (index, decision) in agentDecisions.enumerated() {
+                print("[\(index + 1)] \(decision.agentType.displayName.uppercased())")
+                print("    Confidence: \(String(format: "%.0f%%", decision.confidence * 100))")
+                print("    \(decision.reasoning)")
+                print("")
+
+                switch decision.action {
+                case .draftResponse(let draft):
+                    print("    📤 Draft response to \(draft.recipient):")
+                    let preview = draft.content.prefix(80)
+                    print("    \"\(preview)\(draft.content.count > 80 ? "..." : "")\"")
+
+                case .adjustTaskPriority(let adj):
+                    print("    ⚡ Change priority: \(adj.currentPriority.rawValue) → \(adj.newPriority.rawValue)")
+                    print("    Task: \(adj.taskTitle)")
+
+                case .scheduleMeetingPrep(let prep):
+                    print("    📅 Schedule prep for: \(prep.meetingTitle)")
+                    print("    Time: \(prep.scheduledFor.formatted(date: .omitted, time: .shortened))")
+                    print("    Duration: \(Int(prep.estimatedDuration / 60))min")
+
+                case .createFollowup(let followup):
+                    print("    🔔 Follow-up reminder: \(followup.followupAction)")
+                    print("    Scheduled: \(followup.scheduledFor.formatted(date: .abbreviated, time: .shortened))")
+
+                case .noAction:
+                    break
+                }
+
+                if !decision.risks.isEmpty {
+                    print("    ⚠️  Risks: \(decision.risks.joined(separator: ", "))")
+                }
+                print("")
+            }
+
+            print("💡 These actions will be saved for your review. Future versions will support")
+            print("   interactive approval via CLI commands (alfred approve-agent <number>)")
+            print("")
         }
 
         print("\nACTION ITEMS (\(briefing.actionItems.count))")
@@ -648,18 +847,31 @@ struct AlfredApp {
           notion-todos          Process WhatsApp messages to yourself and create Notion todos
           test-notion           Test Notion integration (creates test todo and searches)
 
+          drafts                View message drafts created by agents
+          send-draft <number>   Send a specific draft (use number from 'drafts' command)
+          clear-drafts          Remove all drafts without sending
+
         Flags:
-          --email               Send output via email (in addition to terminal)
+          --notify              Send output via configured notification channels (email, Slack, push)
 
         Examples:
           alfred briefing
-          alfred briefing tomorrow --email
+          alfred briefing tomorrow --notify
           alfred messages imessage 1h
           alfred messages whatsapp "Family Group" 24h
           alfred calendar tomorrow
           alfred calendar primary tomorrow
           alfred calendar work
-          alfred attention --email
+          alfred attention --notify
+
+          alfred drafts         # View agent-created message drafts
+          alfred send-draft 1   # Send first draft
+          alfred clear-drafts   # Clear all drafts
+
+        Agent Workflow:
+          1. Run 'alfred briefing' - agents analyze messages and create drafts
+          2. Run 'alfred drafts' - review what agents want to send
+          3. Run 'alfred send-draft <number>' - approve and send specific drafts
 
         Configuration:
           Edit Config/config.json with your credentials

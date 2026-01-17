@@ -1,0 +1,170 @@
+{
+  "version": "1.0",
+  "description": "Training examples for communication agent to learn your response patterns",
+
+  "user_profile": {
+    "communication_style": "professional-friendly with action-oriented responses",
+    "typical_response_length": "1-2 sentences",
+    "uses_emojis": false,
+    "preferred_greeting": null,
+    "preferred_closing": null
+  },
+
+  "training_examples": [
+    {
+      "category": "acknowledgment",
+      "incoming_message": "Thanks for the help!",
+      "your_typical_response": "Happy to help!",
+      "tone": "friendly",
+      "context": "general"
+    },
+    {
+      "category": "acknowledgment",
+      "incoming_message": "Got the files, thanks",
+      "your_typical_response": "Great, let me know if you need anything else",
+      "tone": "professional",
+      "context": "work"
+    },
+    {
+      "category": "confirmation",
+      "incoming_message": "Can you review the proposal?",
+      "your_typical_response": "Will review by end of day and share feedback",
+      "tone": "professional",
+      "context": "work"
+    },
+    {
+      "category": "confirmation",
+      "incoming_message": "Let's meet at 3pm",
+      "your_typical_response": "Confirmed - see you at 3pm",
+      "tone": "professional",
+      "context": "meeting"
+    },
+    {
+      "category": "question_response",
+      "incoming_message": "Do you have time for a quick call?",
+      "your_typical_response": "Can do tomorrow morning - does 10am work?",
+      "tone": "professional-friendly",
+      "context": "scheduling"
+    },
+    {
+      "category": "question_response",
+      "incoming_message": "What's the status on this?",
+      "your_typical_response": "In progress - will have update by EOD",
+      "tone": "professional",
+      "context": "status_update"
+    },
+    {
+      "category": "task_acceptance",
+      "incoming_message": "Can you handle this by Friday?",
+      "your_typical_response": "Yes, will have it ready by Friday afternoon",
+      "tone": "professional",
+      "context": "task_assignment"
+    },
+    {
+      "category": "rescheduling",
+      "incoming_message": "Can we reschedule our 3pm?",
+      "your_typical_response": "Of course - does 4pm work instead?",
+      "tone": "professional-friendly",
+      "context": "meeting"
+    },
+    {
+      "category": "follow_up",
+      "incoming_message": "Following up on the invoice",
+      "your_typical_response": "Sent yesterday - let me know if you don't see it",
+      "tone": "professional",
+      "context": "business"
+    },
+    {
+      "category": "casual_response",
+      "incoming_message": "Are you free for coffee?",
+      "your_typical_response": "Would love to! What time works?",
+      "tone": "casual",
+      "context": "personal"
+    }
+  ],
+
+  "response_patterns": {
+    "acknowledgment": {
+      "work": "Noted, thanks!",
+      "personal": "Got it, thanks!",
+      "client": "Thank you for the update"
+    },
+    "confirmation": {
+      "work": "Confirmed - will {action}",
+      "meeting": "Confirmed - see you {time}",
+      "task": "Will complete by {deadline}"
+    },
+    "question": {
+      "scheduling": "Can do {timeframe} - does {specific_time} work?",
+      "status": "{status} - will have update by {timeframe}",
+      "general": "Let me {action} and get back to you"
+    },
+    "decline": {
+      "polite": "Unfortunately can't make it - can we {alternative}?",
+      "busy": "Swamped right now - can this wait until {timeframe}?",
+      "delegate": "Can {person} help with this instead?"
+    }
+  },
+
+  "tone_indicators": {
+    "professional": {
+      "keywords": ["proposal", "review", "contract", "deadline", "invoice", "meeting"],
+      "formality_level": "medium"
+    },
+    "professional-friendly": {
+      "keywords": ["thanks", "great", "sounds good", "let me know"],
+      "formality_level": "low-medium"
+    },
+    "casual": {
+      "keywords": ["coffee", "lunch", "weekend", "free", "catch up"],
+      "formality_level": "low"
+    },
+    "urgent": {
+      "keywords": ["urgent", "asap", "immediately", "critical", "emergency"],
+      "formality_level": "medium"
+    }
+  },
+
+  "context_hints": {
+    "payment_related": {
+      "keywords": ["invoice", "payment", "paid", "due", "amount"],
+      "suggested_response_type": "confirmation with timeline"
+    },
+    "meeting_related": {
+      "keywords": ["meet", "call", "schedule", "time", "calendar"],
+      "suggested_response_type": "availability or confirmation"
+    },
+    "task_related": {
+      "keywords": ["complete", "finish", "deadline", "deliver", "submit"],
+      "suggested_response_type": "confirmation with timeline"
+    },
+    "question": {
+      "keywords": ["?", "can you", "could you", "would you", "do you"],
+      "suggested_response_type": "direct answer or timeline"
+    }
+  },
+
+  "personalization_rules": {
+    "never_use": [
+      "as per my last email",
+      "per my previous message",
+      "touching base",
+      "circling back",
+      "reaching out",
+      "just checking in"
+    ],
+    "preferred_phrases": [
+      "let me know",
+      "happy to help",
+      "will keep you posted",
+      "sounds good",
+      "makes sense"
+    ],
+    "time_references": {
+      "same_day": "by EOD",
+      "next_day": "tomorrow",
+      "within_week": "by end of week",
+      "specific": "by {day} {time}"
+    }
+  }
+}
