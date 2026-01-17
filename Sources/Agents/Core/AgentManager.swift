@@ -273,6 +273,13 @@ class AgentManager {
     func refreshInsights() async throws {
         learningInsights = try await learningEngine.getInsights()
     }
+
+    // MARK: - Public Accessors
+
+    /// Get the TaskAgent if available
+    func getTaskAgent() -> TaskAgent? {
+        return agents.first(where: { $0 is TaskAgent }) as? TaskAgent
+    }
 }
 
 // MARK: - Agent Errors

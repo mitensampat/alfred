@@ -6,7 +6,6 @@ class NotificationService {
 
     init(config: NotificationConfig) {
         self.config = config
-        print("  [DEBUG] NotificationService config - email:\(config.email.enabled) slack:\(config.slack.enabled) push:\(config.push.enabled)")
     }
 
     func sendBriefing(_ briefing: DailyBriefing) async throws {

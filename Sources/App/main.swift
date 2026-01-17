@@ -85,7 +85,37 @@ struct AlfredApp {
                 let date = dateArg.flatMap { parseDate($0) }
                 await runCalendar(orchestrator, for: date, calendar: calendarFilter)
             case "attention":
-                await runAttentionDefense(orchestrator, sendNotifications: shouldSendNotifications)
+                // Sub-commands for attention system
+                if filteredArgs.count > 2 {
+                    let subcommand = filteredArgs[2]
+                    switch subcommand {
+                    case "init":
+                        await runAttentionInit()
+                    case "report":
+                        let scope = filteredArgs.count > 3 ? filteredArgs[3] : "both"
+                        let period = filteredArgs.count > 4 ? filteredArgs[4] : "week"
+                        await runAttentionReport(orchestrator, scope: scope, period: period)
+                    case "calendar":
+                        let period = filteredArgs.count > 3 ? filteredArgs[3] : "week"
+                        await runAttentionReport(orchestrator, scope: "calendar", period: period)
+                    case "messaging":
+                        let period = filteredArgs.count > 3 ? filteredArgs[3] : "week"
+                        await runAttentionReport(orchestrator, scope: "messaging", period: period)
+                    case "plan":
+                        let days = filteredArgs.count > 3 ? Int(filteredArgs[3]) ?? 7 : 7
+                        await runAttentionPlan(orchestrator, days: days)
+                    case "priorities":
+                        await runCollectPriorities(orchestrator)
+                    case "config":
+                        await runAttentionConfig()
+                    default:
+                        print("Unknown attention subcommand: \(subcommand)")
+                        printAttentionUsage()
+                    }
+                } else {
+                    // Default: run attention defense
+                    await runAttentionDefense(orchestrator, sendNotifications: shouldSendNotifications)
+                }
             case "schedule":
                 print("Starting scheduled mode...")
                 await scheduler.start()
@@ -99,9 +129,6 @@ struct AlfredApp {
                 await testNotion(orchestrator)
             case "drafts":
                 await runShowDrafts()
-            case "send-draft":
-                let draftNumber = filteredArgs.count > 2 ? Int(filteredArgs[2]) : nil
-                await runSendDraft(orchestrator, draftNumber: draftNumber)
             case "clear-drafts":
                 await runClearDrafts()
             default:
@@ -288,6 +315,733 @@ struct AlfredApp {
         }
     }
 
+    // MARK: - Enhanced Attention Commands
+
+    static func runAttentionInit() async {
+        print("\n=== INITIALIZE ATTENTION PREFERENCES ===\n")
+        print("Creating attention preferences configuration...")
+
+        let templatePath = "Config/attention_preferences.json"
+        let template = """
+{
+  "version": "1.0",
+  "last_updated": "\(ISO8601DateFormatter().string(from: Date()))",
+  "priorities": [
+    {
+      "id": "deep_work",
+      "description": "Deep focused work on strategic projects",
+      "weight": 0.4,
+      "keywords": ["strategic", "planning", "development"],
+      "time_allocation": 40.0
+    },
+    {
+      "id": "collaboration",
+      "description": "Team collaboration and coordination",
+      "weight": 0.3,
+      "keywords": ["team", "sync", "meeting"],
+      "time_allocation": 30.0
+    },
+    {
+      "id": "communication",
+      "description": "Responding to messages and emails",
+      "weight": 0.2,
+      "keywords": ["response", "reply", "message"],
+      "time_allocation": 20.0
+    },
+    {
+      "id": "administrative",
+      "description": "Administrative tasks and overhead",
+      "weight": 0.1,
+      "keywords": ["admin", "overhead"],
+      "time_allocation": 10.0
+    }
+  ],
+  "meeting_preferences": {
+    "high_value": ["strategic", "planning", "1:1", "customer"],
+    "low_value": ["status update", "fyi", "optional"],
+    "max_meetings_per_day": 5,
+    "max_meetings_per_week": 20,
+    "max_hours_per_day": 6.0,
+    "max_hours_per_week": 25.0,
+    "category_overrides": {},
+    "minimum_focus_block_hours": 2.0,
+    "preferred_focus_time_slots": ["9am-12pm", "2pm-5pm"]
+  },
+  "messaging_preferences": {
+    "high_priority_contacts": [],
+    "low_priority_contacts": [],
+    "target_response_time_urgent": 3600,
+    "target_response_time_important": 14400,
+    "target_response_time_routine": 86400,
+    "auto_decline_patterns": []
+  },
+  "time_allocation": {
+    "period": "weekly",
+    "goals": [
+      {
+        "category": "Strategic",
+        "target_percentage": 40.0,
+        "current_percentage": null,
+        "variance": null
+      },
+      {
+        "category": "Collaborative",
+        "target_percentage": 30.0,
+        "current_percentage": null,
+        "variance": null
+      },
+      {
+        "category": "Tactical",
+        "target_percentage": 20.0,
+        "current_percentage": null,
+        "variance": null
+      },
+      {
+        "category": "Informational",
+        "target_percentage": 10.0,
+        "current_percentage": null,
+        "variance": null
+      }
+    ]
+  },
+  "query_defaults": {
+    "default_lookback_days": 7,
+    "default_lookforward_days": 14,
+    "week_start_day": "monday"
+  }
+}
+"""
+
+        do {
+            // Try to write to the Alfred project Config directory first
+            let preferredPath = (NSString(string: "~/Documents/Claude apps/Alfred/Config/attention_preferences.json").expandingTildeInPath)
+            let fileURL = URL(fileURLWithPath: preferredPath)
+
+            // Create Config directory if it doesn't exist
+            let configDir = fileURL.deletingLastPathComponent()
+            try FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
+
+            try template.write(to: fileURL, atomically: true, encoding: .utf8)
+            print("✓ Created attention preferences at: \(preferredPath)")
+            print("\n📝 Edit this file to customize your attention preferences")
+            print("💡 Run 'alfred attention report' to see your attention metrics")
+        } catch {
+            print("⚠️  Failed to create preferences file: \(error)")
+        }
+    }
+
+    static func runAttentionReport(_ orchestrator: BriefingOrchestrator, scope: String, period: String) async {
+        print("\n=== ATTENTION REPORT ===\n")
+        print("Scope: \(scope)")
+        print("Period: \(period)\n")
+
+        do {
+            // Parse period
+            let query = parseAttentionQuery(scope: scope, period: period)
+
+            // Fetch data based on scope
+            let events: [CalendarEvent]
+            if query.includeCalendar {
+                events = try await orchestrator.fetchCalendarEvents(
+                    from: query.period.start,
+                    to: query.period.end
+                )
+            } else {
+                events = []
+            }
+
+            let messages: [MessageSummary]
+            if query.includeMessaging {
+                messages = try await orchestrator.getMessagesSummary(
+                    platform: "all",
+                    timeframe: calculateTimeframe(from: query.period.start, to: query.period.end)
+                )
+            } else {
+                messages = []
+            }
+
+            // Generate report using TaskAgent
+            guard let agentManager = orchestrator.publicAgentManager else {
+                print("⚠️  Agent manager not available")
+                return
+            }
+
+            guard let taskAgent = agentManager.getTaskAgent() else {
+                print("⚠️  TaskAgent not found in agent manager")
+                return
+            }
+
+            let report = try await taskAgent.analyzeAttention(
+                query: query,
+                events: events,
+                messages: messages
+            )
+
+            // Print report
+            printDetailedAttentionReport(report)
+
+        } catch {
+            print("Error generating attention report: \(error)")
+        }
+    }
+
+    static func runAttentionPlan(_ orchestrator: BriefingOrchestrator, days: Int) async {
+        print("\n=== ATTENTION PLANNING ===\n")
+        print("Planning for next \(days) days\n")
+
+        do {
+            // Get upcoming events
+            let start = Date()
+            let end = Calendar.current.date(byAdding: .day, value: days, to: start)!
+
+            let events = try await orchestrator.fetchCalendarEvents(from: start, to: end)
+
+            // Create planning request (simplified - would prompt user for details)
+            let request = AttentionPlanRequest(
+                period: AttentionPlanRequest.TimePeriod(
+                    start: start,
+                    end: end,
+                    description: "next \(days) days"
+                ),
+                priorities: ["Focus on strategic work", "Limit meetings"],
+                constraints: [
+                    AttentionPlanRequest.Constraint(
+                        type: .maxMeetingHours,
+                        description: "Maximum 6 hours of meetings per day",
+                        value: 6.0
+                    ),
+                    AttentionPlanRequest.Constraint(
+                        type: .requiredFocusTime,
+                        description: "At least 2 hours of focus time per day",
+                        value: 2.0
+                    )
+                ],
+                goals: [
+                    AttentionPlanRequest.Goal(
+                        description: "Deep work on strategic projects",
+                        category: "Strategic",
+                        targetHours: Double(days) * 3,
+                        priority: 1
+                    )
+                ]
+            )
+
+            // Generate plan using TaskAgent
+            guard let agentManager = orchestrator.publicAgentManager,
+                  let taskAgent = agentManager.getTaskAgent() else {
+                print("⚠️  Agents not enabled")
+                return
+            }
+
+            let plan = try await taskAgent.planAttention(request: request, currentEvents: events)
+
+            // Print plan
+            printAttentionPlan(plan)
+
+        } catch {
+            print("Error generating attention plan: \(error)")
+        }
+    }
+
+    static func runCollectPriorities(_ orchestrator: BriefingOrchestrator) async {
+        print("\n=== COLLECT MEETING PRIORITIES ===\n")
+        print("Analyzing your meetings to understand priorities...\n")
+
+        do {
+            // Get last 30 days of meetings
+            let end = Date()
+            let start = Calendar.current.date(byAdding: .day, value: -30, to: end)!
+
+            let events = try await orchestrator.fetchCalendarEvents(from: start, to: end)
+
+            guard let agentManager = orchestrator.publicAgentManager,
+                  let taskAgent = agentManager.getTaskAgent() else {
+                print("⚠️  Agents not enabled")
+                return
+            }
+
+            print("Found \(events.count) meetings in last 30 days")
+            print("Analyzing patterns...\n")
+
+            let categorizations = try await taskAgent.collectMeetingPriorities(events: events)
+
+            print("\n=== MEETING CATEGORIZATIONS ===\n")
+            for (pattern, category) in categorizations.sorted(by: { $0.key < $1.key }) {
+                print("📌 \(pattern)")
+                print("   Category: \(category.rawValue)\n")
+            }
+
+            print("\n💡 These categorizations will be saved to your attention preferences")
+            print("💡 Run 'alfred attention report' to see updated metrics")
+
+        } catch {
+            print("Error collecting priorities: \(error)")
+        }
+    }
+
+    static func runAttentionConfig() async {
+        print("\n=== ATTENTION CONFIGURATION ===\n")
+
+        // Find the config file
+        let paths = [
+            (NSString(string: "~/Documents/Claude apps/Alfred/Config/attention_preferences.json").expandingTildeInPath),
+            (NSString(string: "~/.config/alfred/attention_preferences.json").expandingTildeInPath)
+        ]
+
+        var configPath: String?
+        for path in paths {
+            if FileManager.default.fileExists(atPath: path) {
+                configPath = path
+                break
+            }
+        }
+
+        guard let path = configPath else {
+            print("⚠️  No attention preferences file found")
+            print("💡 Run 'alfred attention init' to create one")
+            return
+        }
+
+        print("📍 Config file: \(path)")
+        print("")
+
+        // Load current config
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
+            print("⚠️  Failed to read preferences file")
+            return
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        guard let currentPrefs = try? decoder.decode(AttentionPreferences.self, from: data) else {
+            print("⚠️  Failed to parse current preferences")
+            return
+        }
+
+        // Interactive menu
+        print("What would you like to configure?\n")
+        print("1. Query defaults (lookback/lookforward windows)")
+        print("2. Meeting preferences (meeting limits)")
+        print("3. Time allocation goals")
+        print("4. View current configuration")
+        print("5. Exit")
+        print("")
+
+        print("Enter choice (1-5): ", terminator: "")
+        guard let choice = readLine()?.trimmingCharacters(in: .whitespaces) else { return }
+
+        switch choice {
+        case "1":
+            await configureQueryDefaults(path: path, current: currentPrefs)
+        case "2":
+            await configureMeetingPreferences(path: path, current: currentPrefs)
+        case "3":
+            await configureTimeAllocation(path: path, current: currentPrefs)
+        case "4":
+            printCurrentConfiguration(currentPrefs)
+        case "5":
+            print("👋 Exiting")
+        default:
+            print("Invalid choice")
+        }
+    }
+
+    static func configureQueryDefaults(path: String, current: AttentionPreferences) async {
+        print("\n=== QUERY DEFAULTS ===\n")
+
+        let currentDefaults = current.queryDefaults
+        let currentLookback = currentDefaults?.defaultLookbackDays ?? 7
+        let currentLookforward = currentDefaults?.defaultLookforwardDays ?? 14
+        let currentWeekStart = currentDefaults?.weekStartDay ?? "monday"
+
+        print("Current settings:")
+        print("  Lookback days: \(currentLookback)")
+        print("  Lookforward days: \(currentLookforward)")
+        print("  Week start: \(currentWeekStart)")
+        print("")
+
+        print("Enter new lookback days [\(currentLookback)]: ", terminator: "")
+        let lookbackInput = readLine()?.trimmingCharacters(in: .whitespaces) ?? ""
+        let newLookback = Int(lookbackInput) ?? currentLookback
+
+        print("Enter new lookforward days [\(currentLookforward)]: ", terminator: "")
+        let lookforwardInput = readLine()?.trimmingCharacters(in: .whitespaces) ?? ""
+        let newLookforward = Int(lookforwardInput) ?? currentLookforward
+
+        print("Enter week start day (monday/sunday) [\(currentWeekStart)]: ", terminator: "")
+        let weekStartInput = readLine()?.trimmingCharacters(in: .whitespaces).lowercased() ?? ""
+        let newWeekStart = weekStartInput.isEmpty ? currentWeekStart : weekStartInput
+
+        // Update the config
+        do {
+            var data = try Data(contentsOf: URL(fileURLWithPath: path))
+            var json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+
+            json["query_defaults"] = [
+                "default_lookback_days": newLookback,
+                "default_lookforward_days": newLookforward,
+                "week_start_day": newWeekStart
+            ]
+            json["last_updated"] = ISO8601DateFormatter().string(from: Date())
+
+            let newData = try JSONSerialization.data(withJSONObject: json, options: .prettyPrinted)
+            try newData.write(to: URL(fileURLWithPath: path))
+
+            print("\n✓ Configuration updated successfully!")
+            print("\n📝 New settings:")
+            print("  Lookback days: \(newLookback)")
+            print("  Lookforward days: \(newLookforward)")
+            print("  Week start: \(newWeekStart)")
+        } catch {
+            print("⚠️  Failed to update configuration: \(error)")
+        }
+    }
+
+    static func configureMeetingPreferences(path: String, current: AttentionPreferences) async {
+        print("\n=== MEETING PREFERENCES ===\n")
+
+        let prefs = current.meetingPreferences
+
+        print("Current settings:")
+        print("  Max meetings per day: \(prefs.maxMeetingsPerDay ?? 0)")
+        print("  Max meetings per week: \(prefs.maxMeetingsPerWeek ?? 0)")
+        print("  Max hours per day: \(prefs.maxHoursPerDay ?? 0.0)")
+        print("  Max hours per week: \(prefs.maxHoursPerWeek ?? 0.0)")
+        print("  Minimum focus block: \(prefs.minimumFocusBlockHours) hours")
+        print("")
+
+        print("Enter new max meetings per day [\(prefs.maxMeetingsPerDay ?? 0)]: ", terminator: "")
+        let maxDayInput = readLine()?.trimmingCharacters(in: .whitespaces) ?? ""
+        let newMaxDay = Int(maxDayInput) ?? (prefs.maxMeetingsPerDay ?? 0)
+
+        print("Enter new max hours per day [\(prefs.maxHoursPerDay ?? 0.0)]: ", terminator: "")
+        let maxHoursInput = readLine()?.trimmingCharacters(in: .whitespaces) ?? ""
+        let newMaxHours = Double(maxHoursInput) ?? (prefs.maxHoursPerDay ?? 0.0)
+
+        print("Enter minimum focus block hours [\(prefs.minimumFocusBlockHours)]: ", terminator: "")
+        let focusInput = readLine()?.trimmingCharacters(in: .whitespaces) ?? ""
+        let newFocus = Double(focusInput) ?? prefs.minimumFocusBlockHours
+
+        // Update the config
+        do {
+            var data = try Data(contentsOf: URL(fileURLWithPath: path))
+            var json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+            var meetingPrefs = json["meeting_preferences"] as! [String: Any]
+
+            meetingPrefs["max_meetings_per_day"] = newMaxDay
+            meetingPrefs["max_hours_per_day"] = newMaxHours
+            meetingPrefs["minimum_focus_block_hours"] = newFocus
+
+            json["meeting_preferences"] = meetingPrefs
+            json["last_updated"] = ISO8601DateFormatter().string(from: Date())
+
+            let newData = try JSONSerialization.data(withJSONObject: json, options: .prettyPrinted)
+            try newData.write(to: URL(fileURLWithPath: path))
+
+            print("\n✓ Configuration updated successfully!")
+        } catch {
+            print("⚠️  Failed to update configuration: \(error)")
+        }
+    }
+
+    static func configureTimeAllocation(path: String, current: AttentionPreferences) async {
+        print("\n=== TIME ALLOCATION GOALS ===\n")
+
+        print("Current allocation targets:")
+        for goal in current.timeAllocation.goals {
+            print("  \(goal.category): \(goal.targetPercentage)%")
+        }
+        print("")
+
+        print("Enter category to update (or 'done'): ", terminator: "")
+        guard let category = readLine()?.trimmingCharacters(in: .whitespaces), category.lowercased() != "done" else {
+            return
+        }
+
+        print("Enter new target percentage for \(category): ", terminator: "")
+        guard let percentInput = readLine()?.trimmingCharacters(in: .whitespaces),
+              let newPercent = Double(percentInput) else {
+            print("Invalid percentage")
+            return
+        }
+
+        // Update the config
+        do {
+            var data = try Data(contentsOf: URL(fileURLWithPath: path))
+            var json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+            var timeAlloc = json["time_allocation"] as! [String: Any]
+            var goals = timeAlloc["goals"] as! [[String: Any]]
+
+            for (index, goal) in goals.enumerated() {
+                if let cat = goal["category"] as? String, cat.lowercased() == category.lowercased() {
+                    goals[index]["target_percentage"] = newPercent
+                    break
+                }
+            }
+
+            timeAlloc["goals"] = goals
+            json["time_allocation"] = timeAlloc
+            json["last_updated"] = ISO8601DateFormatter().string(from: Date())
+
+            let newData = try JSONSerialization.data(withJSONObject: json, options: .prettyPrinted)
+            try newData.write(to: URL(fileURLWithPath: path))
+
+            print("\n✓ Configuration updated successfully!")
+            print("💡 Run this command again to update more categories")
+        } catch {
+            print("⚠️  Failed to update configuration: \(error)")
+        }
+    }
+
+    static func printCurrentConfiguration(_ prefs: AttentionPreferences) {
+        print("\n=== CURRENT CONFIGURATION ===\n")
+
+        print("📅 Query Defaults:")
+        if let defaults = prefs.queryDefaults {
+            print("  Lookback days: \(defaults.defaultLookbackDays)")
+            print("  Lookforward days: \(defaults.defaultLookforwardDays)")
+            print("  Week start: \(defaults.weekStartDay)")
+        } else {
+            print("  Not configured")
+        }
+
+        print("\n📊 Meeting Preferences:")
+        let mp = prefs.meetingPreferences
+        print("  Max meetings/day: \(mp.maxMeetingsPerDay ?? 0)")
+        print("  Max meetings/week: \(mp.maxMeetingsPerWeek ?? 0)")
+        print("  Max hours/day: \(mp.maxHoursPerDay ?? 0.0)")
+        print("  Max hours/week: \(mp.maxHoursPerWeek ?? 0.0)")
+        print("  Min focus block: \(mp.minimumFocusBlockHours)h")
+
+        print("\n🎯 Time Allocation Goals:")
+        for goal in prefs.timeAllocation.goals {
+            print("  \(goal.category): \(goal.targetPercentage)%")
+        }
+
+        print("\n📍 File location:")
+        let paths = [
+            (NSString(string: "~/Documents/Claude apps/Alfred/Config/attention_preferences.json").expandingTildeInPath),
+            (NSString(string: "~/.config/alfred/attention_preferences.json").expandingTildeInPath)
+        ]
+        for path in paths {
+            if FileManager.default.fileExists(atPath: path) {
+                print("  \(path)")
+                break
+            }
+        }
+
+        print("\n💡 Edit the file directly for advanced configuration")
+        print("💡 Run 'alfred attention config' to use interactive mode")
+    }
+
+    // MARK: - Attention Helper Functions
+
+    static func parseAttentionQuery(scope: String, period: String) -> AttentionQuery {
+        let queryPeriod: AttentionQuery.Period
+
+        // Check if period is a number (e.g., "7", "30", "-14")
+        if let days = Int(period) {
+            if days > 0 {
+                // Positive number = look forward
+                queryPeriod = .nextNDays(days)
+            } else if days < 0 {
+                // Negative number = look back
+                queryPeriod = .lastNDays(abs(days))
+            } else {
+                queryPeriod = .today()
+            }
+        } else {
+            // Named periods
+            switch period.lowercased() {
+            case "today":
+                queryPeriod = .today()
+            case "week", "thisweek":
+                queryPeriod = .thisWeek()
+            case "lastweek":
+                queryPeriod = .lastWeek()
+            case "nextweek":
+                queryPeriod = .nextWeek()
+            default:
+                queryPeriod = .thisWeek()
+            }
+        }
+
+        let includeCalendar = scope == "calendar" || scope == "both"
+        let includeMessaging = scope == "messaging" || scope == "both"
+
+        return AttentionQuery(
+            scope: scope == "calendar" ? .calendar : (scope == "messaging" ? .messaging : .both),
+            period: queryPeriod,
+            includeCalendar: includeCalendar,
+            includeMessaging: includeMessaging,
+            compareWithGoals: true
+        )
+    }
+
+    static func calculateTimeframe(from start: Date, to end: Date) -> String {
+        let hours = Int(end.timeIntervalSince(start) / 3600)
+        if hours < 24 {
+            return "\(hours)h"
+        }
+        let days = hours / 24
+        return "\(days)d"
+    }
+
+    static func printDetailedAttentionReport(_ report: AttentionReport) {
+        print("Period: \(report.period.description)")
+        print("Type: \(report.period.type.rawValue)\n")
+
+        // Calendar metrics
+        if report.calendar.meetingCount > 0 {
+            print("=== CALENDAR ATTENTION ===\n")
+            print("Total Meeting Time: \(formatDuration(report.calendar.totalMeetingTime))")
+            print("Meeting Count: \(report.calendar.meetingCount)")
+            print("Utilization Score: \(Int(report.calendar.utilizationScore))%")
+            print("Estimated Waste: \(formatDuration(report.calendar.wastedTimeEstimate))\n")
+
+            print("Breakdown by Category:")
+            for (category, stats) in report.calendar.breakdown.sorted(by: { $0.key.priority < $1.key.priority }) {
+                print("  \(category.rawValue): \(formatDuration(stats.timeSpent)) (\(Int(stats.percentage))%)")
+            }
+
+            print("\nTop Time Consumers:")
+            for (index, pattern) in report.calendar.topTimeConsumers.prefix(5).enumerated() {
+                print("  \(index + 1). \(pattern.pattern)")
+                print("     \(pattern.occurrences) meetings, \(formatDuration(pattern.totalTime)) total")
+            }
+            print()
+        }
+
+        // Messaging metrics
+        if report.messaging.totalThreads > 0 {
+            print("=== MESSAGING ATTENTION ===\n")
+            print("Total Threads: \(report.messaging.totalThreads)")
+            print("Responses Given: \(report.messaging.responsesGiven)")
+            print("Utilization Score: \(Int(report.messaging.utilizationScore))%\n")
+
+            print("Breakdown by Category:")
+            for (category, stats) in report.messaging.breakdown.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {
+                print("  \(category.rawValue): \(stats.threadCount) threads (\(Int(stats.percentage))%)")
+            }
+
+            print("\nTop Thread Consumers:")
+            for (index, thread) in report.messaging.topTimeConsumers.prefix(5).enumerated() {
+                print("  \(index + 1). \(thread.contact)")
+                print("     \(thread.messageCount) messages, \(String(format: "%.1f", thread.averageMessagesPerDay)) msg/day")
+            }
+            print()
+        }
+
+        // Overall scores
+        print("=== OVERALL ATTENTION ===\n")
+        print("Focus Score: \(Int(report.overall.focusScore))%")
+        print("Balance Score: \(Int(report.overall.balanceScore))%")
+        print("Efficiency Score: \(Int(report.overall.efficiencyScore))%")
+        print("Goal Alignment: \(Int(report.overall.alignmentWithGoals))%\n")
+
+        // Recommendations
+        if !report.recommendations.isEmpty {
+            print("=== RECOMMENDATIONS ===\n")
+            for (index, rec) in report.recommendations.enumerated() {
+                print("\(index + 1). [\(rec.priority.rawValue.uppercased())] \(rec.title)")
+                print("   \(rec.description)")
+                if let action = rec.suggestedAction {
+                    print("   → \(action)")
+                }
+                print()
+            }
+        }
+    }
+
+    static func printAttentionPlan(_ plan: AttentionPlan) {
+        print("Planning Period: \(plan.request.period.description)\n")
+
+        print("=== CURRENT COMMITMENTS ===\n")
+        print("Total commitments: \(plan.currentCommitments.count)")
+        let totalHours = plan.currentCommitments.reduce(0.0) { $0 + $1.duration } / 3600
+        print("Total hours: \(String(format: "%.1f", totalHours))h\n")
+
+        // Group by category
+        let byCategory = Dictionary(grouping: plan.currentCommitments, by: { $0.category })
+        for category in MeetingCategory.allCases {
+            if let commitments = byCategory[category], !commitments.isEmpty {
+                let hours = commitments.reduce(0.0) { $0 + $1.duration } / 3600
+                print("\(category.rawValue): \(commitments.count) meetings, \(String(format: "%.1f", hours))h")
+            }
+        }
+
+        print("\n=== RECOMMENDATIONS ===\n")
+        for (index, rec) in plan.recommendations.enumerated() {
+            print("\(index + 1). \(rec.title)")
+            print("   Action: \(rec.action.rawValue)")
+            print("   \(rec.description)")
+            print("   Impact: \(rec.impact)")
+            print("   Effort: \(rec.effort)\n")
+        }
+
+        if !plan.conflicts.isEmpty {
+            print("=== CONFLICTS ===\n")
+            for conflict in plan.conflicts {
+                print("⚠️  [\(conflict.severity.rawValue.uppercased())] \(conflict.description)")
+                print("   Affected: \(conflict.affectedGoal)")
+                print("   Resolution: \(conflict.suggestedResolution)\n")
+            }
+        }
+
+        print("=== PROJECTED ATTENTION ===\n")
+        print("Focus Score: \(Int(plan.projectedAttention.focusScore))%")
+        print("Efficiency Score: \(Int(plan.projectedAttention.efficiencyScore))%")
+        print("Goal Alignment: \(Int(plan.projectedAttention.alignmentWithGoals))%")
+        print("\n\(plan.projectedAttention.summary)")
+    }
+
+    static func printAttentionUsage() {
+        print("""
+
+        Usage: alfred attention [subcommand] [options]
+
+        Subcommands:
+          (none)              Run attention defense (default)
+          init                Create attention preferences configuration
+          report [scope] [period]  Generate detailed attention report
+          calendar [period]   Analyze calendar attention only
+          messaging [period]  Analyze messaging attention only
+          plan [days]         Plan attention for next N days (default: 7)
+          priorities          Collect and categorize meeting priorities
+
+        Scope (for report):
+          both                Both calendar and messaging (default)
+          calendar            Calendar only
+          messaging           Messaging only
+
+        Period:
+          today               Today only
+          week                This week (default)
+          lastweek            Last week
+          nextweek            Next week
+
+        Examples:
+          alfred attention                      # Run attention defense
+          alfred attention init                 # Initialize preferences
+          alfred attention report               # Full report for this week
+          alfred attention calendar lastweek    # Calendar report for last week
+          alfred attention messaging today      # Messaging report for today
+          alfred attention plan 14              # Plan next 2 weeks
+          alfred attention priorities           # Learn meeting priorities
+
+        """)
+    }
+
+    static func formatDuration(_ seconds: TimeInterval) -> String {
+        let hours = Int(seconds) / 3600
+        let minutes = (Int(seconds) % 3600) / 60
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        }
+        return "\(minutes)m"
+    }
+
     static func runGoogleAuth(_ config: AppConfig) async {
         print("\nGoogle Calendar Accounts Available:")
         for (index, account) in config.calendar.google.enumerated() {
@@ -442,84 +1196,14 @@ struct AlfredApp {
             }
 
             print("Commands:")
-            print("  alfred send-draft <number>  - Send a specific draft")
-            print("  alfred send-draft all       - Send all drafts")
-            print("  alfred clear-drafts         - Remove all drafts without sending\n")
+            print("  alfred clear-drafts         - Remove all drafts\n")
+            print("💡 Note: Alfred creates drafts only - manual sending required\n")
 
         } catch {
             print("Error reading drafts: \(error)\n")
         }
     }
 
-    static func runSendDraft(_ orchestrator: BriefingOrchestrator, draftNumber: Int?) async {
-        let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        let draftsFile = homeDir.appendingPathComponent(".alfred/message_drafts.json")
-
-        guard FileManager.default.fileExists(atPath: draftsFile.path) else {
-            print("❌ No drafts found\n")
-            return
-        }
-
-        do {
-            let data = try Data(contentsOf: draftsFile)
-            var drafts = try JSONDecoder().decode([MessageDraft].self, from: data)
-
-            if drafts.isEmpty {
-                print("❌ No drafts found\n")
-                return
-            }
-
-            // Determine which drafts to send
-            let draftsToSend: [MessageDraft]
-            let remainingDrafts: [MessageDraft]
-
-            if let number = draftNumber, number > 0, number <= drafts.count {
-                // Send specific draft
-                draftsToSend = [drafts[number - 1]]
-                remainingDrafts = drafts.enumerated().filter { $0.offset != number - 1 }.map { $0.element }
-            } else {
-                print("❌ Invalid draft number. Use 'alfred drafts' to see available drafts.\n")
-                return
-            }
-
-            // Send drafts
-            let messageSender = MessageSender(config: orchestrator.config)
-            var successCount = 0
-            var failedCount = 0
-
-            for draft in draftsToSend {
-                print("\n📤 Sending to \(draft.recipient) via \(draft.platform.rawValue)...")
-                do {
-                    let result = try await messageSender.sendMessage(draft: draft)
-                    if result.isSuccess {
-                        successCount += 1
-                    } else {
-                        failedCount += 1
-                    }
-                } catch {
-                    print("❌ Failed: \(error)")
-                    failedCount += 1
-                }
-            }
-
-            // Update drafts file
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = .prettyPrinted
-            let updatedData = try encoder.encode(remainingDrafts)
-            try updatedData.write(to: draftsFile)
-
-            // Summary
-            print("\n" + String(repeating: "=", count: 60))
-            print("✓ Sent: \(successCount)")
-            if failedCount > 0 {
-                print("❌ Failed: \(failedCount)")
-            }
-            print("\(remainingDrafts.count) draft(s) remaining\n")
-
-        } catch {
-            print("Error: \(error)\n")
-        }
-    }
 
     static func runClearDrafts() async {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
@@ -796,12 +1480,6 @@ struct AlfredApp {
         }
     }
 
-    static func formatDuration(_ duration: TimeInterval) -> String {
-        let hours = Int(duration / 3600)
-        let minutes = Int((duration.truncatingRemainder(dividingBy: 3600)) / 60)
-        return "\(hours)h \(minutes)m"
-    }
-
     static func printUsage() {
         print("""
         Alfred - Your Personal Assistant 🦇
@@ -841,15 +1519,44 @@ struct AlfredApp {
           attention             Generate attention defense report (3pm alert)
                                  Add --email to send via email
 
+          attention init        Create attention preferences file
+          attention report [scope] [period]
+                                 Generate attention report
+                                 Scopes: both, calendar, messaging (default: both)
+                                 Periods:
+                                   - Named: today, week, lastweek, nextweek
+                                   - Custom: number of days (e.g., 7, 14, 30)
+                                   - Lookback: negative days (e.g., -7, -30)
+                                 Examples: attention report calendar week
+                                          attention report messaging today
+                                          attention report calendar 14 (next 14 days)
+                                          attention report calendar -30 (last 30 days)
+
+          attention calendar [period]
+                                 Calendar-only attention report
+                                 Examples: attention calendar week
+
+          attention messaging [period]
+                                 Messaging-only attention report
+                                 Examples: attention messaging week
+
+          attention plan [days]  Generate attention plan for next N days
+                                 Examples: attention plan 7
+                                          attention plan 14
+
+          attention priorities   Collect meeting priorities (AI learns from you)
+
+          attention config       Interactive configuration (lookback/lookforward, limits, goals)
+                                 View and edit attention preferences interactively
+
           schedule              Run in scheduled mode (auto-generates briefings)
           auth                  Authenticate with Google Calendar
 
           notion-todos          Process WhatsApp messages to yourself and create Notion todos
           test-notion           Test Notion integration (creates test todo and searches)
 
-          drafts                View message drafts created by agents
-          send-draft <number>   Send a specific draft (use number from 'drafts' command)
-          clear-drafts          Remove all drafts without sending
+          drafts                View message drafts created by agents (review only)
+          clear-drafts          Remove all drafts
 
         Flags:
           --notify              Send output via configured notification channels (email, Slack, push)
@@ -863,15 +1570,17 @@ struct AlfredApp {
           alfred calendar primary tomorrow
           alfred calendar work
           alfred attention --notify
+          alfred attention init
+          alfred attention report calendar week
+          alfred attention plan 7
 
           alfred drafts         # View agent-created message drafts
-          alfred send-draft 1   # Send first draft
           alfred clear-drafts   # Clear all drafts
 
         Agent Workflow:
           1. Run 'alfred briefing' - agents analyze messages and create drafts
-          2. Run 'alfred drafts' - review what agents want to send
-          3. Run 'alfred send-draft <number>' - approve and send specific drafts
+          2. Run 'alfred drafts' - review suggested responses
+          3. Manually send messages based on draft suggestions
 
         Configuration:
           Edit Config/config.json with your credentials
