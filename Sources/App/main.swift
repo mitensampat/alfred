@@ -116,6 +116,24 @@ struct AlfredApp {
                     // Default: run attention defense
                     await runAttentionDefense(orchestrator, sendNotifications: shouldSendNotifications)
                 }
+            case "commitments":
+                if filteredArgs.count > 2 {
+                    let subcommand = filteredArgs[2]
+                    switch subcommand {
+                    case "init":
+                        await runCommitmentsInit(orchestrator)
+                    case "scan":
+                        await runCommitmentsScan(orchestrator, args: Array(filteredArgs.dropFirst(3)))
+                    case "list":
+                        await runCommitmentsList(orchestrator, args: Array(filteredArgs.dropFirst(3)))
+                    case "overdue":
+                        await runCommitmentsOverdue(orchestrator)
+                    default:
+                        printCommitmentsUsage()
+                    }
+                } else {
+                    printCommitmentsUsage()
+                }
             case "schedule":
                 print("Starting scheduled mode...")
                 await scheduler.start()
@@ -439,50 +457,107 @@ struct AlfredApp {
             // Parse period
             let query = parseAttentionQuery(scope: scope, period: period)
 
-            // Fetch data based on scope
-            let events: [CalendarEvent]
-            if query.includeCalendar {
-                events = try await orchestrator.fetchCalendarEvents(
-                    from: query.period.start,
-                    to: query.period.end
-                )
+            // Process calendar and messaging completely separately
+            if query.includeCalendar && !query.includeMessaging {
+                // Calendar only - fast path
+                print("📅 Analyzing calendar attention...\n")
+                try await runCalendarOnlyReport(orchestrator, query: query)
+            } else if query.includeMessaging && !query.includeCalendar {
+                // Messaging only - streaming processing for large volumes
+                print("💬 Analyzing messaging attention...\n")
+                try await runMessagingOnlyReport(orchestrator, query: query)
             } else {
-                events = []
+                // Both - process separately then combine
+                print("📊 Analyzing both calendar and messaging...\n")
+                try await runCombinedReport(orchestrator, query: query)
             }
-
-            let messages: [MessageSummary]
-            if query.includeMessaging {
-                messages = try await orchestrator.getMessagesSummary(
-                    platform: "all",
-                    timeframe: calculateTimeframe(from: query.period.start, to: query.period.end)
-                )
-            } else {
-                messages = []
-            }
-
-            // Generate report using TaskAgent
-            guard let agentManager = orchestrator.publicAgentManager else {
-                print("⚠️  Agent manager not available")
-                return
-            }
-
-            guard let taskAgent = agentManager.getTaskAgent() else {
-                print("⚠️  TaskAgent not found in agent manager")
-                return
-            }
-
-            let report = try await taskAgent.analyzeAttention(
-                query: query,
-                events: events,
-                messages: messages
-            )
-
-            // Print report
-            printDetailedAttentionReport(report)
 
         } catch {
             print("Error generating attention report: \(error)")
         }
+    }
+
+    static func runCalendarOnlyReport(_ orchestrator: BriefingOrchestrator, query: AttentionQuery) async throws {
+        let events = try await orchestrator.fetchCalendarEvents(
+            from: query.period.start,
+            to: query.period.end
+        )
+
+        print("✓ Found \(events.count) calendar event(s)\n")
+
+        guard let agentManager = orchestrator.publicAgentManager,
+              let taskAgent = agentManager.getTaskAgent() else {
+            print("⚠️  Agents not enabled")
+            return
+        }
+
+        let report = try await taskAgent.analyzeAttention(
+            query: query,
+            events: events,
+            messages: []
+        )
+
+        printDetailedAttentionReport(report)
+    }
+
+    static func runMessagingOnlyReport(_ orchestrator: BriefingOrchestrator, query: AttentionQuery) async throws {
+        // Fetch messages with limit to avoid memory issues
+        print("📱 Fetching messages (this may take a moment for large volumes)...\n")
+
+        let messages = try await orchestrator.getMessagesSummary(
+            platform: "all",
+            timeframe: calculateTimeframe(from: query.period.start, to: query.period.end)
+        )
+
+        print("✓ Found \(messages.count) message thread(s)\n")
+
+        guard let agentManager = orchestrator.publicAgentManager,
+              let taskAgent = agentManager.getTaskAgent() else {
+            print("⚠️  Agents not enabled")
+            return
+        }
+
+        let report = try await taskAgent.analyzeAttention(
+            query: query,
+            events: [],
+            messages: messages
+        )
+
+        printDetailedAttentionReport(report)
+    }
+
+    static func runCombinedReport(_ orchestrator: BriefingOrchestrator, query: AttentionQuery) async throws {
+        // Process calendar first (fast)
+        print("📅 Step 1/2: Analyzing calendar...")
+        let events = try await orchestrator.fetchCalendarEvents(
+            from: query.period.start,
+            to: query.period.end
+        )
+        print("✓ Found \(events.count) calendar event(s)\n")
+
+        // Process messages second (slower)
+        print("💬 Step 2/2: Analyzing messages...")
+        let messages = try await orchestrator.getMessagesSummary(
+            platform: "all",
+            timeframe: calculateTimeframe(from: query.period.start, to: query.period.end)
+        )
+        print("✓ Found \(messages.count) message thread(s)\n")
+
+        guard let agentManager = orchestrator.publicAgentManager,
+              let taskAgent = agentManager.getTaskAgent() else {
+            print("⚠️  Agents not enabled")
+            return
+        }
+
+        print("🔄 Generating combined report...\n")
+
+        let report = try await taskAgent.analyzeAttention(
+            query: query,
+            events: events,
+            messages: messages
+        )
+
+        printDetailedAttentionReport(report)
     }
 
     static func runAttentionPlan(_ orchestrator: BriefingOrchestrator, days: Int) async {
@@ -1549,6 +1624,10 @@ struct AlfredApp {
           attention config       Interactive configuration (lookback/lookforward, limits, goals)
                                  View and edit attention preferences interactively
 
+          commitments init      Show setup instructions for Commitments Tracker
+                                 Provides database schema and configuration guide
+                                 Example: alfred commitments init
+
           schedule              Run in scheduled mode (auto-generates briefings)
           auth                  Authenticate with Google Calendar
 
@@ -1561,29 +1640,57 @@ struct AlfredApp {
         Flags:
           --notify              Send output via configured notification channels (email, Slack, push)
 
-        Examples:
-          alfred briefing
-          alfred briefing tomorrow --notify
-          alfred messages imessage 1h
-          alfred messages whatsapp "Family Group" 24h
-          alfred calendar tomorrow
-          alfred calendar primary tomorrow
-          alfred calendar work
-          alfred attention --notify
-          alfred attention init
-          alfred attention report calendar week
-          alfred attention plan 7
+        Quick Start Examples:
+          # Daily briefings
+          alfred briefing                    # Generate today's briefing
+          alfred briefing tomorrow --notify  # Tomorrow's briefing via email
+          alfred briefing +3                 # Briefing for 3 days ahead
 
-          alfred drafts         # View agent-created message drafts
-          alfred clear-drafts   # Clear all drafts
+          # Message analysis
+          alfred messages imessage 1h        # Last hour of iMessages
+          alfred messages all 24h            # All messages, last 24h
+          alfred messages whatsapp "Kunal Shah" 7d  # Specific contact, 7 days
 
-        Agent Workflow:
-          1. Run 'alfred briefing' - agents analyze messages and create drafts
-          2. Run 'alfred drafts' - review suggested responses
-          3. Manually send messages based on draft suggestions
+          # Calendar management
+          alfred calendar                    # Today's calendar
+          alfred calendar tomorrow           # Tomorrow's schedule
+          alfred calendar work next week     # Work calendar, next week
+
+          # Attention management
+          alfred attention --notify          # 3pm attention defense alert
+          alfred attention init              # Setup attention preferences
+          alfred attention report calendar week  # Weekly calendar report
+          alfred attention plan 7            # Plan next 7 days
+
+          # Commitments tracking
+          alfred commitments init            # Setup commitment tracking in Notion
+
+          # Agent drafts
+          alfred drafts                      # Review agent-created message drafts
+          alfred clear-drafts                # Clear all drafts
+
+        Workflow Examples:
+          # Morning routine
+          alfred briefing --notify           # Get briefing via email
+          alfred calendar                    # Review today's schedule
+
+          # Quick message check
+          alfred messages all 1h             # Check last hour
+          alfred messages whatsapp "Team" 24h  # Team messages today
+
+          # Weekly planning
+          alfred attention plan 7            # Plan next week
+          alfred calendar +7                 # See next week's calendar
+
+          # Agent workflow
+          alfred briefing                    # Agents analyze & create drafts
+          alfred drafts                      # Review suggested responses
+          # (Send messages manually based on drafts)
 
         Configuration:
-          Edit Config/config.json with your credentials
+          Edit ~/.config/alfred/config.json with your credentials
+          Run 'alfred attention init' to setup attention preferences
+          Run 'alfred commitments init' to setup commitment tracking
         """)
     }
 }
@@ -1641,4 +1748,382 @@ class Scheduler {
             }
         }
     }
+}
+
+// MARK: - Commitments Commands
+
+func runCommitmentsInit(_ orchestrator: BriefingOrchestrator) async {
+    print("\n🔧 COMMITMENTS TRACKER SETUP\n")
+
+    print("To use the Commitments Tracker, you need to create a database in Notion first.")
+    print("This allows you to choose where to place it in your workspace.\n")
+
+    print("📋 REQUIRED PROPERTIES FOR YOUR DATABASE:\n")
+    print("Create a new database in Notion with these properties:\n")
+
+    print("1. Title (title) - The commitment description")
+    print("2. Type (select) - Options: 'I Owe', 'They Owe Me'")
+    print("3. Status (status) - Notion's built-in status property")
+    print("4. Commitment Text (rich text) - Full commitment text")
+    print("5. Committed By (rich text) - Who made the commitment")
+    print("6. Committed To (rich text) - Who receives the commitment")
+    print("7. Source Platform (select) - Options: 'iMessage', 'WhatsApp', 'Meeting', 'Email', 'Signal'")
+    print("8. Source Thread (rich text) - Thread/conversation name")
+    print("9. Due Date (date) - When it's due")
+    print("10. Priority (select) - Options: 'Critical', 'High', 'Medium', 'Low'")
+    print("11. Original Context (rich text) - Original message context")
+    print("12. Follow-up Scheduled (date) - When to follow up")
+    print("13. Unique Hash (rich text) - Unique identifier for deduplication")
+    print("14. Created Date (created time) - Notion's built-in property")
+    print("15. Last Updated (last edited time) - Notion's built-in property\n")
+
+    print("📝 QUICK SETUP STEPS:\n")
+    print("1. Create a new database in Notion (anywhere you like)")
+    print("2. Add all the properties listed above")
+    print("3. Copy the database ID from the URL (the part after the page name)")
+    print("   Example: https://notion.so/Your-Database-1c8308445573809cb43edab74b5e0777")
+    print("            Database ID: 1c8308445573809cb43edab74b5e0777")
+    print("4. Add this to your ~/.config/alfred/config.json:\n")
+
+    print("""
+    "commitments": {
+      "enabled": true,
+      "notion_database_id": "YOUR_DATABASE_ID_HERE",
+      "auto_scan_on_briefing": true,
+      "auto_scan_contacts": ["Contact Name 1", "Contact Name 2"],
+      "default_lookback_days": 14,
+      "priority_keywords": {
+        "critical": ["urgent", "asap", "critical", "immediately"],
+        "high": ["important", "soon", "this week"],
+        "medium": ["need to", "should"],
+        "low": ["sometime", "eventually"]
+      },
+      "notification_preferences": {
+        "notify_on_overdue": true,
+        "notify_before_deadline_hours": 24
+      }
+    }
+    """)
+
+    print("\n💡 TIP: You can use Notion's 'Duplicate' feature to copy database templates if needed.")
+    print("\n✅ Once configured, use 'alfred commitments scan' to start tracking commitments!")
+}
+
+func printCommitmentsUsage() {
+    print("""
+
+    📋 COMMITMENTS TRACKER COMMANDS:
+
+    alfred commitments init
+        Initialize commitments tracker and show setup instructions
+
+    alfred commitments scan [contact_name] [days]
+        Scan messages for commitments
+        - contact_name: Name of the contact (optional, scans all if not provided)
+        - days: Number of days to look back (default: from config, usually 5-14)
+        Examples:
+          alfred commitments scan "Kunal Shah" 14
+          alfred commitments scan "Swamy Seetharaman" 7
+          alfred commitments scan 7 (scans all auto_scan_contacts)
+
+    alfred commitments list [type]
+        List all commitments
+        - type: Optional filter - "i_owe" or "they_owe"
+        Examples:
+          alfred commitments list
+          alfred commitments list i_owe
+
+    alfred commitments overdue
+        Show all overdue commitments
+
+    """)
+}
+
+func runCommitmentsScan(_ orchestrator: BriefingOrchestrator, args: [String]) async {
+    print("\n🔍 SCANNING FOR COMMITMENTS\n")
+
+    guard let config = orchestrator.config.commitments, config.enabled else {
+        print("❌ Commitments feature is not enabled in config")
+        return
+    }
+
+    guard let databaseId = config.notionDatabaseId else {
+        print("❌ Notion database ID not configured")
+        print("Run 'alfred commitments init' for setup instructions")
+        return
+    }
+
+    // Parse arguments
+    var contactName: String?
+    var lookbackDays = config.defaultLookbackDays
+
+    if args.count >= 2 {
+        // alfred commitments scan "Contact Name" 14
+        contactName = args[0]
+        if let days = Int(args[1]) {
+            lookbackDays = days
+        }
+    } else if args.count == 1 {
+        // Check if single arg is a number (days) or contact name
+        if let days = Int(args[0]) {
+            lookbackDays = days
+        } else {
+            contactName = args[0]
+        }
+    }
+
+    // Determine which contacts to scan
+    let contactsToScan: [String]
+    if let contact = contactName {
+        contactsToScan = [contact]
+        print("📱 Scanning messages with: \(contact)")
+    } else {
+        contactsToScan = config.autoScanContacts
+        print("📱 Scanning messages with: \(contactsToScan.joined(separator: ", "))")
+    }
+
+    print("📅 Looking back: \(lookbackDays) days\n")
+
+    let startDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+
+    var totalCommitmentsFound = 0
+    var totalCommitmentsSaved = 0
+
+    for contact in contactsToScan {
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print("👤 Scanning: \(contact)")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+        // Fetch messages from all platforms
+        print("  ↳ Fetching messages from all platforms...")
+        do {
+            let allMessages = try await orchestrator.fetchMessagesForContact(contact, since: startDate)
+
+            if allMessages.isEmpty {
+                print("\n  ℹ️  No messages found for \(contact)\n")
+                continue
+            }
+
+            // Count by platform
+            let whatsappCount = allMessages.filter { $0.platform == .whatsapp }.count
+            let imessageCount = allMessages.filter { $0.platform == .imessage }.count
+
+            print("  ✓ Found \(allMessages.count) message(s)")
+            if whatsappCount > 0 {
+                print("    • WhatsApp: \(whatsappCount)")
+            }
+            if imessageCount > 0 {
+                print("    • iMessage: \(imessageCount)")
+            }
+
+            print("\n  🤖 Analyzing with AI...\n")
+
+            // Group messages by thread and analyze
+            let groupedByThread = Dictionary(grouping: allMessages) { $0.threadName }
+
+            for (threadName, threadMessages) in groupedByThread {
+                guard let firstMessage = threadMessages.first else { continue }
+                let platform = firstMessage.platform
+                let threadId = firstMessage.threadId
+                let messages = threadMessages.map { $0.message }
+
+                do {
+                    let extraction = try await orchestrator.commitmentAnalyzer.analyzeMessages(
+                        messages,
+                        platform: platform,
+                        threadName: threadName,
+                        threadId: threadId
+                    )
+
+                    if extraction.commitments.isEmpty {
+                        print("  ℹ️  No commitments found in: \(threadName)")
+                    } else {
+                        print("  ✓ Found \(extraction.commitments.count) commitment(s) in: \(threadName)")
+                        totalCommitmentsFound += extraction.commitments.count
+
+                        // Save to Notion
+                        for commitment in extraction.commitments {
+                            do {
+                                // Check if commitment already exists
+                                let existingCommitment = try await orchestrator.notionServicePublic.findCommitmentByHash(
+                                    commitment.uniqueHash,
+                                    databaseId: databaseId
+                                )
+
+                                if existingCommitment != nil {
+                                    print("    ⊘ Skipped (duplicate): \(commitment.title)")
+                                } else {
+                                    try await orchestrator.notionServicePublic.createCommitment(
+                                        commitment,
+                                        databaseId: databaseId
+                                    )
+                                    print("    ✓ Saved: \(commitment.title)")
+                                    totalCommitmentsSaved += 1
+                                }
+                            } catch {
+                                print("    ✗ Failed to save: \(commitment.title) - \(error)")
+                            }
+                        }
+                    }
+                } catch {
+                    print("  ✗ Analysis failed for \(threadName): \(error)")
+                }
+            }
+
+            print("")
+        } catch {
+            print("  ✗ Failed to fetch messages: \(error)\n")
+        }
+    }
+
+    print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    print("📊 SCAN SUMMARY")
+    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    print("Total commitments found: \(totalCommitmentsFound)")
+    print("New commitments saved: \(totalCommitmentsSaved)")
+    print("Duplicates skipped: \(totalCommitmentsFound - totalCommitmentsSaved)")
+    print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+}
+
+func runCommitmentsList(_ orchestrator: BriefingOrchestrator, args: [String]) async {
+    print("\n📋 COMMITMENTS LIST\n")
+
+    guard let config = orchestrator.config.commitments, config.enabled else {
+        print("❌ Commitments feature is not enabled in config")
+        return
+    }
+
+    guard let databaseId = config.notionDatabaseId else {
+        print("❌ Notion database ID not configured")
+        return
+    }
+
+    // Parse type filter
+    var typeFilter: Commitment.CommitmentType?
+    if let arg = args.first {
+        switch arg.lowercased() {
+        case "i_owe", "iowe":
+            typeFilter = .iOwe
+        case "they_owe", "theyowe":
+            typeFilter = .theyOwe
+        default:
+            print("⚠️  Unknown type filter: \(arg) (use 'i_owe' or 'they_owe')\n")
+        }
+    }
+
+    do {
+        let commitments = try await orchestrator.notionServicePublic.queryActiveCommitments(
+            databaseId: databaseId,
+            type: typeFilter
+        )
+
+        if commitments.isEmpty {
+            print("ℹ️  No active commitments found\n")
+            return
+        }
+
+        // Group by type
+        let iOwe = commitments.filter { $0.type == .iOwe }
+        let theyOwe = commitments.filter { $0.type == .theyOwe }
+
+        if !iOwe.isEmpty && (typeFilter == nil || typeFilter == .iOwe) {
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            print("📤 I OWE (\(iOwe.count))")
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+            for commitment in iOwe.sorted(by: { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }) {
+                printCommitmentDetails(commitment)
+            }
+        }
+
+        if !theyOwe.isEmpty && (typeFilter == nil || typeFilter == .theyOwe) {
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            print("📥 THEY OWE ME (\(theyOwe.count))")
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+            for commitment in theyOwe.sorted(by: { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }) {
+                printCommitmentDetails(commitment)
+            }
+        }
+
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+    } catch {
+        print("❌ Failed to fetch commitments: \(error)\n")
+    }
+}
+
+func runCommitmentsOverdue(_ orchestrator: BriefingOrchestrator) async {
+    print("\n⚠️  OVERDUE COMMITMENTS\n")
+
+    guard let config = orchestrator.config.commitments, config.enabled else {
+        print("❌ Commitments feature is not enabled in config")
+        return
+    }
+
+    guard let databaseId = config.notionDatabaseId else {
+        print("❌ Notion database ID not configured")
+        return
+    }
+
+    do {
+        let overdueCommitments = try await orchestrator.notionServicePublic.queryOverdueCommitments(
+            databaseId: databaseId
+        )
+
+        if overdueCommitments.isEmpty {
+            print("✅ No overdue commitments!\n")
+            return
+        }
+
+        // Group by type
+        let iOwe = overdueCommitments.filter { $0.type == .iOwe }
+        let theyOwe = overdueCommitments.filter { $0.type == .theyOwe }
+
+        if !iOwe.isEmpty {
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            print("📤 I OWE - OVERDUE (\(iOwe.count))")
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+            for commitment in iOwe.sorted(by: { ($0.dueDate ?? .distantPast) < ($1.dueDate ?? .distantPast) }) {
+                printCommitmentDetails(commitment, showOverdueWarning: true)
+            }
+        }
+
+        if !theyOwe.isEmpty {
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            print("📥 THEY OWE ME - OVERDUE (\(theyOwe.count))")
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+            for commitment in theyOwe.sorted(by: { ($0.dueDate ?? .distantPast) < ($1.dueDate ?? .distantPast) }) {
+                printCommitmentDetails(commitment, showOverdueWarning: true)
+            }
+        }
+
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+    } catch {
+        print("❌ Failed to fetch overdue commitments: \(error)\n")
+    }
+}
+
+func printCommitmentDetails(_ commitment: Commitment, showOverdueWarning: Bool = false) {
+    print("  \(commitment.status.emoji) \(commitment.title)")
+    print("     From: \(commitment.committedBy) → To: \(commitment.committedTo)")
+    print("     Source: \(commitment.sourcePlatform.displayName) - \(commitment.sourceThread)")
+
+    if let dueDate = commitment.dueDate {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        let dueDateStr = formatter.string(from: dueDate)
+
+        if showOverdueWarning, let daysOverdue = commitment.daysUntilDue {
+            print("     Due: \(dueDateStr) ⚠️  \(abs(daysOverdue)) days overdue!")
+        } else {
+            print("     Due: \(dueDateStr)")
+        }
+    }
+
+    print("     Priority: \(commitment.priority.emoji) \(commitment.priority.displayName)")
+    print("")
 }

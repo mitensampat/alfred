@@ -10,6 +10,7 @@ struct AppConfig: Codable {
     let notifications: NotificationConfig
     let research: ResearchConfig
     let agents: AgentsConfig?
+    let commitments: CommitmentConfig?
 
     static func load(from path: String = "Config/config.json") -> AppConfig? {
         // Try multiple config locations in order of preference
@@ -35,6 +36,22 @@ struct AppConfig: Codable {
         }
 
         return nil
+    }
+
+    var commitmentConfig: CommitmentConfig? {
+        return commitments
+    }
+
+    var userConfig: UserSettings {
+        return user
+    }
+
+    var notionConfig: NotionConfig {
+        return notion
+    }
+
+    var aiConfig: AIConfig {
+        return ai
     }
 }
 

@@ -3,10 +3,149 @@ import Foundation
 class NotionService {
     private let apiKey: String
     private let databaseId: String
+    private var commitmentsDatabaseId: String?
 
     init(config: NotionConfig) {
         self.apiKey = config.apiKey
         self.databaseId = config.databaseId
+    }
+
+    // MARK: - Commitments Database Creation
+
+    /// Create the Commitments Tracker database automatically
+    func createCommitmentsDatabase(parentPageId: String? = nil) async throws -> String {
+        let url = URL(string: "https://api.notion.com/v1/databases")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Use parent page if provided, otherwise create in workspace root
+        let parent: [String: Any]
+        if let pageId = parentPageId {
+            parent = ["type": "page_id", "page_id": pageId]
+        } else {
+            parent = ["type": "workspace", "workspace": true]
+        }
+
+        let properties: [String: Any] = [
+            "Title": [
+                "title": [String: Any]()
+            ],
+            "Type": [
+                "select": [
+                    "options": [
+                        ["name": "I Owe", "color": "red"],
+                        ["name": "They Owe Me", "color": "blue"]
+                    ]
+                ]
+            ],
+            "Status": [
+                "status": [String: Any]()
+            ],
+            "Commitment Text": [
+                "rich_text": [String: Any]()
+            ],
+            "Committed By": [
+                "rich_text": [String: Any]()
+            ],
+            "Committed To": [
+                "rich_text": [String: Any]()
+            ],
+            "Source Platform": [
+                "select": [
+                    "options": [
+                        ["name": "iMessage", "color": "green"],
+                        ["name": "WhatsApp", "color": "green"],
+                        ["name": "Meeting", "color": "blue"],
+                        ["name": "Email", "color": "orange"],
+                        ["name": "Signal", "color": "purple"]
+                    ]
+                ]
+            ],
+            "Source Thread": [
+                "rich_text": [String: Any]()
+            ],
+            "Due Date": [
+                "date": [String: Any]()
+            ],
+            "Priority": [
+                "select": [
+                    "options": [
+                        ["name": "Critical", "color": "red"],
+                        ["name": "High", "color": "orange"],
+                        ["name": "Medium", "color": "yellow"],
+                        ["name": "Low", "color": "gray"]
+                    ]
+                ]
+            ],
+            "Original Context": [
+                "rich_text": [String: Any]()
+            ],
+            "Follow-up Scheduled": [
+                "date": [String: Any]()
+            ],
+            "Unique Hash": [
+                "rich_text": [String: Any]()
+            ],
+            "Created Date": [
+                "created_time": [String: Any]()
+            ],
+            "Last Updated": [
+                "last_edited_time": [String: Any]()
+            ]
+        ]
+
+        let body: [String: Any] = [
+            "parent": parent,
+            "title": [
+                [
+                    "type": "text",
+                    "text": ["content": "Commitments Tracker"]
+                ]
+            ],
+            "properties": properties
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw NSError(domain: "NotionService", code: 10, userInfo: [NSLocalizedDescriptionKey: "Failed to create commitments database: \(errorBody)"])
+        }
+
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard let databaseId = json?["id"] as? String else {
+            throw NSError(domain: "NotionService", code: 11, userInfo: [NSLocalizedDescriptionKey: "No database ID returned"])
+        }
+
+        self.commitmentsDatabaseId = databaseId
+        return databaseId
+    }
+
+    /// Check if commitments database exists and is accessible
+    func validateCommitmentsDatabase(databaseId: String) async throws -> Bool {
+        let url = URL(string: "https://api.notion.com/v1/databases/\(databaseId)")!
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            return false
+        }
+
+        if httpResponse.statusCode == 200 {
+            return true
+        } else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown"
+            print("⚠️  Database validation failed: \(errorBody)")
+            return false
+        }
     }
 
     // MARK: - Database Schema
@@ -578,6 +717,494 @@ class NotionService {
 
             return NotionTask(id: id, title: title, status: status, dueDate: dueDate)
         }
+    }
+
+    // MARK: - Commitments Management
+
+    /// Create a commitment in Notion
+    func createCommitment(_ commitment: Commitment, databaseId: String) async throws -> String {
+        let formattedId = formatNotionId(databaseId)
+        let url = URL(string: "https://api.notion.com/v1/pages")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        var properties: [String: Any] = [:]
+
+        // Title
+        properties["Title"] = [
+            "title": [
+                [
+                    "text": [
+                        "content": commitment.title
+                    ]
+                ]
+            ]
+        ]
+
+        // Type
+        properties["Type"] = [
+            "select": ["name": commitment.type.rawValue]
+        ]
+
+        // Status
+        properties["Status"] = [
+            "status": ["name": commitment.status.rawValue]
+        ]
+
+        // Commitment Text
+        properties["Commitment Text"] = [
+            "rich_text": [
+                [
+                    "text": [
+                        "content": commitment.commitmentText
+                    ]
+                ]
+            ]
+        ]
+
+        // Committed By
+        properties["Committed By"] = [
+            "rich_text": [
+                [
+                    "text": [
+                        "content": commitment.committedBy
+                    ]
+                ]
+            ]
+        ]
+
+        // Committed To
+        properties["Committed To"] = [
+            "rich_text": [
+                [
+                    "text": [
+                        "content": commitment.committedTo
+                    ]
+                ]
+            ]
+        ]
+
+        // Source Platform
+        properties["Source Platform"] = [
+            "select": ["name": commitment.sourcePlatform.rawValue]
+        ]
+
+        // Source Thread
+        properties["Source Thread"] = [
+            "rich_text": [
+                [
+                    "text": [
+                        "content": commitment.sourceThread
+                    ]
+                ]
+            ]
+        ]
+
+        // Due Date
+        if let dueDate = commitment.dueDate {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withFullDate]
+            properties["Due Date"] = [
+                "date": [
+                    "start": formatter.string(from: dueDate)
+                ]
+            ]
+        }
+
+        // Priority
+        let priorityName = commitment.priority.rawValue.prefix(1).uppercased() + commitment.priority.rawValue.dropFirst()
+        properties["Priority"] = [
+            "select": ["name": priorityName]
+        ]
+
+        // Original Context
+        properties["Original Context"] = [
+            "rich_text": [
+                [
+                    "text": [
+                        "content": String(commitment.originalContext.prefix(2000))  // Notion limit
+                    ]
+                ]
+            ]
+        ]
+
+        // Follow-up Scheduled
+        if let followupDate = commitment.followupScheduled {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withFullDate, .withTime, .withTimeZone]
+            properties["Follow-up Scheduled"] = [
+                "date": [
+                    "start": formatter.string(from: followupDate)
+                ]
+            ]
+        }
+
+        // Unique Hash
+        properties["Unique Hash"] = [
+            "rich_text": [
+                [
+                    "text": [
+                        "content": commitment.uniqueHash
+                    ]
+                ]
+            ]
+        ]
+
+        let body: [String: Any] = [
+            "parent": ["database_id": formattedId],
+            "properties": properties
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw NSError(domain: "NotionService", code: 12, userInfo: [NSLocalizedDescriptionKey: "Failed to create commitment: \(errorBody)"])
+        }
+
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        return json?["id"] as? String ?? "unknown"
+    }
+
+    /// Find commitment by unique hash
+    func findCommitmentByHash(_ hash: String, databaseId: String) async throws -> String? {
+        let formattedId = formatNotionId(databaseId)
+        let url = URL(string: "https://api.notion.com/v1/databases/\(formattedId)/query")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "filter": [
+                "property": "Unique Hash",
+                "rich_text": [
+                    "equals": hash
+                ]
+            ],
+            "page_size": 1
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            return nil
+        }
+
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard let results = json?["results"] as? [[String: Any]],
+              let firstResult = results.first,
+              let id = firstResult["id"] as? String else {
+            return nil
+        }
+
+        return id
+    }
+
+    /// Update commitment status
+    func updateCommitmentStatus(notionId: String, status: Commitment.CommitmentStatus) async throws {
+        let url = URL(string: "https://api.notion.com/v1/pages/\(notionId)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "properties": [
+                "Status": [
+                    "status": ["name": status.rawValue]
+                ]
+            ]
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw NSError(domain: "NotionService", code: 13, userInfo: [NSLocalizedDescriptionKey: "Failed to update commitment status: \(errorBody)"])
+        }
+    }
+
+    /// Query active commitments
+    func queryActiveCommitments(databaseId: String, type: Commitment.CommitmentType? = nil) async throws -> [Commitment] {
+        let formattedId = formatNotionId(databaseId)
+        let url = URL(string: "https://api.notion.com/v1/databases/\(formattedId)/query")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        var filters: [[String: Any]] = [
+            [
+                "property": "Status",
+                "status": ["does_not_equal": "Completed"]
+            ],
+            [
+                "property": "Status",
+                "status": ["does_not_equal": "Cancelled"]
+            ]
+        ]
+
+        if let type = type {
+            filters.append([
+                "property": "Type",
+                "select": ["equals": type.rawValue]
+            ])
+        }
+
+        let body: [String: Any] = [
+            "filter": [
+                "and": filters
+            ],
+            "sorts": [
+                [
+                    "property": "Due Date",
+                    "direction": "ascending"
+                ]
+            ],
+            "page_size": 100
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw NSError(domain: "NotionService", code: 14, userInfo: [NSLocalizedDescriptionKey: "Failed to query commitments: \(errorBody)"])
+        }
+
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let results = json?["results"] as? [[String: Any]] ?? []
+
+        return results.compactMap { parseCommitmentFromNotionPage($0) }
+    }
+
+    /// Query overdue commitments
+    func queryOverdueCommitments(databaseId: String) async throws -> [Commitment] {
+        let formattedId = formatNotionId(databaseId)
+        let url = URL(string: "https://api.notion.com/v1/databases/\(formattedId)/query")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let today = Date()
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+
+        let body: [String: Any] = [
+            "filter": [
+                "and": [
+                    [
+                        "property": "Status",
+                        "status": ["does_not_equal": "Completed"]
+                    ],
+                    [
+                        "property": "Status",
+                        "status": ["does_not_equal": "Cancelled"]
+                    ],
+                    [
+                        "property": "Due Date",
+                        "date": ["before": formatter.string(from: today)]
+                    ]
+                ]
+            ],
+            "sorts": [
+                [
+                    "property": "Due Date",
+                    "direction": "ascending"
+                ]
+            ],
+            "page_size": 100
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw NSError(domain: "NotionService", code: 15, userInfo: [NSLocalizedDescriptionKey: "Failed to query overdue commitments: \(errorBody)"])
+        }
+
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let results = json?["results"] as? [[String: Any]] ?? []
+
+        return results.compactMap { parseCommitmentFromNotionPage($0) }
+    }
+
+    /// Parse commitment from Notion page result
+    private func parseCommitmentFromNotionPage(_ result: [String: Any]) -> Commitment? {
+        guard let id = result["id"] as? String,
+              let properties = result["properties"] as? [String: Any] else {
+            return nil
+        }
+
+        // Extract title
+        var title = ""
+        if let titleProp = properties["Title"] as? [String: Any],
+           let titleArray = titleProp["title"] as? [[String: Any]],
+           let firstTitle = titleArray.first,
+           let text = firstTitle["plain_text"] as? String {
+            title = text
+        }
+
+        // Extract type
+        var typeString = "I Owe"
+        if let typeProp = properties["Type"] as? [String: Any],
+           let selectData = typeProp["select"] as? [String: Any],
+           let typeName = selectData["name"] as? String {
+            typeString = typeName
+        }
+        guard let type = Commitment.CommitmentType(rawValue: typeString) else { return nil }
+
+        // Extract status
+        var statusString = "Open"
+        if let statusProp = properties["Status"] as? [String: Any],
+           let statusData = statusProp["status"] as? [String: Any],
+           let statusName = statusData["name"] as? String {
+            statusString = statusName
+        }
+        guard let status = Commitment.CommitmentStatus(rawValue: statusString) else { return nil }
+
+        // Extract commitment text
+        var commitmentText = ""
+        if let textProp = properties["Commitment Text"] as? [String: Any],
+           let richTextArray = textProp["rich_text"] as? [[String: Any]],
+           let firstText = richTextArray.first,
+           let plainText = firstText["plain_text"] as? String {
+            commitmentText = plainText
+        }
+
+        // Extract committed by
+        var committedBy = ""
+        if let byProp = properties["Committed By"] as? [String: Any],
+           let richTextArray = byProp["rich_text"] as? [[String: Any]],
+           let firstText = richTextArray.first,
+           let plainText = firstText["plain_text"] as? String {
+            committedBy = plainText
+        }
+
+        // Extract committed to
+        var committedTo = ""
+        if let toProp = properties["Committed To"] as? [String: Any],
+           let richTextArray = toProp["rich_text"] as? [[String: Any]],
+           let firstText = richTextArray.first,
+           let plainText = firstText["plain_text"] as? String {
+            committedTo = plainText
+        }
+
+        // Extract source platform
+        var platformString = "iMessage"
+        if let platformProp = properties["Source Platform"] as? [String: Any],
+           let selectData = platformProp["select"] as? [String: Any],
+           let platformName = selectData["name"] as? String {
+            platformString = platformName
+        }
+        guard let platform = MessagePlatform(rawValue: platformString.lowercased()) else { return nil }
+
+        // Extract source thread
+        var sourceThread = ""
+        if let threadProp = properties["Source Thread"] as? [String: Any],
+           let richTextArray = threadProp["rich_text"] as? [[String: Any]],
+           let firstText = richTextArray.first,
+           let plainText = firstText["plain_text"] as? String {
+            sourceThread = plainText
+        }
+
+        // Extract due date
+        var dueDate: Date?
+        if let dateProp = properties["Due Date"] as? [String: Any],
+           let dateData = dateProp["date"] as? [String: Any],
+           let dateString = dateData["start"] as? String {
+            let formatter = ISO8601DateFormatter()
+            dueDate = formatter.date(from: dateString)
+        }
+
+        // Extract priority
+        var priorityString = "Medium"
+        if let priorityProp = properties["Priority"] as? [String: Any],
+           let selectData = priorityProp["select"] as? [String: Any],
+           let priorityName = selectData["name"] as? String {
+            priorityString = priorityName
+        }
+        let priority = UrgencyLevel(rawValue: priorityString.lowercased()) ?? .medium
+
+        // Extract original context
+        var originalContext = ""
+        if let contextProp = properties["Original Context"] as? [String: Any],
+           let richTextArray = contextProp["rich_text"] as? [[String: Any]],
+           let firstText = richTextArray.first,
+           let plainText = firstText["plain_text"] as? String {
+            originalContext = plainText
+        }
+
+        // Extract follow-up scheduled
+        var followupScheduled: Date?
+        if let followupProp = properties["Follow-up Scheduled"] as? [String: Any],
+           let dateData = followupProp["date"] as? [String: Any],
+           let dateString = dateData["start"] as? String {
+            let formatter = ISO8601DateFormatter()
+            followupScheduled = formatter.date(from: dateString)
+        }
+
+        // Extract unique hash
+        var uniqueHash = ""
+        if let hashProp = properties["Unique Hash"] as? [String: Any],
+           let richTextArray = hashProp["rich_text"] as? [[String: Any]],
+           let firstText = richTextArray.first,
+           let plainText = firstText["plain_text"] as? String {
+            uniqueHash = plainText
+        }
+
+        // Extract dates
+        var createdAt = Date()
+        if let createdTime = properties["Created Date"] as? [String: Any],
+           let createdString = createdTime["created_time"] as? String {
+            let formatter = ISO8601DateFormatter()
+            createdAt = formatter.date(from: createdString) ?? Date()
+        }
+
+        var lastUpdated = Date()
+        if let editedTime = properties["Last Updated"] as? [String: Any],
+           let editedString = editedTime["last_edited_time"] as? String {
+            let formatter = ISO8601DateFormatter()
+            lastUpdated = formatter.date(from: editedString) ?? Date()
+        }
+
+        return Commitment(
+            id: UUID(),
+            type: type,
+            status: status,
+            title: title,
+            commitmentText: commitmentText,
+            committedBy: committedBy,
+            committedTo: committedTo,
+            sourcePlatform: platform,
+            sourceThread: sourceThread,
+            dueDate: dueDate,
+            priority: priority,
+            originalContext: originalContext,
+            followupScheduled: followupScheduled,
+            notionId: id,
+            notionTaskId: nil,
+            createdAt: createdAt,
+            lastUpdated: lastUpdated
+        )
     }
 }
 

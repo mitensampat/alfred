@@ -1,27 +1,27 @@
 {
   "version": "1.0",
-  "last_updated": "2026-01-17T08:08:17Z",
+  "last_updated": "2026-01-18T04:34:09Z",
   "priorities": [
     {
       "id": "deep_work",
       "description": "Deep focused work on strategic projects",
       "weight": 0.4,
-      "keywords": ["strategic", "planning", "development", "focus time"],
-      "time_allocation": 50.0
+      "keywords": ["strategic", "planning", "development"],
+      "time_allocation": 40.0
     },
     {
       "id": "collaboration",
       "description": "Team collaboration and coordination",
       "weight": 0.3,
       "keywords": ["team", "sync", "meeting"],
-      "time_allocation": 25.0
+      "time_allocation": 30.0
     },
     {
       "id": "communication",
       "description": "Responding to messages and emails",
       "weight": 0.2,
       "keywords": ["response", "reply", "message"],
-      "time_allocation": 15.0
+      "time_allocation": 20.0
     },
     {
       "id": "administrative",
@@ -34,16 +34,16 @@
   "meeting_preferences": {
     "high_value": ["strategic", "planning", "1:1", "customer"],
     "low_value": ["status update", "fyi", "optional"],
-    "max_meetings_per_day": 6,
+    "max_meetings_per_day": 7,
     "max_meetings_per_week": 25,
-    "max_hours_per_day": 12,
-    "max_hours_per_week": 80,
+    "max_hours_per_day": 9.0,
+    "max_hours_per_week": 75.0,
     "category_overrides": {},
     "minimum_focus_block_hours": 2.5,
-    "preferred_focus_time_slots": ["9.30am-1pm", "2pm-7.30pm"]
+    "preferred_focus_time_slots": ["9am-1pm", "2pm-7:30pm"]
   },
   "messaging_preferences": {
-    "high_priority_contacts": ["Kunal Shah", "Swamy Seetharaman", "Vinayak Narayan CRED", "Mona Gandhi"],
+    "high_priority_contacts": [],
     "low_priority_contacts": [],
     "target_response_time_urgent": 3600,
     "target_response_time_important": 14400,
@@ -55,19 +55,19 @@
     "goals": [
       {
         "category": "Strategic",
-        "target_percentage": 50.0,
+        "target_percentage": 40.0,
         "current_percentage": null,
         "variance": null
       },
       {
         "category": "Collaborative",
-        "target_percentage": 25.0,
+        "target_percentage": 30.0,
         "current_percentage": null,
         "variance": null
       },
       {
         "category": "Tactical",
-        "target_percentage": 15.0,
+        "target_percentage": 20.0,
         "current_percentage": null,
         "variance": null
       },
@@ -78,5 +78,10 @@
         "variance": null
       }
     ]
+  },
+  "query_defaults": {
+    "default_lookback_days": 7,
+    "default_lookforward_days": 14,
+    "week_start_day": "monday"
   }
 }
