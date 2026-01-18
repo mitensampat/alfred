@@ -7,12 +7,29 @@ class FollowupAgent: AgentProtocol {
 
     private let appConfig: AppConfig
     private let learningEngine: LearningEngine
+    private var commitmentAnalyzer: CommitmentAnalyzer?
+    private var notionService: NotionService?
 
     init(config: AgentConfig, appConfig: AppConfig, learningEngine: LearningEngine) {
         self.config = config
         self.autonomyLevel = config.autonomyLevel
         self.appConfig = appConfig
         self.learningEngine = learningEngine
+
+        // Initialize commitment tracking if enabled
+        if let commitmentConfig = appConfig.commitmentConfig,
+           commitmentConfig.enabled,
+           let analysisModel = appConfig.aiConfig.messageAnalysisModel {
+            self.commitmentAnalyzer = CommitmentAnalyzer(
+                anthropicApiKey: appConfig.aiConfig.anthropicApiKey,
+                model: analysisModel,
+                userInfo: CommitmentAnalyzer.UserInfo(
+                    name: appConfig.userConfig.name,
+                    email: appConfig.userConfig.email
+                )
+            )
+            self.notionService = NotionService(config: appConfig.notionConfig)
+        }
     }
 
     // MARK: - Evaluation
@@ -273,6 +290,66 @@ class FollowupAgent: AgentProtocol {
             alternatives: ["Skip follow-up", "Manual verification"],
             requiresApproval: false  // Will be determined by AgentManager
         )
+    }
+
+    // MARK: - Commitment Persistence
+
+    /// Save commitment to Notion database
+    func saveCommitmentToNotion(_ commitment: Commitment) async throws -> String? {
+        guard let notionService = notionService,
+              let commitmentConfig = appConfig.commitmentConfig,
+              let databaseId = commitmentConfig.notionDatabaseId else {
+            print("⚠️  Commitment tracking not configured")
+            return nil
+        }
+
+        // Check for duplicates
+        if let existingId = try await notionService.findCommitmentByHash(commitment.uniqueHash, databaseId: databaseId) {
+            print("ℹ️  Commitment already exists (hash: \(commitment.uniqueHash.prefix(8))...)")
+            return existingId
+        }
+
+        // Create new commitment
+        let notionId = try await notionService.createCommitment(commitment, databaseId: databaseId)
+        print("✅ Saved commitment to Notion: \(notionId)")
+        return notionId
+    }
+
+    /// Check Notion for overdue commitments and create reminders
+    func syncOverdueCommitments() async throws -> [AgentDecision] {
+        guard let notionService = notionService,
+              let commitmentConfig = appConfig.commitmentConfig,
+              let databaseId = commitmentConfig.notionDatabaseId else {
+            return []
+        }
+
+        let overdueCommitments = try await notionService.queryOverdueCommitments(databaseId: databaseId)
+        var decisions: [AgentDecision] = []
+
+        for commitment in overdueCommitments where commitment.type == .iOwe {
+            // Create urgent follow-up for overdue "I Owe" commitments
+            let followup = FollowupReminder(
+                originalContext: "Overdue commitment: \(commitment.title)",
+                followupAction: commitment.commitmentText,
+                scheduledFor: Date(),  // Now
+                priority: .critical
+            )
+
+            let decision = AgentDecision(
+                agentType: .followup,
+                action: .createFollowup(followup),
+                reasoning: "Commitment '\(commitment.title)' is overdue. Creating urgent reminder.",
+                confidence: 0.95,
+                context: "overdue_commitment_\(commitment.uniqueHash)",
+                risks: ["Overdue commitment may impact relationships"],
+                alternatives: ["Mark as cancelled", "Extend deadline"],
+                requiresApproval: false
+            )
+
+            decisions.append(decision)
+        }
+
+        return decisions
     }
 
     // MARK: - Execution

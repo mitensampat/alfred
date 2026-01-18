@@ -13,6 +13,10 @@ class BriefingOrchestrator {
     private let notionService: NotionService
     private var agentManager: AgentManager?
 
+    // Public accessors for commitments feature
+    let commitmentAnalyzer: CommitmentAnalyzer
+    var notionServicePublic: NotionService { notionService }
+
     init(config: AppConfig) {
         self.config = config
 
@@ -25,6 +29,16 @@ class BriefingOrchestrator {
         self.researchService = ResearchService(config: config, aiService: aiService)
         self.notificationService = NotificationService(config: config.notifications)
         self.notionService = NotionService(config: config.notion)
+
+        // Initialize commitment analyzer
+        self.commitmentAnalyzer = CommitmentAnalyzer(
+            anthropicApiKey: config.ai.anthropicApiKey,
+            model: config.ai.model,
+            userInfo: CommitmentAnalyzer.UserInfo(
+                name: config.user.name,
+                email: config.user.email
+            )
+        )
 
         // Initialize agent manager if agents are enabled
         if let agentsConfig = config.agents, agentsConfig.enabled {
@@ -944,5 +958,56 @@ class BriefingOrchestrator {
     /// Access the agent manager (public accessor)
     var publicAgentManager: AgentManager? {
         return agentManager
+    }
+
+    // MARK: - Commitments Support
+
+    /// Fetch messages for a specific contact from all platforms
+    func fetchMessagesForContact(_ contactName: String, since: Date) async throws -> [(message: Message, platform: MessagePlatform, threadName: String, threadId: String)] {
+        var allMessages: [(Message, MessagePlatform, String, String)] = []
+
+        // iMessage
+        if config.messaging.imessage.enabled {
+            do {
+                try imessageReader.connect()
+                let threads = try imessageReader.fetchThreads(since: since)
+                imessageReader.disconnect()
+
+                let matchingThreads = threads.filter { thread in
+                    thread.threadName.localizedCaseInsensitiveContains(contactName)
+                }
+
+                for thread in matchingThreads {
+                    for message in thread.messages {
+                        allMessages.append((message, .imessage, thread.threadName, thread.threadId))
+                    }
+                }
+            } catch {
+                print("  ✗ Failed to fetch iMessages: \(error)")
+            }
+        }
+
+        // WhatsApp
+        if config.messaging.whatsapp.enabled {
+            do {
+                try whatsappReader.connect()
+                let threads = try whatsappReader.fetchThreads(since: since)
+                whatsappReader.disconnect()
+
+                let matchingThreads = threads.filter { thread in
+                    thread.threadName.localizedCaseInsensitiveContains(contactName)
+                }
+
+                for thread in matchingThreads {
+                    for message in thread.messages {
+                        allMessages.append((message, .whatsapp, thread.threadName, thread.threadId))
+                    }
+                }
+            } catch {
+                print("  ✗ Failed to fetch WhatsApp messages: \(error)")
+            }
+        }
+
+        return allMessages
     }
 }

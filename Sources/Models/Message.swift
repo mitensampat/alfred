@@ -5,6 +5,15 @@ enum MessagePlatform: String, Codable {
     case whatsapp
     case signal
     case email
+
+    var displayName: String {
+        switch self {
+        case .imessage: return "iMessage"
+        case .whatsapp: return "WhatsApp"
+        case .signal: return "Signal"
+        case .email: return "Email"
+        }
+    }
 }
 
 enum MessageDirection: String, Codable {
@@ -43,6 +52,15 @@ struct MessageThread: Codable {
             Calendar.current.isDateInToday($0.timestamp)
         }
     }
+
+    // Helper properties for commitments feature
+    var threadName: String {
+        return contactName ?? contactIdentifier
+    }
+
+    var threadId: String {
+        return contactIdentifier
+    }
 }
 
 struct MessageSummary: Codable {
@@ -67,5 +85,23 @@ enum UrgencyLevel: String, Codable, Comparable {
             return false
         }
         return lhsIndex < rhsIndex
+    }
+
+    var displayName: String {
+        switch self {
+        case .critical: return "Critical"
+        case .high: return "High"
+        case .medium: return "Medium"
+        case .low: return "Low"
+        }
+    }
+
+    var emoji: String {
+        switch self {
+        case .critical: return "🔴"
+        case .high: return "🟠"
+        case .medium: return "🟡"
+        case .low: return "🟢"
+        }
     }
 }
