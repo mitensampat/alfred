@@ -1,5 +1,34 @@
 # Changes Summary
 
+## Latest: Commitments Tracker Enhancement (v1.2.1)
+
+### Enhanced Command-Line Arguments
+- **Flexible lookback period**: Now supports both numeric (`14`) and suffixed (`14d`) formats
+- **Better UX**: More intuitive command syntax matching natural language
+- **Example usage**: `alfred commitments scan "Akshay Aedula" 14d`
+
+**All supported formats:**
+```bash
+# Scan specific person with lookback period
+alfred commitments scan "Akshay Aedula" 14d
+alfred commitments scan "Kunal Shah" 14
+
+# Scan all configured contacts with custom lookback
+alfred commitments scan 7d
+alfred commitments scan 7
+
+# Scan specific person with default lookback (from config)
+alfred commitments scan "Swamy Seetharaman"
+
+# Scan all configured contacts with default lookback
+alfred commitments scan
+```
+
+**Implementation:**
+- Added `parseDaysArgument()` helper function supporting both "14" and "14d" formats
+- Updated usage documentation with examples
+- Fully backward compatible with existing syntax
+
 ## New Features
 
 ### 1. **Gmail/Email Integration**
