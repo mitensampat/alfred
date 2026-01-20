@@ -1817,14 +1817,15 @@ func printCommitmentsUsage() {
     alfred commitments init
         Initialize commitments tracker and show setup instructions
 
-    alfred commitments scan [contact_name] [days]
+    alfred commitments scan [contact_name] [lookback_period]
         Scan messages for commitments
         - contact_name: Name of the contact (optional, scans all if not provided)
-        - days: Number of days to look back (default: from config, usually 5-14)
+        - lookback_period: Days to look back - supports "14" or "14d" (default: from config)
         Examples:
-          alfred commitments scan "Kunal Shah" 14
+          alfred commitments scan "Kunal Shah" 14d
+          alfred commitments scan "Akshay Aedula" 14d
           alfred commitments scan "Swamy Seetharaman" 7
-          alfred commitments scan 7 (scans all auto_scan_contacts)
+          alfred commitments scan 7d (scans all auto_scan_contacts)
 
     alfred commitments list [type]
         List all commitments
@@ -1837,6 +1838,24 @@ func printCommitmentsUsage() {
         Show all overdue commitments
 
     """)
+}
+
+/// Parse days argument supporting both "14" and "14d" formats
+func parseDaysArgument(_ arg: String) -> Int? {
+    // Try parsing as plain integer first
+    if let days = Int(arg) {
+        return days
+    }
+
+    // Try parsing with "d" suffix (e.g., "14d")
+    if arg.hasSuffix("d") || arg.hasSuffix("D") {
+        let numericPart = arg.dropLast()
+        if let days = Int(numericPart) {
+            return days
+        }
+    }
+
+    return nil
 }
 
 func runCommitmentsScan(_ orchestrator: BriefingOrchestrator, args: [String]) async {
@@ -1858,14 +1877,14 @@ func runCommitmentsScan(_ orchestrator: BriefingOrchestrator, args: [String]) as
     var lookbackDays = config.defaultLookbackDays
 
     if args.count >= 2 {
-        // alfred commitments scan "Contact Name" 14
+        // alfred commitments scan "Contact Name" 14d
         contactName = args[0]
-        if let days = Int(args[1]) {
+        if let days = parseDaysArgument(args[1]) {
             lookbackDays = days
         }
     } else if args.count == 1 {
         // Check if single arg is a number (days) or contact name
-        if let days = Int(args[0]) {
+        if let days = parseDaysArgument(args[0]) {
             lookbackDays = days
         } else {
             contactName = args[0]
