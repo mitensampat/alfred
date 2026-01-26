@@ -10,10 +10,11 @@ class AgentManager {
     private let decisionLog: DecisionLog
     private let executionEngine: ExecutionEngine
     private let learningEngine: LearningEngine
+    private let sharedContext = SharedContextService.shared
 
     init(config: AgentConfig, appConfig: AppConfig) throws {
         self.config = config
-        self.decisionLog = try DecisionLog()
+        self.decisionLog = DecisionLog.shared
         self.executionEngine = ExecutionEngine(appConfig: appConfig)
         self.learningEngine = try LearningEngine(config: config)
 
@@ -37,10 +38,39 @@ class AgentManager {
     func evaluateContext(_ context: AgentContext) async throws -> [AgentDecision] {
         var allDecisions: [AgentDecision] = []
 
-        // Let each agent evaluate the context
+        // First, let agents process any cross-agent alerts
+        for agent in agents {
+            let alerts = sharedContext.getAlertsFor(agentType: agent.agentType)
+            if !alerts.isEmpty {
+                await agent.processAlerts(alerts)
+            }
+        }
+
+        // Let each agent evaluate the context with awareness of shared context
         for agent in agents {
             let decisions = try await agent.evaluate(context: context)
+
+            // Record each decision in shared context for cross-agent awareness
+            for decision in decisions {
+                sharedContext.recordDecision(decision)
+            }
+
             allDecisions.append(contentsOf: decisions)
+
+            // Collect and share insights from each agent
+            let insights = agent.shareInsights()
+            for insight in insights {
+                sharedContext.shareInsight(insight)
+            }
+        }
+
+        // Check for cross-agent suggestions after all agents have evaluated
+        let suggestions = sharedContext.getPendingSuggestions()
+        if !suggestions.isEmpty {
+            print("  🔄 Cross-agent coordination suggestions: \(suggestions.count)")
+            for suggestion in suggestions {
+                print("    • \(suggestion.title)")
+            }
         }
 
         // Sort by confidence (highest first)

@@ -5,6 +5,49 @@ All notable changes to Alfred will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-01-26
+
+### Added
+- **Proactive Agent Insights**: Agents now surface insights without being asked
+  - Daily briefings include agent observations, commitment reminders, and cross-agent suggestions
+  - New `AgentInsights` section in briefings with proactive notices
+  - Communication + Calendar coordination suggestions
+- **Unified Commitments & Follow-ups**: Single view for all commitments
+  - "I Owe" - commitments you made
+  - "They Owe Me" - commitments others made
+  - "Follow-ups" - reminders to check on things
+  - Overdue indicators and due dates
+- **Daily Agent Digest**: End-of-day summary of agent activity
+  - CLI: `alfred digest` to generate and optionally email digest
+  - API: `GET /api/agent-digest`
+  - Web UI: New "Agent Digest" quick action button
+  - Summary of decisions, learnings, and recommendations
+- **Cross-Agent Coordination**: Agents now share context and work together
+  - `SharedContextService` for inter-agent communication
+  - Agents can raise alerts for other agents
+  - Cross-agent suggestions (e.g., "wait until after meeting to message")
+  - Activity tracking across all agents
+- **Follow-up Task Type**: Unified Tasks database now supports Follow-ups
+  - TaskItem model extended with `.followup` type
+  - Follow-ups stored in Notion alongside Todos and Commitments
+  - Automatic deduplication using hash
+- **Web UI Improvements**
+  - Updated Commitments button shows unified view (I Owe, They Owe Me, Follow-ups)
+  - New Agent Digest quick action button
+  - Better commitment formatting with overdue indicators
+
+### Changed
+- DecisionLog now uses singleton pattern for consistent tracking
+- AgentManager integrates SharedContextService for cross-agent awareness
+- BriefingOrchestrator includes `generateAgentDigest()` method
+- NotionService+Tasks supports Follow-up type in schema
+
+### Technical
+- New `SharedContextService` for agent coordination
+- Extended `AgentProtocol` with optional cross-agent methods
+- `AgentDigest` and related models for daily summaries
+- 1 new API endpoint: `/api/agent-digest`
+
 ## [1.3.1] - 2026-01-26
 
 ### Added
@@ -126,6 +169,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 1.4.0 | 2026-01-26 | Proactive insights, unified commitments, agent digest, cross-agent coordination |
 | 1.3.1 | 2026-01-26 | Agent memory system, teach mode, learning consolidation |
 | 1.3.0 | 2026-01-26 | Web interface, HTTP API, query caching |
 | 1.2.0 | 2026-01-20 | Commitments tracker with AI extraction |

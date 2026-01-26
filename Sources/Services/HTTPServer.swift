@@ -190,6 +190,9 @@ class HTTPServer {
         case ("GET", "/api/agents/status"):
             return handleAgentLearningStatus(request)
 
+        case ("GET", "/api/agent-digest"):
+            return await handleAgentDigest()
+
         default:
             return HTTPResponse(
                 statusCode: 404,
@@ -1527,6 +1530,93 @@ The Commitment Check feature requires a properly configured Notion database.
                 "agents": agentStatuses
             ]
         )
+    }
+
+    private func handleAgentDigest() async -> HTTPResponse {
+        do {
+            let digest = try await alfredService.generateAgentDigest()
+
+            var responseText = "📊 **Daily Agent Digest**\n\n"
+
+            // Summary
+            responseText += "**Summary**\n"
+            responseText += "- Total Decisions: \(digest.summary.totalDecisions)\n"
+            responseText += "- Executed: \(digest.summary.decisionsExecuted)\n"
+            responseText += "- Pending Review: \(digest.summary.decisionsPending)\n"
+            responseText += "- New Learnings: \(digest.summary.newLearningsCount)\n"
+            responseText += "- Follow-ups Created: \(digest.summary.followupsCreated)\n\n"
+
+            // Agent Activity
+            responseText += "**Agent Activity**\n"
+            for activity in digest.agentActivity where activity.decisionsCount > 0 {
+                let successPct = Int(activity.successRate * 100)
+                responseText += "\n**\(activity.agentType.displayName)**: \(activity.decisionsCount) decisions (\(successPct)% success)\n"
+                if let topAction = activity.topAction {
+                    responseText += "  Top action: \(topAction)\n"
+                }
+            }
+
+            // Commitment Status
+            responseText += "\n**Commitment Status**\n"
+            responseText += "- I Owe (Active): \(digest.commitmentStatus.activeIOwe)\n"
+            responseText += "- They Owe Me: \(digest.commitmentStatus.activeTheyOwe)\n"
+            responseText += "- Overdue: \(digest.commitmentStatus.overdueCount)\n"
+            responseText += "- Due This Week: \(digest.commitmentStatus.upcomingThisWeek)\n"
+
+            // Upcoming Follow-ups
+            if !digest.upcomingFollowups.isEmpty {
+                responseText += "\n**Upcoming Follow-ups (\(digest.upcomingFollowups.count))**\n"
+                for followup in digest.upcomingFollowups.prefix(3) {
+                    let overdueTag = followup.isOverdue ? " ⚠️" : ""
+                    responseText += "- \(followup.title)\(overdueTag)\n"
+                }
+            }
+
+            // Recommendations
+            if !digest.recommendations.isEmpty {
+                responseText += "\n**Recommendations**\n"
+                for rec in digest.recommendations {
+                    responseText += "• \(rec)\n"
+                }
+            }
+
+            return HTTPResponse(
+                statusCode: 200,
+                body: [
+                    "response": responseText,
+                    "data": [
+                        "summary": [
+                            "totalDecisions": digest.summary.totalDecisions,
+                            "decisionsExecuted": digest.summary.decisionsExecuted,
+                            "decisionsPending": digest.summary.decisionsPending,
+                            "newLearningsCount": digest.summary.newLearningsCount,
+                            "followupsCreated": digest.summary.followupsCreated
+                        ],
+                        "commitmentStatus": [
+                            "activeIOwe": digest.commitmentStatus.activeIOwe,
+                            "activeTheyOwe": digest.commitmentStatus.activeTheyOwe,
+                            "overdueCount": digest.commitmentStatus.overdueCount,
+                            "upcomingThisWeek": digest.commitmentStatus.upcomingThisWeek
+                        ],
+                        "upcomingFollowups": digest.upcomingFollowups.map { [
+                            "title": $0.title,
+                            "scheduledFor": ISO8601DateFormatter().string(from: $0.scheduledFor),
+                            "context": $0.context,
+                            "isOverdue": $0.isOverdue
+                        ] },
+                        "recommendations": digest.recommendations
+                    ]
+                ]
+            )
+        } catch {
+            return HTTPResponse(
+                statusCode: 500,
+                body: [
+                    "error": "Failed to generate agent digest",
+                    "details": error.localizedDescription
+                ]
+            )
+        }
     }
 
     private func formatAgentsSummary(_ agents: [[String: Any]]) -> String {

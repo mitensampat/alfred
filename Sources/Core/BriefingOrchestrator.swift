@@ -144,6 +144,22 @@ class BriefingOrchestrator {
             }
         }
 
+        // 7. Gather agent insights (proactive notices, recent learnings, commitment reminders)
+        var agentInsights: AgentInsights? = nil
+        if agentManager != nil {
+            print("🧠 Gathering agent insights...")
+            agentInsights = try await gatherAgentInsights(
+                messagingSummary: messagingSummary,
+                calendarBriefing: calendarBriefing,
+                notionTasks: notionTasks
+            )
+            if let insights = agentInsights, !insights.isEmpty {
+                print("✓ Agent insights: \(insights.recentLearnings.count) learnings, \(insights.proactiveNotices.count) notices, \(insights.commitmentReminders.count) reminders\n")
+            } else {
+                print("ℹ️  No significant agent insights\n")
+            }
+        }
+
         let briefing = DailyBriefing(
             date: date,
             messagingSummary: messagingSummary,
@@ -151,6 +167,7 @@ class BriefingOrchestrator {
             actionItems: actionItems,
             notionContext: NotionContext(notes: notionNotes, tasks: notionTasks),
             agentDecisions: agentDecisions,
+            agentInsights: agentInsights,
             generatedAt: Date()
         )
 
@@ -1133,5 +1150,412 @@ class BriefingOrchestrator {
         let data = Data(combined.utf8)
         let hash = SHA256.hash(data: data)
         return hash.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    // MARK: - Agent Insights
+
+    /// Gather proactive insights from all agents for the briefing
+    private func gatherAgentInsights(
+        messagingSummary: MessagingSummary,
+        calendarBriefing: CalendarBriefing,
+        notionTasks: [NotionTask]
+    ) async throws -> AgentInsights {
+        let memoryService = AgentMemoryService.shared
+
+        // 1. Gather recent learnings from all agents (last 24 hours)
+        var recentLearnings: [AgentLearning] = []
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+
+        let allAgentTypes: [AgentType] = [.communication, .task, .calendar, .followup]
+        for agentType in allAgentTypes {
+            let memory = memoryService.getMemory(for: agentType)
+
+            // Parse recent learnings from memory
+            if let learnedSection = extractSection(from: memory.content, named: "Learned Patterns") {
+                let learnings = parseRecentLearnings(learnedSection, agentType: agentType, since: yesterday)
+                recentLearnings.append(contentsOf: learnings)
+            }
+        }
+
+        // 2. Generate proactive notices based on context
+        var proactiveNotices: [ProactiveNotice] = []
+
+        // Communication agent notices
+        if messagingSummary.stats.threadsNeedingResponse > 5 {
+            proactiveNotices.append(ProactiveNotice(
+                agentType: .communication,
+                title: "High message backlog",
+                message: "You have \(messagingSummary.stats.threadsNeedingResponse) threads awaiting response. Consider batch-responding to clear your inbox.",
+                priority: .medium,
+                suggestedAction: "Review messages summary and prioritize responses",
+                relatedContext: nil
+            ))
+        }
+
+        // Check for VIP contacts needing response
+        let vipPatterns = extractVIPPatterns(from: memoryService.getMemory(for: .communication).content)
+        for summary in messagingSummary.needsResponse {
+            if let contactName = summary.thread.contactName,
+               vipPatterns.contains(where: { contactName.lowercased().contains($0.lowercased()) }) {
+                proactiveNotices.append(ProactiveNotice(
+                    agentType: .communication,
+                    title: "VIP contact waiting",
+                    message: "\(contactName) is in your VIP list and has an unanswered message.",
+                    priority: .high,
+                    suggestedAction: "Prioritize responding to \(contactName)",
+                    relatedContext: summary.summary
+                ))
+            }
+        }
+
+        // Calendar agent notices
+        let meetingHours = calendarBriefing.schedule.totalMeetingTime / 3600
+        if meetingHours > 6 {
+            proactiveNotices.append(ProactiveNotice(
+                agentType: .calendar,
+                title: "Heavy meeting day",
+                message: "You have \(Int(meetingHours)) hours of meetings. Based on your patterns, this impacts your deep work capacity.",
+                priority: .medium,
+                suggestedAction: "Block time for essential tasks between meetings",
+                relatedContext: nil
+            ))
+        }
+
+        // Task agent notices
+        let overdueTasks = notionTasks.filter { task in
+            if let dueDate = task.dueDate, dueDate < Date() {
+                return task.status.lowercased() != "done" && task.status.lowercased() != "completed"
+            }
+            return false
+        }
+        if !overdueTasks.isEmpty {
+            proactiveNotices.append(ProactiveNotice(
+                agentType: .task,
+                title: "\(overdueTasks.count) overdue task(s)",
+                message: "Tasks need attention: \(overdueTasks.prefix(3).map { $0.title }.joined(separator: ", "))\(overdueTasks.count > 3 ? "..." : "")",
+                priority: .high,
+                suggestedAction: "Review and reschedule or complete overdue tasks",
+                relatedContext: nil
+            ))
+        }
+
+        // 3. Check for commitment reminders (from Notion)
+        var commitmentReminders: [CommitmentReminder] = []
+
+        if let commitmentConfig = config.commitments,
+           let databaseId = commitmentConfig.notionDatabaseId {
+            do {
+                let overdueCommitments = try await notionService.queryOverdueCommitments(databaseId: databaseId)
+
+                for commitment in overdueCommitments.prefix(5) {
+                    let daysOverdue: Int?
+                    if let dueDate = commitment.dueDate {
+                        daysOverdue = Calendar.current.dateComponents([.day], from: dueDate, to: Date()).day
+                    } else {
+                        daysOverdue = nil
+                    }
+
+                    commitmentReminders.append(CommitmentReminder(
+                        commitment: commitment.title,
+                        committedTo: commitment.committedTo,
+                        dueDate: commitment.dueDate,
+                        daysOverdue: daysOverdue,
+                        source: commitment.sourcePlatform.rawValue,
+                        suggestedAction: commitment.type == .iOwe ? "Complete and deliver" : "Follow up with \(commitment.committedBy)"
+                    ))
+                }
+
+                // Also check for upcoming commitments (due within 24 hours)
+                let upcomingCommitments = try await notionService.queryUpcomingCommitments(databaseId: databaseId, withinHours: 24)
+                for commitment in upcomingCommitments.prefix(3) {
+                    commitmentReminders.append(CommitmentReminder(
+                        commitment: commitment.title,
+                        committedTo: commitment.committedTo,
+                        dueDate: commitment.dueDate,
+                        daysOverdue: nil,
+                        source: commitment.sourcePlatform.rawValue,
+                        suggestedAction: "Due soon - prioritize today"
+                    ))
+                }
+            } catch {
+                // Silently ignore commitment query errors
+            }
+        }
+
+        // 4. Cross-agent suggestions
+        var crossAgentSuggestions: [CrossAgentSuggestion] = []
+
+        // Communication + Calendar: External meeting with pending response
+        for briefing in calendarBriefing.meetingBriefings {
+            for attendee in briefing.event.externalAttendees {
+                let attendeeName = attendee.name ?? attendee.email.components(separatedBy: "@").first ?? attendee.email
+                if messagingSummary.needsResponse.contains(where: {
+                    $0.thread.contactName?.lowercased().contains(attendeeName.lowercased()) ?? false
+                }) {
+                    crossAgentSuggestions.append(CrossAgentSuggestion(
+                        title: "Reply before meeting",
+                        description: "You have a pending message from \(attendeeName) and a meeting with them today. Consider responding before the meeting.",
+                        involvedAgents: [.communication, .calendar],
+                        confidence: 0.85
+                    ))
+                }
+            }
+        }
+
+        // Task + Followup: Completed tasks that might need follow-up
+        let completedTasks = notionTasks.filter {
+            $0.status.lowercased() == "done" || $0.status.lowercased() == "completed"
+        }
+        let communicationTasks = completedTasks.filter { task in
+            let keywords = ["send", "share", "deliver", "email", "message", "notify"]
+            return keywords.contains { task.title.lowercased().contains($0) }
+        }
+        if !communicationTasks.isEmpty {
+            crossAgentSuggestions.append(CrossAgentSuggestion(
+                title: "Follow up on deliverables",
+                description: "You completed \(communicationTasks.count) task(s) involving communication. Consider following up to confirm receipt.",
+                involvedAgents: [.task, .followup],
+                confidence: 0.7
+            ))
+        }
+
+        return AgentInsights(
+            recentLearnings: recentLearnings,
+            proactiveNotices: proactiveNotices,
+            commitmentReminders: commitmentReminders,
+            crossAgentSuggestions: crossAgentSuggestions
+        )
+    }
+
+    /// Extract a section from markdown memory content
+    private func extractSection(from markdown: String, named sectionName: String) -> String? {
+        let pattern = "## \(sectionName)\n([\\s\\S]*?)(?=\n## |$)"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []),
+              let match = regex.firstMatch(in: markdown, options: [], range: NSRange(markdown.startIndex..., in: markdown)),
+              let range = Range(match.range(at: 1), in: markdown) else {
+            return nil
+        }
+        return String(markdown[range])
+    }
+
+    /// Parse recent learnings from a memory section
+    private func parseRecentLearnings(_ section: String, agentType: AgentType, since: Date) -> [AgentLearning] {
+        var learnings: [AgentLearning] = []
+        let lines = section.components(separatedBy: "\n").filter { $0.hasPrefix("- ") }
+
+        let dateFormatter = ISO8601DateFormatter()
+
+        for line in lines.prefix(5) {
+            // Try to extract date from line (format: "- [date] learning text")
+            if let bracketStart = line.firstIndex(of: "["),
+               let bracketEnd = line.firstIndex(of: "]"),
+               bracketStart < bracketEnd {
+                let dateStr = String(line[line.index(after: bracketStart)..<bracketEnd])
+                if let learnedDate = dateFormatter.date(from: dateStr), learnedDate >= since {
+                    let text = String(line[line.index(after: bracketEnd)...]).trimmingCharacters(in: .whitespaces)
+                    learnings.append(AgentLearning(
+                        agentType: agentType,
+                        description: text,
+                        learnedAt: learnedDate,
+                        confidence: 0.7
+                    ))
+                }
+            } else {
+                // No date, assume it's recent
+                let text = String(line.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+                if !text.isEmpty {
+                    learnings.append(AgentLearning(
+                        agentType: agentType,
+                        description: text,
+                        learnedAt: Date(),
+                        confidence: 0.6
+                    ))
+                }
+            }
+        }
+
+        return learnings
+    }
+
+    /// Extract VIP contact patterns from communication agent memory
+    private func extractVIPPatterns(from memory: String) -> [String] {
+        var vips: [String] = []
+
+        // Look for VIP mentions in rules or patterns
+        let lines = memory.components(separatedBy: "\n")
+        for line in lines {
+            let lowercased = line.lowercased()
+            if lowercased.contains("vip") || lowercased.contains("priority") || lowercased.contains("important contact") {
+                // Extract name from the line
+                let words = line.components(separatedBy: CharacterSet.alphanumerics.inverted)
+                    .filter { $0.count > 2 && $0.first?.isUppercase == true }
+                vips.append(contentsOf: words)
+            }
+        }
+
+        return vips
+    }
+
+    // MARK: - Agent Digest Generation
+
+    /// Generate a daily agent digest for end-of-day email
+    func generateAgentDigest() async throws -> AgentDigest {
+        let memoryService = AgentMemoryService.shared
+        let decisionLog = DecisionLog.shared
+
+        // 1. Get today's decisions from the decision log
+        let todaysDecisions = try decisionLog.getDecisionsForToday()
+        let executedCount = todaysDecisions.filter {
+            if case .success = decisionLog.getExecutionResult(for: $0.id) { return true }
+            return false
+        }.count
+        let pendingReview = todaysDecisions.filter { $0.requiresApproval &&
+            decisionLog.getExecutionResult(for: $0.id) == nil }
+
+        // 2. Gather new learnings from today
+        let today = Calendar.current.startOfDay(for: Date())
+        var newLearnings: [AgentLearning] = []
+        for agentType in [AgentType.communication, .task, .calendar, .followup] {
+            let learnings = parseRecentLearnings(memoryService.getMemory(for: agentType).content,
+                                                  agentType: agentType,
+                                                  since: today)
+            newLearnings.append(contentsOf: learnings)
+        }
+
+        // 3. Build agent activity summaries
+        var agentActivity: [AgentActivitySummary] = []
+        for agentType in [AgentType.communication, .task, .calendar, .followup] {
+            let agentDecisions = todaysDecisions.filter { $0.agentType == agentType }
+            let successCount = agentDecisions.filter {
+                if case .success = decisionLog.getExecutionResult(for: $0.id) { return true }
+                return false
+            }.count
+            let successRate = agentDecisions.isEmpty ? 0.0 : Double(successCount) / Double(agentDecisions.count)
+
+            // Find most common action type
+            var actionCounts: [String: Int] = [:]
+            for decision in agentDecisions {
+                let actionKey = decision.action.description.components(separatedBy: ":").first ?? "Unknown"
+                actionCounts[actionKey, default: 0] += 1
+            }
+            let topAction = actionCounts.max(by: { $0.value < $1.value })?.key
+
+            // Get key insight from memory
+            let memory = memoryService.getMemory(for: agentType)
+            let keyInsight = extractSection(from: memory.content, named: "Active Rules")?
+                .components(separatedBy: "\n")
+                .first { $0.hasPrefix("- ") }?
+                .dropFirst(2)
+                .prefix(60)
+                .description
+
+            agentActivity.append(AgentActivitySummary(
+                agentType: agentType,
+                decisionsCount: agentDecisions.count,
+                successRate: successRate,
+                topAction: topAction,
+                keyInsight: keyInsight.map { String($0) }
+            ))
+        }
+
+        // 4. Get follow-ups due soon
+        var upcomingFollowups: [FollowupDigestItem] = []
+        if let tasksDbId = config.notion.briefingSources?.tasksDatabaseId {
+            notionService.setTasksDatabaseId(tasksDbId)
+            let followups = try await notionService.queryActiveTasks(type: .followup)
+            let now = Date()
+            let threeDaysFromNow = Calendar.current.date(byAdding: .day, value: 3, to: now)!
+
+            upcomingFollowups = followups
+                .filter { ($0.dueDate ?? .distantFuture) <= threeDaysFromNow }
+                .map { task in
+                    FollowupDigestItem(
+                        title: task.title,
+                        scheduledFor: task.dueDate ?? now,
+                        context: task.originalContext ?? task.description ?? "",
+                        priority: UrgencyLevel(rawValue: task.priority?.rawValue.lowercased() ?? "medium") ?? .medium,
+                        isOverdue: task.isOverdue
+                    )
+                }
+                .sorted { $0.scheduledFor < $1.scheduledFor }
+        }
+
+        // 5. Get commitment status
+        var commitmentStatus = CommitmentStatusSummary(
+            activeIOwe: 0,
+            activeTheyOwe: 0,
+            completedToday: 0,
+            overdueCount: 0,
+            upcomingThisWeek: 0
+        )
+
+        if let tasksDbId = config.notion.briefingSources?.tasksDatabaseId {
+            notionService.setTasksDatabaseId(tasksDbId)
+            let commitments = try await notionService.queryActiveTasks(type: .commitment)
+
+            let now = Date()
+            let weekFromNow = Calendar.current.date(byAdding: .day, value: 7, to: now)!
+
+            commitmentStatus = CommitmentStatusSummary(
+                activeIOwe: commitments.filter { $0.commitmentDirection == .iOwe }.count,
+                activeTheyOwe: commitments.filter { $0.commitmentDirection == .theyOweMe }.count,
+                completedToday: 0, // Would need to query completed items
+                overdueCount: commitments.filter { $0.isOverdue }.count,
+                upcomingThisWeek: commitments.filter {
+                    guard let due = $0.dueDate else { return false }
+                    return due >= now && due <= weekFromNow
+                }.count
+            )
+        }
+
+        // 6. Generate recommendations
+        var recommendations: [String] = []
+
+        if commitmentStatus.overdueCount > 0 {
+            recommendations.append("You have \(commitmentStatus.overdueCount) overdue commitments that need attention")
+        }
+
+        if !upcomingFollowups.isEmpty {
+            let overdueFollowups = upcomingFollowups.filter { $0.isOverdue }.count
+            if overdueFollowups > 0 {
+                recommendations.append("\(overdueFollowups) follow-ups are overdue - consider addressing them tomorrow")
+            }
+        }
+
+        let lowSuccessAgents = agentActivity.filter { $0.successRate < 0.5 && $0.decisionsCount > 0 }
+        for agent in lowSuccessAgents {
+            recommendations.append("Consider reviewing \(agent.agentType.displayName) agent rules - success rate was \(Int(agent.successRate * 100))%")
+        }
+
+        if newLearnings.count > 5 {
+            recommendations.append("Agents learned \(newLearnings.count) new patterns today - review in 'alfred agents memory'")
+        }
+
+        // Build summary
+        let followupsCreated = todaysDecisions.filter {
+            if case .createFollowup = $0.action { return true }
+            return false
+        }.count
+
+        let summary = DigestSummary(
+            totalDecisions: todaysDecisions.count,
+            decisionsExecuted: executedCount,
+            decisionsPending: pendingReview.count,
+            newLearningsCount: newLearnings.count,
+            followupsCreated: followupsCreated,
+            commitmentsClosed: commitmentStatus.completedToday
+        )
+
+        return AgentDigest(
+            date: Date(),
+            summary: summary,
+            agentActivity: agentActivity,
+            newLearnings: newLearnings,
+            decisionsRequiringReview: pendingReview,
+            upcomingFollowups: upcomingFollowups,
+            commitmentStatus: commitmentStatus,
+            recommendations: recommendations,
+            generatedAt: Date()
+        )
     }
 }

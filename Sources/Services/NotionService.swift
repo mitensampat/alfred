@@ -1059,6 +1059,66 @@ class NotionService {
         return results.compactMap { parseCommitmentFromNotionPage($0) }
     }
 
+    /// Query commitments due within a specified number of hours
+    func queryUpcomingCommitments(databaseId: String, withinHours: Int) async throws -> [Commitment] {
+        let formattedId = formatNotionId(databaseId)
+        let url = URL(string: "https://api.notion.com/v1/databases/\(formattedId)/query")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let now = Date()
+        let deadline = Calendar.current.date(byAdding: .hour, value: withinHours, to: now)!
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+
+        let body: [String: Any] = [
+            "filter": [
+                "and": [
+                    [
+                        "property": "Status",
+                        "status": ["does_not_equal": "Completed"]
+                    ],
+                    [
+                        "property": "Status",
+                        "status": ["does_not_equal": "Cancelled"]
+                    ],
+                    [
+                        "property": "Due Date",
+                        "date": ["on_or_after": formatter.string(from: now)]
+                    ],
+                    [
+                        "property": "Due Date",
+                        "date": ["on_or_before": formatter.string(from: deadline)]
+                    ]
+                ]
+            ],
+            "sorts": [
+                [
+                    "property": "Due Date",
+                    "direction": "ascending"
+                ]
+            ],
+            "page_size": 50
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw NSError(domain: "NotionService", code: 16, userInfo: [NSLocalizedDescriptionKey: "Failed to query upcoming commitments: \(errorBody)"])
+        }
+
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let results = json?["results"] as? [[String: Any]] ?? []
+
+        return results.compactMap { parseCommitmentFromNotionPage($0) }
+    }
+
     /// Parse commitment from Notion page result
     private func parseCommitmentFromNotionPage(_ result: [String: Any]) -> Commitment? {
         guard let id = result["id"] as? String,

@@ -10,6 +10,30 @@ protocol AgentProtocol {
     func evaluate(context: AgentContext) async throws -> [AgentDecision]
     func execute(decision: AgentDecision) async throws -> ExecutionResult
     func learn(feedback: UserFeedback) async throws
+
+    /// Optional: Get shared context from other agents before making decisions
+    func getSharedContext() -> SharedContextSummary
+
+    /// Optional: Process alerts from other agents
+    func processAlerts(_ alerts: [AgentAlert]) async
+
+    /// Optional: Contribute insights to shared context
+    func shareInsights() -> [SharedInsight]
+}
+
+// Default implementations for optional cross-agent methods
+extension AgentProtocol {
+    func getSharedContext() -> SharedContextSummary {
+        return SharedContextService.shared.getContextSummary(for: agentType)
+    }
+
+    func processAlerts(_ alerts: [AgentAlert]) async {
+        // Default: no special processing
+    }
+
+    func shareInsights() -> [SharedInsight] {
+        return []
+    }
 }
 
 // MARK: - Autonomy Level

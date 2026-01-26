@@ -1472,13 +1472,18 @@
                 </div>
                 <div class="quick-prompt" onclick="callDirectAPI('/api/commitments', 'My Commitments')">
                     <div class="quick-prompt-icon">✅</div>
-                    <div class="quick-prompt-title">My Commitments</div>
-                    <div class="quick-prompt-desc">See what you owe and what's owed</div>
+                    <div class="quick-prompt-title">Commitments</div>
+                    <div class="quick-prompt-desc">I owe, they owe me, follow-ups</div>
                 </div>
                 <div class="quick-prompt" onclick="showCommitmentCheckPrompt()">
                     <div class="quick-prompt-icon">🤝</div>
                     <div class="quick-prompt-title">Commitment Check</div>
                     <div class="quick-prompt-desc">Check commitments with someone</div>
+                </div>
+                <div class="quick-prompt" onclick="callDirectAPI('/api/agent-digest', 'Agent Digest')">
+                    <div class="quick-prompt-icon">📊</div>
+                    <div class="quick-prompt-title">Agent Digest</div>
+                    <div class="quick-prompt-desc">Daily summary of agent activity</div>
                 </div>
                 <div class="quick-prompt" onclick="callDirectAPI('/api/todos/scan', 'Scan Todos')">
                     <div class="quick-prompt-icon">📝</div>
@@ -1777,20 +1782,78 @@
         function formatCommitments(commitments) {
             if (!commitments || commitments.length === 0) return '';
 
-            let html = '<div class="data-card">';
-            html += '<div class="data-card-header">Commitments</div>';
-            html += '<div class="data-card-content">';
+            // Separate into I Owe, They Owe Me, and Follow-ups
+            const iOwe = commitments.filter(c => c.direction === 'I Owe' || c.commitmentDirection === 'iOwe');
+            const theyOwe = commitments.filter(c => c.direction === 'They Owe Me' || c.commitmentDirection === 'theyOweMe');
+            const followups = commitments.filter(c => c.type === 'Follow-up' || c.isFollowup);
 
-            commitments.forEach(commitment => {
-                html += `
-                    <div class="data-item">
-                        <div class="data-item-title">${escapeHtml(commitment.title)}</div>
-                        <div class="data-item-meta">${commitment.committedBy} → ${commitment.committedTo}</div>
-                    </div>
-                `;
-            });
+            let html = '';
 
-            html += '</div></div>';
+            if (iOwe.length > 0) {
+                html += '<div class="data-card">';
+                html += '<div class="data-card-header">I Owe (' + iOwe.length + ')</div>';
+                html += '<div class="data-card-content">';
+                iOwe.forEach(commitment => {
+                    const overdueTag = commitment.isOverdue ? '<span style="color:#e03e3e;margin-left:8px;">OVERDUE</span>' : '';
+                    html += `
+                        <div class="data-item">
+                            <div class="data-item-title">${escapeHtml(commitment.title)}${overdueTag}</div>
+                            <div class="data-item-meta">${commitment.committedBy || 'You'} → ${commitment.committedTo || 'Unknown'}</div>
+                        </div>
+                    `;
+                });
+                html += '</div></div>';
+            }
+
+            if (theyOwe.length > 0) {
+                html += '<div class="data-card">';
+                html += '<div class="data-card-header">They Owe Me (' + theyOwe.length + ')</div>';
+                html += '<div class="data-card-content">';
+                theyOwe.forEach(commitment => {
+                    const overdueTag = commitment.isOverdue ? '<span style="color:#e03e3e;margin-left:8px;">OVERDUE</span>' : '';
+                    html += `
+                        <div class="data-item">
+                            <div class="data-item-title">${escapeHtml(commitment.title)}${overdueTag}</div>
+                            <div class="data-item-meta">${commitment.committedBy || 'Unknown'} → ${commitment.committedTo || 'You'}</div>
+                        </div>
+                    `;
+                });
+                html += '</div></div>';
+            }
+
+            if (followups.length > 0) {
+                html += '<div class="data-card">';
+                html += '<div class="data-card-header">Follow-ups (' + followups.length + ')</div>';
+                html += '<div class="data-card-content">';
+                followups.forEach(followup => {
+                    const overdueTag = followup.isOverdue ? '<span style="color:#e03e3e;margin-left:8px;">OVERDUE</span>' : '';
+                    const dueDate = followup.dueDate ? new Date(followup.dueDate).toLocaleDateString() : '';
+                    html += `
+                        <div class="data-item">
+                            <div class="data-item-title">${escapeHtml(followup.title)}${overdueTag}</div>
+                            <div class="data-item-meta">${dueDate ? 'Due: ' + dueDate : ''} ${followup.context ? '- ' + escapeHtml(followup.context.substring(0, 50)) : ''}</div>
+                        </div>
+                    `;
+                });
+                html += '</div></div>';
+            }
+
+            // Fallback for legacy format without categorization
+            if (html === '' && commitments.length > 0) {
+                html += '<div class="data-card">';
+                html += '<div class="data-card-header">Commitments</div>';
+                html += '<div class="data-card-content">';
+                commitments.forEach(commitment => {
+                    html += `
+                        <div class="data-item">
+                            <div class="data-item-title">${escapeHtml(commitment.title)}</div>
+                            <div class="data-item-meta">${commitment.committedBy} → ${commitment.committedTo}</div>
+                        </div>
+                    `;
+                });
+                html += '</div></div>';
+            }
+
             return html;
         }
 

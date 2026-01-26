@@ -103,11 +103,14 @@ class ExecutionEngine {
     }
 
     private func executeCreateFollowup(_ followup: FollowupReminder) async throws -> ExecutionResult {
-        // Create a follow-up reminder in Notion or local storage
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
         let alfredDir = homeDir.appendingPathComponent(".alfred")
         let followupsFile = alfredDir.appendingPathComponent("followups.json")
 
+        // Create directory if needed
+        try? FileManager.default.createDirectory(at: alfredDir, withIntermediateDirectories: true)
+
+        // 1. Save to local file for quick access
         var existingFollowups: [FollowupReminder] = []
         if FileManager.default.fileExists(atPath: followupsFile.path) {
             if let data = try? Data(contentsOf: followupsFile),
@@ -120,6 +123,33 @@ class ExecutionEngine {
 
         let data = try JSONEncoder().encode(existingFollowups)
         try data.write(to: followupsFile)
+
+        // 2. Also save to Notion unified Tasks database (if configured)
+        if let tasksDatabaseId = appConfig.notion.briefingSources?.tasksDatabaseId,
+           tasksDatabaseId != "YOUR_TASKS_DATABASE_ID" {
+            do {
+                let notionService = NotionService(config: appConfig.notion)
+
+                // Generate hash for deduplication
+                let hashInput = "\(followup.followupAction)|\(followup.originalContext)|\(followup.scheduledFor.timeIntervalSince1970)"
+                let hash = String(hashInput.hashValue)
+
+                // Check if already exists
+                if let _ = try await notionService.findTaskByHash(hash) {
+                    return .success(details: "Follow-up already exists in Notion")
+                }
+
+                // Create TaskItem from follow-up
+                let taskItem = TaskItem.fromFollowup(followup, hash: hash)
+
+                // Save to Notion
+                let pageId = try await notionService.createTask(taskItem)
+                return .success(details: "Follow-up created in Notion (ID: \(pageId)) for \(followup.scheduledFor.formatted())")
+            } catch {
+                // Log error but don't fail - local file was saved
+                print("⚠️  Failed to save follow-up to Notion: \(error)")
+            }
+        }
 
         return .success(details: "Follow-up reminder created for \(followup.scheduledFor.formatted())")
     }

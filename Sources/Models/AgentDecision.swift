@@ -39,7 +39,7 @@ struct AgentDecision: Codable, Identifiable {
     }
 }
 
-enum AgentType: String, Codable {
+enum AgentType: String, Codable, CaseIterable {
     case communication
     case task
     case calendar
