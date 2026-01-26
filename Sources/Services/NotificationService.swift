@@ -68,6 +68,42 @@ class NotificationService {
         }
     }
 
+    func sendAgentDigest(_ digest: AgentDigest) async throws {
+        print("  [DEBUG] sendAgentDigest called")
+        let formatted = formatAgentDigest(digest)
+        print("  [DEBUG] Formatted digest ready")
+
+        if config.email.enabled {
+            print("  → Sending agent digest email...")
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "EEEE, MMM d"
+            try await sendEmail(
+                subject: "Alfred Agent Digest - \(dateFormatter.string(from: digest.date))",
+                body: formatted.html
+            )
+            print("  ✓ Agent digest email sent")
+        }
+
+        if config.push.enabled {
+            do {
+                print("  → Sending push notification...")
+                try await sendPushNotification(
+                    title: "Daily Agent Digest Ready",
+                    body: "\(digest.summary.totalDecisions) decisions, \(digest.newLearnings.count) new learnings"
+                )
+                print("  ✓ Push notification sent")
+            } catch {
+                print("  ⊗ Push notifications not available in command-line mode")
+            }
+        }
+
+        if config.slack.enabled {
+            print("  → Sending Slack notification...")
+            try await sendSlackMessage(formatted.markdown)
+            print("  ✓ Slack notification sent")
+        }
+    }
+
     // MARK: - Email
 
     private func sendEmail(subject: String, body: String) async throws {
@@ -279,6 +315,117 @@ class NotificationService {
 
         let html = markdownToHTML(markdown)
 
+        return (markdown, html)
+    }
+
+    private func formatAgentDigest(_ digest: AgentDigest) -> (markdown: String, html: String) {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "EEEE, MMMM d, yyyy"
+
+        var markdown = """
+        # Alfred Agent Digest - \(dateFormatter.string(from: digest.date))
+
+        ## Summary
+        - **Total Decisions**: \(digest.summary.totalDecisions)
+        - **Executed**: \(digest.summary.decisionsExecuted)
+        - **Pending Review**: \(digest.summary.decisionsPending)
+        - **New Learnings**: \(digest.summary.newLearningsCount)
+        - **Follow-ups Created**: \(digest.summary.followupsCreated)
+        - **Commitments Closed**: \(digest.summary.commitmentsClosed)
+
+        ## Agent Activity
+        """
+
+        for activity in digest.agentActivity {
+            let successPct = Int(activity.successRate * 100)
+            markdown += """
+
+            ### \(activity.agentType.displayName) Agent
+            - **Decisions**: \(activity.decisionsCount)
+            - **Success Rate**: \(successPct)%
+            """
+            if let topAction = activity.topAction {
+                markdown += "\n- **Top Action**: \(topAction)"
+            }
+            if let insight = activity.keyInsight {
+                markdown += "\n- **Key Insight**: \(insight)"
+            }
+        }
+
+        if !digest.newLearnings.isEmpty {
+            markdown += """
+
+
+            ## New Learnings (\(digest.newLearnings.count))
+            """
+            for learning in digest.newLearnings {
+                markdown += """
+
+                - **[\(learning.agentType.displayName)]** \(learning.description)
+                """
+            }
+        }
+
+        if !digest.decisionsRequiringReview.isEmpty {
+            markdown += """
+
+
+            ## Decisions Requiring Review (\(digest.decisionsRequiringReview.count))
+            """
+            for decision in digest.decisionsRequiringReview {
+                markdown += """
+
+                - **[\(decision.agentType.displayName)]** \(decision.action.description)
+                  Reasoning: \(decision.reasoning)
+                """
+            }
+        }
+
+        // Commitment status
+        markdown += """
+
+
+        ## Commitment Status
+        - **I Owe (Active)**: \(digest.commitmentStatus.activeIOwe)
+        - **They Owe Me (Active)**: \(digest.commitmentStatus.activeTheyOwe)
+        - **Completed Today**: \(digest.commitmentStatus.completedToday)
+        - **Overdue**: \(digest.commitmentStatus.overdueCount)
+        - **Due This Week**: \(digest.commitmentStatus.upcomingThisWeek)
+        """
+
+        if !digest.upcomingFollowups.isEmpty {
+            markdown += """
+
+
+            ## Upcoming Follow-ups (\(digest.upcomingFollowups.count))
+            """
+            let timeFormatter = DateFormatter()
+            timeFormatter.dateStyle = .short
+            timeFormatter.timeStyle = .short
+
+            for followup in digest.upcomingFollowups.prefix(5) {
+                let overdueTag = followup.isOverdue ? " ⚠️ OVERDUE" : ""
+                markdown += """
+
+                - **\(followup.title)**\(overdueTag)
+                  Due: \(timeFormatter.string(from: followup.scheduledFor))
+                  Context: \(followup.context.prefix(50))\(followup.context.count > 50 ? "..." : "")
+                """
+            }
+        }
+
+        if !digest.recommendations.isEmpty {
+            markdown += """
+
+
+            ## Recommendations
+            """
+            for rec in digest.recommendations {
+                markdown += "\n- \(rec)"
+            }
+        }
+
+        let html = markdownToHTML(markdown)
         return (markdown, html)
     }
 

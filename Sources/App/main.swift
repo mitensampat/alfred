@@ -153,6 +153,8 @@ struct AlfredApp {
                 await runAgentsCommand(filteredArgs)
             case "teach":
                 await runTeachCommand(filteredArgs)
+            case "digest":
+                await runAgentDigest(orchestrator)
             case "server":
                 await runServer(config, orchestrator)
             default:
@@ -1450,6 +1452,116 @@ struct AlfredApp {
         }
     }
 
+    static func runAgentDigest(_ orchestrator: BriefingOrchestrator) async {
+        print("\n📊 DAILY AGENT DIGEST\n")
+        print("Generating digest...")
+
+        do {
+            let digest = try await orchestrator.generateAgentDigest()
+
+            // Print summary
+            print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            print("📈 SUMMARY")
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+            print("  Total Decisions:      \(digest.summary.totalDecisions)")
+            print("  Executed:             \(digest.summary.decisionsExecuted)")
+            print("  Pending Review:       \(digest.summary.decisionsPending)")
+            print("  New Learnings:        \(digest.summary.newLearningsCount)")
+            print("  Follow-ups Created:   \(digest.summary.followupsCreated)")
+            print("  Commitments Closed:   \(digest.summary.commitmentsClosed)")
+
+            // Print agent activity
+            if !digest.agentActivity.isEmpty {
+                print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                print("🤖 AGENT ACTIVITY")
+                print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+                for activity in digest.agentActivity where activity.decisionsCount > 0 {
+                    let successPct = Int(activity.successRate * 100)
+                    print("  \(activity.agentType.icon) \(activity.agentType.displayName)")
+                    print("     Decisions: \(activity.decisionsCount) | Success: \(successPct)%")
+                    if let topAction = activity.topAction {
+                        print("     Top Action: \(topAction)")
+                    }
+                    if let insight = activity.keyInsight {
+                        print("     Insight: \(insight)")
+                    }
+                    print("")
+                }
+            }
+
+            // Print new learnings
+            if !digest.newLearnings.isEmpty {
+                print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                print("🧠 NEW LEARNINGS (\(digest.newLearnings.count))")
+                print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+                for learning in digest.newLearnings.prefix(5) {
+                    print("  [\(learning.agentType.displayName)] \(learning.description)")
+                }
+                if digest.newLearnings.count > 5 {
+                    print("  ... and \(digest.newLearnings.count - 5) more")
+                }
+                print("")
+            }
+
+            // Print commitment status
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            print("📋 COMMITMENT STATUS")
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+            print("  I Owe (Active):       \(digest.commitmentStatus.activeIOwe)")
+            print("  They Owe Me (Active): \(digest.commitmentStatus.activeTheyOwe)")
+            print("  Overdue:              \(digest.commitmentStatus.overdueCount)")
+            print("  Due This Week:        \(digest.commitmentStatus.upcomingThisWeek)")
+
+            // Print upcoming follow-ups
+            if !digest.upcomingFollowups.isEmpty {
+                print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                print("🔔 UPCOMING FOLLOW-UPS (\(digest.upcomingFollowups.count))")
+                print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+                let formatter = DateFormatter()
+                formatter.dateStyle = .short
+                formatter.timeStyle = .short
+
+                for followup in digest.upcomingFollowups.prefix(5) {
+                    let overdueTag = followup.isOverdue ? " ⚠️" : ""
+                    print("  • \(followup.title)\(overdueTag)")
+                    print("    Due: \(formatter.string(from: followup.scheduledFor))")
+                    print("")
+                }
+            }
+
+            // Print recommendations
+            if !digest.recommendations.isEmpty {
+                print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                print("💡 RECOMMENDATIONS")
+                print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+                for rec in digest.recommendations {
+                    print("  • \(rec)")
+                }
+            }
+
+            print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+            // Send email if configured
+            if orchestrator.config.notifications.email.enabled {
+                print("\n📧 Sending digest email...")
+                let notificationService = NotificationService(config: orchestrator.config.notifications)
+                try await notificationService.sendAgentDigest(digest)
+                print("✅ Digest email sent successfully!")
+            } else {
+                print("\n💡 Tip: Enable email notifications in config to receive daily digest via email")
+            }
+
+        } catch {
+            print("❌ Failed to generate digest: \(error)")
+        }
+
+        print("")
+    }
+
     static func runTeachCommand(_ args: [String]) async {
         // alfred teach [agent] "rule"
         // alfred teach [agent] --category [category] "rule"
@@ -1697,6 +1809,63 @@ struct AlfredApp {
             print("")
         }
 
+        // Agent Insights
+        if let insights = briefing.agentInsights, !insights.isEmpty {
+            print("\n🧠 AGENT INSIGHTS")
+            print("=================")
+
+            // Proactive Notices
+            if !insights.proactiveNotices.isEmpty {
+                print("\n📢 PROACTIVE NOTICES:")
+                for notice in insights.proactiveNotices {
+                    let priorityIcon = notice.priority == .critical ? "🔴" : (notice.priority == .high ? "🟠" : "🟡")
+                    print("  \(priorityIcon) [\(notice.agentType.displayName)] \(notice.title)")
+                    print("     \(notice.message)")
+                    if let action = notice.suggestedAction {
+                        print("     → \(action)")
+                    }
+                    print("")
+                }
+            }
+
+            // Commitment Reminders
+            if !insights.commitmentReminders.isEmpty {
+                print("⏰ COMMITMENT REMINDERS:")
+                for reminder in insights.commitmentReminders {
+                    let overdueText = reminder.daysOverdue.map { $0 > 0 ? " (\($0) day(s) overdue!)" : "" } ?? ""
+                    print("  • \(reminder.commitment)\(overdueText)")
+                    if let to = reminder.committedTo {
+                        print("    To: \(to)")
+                    }
+                    if let due = reminder.dueDate {
+                        print("    Due: \(due.formatted(date: .abbreviated, time: .omitted))")
+                    }
+                    print("    → \(reminder.suggestedAction)")
+                    print("")
+                }
+            }
+
+            // Cross-Agent Suggestions
+            if !insights.crossAgentSuggestions.isEmpty {
+                print("🔗 CROSS-AGENT SUGGESTIONS:")
+                for suggestion in insights.crossAgentSuggestions {
+                    let agentNames = suggestion.involvedAgents.map { $0.displayName }.joined(separator: " + ")
+                    print("  • [\(agentNames)] \(suggestion.title)")
+                    print("    \(suggestion.description)")
+                    print("")
+                }
+            }
+
+            // Recent Learnings
+            if !insights.recentLearnings.isEmpty {
+                print("📚 WHAT AGENTS LEARNED RECENTLY:")
+                for learning in insights.recentLearnings.prefix(5) {
+                    print("  • [\(learning.agentType.displayName)] \(learning.description)")
+                }
+                print("")
+            }
+        }
+
         print("\nACTION ITEMS (\(briefing.actionItems.count))")
         print("------------")
         for item in briefing.actionItems.prefix(10) {
@@ -1942,6 +2111,11 @@ struct AlfredApp {
                                 Examples: teach communication "Be formal with investors"
                                          teach task "Fridays are for deep work"
                                          teach calendar "Board meetings need 30 min prep"
+
+          digest                Generate daily agent digest
+                                Summarizes agent decisions, learnings, and recommendations
+                                Sends digest via email if configured
+                                Example: alfred digest
 
         Flags:
           --notify              Send output via configured notification channels (email, Slack, push)
@@ -2403,7 +2577,7 @@ func runCommitmentsScan(_ orchestrator: BriefingOrchestrator, args: [String]) as
 }
 
 func runCommitmentsList(_ orchestrator: BriefingOrchestrator, args: [String]) async {
-    print("\n📋 COMMITMENTS LIST\n")
+    print("\n📋 COMMITMENTS & FOLLOW-UPS\n")
 
     guard let config = orchestrator.config.commitments, config.enabled else {
         print("❌ Commitments feature is not enabled in config")
@@ -2412,35 +2586,47 @@ func runCommitmentsList(_ orchestrator: BriefingOrchestrator, args: [String]) as
 
     // Parse type filter
     var directionFilter: TaskItem.CommitmentDirection?
+    var showFollowups = true
     if let arg = args.first {
         switch arg.lowercased() {
         case "i_owe", "iowe":
             directionFilter = .iOwe
+            showFollowups = false
         case "they_owe", "theyowe":
             directionFilter = .theyOweMe
+            showFollowups = false
+        case "followups", "follow-ups":
+            directionFilter = nil
+            showFollowups = true
         default:
-            print("⚠️  Unknown type filter: \(arg) (use 'i_owe' or 'they_owe')\n")
+            print("⚠️  Unknown type filter: \(arg) (use 'i_owe', 'they_owe', or 'followups')\n")
         }
     }
 
     do {
         // Query Tasks database for commitments
-        let tasks = try await orchestrator.notionServicePublic.queryActiveTasks(type: .commitment)
+        let commitmentTasks = try await orchestrator.notionServicePublic.queryActiveTasks(type: .commitment)
+
+        // Query Tasks database for follow-ups
+        let followupTasks = try await orchestrator.notionServicePublic.queryActiveTasks(type: .followup)
 
         // Filter by direction if specified
-        var filteredTasks = tasks
+        var filteredCommitments = commitmentTasks
         if let direction = directionFilter {
-            filteredTasks = tasks.filter { $0.commitmentDirection == direction }
+            filteredCommitments = commitmentTasks.filter { $0.commitmentDirection == direction }
         }
 
-        if filteredTasks.isEmpty {
-            print("ℹ️  No active commitments found\n")
+        let hasCommitments = !filteredCommitments.isEmpty
+        let hasFollowups = !followupTasks.isEmpty && showFollowups && directionFilter == nil
+
+        if !hasCommitments && !hasFollowups {
+            print("ℹ️  No active commitments or follow-ups found\n")
             return
         }
 
-        // Group by direction
-        let iOwe = filteredTasks.filter { $0.commitmentDirection == .iOwe }
-        let theyOwe = filteredTasks.filter { $0.commitmentDirection == .theyOweMe }
+        // Group commitments by direction
+        let iOwe = filteredCommitments.filter { $0.commitmentDirection == .iOwe }
+        let theyOwe = filteredCommitments.filter { $0.commitmentDirection == .theyOweMe }
 
         if !iOwe.isEmpty && (directionFilter == nil || directionFilter == .iOwe) {
             print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -2459,6 +2645,17 @@ func runCommitmentsList(_ orchestrator: BriefingOrchestrator, args: [String]) as
 
             for task in theyOwe.sorted(by: { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }) {
                 printTaskItemAsCommitment(task)
+            }
+        }
+
+        // Show follow-ups section
+        if hasFollowups {
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            print("🔔 FOLLOW-UPS (\(followupTasks.count))")
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+            for task in followupTasks.sorted(by: { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }) {
+                printTaskItemAsFollowup(task)
             }
         }
 
@@ -2572,6 +2769,51 @@ func printTaskItemAsCommitment(_ task: TaskItem, showOverdueWarning: Bool = fals
             print("     Due: \(dueDateStr) ⚠️  \(abs(daysOverdue)) days overdue!")
         } else {
             print("     Due: \(dueDateStr)")
+        }
+    }
+
+    if let priority = task.priority {
+        let priorityEmoji: String
+        switch priority {
+        case .critical: priorityEmoji = "🔴"
+        case .high: priorityEmoji = "🟠"
+        case .medium: priorityEmoji = "🟡"
+        case .low: priorityEmoji = "⚪"
+        }
+        print("     Priority: \(priorityEmoji) \(priority.rawValue)")
+    }
+
+    print("")
+}
+
+func printTaskItemAsFollowup(_ task: TaskItem) {
+    // Status emoji
+    let statusEmoji: String
+    switch task.status {
+    case .notStarted: statusEmoji = "⏰"
+    case .inProgress: statusEmoji = "🔄"
+    case .done: statusEmoji = "✅"
+    case .blocked: statusEmoji = "🚫"
+    case .cancelled: statusEmoji = "❌"
+    }
+
+    print("  \(statusEmoji) \(task.title)")
+
+    if let context = task.originalContext ?? task.description {
+        print("     Context: \(context.prefix(60))\(context.count > 60 ? "..." : "")")
+    }
+
+    if let dueDate = task.dueDate {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        let dueDateStr = formatter.string(from: dueDate)
+
+        if task.isOverdue {
+            let daysOverdue = Calendar.current.dateComponents([.day], from: dueDate, to: Date()).day ?? 0
+            print("     Scheduled: \(dueDateStr) ⚠️  \(abs(daysOverdue)) days overdue!")
+        } else {
+            print("     Scheduled: \(dueDateStr)")
         }
     }
 

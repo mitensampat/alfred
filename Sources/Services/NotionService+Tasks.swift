@@ -43,7 +43,8 @@ extension NotionService {
             ]]],
             "Type": ["select": ["options": [
                 ["name": "Todo", "color": "blue"],
-                ["name": "Commitment", "color": "purple"]
+                ["name": "Commitment", "color": "purple"],
+                ["name": "Follow-up", "color": "green"]
             ]]],
             "Description": ["rich_text": [String: Any]()],
             "Source": ["select": ["options": [
@@ -391,31 +392,39 @@ extension NotionService {
         let createdDate = Date()
         let lastUpdated = Date()
 
-        // Parse commitment details from description if it's a commitment
+        // Parse commitment/followup details from description
         var committedBy: String?
         var committedTo: String?
         var commitmentDirection: TaskItem.CommitmentDirection?
         var originalContext: String?
+        var followUpDate: Date?
 
-        if type == .commitment, let desc = description {
-            // Try to extract commitment details from description
-            // Format: "Direction: I Owe\nCommitted by: X\nCommitted to: Y\n\nOriginal context:\n..."
-            let lines = desc.components(separatedBy: "\n")
-            for line in lines {
-                if line.hasPrefix("Direction: ") {
-                    let direction = line.replacingOccurrences(of: "Direction: ", with: "")
-                    commitmentDirection = TaskItem.CommitmentDirection(rawValue: direction)
-                } else if line.hasPrefix("Committed by: ") {
-                    committedBy = line.replacingOccurrences(of: "Committed by: ", with: "")
-                } else if line.hasPrefix("Committed to: ") {
-                    committedTo = line.replacingOccurrences(of: "Committed to: ", with: "")
-                } else if line.hasPrefix("Original context:") {
-                    // Rest of the description is context
-                    if let range = desc.range(of: "Original context:\n") {
-                        originalContext = String(desc[range.upperBound...])
+        if let desc = description {
+            if type == .commitment {
+                // Try to extract commitment details from description
+                // Format: "Direction: I Owe\nCommitted by: X\nCommitted to: Y\n\nOriginal context:\n..."
+                let lines = desc.components(separatedBy: "\n")
+                for line in lines {
+                    if line.hasPrefix("Direction: ") {
+                        let direction = line.replacingOccurrences(of: "Direction: ", with: "")
+                        commitmentDirection = TaskItem.CommitmentDirection(rawValue: direction)
+                    } else if line.hasPrefix("Committed by: ") {
+                        committedBy = line.replacingOccurrences(of: "Committed by: ", with: "")
+                    } else if line.hasPrefix("Committed to: ") {
+                        committedTo = line.replacingOccurrences(of: "Committed to: ", with: "")
+                    } else if line.hasPrefix("Original context:") {
+                        // Rest of the description is context
+                        if let range = desc.range(of: "Original context:\n") {
+                            originalContext = String(desc[range.upperBound...])
+                        }
+                        break
                     }
-                    break
                 }
+            } else if type == .followup {
+                // For follow-ups, the description is the original context
+                originalContext = desc
+                // Follow-up date is same as due date
+                followUpDate = dueDate
             }
         }
 
@@ -435,8 +444,8 @@ extension NotionService {
             sourcePlatform: sourcePlatform,
             sourceThread: nil,
             sourceThreadId: nil,
-            tags: nil,
-            followUpDate: nil,
+            tags: type == .followup ? ["follow-up"] : nil,
+            followUpDate: followUpDate,
             uniqueHash: uniqueHash,
             notes: nil,
             createdDate: createdDate,

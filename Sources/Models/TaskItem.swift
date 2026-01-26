@@ -37,6 +37,7 @@ struct TaskItem: Codable {
     enum TaskType: String, Codable {
         case todo = "Todo"
         case commitment = "Commitment"
+        case followup = "Follow-up"
     }
 
     enum TaskStatus: String, Codable {
@@ -80,6 +81,10 @@ struct TaskItem: Codable {
 
     var isTodo: Bool {
         return type == .todo
+    }
+
+    var isFollowup: Bool {
+        return type == .followup
     }
 
     var isActive: Bool {
@@ -165,6 +170,62 @@ struct TaskItem: Codable {
             notes: nil,
             createdDate: Date(),
             lastUpdated: Date()
+        )
+    }
+
+    /// Create a TaskItem from a FollowupReminder
+    static func fromFollowup(_ followup: FollowupReminder, notionId: String = "", hash: String? = nil) -> TaskItem {
+        let priority: Priority
+        switch followup.priority {
+        case .critical: priority = .critical
+        case .high: priority = .high
+        case .medium: priority = .medium
+        case .low: priority = .low
+        }
+
+        return TaskItem(
+            notionId: notionId,
+            title: followup.followupAction,
+            type: .followup,
+            status: .notStarted,
+            description: followup.originalContext,
+            dueDate: followup.scheduledFor,
+            priority: priority,
+            assignee: nil,
+            commitmentDirection: nil,
+            committedBy: nil,
+            committedTo: nil,
+            originalContext: followup.originalContext,
+            sourcePlatform: .manual,
+            sourceThread: nil,
+            sourceThreadId: nil,
+            tags: ["follow-up"],
+            followUpDate: followup.scheduledFor,
+            uniqueHash: hash,
+            notes: nil,
+            createdDate: Date(),
+            lastUpdated: Date()
+        )
+    }
+
+    /// Convert TaskItem to FollowupReminder (if applicable)
+    func toFollowupReminder() -> FollowupReminder? {
+        guard type == .followup else { return nil }
+
+        let urgencyLevel: UrgencyLevel
+        switch priority {
+        case .critical: urgencyLevel = .critical
+        case .high: urgencyLevel = .high
+        case .medium: urgencyLevel = .medium
+        case .low: urgencyLevel = .low
+        case .none: urgencyLevel = .medium
+        }
+
+        return FollowupReminder(
+            originalContext: originalContext ?? description ?? "",
+            followupAction: title,
+            scheduledFor: dueDate ?? Date(),
+            priority: urgencyLevel
         )
     }
 

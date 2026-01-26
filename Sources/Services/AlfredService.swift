@@ -353,6 +353,15 @@ class AlfredService: ObservableObject {
             messageCount: analysis.thread.messages.count
         )
     }
+
+    // MARK: - Agent Digest
+
+    func generateAgentDigest() async throws -> AgentDigest {
+        guard let orchestrator = orchestrator else {
+            throw ServiceError.notInitialized
+        }
+        return try await orchestrator.generateAgentDigest()
+    }
 }
 
 // MARK: - Helper Structs

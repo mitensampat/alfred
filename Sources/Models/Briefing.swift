@@ -7,7 +7,54 @@ struct DailyBriefing: Codable {
     let actionItems: [ActionItem]
     let notionContext: NotionContext?
     let agentDecisions: [AgentDecision]?
+    let agentInsights: AgentInsights?
     let generatedAt: Date
+}
+
+// MARK: - Agent Insights
+
+struct AgentInsights: Codable {
+    let recentLearnings: [AgentLearning]
+    let proactiveNotices: [ProactiveNotice]
+    let commitmentReminders: [CommitmentReminder]
+    let crossAgentSuggestions: [CrossAgentSuggestion]
+
+    var isEmpty: Bool {
+        recentLearnings.isEmpty && proactiveNotices.isEmpty &&
+        commitmentReminders.isEmpty && crossAgentSuggestions.isEmpty
+    }
+}
+
+struct AgentLearning: Codable {
+    let agentType: AgentType
+    let description: String
+    let learnedAt: Date
+    let confidence: Double
+}
+
+struct ProactiveNotice: Codable {
+    let agentType: AgentType
+    let title: String
+    let message: String
+    let priority: UrgencyLevel
+    let suggestedAction: String?
+    let relatedContext: String?
+}
+
+struct CommitmentReminder: Codable {
+    let commitment: String
+    let committedTo: String?
+    let dueDate: Date?
+    let daysOverdue: Int?
+    let source: String
+    let suggestedAction: String
+}
+
+struct CrossAgentSuggestion: Codable {
+    let title: String
+    let description: String
+    let involvedAgents: [AgentType]
+    let confidence: Double
 }
 
 struct NotionContext: Codable {
@@ -98,4 +145,51 @@ struct PushOffSuggestion: Codable {
         case medium
         case high
     }
+}
+
+// MARK: - Daily Agent Digest
+
+struct AgentDigest: Codable {
+    let date: Date
+    let summary: DigestSummary
+    let agentActivity: [AgentActivitySummary]
+    let newLearnings: [AgentLearning]
+    let decisionsRequiringReview: [AgentDecision]
+    let upcomingFollowups: [FollowupDigestItem]
+    let commitmentStatus: CommitmentStatusSummary
+    let recommendations: [String]
+    let generatedAt: Date
+}
+
+struct DigestSummary: Codable {
+    let totalDecisions: Int
+    let decisionsExecuted: Int
+    let decisionsPending: Int
+    let newLearningsCount: Int
+    let followupsCreated: Int
+    let commitmentsClosed: Int
+}
+
+struct AgentActivitySummary: Codable {
+    let agentType: AgentType
+    let decisionsCount: Int
+    let successRate: Double
+    let topAction: String?
+    let keyInsight: String?
+}
+
+struct FollowupDigestItem: Codable {
+    let title: String
+    let scheduledFor: Date
+    let context: String
+    let priority: UrgencyLevel
+    let isOverdue: Bool
+}
+
+struct CommitmentStatusSummary: Codable {
+    let activeIOwe: Int
+    let activeTheyOwe: Int
+    let completedToday: Int
+    let overdueCount: Int
+    let upcomingThisWeek: Int
 }

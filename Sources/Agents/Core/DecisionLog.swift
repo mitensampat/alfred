@@ -2,10 +2,18 @@ import Foundation
 import SQLite3
 
 class DecisionLog {
+    static let shared: DecisionLog = {
+        do {
+            return try DecisionLog()
+        } catch {
+            fatalError("Failed to initialize DecisionLog: \(error)")
+        }
+    }()
+
     private var db: OpaquePointer?
     private let dbPath: String
 
-    init() throws {
+    private init() throws {
         // Store decision log in user's home directory
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
         let alfredDir = homeDir.appendingPathComponent(".alfred")
@@ -280,6 +288,130 @@ class DecisionLog {
     func getEntries(for agentType: AgentType, since: Date) async throws -> [AuditEntry] {
         // Similar to getEntries but filtered by agent_type
         return []
+    }
+
+    /// Get all decisions made today
+    func getDecisionsForToday() throws -> [AgentDecision] {
+        let today = Calendar.current.startOfDay(for: Date())
+        let todayStr = ISO8601DateFormatter().string(from: today)
+
+        let query = """
+        SELECT id, agent_type, action_type, reasoning, confidence, context, risks, alternatives, requires_approval, timestamp
+        FROM decisions
+        WHERE timestamp >= ?
+        ORDER BY timestamp DESC;
+        """
+
+        var decisions: [AgentDecision] = []
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+
+        if sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK {
+            sqlite3_bind_text(statement, 1, todayStr, -1, nil)
+
+            while sqlite3_step(statement) == SQLITE_ROW {
+                if let decision = parseDecisionFromRow(statement) {
+                    decisions.append(decision)
+                }
+            }
+        }
+
+        return decisions
+    }
+
+    /// Get execution result for a specific decision
+    func getExecutionResult(for decisionId: UUID) -> ExecutionResult? {
+        let query = """
+        SELECT result, result_details FROM executions WHERE decision_id = ? LIMIT 1;
+        """
+
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+
+        if sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK {
+            sqlite3_bind_text(statement, 1, decisionId.uuidString, -1, nil)
+
+            if sqlite3_step(statement) == SQLITE_ROW {
+                let resultType = String(cString: sqlite3_column_text(statement, 0))
+                let resultDetails = sqlite3_column_text(statement, 1).map { String(cString: $0) }
+
+                switch resultType {
+                case "success":
+                    return .success(details: resultDetails ?? "")
+                case "failure":
+                    return .failure(error: resultDetails ?? "Unknown error")
+                case "skipped":
+                    return .skipped
+                default:
+                    return nil
+                }
+            }
+        }
+
+        return nil
+    }
+
+    /// Parse a decision from a SQLite row
+    private func parseDecisionFromRow(_ statement: OpaquePointer?) -> AgentDecision? {
+        guard let statement = statement else { return nil }
+
+        guard let idStr = sqlite3_column_text(statement, 0).map({ String(cString: $0) }),
+              let id = UUID(uuidString: idStr),
+              let agentTypeStr = sqlite3_column_text(statement, 1).map({ String(cString: $0) }),
+              let agentType = AgentType(rawValue: agentTypeStr),
+              let actionTypeStr = sqlite3_column_text(statement, 2).map({ String(cString: $0) }),
+              let reasoning = sqlite3_column_text(statement, 3).map({ String(cString: $0) }),
+              let context = sqlite3_column_text(statement, 5).map({ String(cString: $0) }),
+              let timestampStr = sqlite3_column_text(statement, 9).map({ String(cString: $0) }) else {
+            return nil
+        }
+
+        let confidence = sqlite3_column_double(statement, 4)
+        let requiresApproval = sqlite3_column_int(statement, 8) == 1
+
+        // Parse risks and alternatives from JSON
+        let risks = sqlite3_column_text(statement, 6)
+            .flatMap { String(cString: $0).data(using: .utf8) }
+            .flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
+
+        let alternatives = sqlite3_column_text(statement, 7)
+            .flatMap { String(cString: $0).data(using: .utf8) }
+            .flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
+
+        // Parse action type back to AgentAction
+        let action = parseActionFromType(actionTypeStr, reasoning: reasoning)
+
+        let timestamp = ISO8601DateFormatter().date(from: timestampStr) ?? Date()
+
+        return AgentDecision(
+            id: id,
+            agentType: agentType,
+            action: action,
+            reasoning: reasoning,
+            confidence: confidence,
+            context: context,
+            risks: risks,
+            alternatives: alternatives,
+            requiresApproval: requiresApproval,
+            timestamp: timestamp
+        )
+    }
+
+    /// Parse action type string back to AgentAction (simplified - returns noAction for most)
+    private func parseActionFromType(_ actionType: String, reasoning: String) -> AgentAction {
+        // Note: This is a simplified version. In production, you'd store the full action data
+        switch actionType {
+        case "draft_response":
+            return .noAction(reason: "Loaded from log: \(reasoning)")
+        case "adjust_task_priority":
+            return .noAction(reason: "Loaded from log: \(reasoning)")
+        case "schedule_meeting_prep":
+            return .noAction(reason: "Loaded from log: \(reasoning)")
+        case "create_followup":
+            return .noAction(reason: "Loaded from log: \(reasoning)")
+        default:
+            return .noAction(reason: reasoning)
+        }
     }
 
     // MARK: - Helpers
