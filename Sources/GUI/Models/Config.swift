@@ -9,6 +9,8 @@ struct AppConfig: Codable {
     let messaging: MessagingConfig
     let notifications: NotificationConfig
     let research: ResearchConfig
+    let commitments: CommitmentsConfig?
+    let api: APIConfig?
 
     static func load(from path: String = "Config/config.json") -> AppConfig? {
         // Try multiple config locations in order of preference
@@ -27,12 +29,18 @@ struct AppConfig: Codable {
 
         for configPath in configPaths {
             let expandedPath = (configPath as NSString).expandingTildeInPath
-            if let data = try? Data(contentsOf: URL(fileURLWithPath: expandedPath)),
-               let config = try? JSONDecoder().decode(AppConfig.self, from: data) {
-                return config
+            if let data = try? Data(contentsOf: URL(fileURLWithPath: expandedPath)) {
+                do {
+                    let config = try JSONDecoder().decode(AppConfig.self, from: data)
+                    NSLog("✅ Config loaded from: %@", expandedPath)
+                    return config
+                } catch {
+                    NSLog("⚠️  Failed to decode config from %@: %@", expandedPath, error.localizedDescription)
+                }
             }
         }
 
+        NSLog("❌ No valid config found")
         return nil
     }
 }
@@ -94,6 +102,7 @@ struct CalendarConfig: Codable {
 struct NotionConfig: Codable {
     let apiKey: String
     let databaseId: String
+    let tasksDatabaseId: String?
     let briefingSources: BriefingSources?
 
     struct BriefingSources: Codable {
@@ -109,6 +118,7 @@ struct NotionConfig: Codable {
     enum CodingKeys: String, CodingKey {
         case apiKey = "api_key"
         case databaseId = "database_id"
+        case tasksDatabaseId = "tasks_database_id"
         case briefingSources = "briefing_sources"
     }
 }
@@ -209,5 +219,33 @@ struct ResearchConfig: Codable {
 
     struct SearchConfig: Codable {
         let enabled: Bool
+    }
+}
+
+struct CommitmentsConfig: Codable {
+    let enabled: Bool
+    let notionDatabaseId: String?
+    let autoScanOnBriefing: Bool
+    let autoScanContacts: [String]
+    let defaultLookbackDays: Int
+
+    enum CodingKeys: String, CodingKey {
+        case enabled
+        case notionDatabaseId = "notion_database_id"
+        case autoScanOnBriefing = "auto_scan_on_briefing"
+        case autoScanContacts = "auto_scan_contacts"
+        case defaultLookbackDays = "default_lookback_days"
+    }
+}
+
+struct APIConfig: Codable {
+    let enabled: Bool
+    let port: Int
+    let passcode: String
+
+    enum CodingKeys: String, CodingKey {
+        case enabled
+        case port
+        case passcode
     }
 }

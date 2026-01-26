@@ -1,13 +1,18 @@
 import Foundation
 
 class NotionService {
-    private let apiKey: String
+    internal let apiKey: String  // Changed to internal for extension access
     private let databaseId: String
     private var commitmentsDatabaseId: String?
 
     init(config: NotionConfig) {
         self.apiKey = config.apiKey
         self.databaseId = config.databaseId
+
+        // Initialize tasks database ID if available
+        if let tasksDbId = config.tasksDatabaseId {
+            self.setTasksDatabaseId(tasksDbId)
+        }
     }
 
     // MARK: - Commitments Database Creation
@@ -721,8 +726,15 @@ class NotionService {
 
     // MARK: - Commitments Management
 
-    /// Create a commitment in Notion
+    /// Create a commitment in Notion (now uses unified Tasks database)
     func createCommitment(_ commitment: Commitment, databaseId: String) async throws -> String {
+        // Convert Commitment to TaskItem and use unified Tasks database
+        let taskItem = TaskItem.fromCommitment(commitment)
+        return try await createTask(taskItem)
+    }
+
+    /// Legacy create commitment (deprecated - use createCommitment instead)
+    func createCommitmentLegacy(_ commitment: Commitment, databaseId: String) async throws -> String {
         let formattedId = formatNotionId(databaseId)
         let url = URL(string: "https://api.notion.com/v1/pages")!
         var request = URLRequest(url: url)

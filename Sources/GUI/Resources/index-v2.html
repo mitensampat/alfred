@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Alfred - Executive Assistant</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1d21; color: #d1d2d3; line-height: 1.6; }
+
+        /* Auth Screen */
+        .auth-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+        .auth-logo { font-size: 32px; font-weight: 700; letter-spacing: 3px; color: #fff; margin-bottom: 48px; }
+        .auth-card { width: 100%; max-width: 400px; background: #252a2e; border: 1px solid #2f3338; border-radius: 12px; padding: 32px; }
+        .auth-card input { width: 100%; padding: 14px; background: #1a1d21; border: 1px solid #2f3338; border-radius: 6px; color: #fff; font-size: 15px; }
+        .auth-card button { width: 100%; padding: 14px; background: #522d5b; border: none; border-radius: 6px; color: #fff; font-size: 15px; font-weight: 600; margin-top: 16px; cursor: pointer; transition: background 0.2s; }
+        .auth-card button:hover { background: #6d3a7a; }
+        .auth-error { color: #e01e5a; font-size: 13px; margin-top: 12px; }
+        .hidden { display: none !important; }
+
+        /* Main App Container */
+        .app-container { display: none; max-width: 800px; margin: 0 auto; padding: 20px; min-height: 100vh; }
+        .app-container.active { display: flex; flex-direction: column; }
+
+        /* Header */
+        .header { text-align: center; padding: 24px 0; }
+        .header h1 { font-size: 28px; font-weight: 700; letter-spacing: 2px; color: #fff; margin-bottom: 8px; }
+        .header p { font-size: 14px; color: #9ca3af; }
+
+        /* Query Input Section */
+        .query-section { margin: 24px 0; }
+        .query-input-container { position: relative; }
+        .query-input { width: 100%; padding: 16px 52px 16px 16px; background: #252a2e; border: 2px solid #2f3338; border-radius: 12px; color: #fff; font-size: 15px; resize: none; min-height: 80px; transition: border-color 0.2s; }
+        .query-input:focus { outline: none; border-color: #522d5b; }
+        .query-input::placeholder { color: #6b7280; }
+        .send-button { position: absolute; right: 12px; bottom: 12px; width: 40px; height: 40px; background: #522d5b; border: none; border-radius: 8px; color: #fff; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+        .send-button:hover { background: #6d3a7a; }
+        .send-button:disabled { background: #2f3338; cursor: not-allowed; }
+
+        /* Quick Actions Grid */
+        .quick-actions { margin: 32px 0; }
+        .quick-actions-label { font-size: 11px; font-weight: 600; color: #9ca3af; letter-spacing: 1px; margin-bottom: 12px; text-transform: uppercase; }
+        .actions-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+        .quick-action-btn { background: #252a2e; border: 1px solid #2f3338; border-radius: 10px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.2s; }
+        .quick-action-btn:hover { background: #2f3338; border-color: #522d5b; }
+        .quick-action-icon { font-size: 24px; margin-bottom: 8px; }
+        .quick-action-text { font-size: 13px; font-weight: 500; color: #fff; }
+
+        /* Response Area */
+        .response-area { margin: 32px 0; }
+        .response-card { background: #252a2e; border: 1px solid #2f3338; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+        .response-query { font-size: 14px; color: #9ca3af; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #2f3338; }
+        .response-query strong { color: #fff; }
+        .response-text { font-size: 15px; color: #fff; line-height: 1.6; white-space: pre-wrap; }
+        .response-loading { text-align: center; padding: 40px; color: #9ca3af; }
+        .response-loading::after { content: '...'; animation: dots 1.5s steps(4, end) infinite; }
+        @keyframes dots { 0%, 20% { content: '.'; } 40% { content: '..'; } 60% { content: '...'; } }
+
+        /* Data Display */
+        .data-card { background: #1a1d21; border: 1px solid #2f3338; border-radius: 8px; padding: 16px; margin-top: 16px; }
+        .data-card-title { font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 12px; }
+        .data-item { padding: 12px; background: #252a2e; border-radius: 6px; margin-bottom: 8px; }
+        .data-item-title { font-size: 14px; font-weight: 500; color: #fff; margin-bottom: 4px; }
+        .data-item-text { font-size: 13px; color: #9ca3af; }
+        .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-left: 8px; }
+        .badge-high { background: rgba(224, 30, 90, 0.2); color: #e01e5a; }
+        .badge-medium { background: rgba(255, 212, 0, 0.2); color: #ffd400; }
+        .badge-low { background: rgba(90, 200, 250, 0.2); color: #5ac8fa; }
+
+        /* Suggested Follow-ups */
+        .follow-ups { margin-top: 16px; }
+        .follow-up-label { font-size: 12px; font-weight: 600; color: #9ca3af; margin-bottom: 8px; }
+        .follow-up-btn { background: #1a1d21; border: 1px solid #2f3338; border-radius: 6px; padding: 10px 14px; margin-right: 8px; margin-bottom: 8px; display: inline-block; font-size: 13px; color: #fff; cursor: pointer; transition: all 0.2s; }
+        .follow-up-btn:hover { background: #252a2e; border-color: #522d5b; }
+
+        /* Query History */
+        .history-section { margin: 48px 0 24px 0; padding-top: 24px; border-top: 1px solid #2f3338; }
+        .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .history-title { font-size: 11px; font-weight: 600; color: #9ca3af; letter-spacing: 1px; text-transform: uppercase; }
+        .history-clear { font-size: 12px; color: #9ca3af; cursor: pointer; transition: color 0.2s; }
+        .history-clear:hover { color: #e01e5a; }
+        .history-list { display: flex; flex-direction: column; gap: 8px; }
+        .history-item { background: #252a2e; border: 1px solid #2f3338; border-radius: 8px; padding: 12px 16px; cursor: pointer; transition: all 0.2s; display: flex; justify-content: space-between; align-items: center; }
+        .history-item:hover { background: #2f3338; border-color: #522d5b; }
+        .history-item-text { font-size: 13px; color: #fff; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 12px; }
+        .history-item-time { font-size: 11px; color: #6b7280; white-space: nowrap; }
+        .history-empty { text-align: center; padding: 24px; color: #6b7280; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <!-- Auth Screen -->
+    <div id="authScreen" class="auth-screen">
+        <div class="auth-logo">ALFRED</div>
+        <div class="auth-card">
+            <input type="password" id="passcodeInput" placeholder="Enter your passcode" onkeypress="if(event.key==='Enter')authenticate()" />
+            <button onclick="authenticate()">Unlock</button>
+            <div id="authError" class="auth-error hidden"></div>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="appContainer" class="app-container">
+        <div class="header">
+            <h1>ALFRED</h1>
+            <p id="greeting">Your executive assistant</p>
+        </div>
+
+        <!-- Query Input -->
+        <div class="query-section">
+            <div class="query-input-container">
+                <textarea
+                    id="queryInput"
+                    class="query-input"
+                    placeholder="Ask me anything... e.g., 'Find my commitments to Mona Gandhi over the last two weeks'"
+                    onkeypress="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendQuery();}"
+                ></textarea>
+                <button class="send-button" onclick="sendQuery()" id="sendButton">
+                    ➤
+                </button>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="quick-actions">
+            <div class="quick-actions-label">Quick Actions</div>
+            <div class="actions-grid">
+                <div class="quick-action-btn" onclick="quickAction('What are my priorities today?')">
+                    <div class="quick-action-icon">⚡</div>
+                    <div class="quick-action-text">Today's Priorities</div>
+                </div>
+                <div class="quick-action-btn" onclick="quickAction('Show me messages that need a response')">
+                    <div class="quick-action-icon">💬</div>
+                    <div class="quick-action-text">Pending Messages</div>
+                </div>
+                <div class="quick-action-btn" onclick="quickAction('What meetings do I have today?')">
+                    <div class="quick-action-icon">📅</div>
+                    <div class="quick-action-text">Today's Meetings</div>
+                </div>
+                <div class="quick-action-btn" onclick="quickAction('Run an attention check')">
+                    <div class="quick-action-icon">👁️</div>
+                    <div class="quick-action-text">Attention Check</div>
+                </div>
+                <div class="quick-action-btn" onclick="quickAction('Show my commitments')">
+                    <div class="quick-action-icon">📋</div>
+                    <div class="quick-action-text">My Commitments</div>
+                </div>
+                <div class="quick-action-btn" onclick="quickAction('Scan for todos')">
+                    <div class="quick-action-icon">✅</div>
+                    <div class="quick-action-text">Scan Todos</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Response Area -->
+        <div id="responseArea" class="response-area"></div>
+
+        <!-- Query History -->
+        <div class="history-section">
+            <div class="history-header">
+                <div class="history-title">Recent Queries</div>
+                <div class="history-clear" onclick="clearHistory()">Clear All</div>
+            </div>
+            <div id="historyList" class="history-list">
+                <div class="history-empty">No recent queries</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let apiKey = '';
+
+        // Authentication
+        function authenticate() {
+            const passcode = document.getElementById('passcodeInput').value;
+            if (!passcode) {
+                showAuthError('Please enter a passcode');
+                return;
+            }
+
+            apiKey = passcode;
+            fetch('/api/health', { headers: { 'X-API-Key': apiKey } })
+                .then(r => {
+                    if (r.ok) {
+                        localStorage.setItem('alfred-api-key', apiKey);
+                        showApp();
+                    } else {
+                        showAuthError('Invalid passcode');
+                    }
+                })
+                .catch(() => showAuthError('Connection failed'));
+        }
+
+        function showAuthError(message) {
+            const errorEl = document.getElementById('authError');
+            errorEl.textContent = message;
+            errorEl.classList.remove('hidden');
+        }
+
+        function showApp() {
+            document.getElementById('authScreen').style.display = 'none';
+            document.getElementById('appContainer').classList.add('active');
+            updateGreeting();
+        }
+
+        function updateGreeting() {
+            const hour = new Date().getHours();
+            let greeting = 'Good evening';
+            if (hour < 12) greeting = 'Good morning';
+            else if (hour < 17) greeting = 'Good afternoon';
+            document.getElementById('greeting').textContent = greeting;
+        }
+
+        // Query Handling
+        function quickAction(query) {
+            document.getElementById('queryInput').value = query;
+            sendQuery();
+        }
+
+        async function sendQuery() {
+            const queryInput = document.getElementById('queryInput');
+            const query = queryInput.value.trim();
+
+            if (!query) return;
+
+            // Save to history
+            saveQueryToHistory(query);
+
+            // Disable send button
+            const sendButton = document.getElementById('sendButton');
+            sendButton.disabled = true;
+
+            // Show loading state
+            const responseArea = document.getElementById('responseArea');
+            responseArea.innerHTML = '<div class="response-card"><div class="response-loading">Processing your request</div></div>';
+
+            try {
+                const response = await fetch('/api/query', {
+                    method: 'POST',
+                    headers: {
+                        'X-API-Key': apiKey,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ query })
+                });
+
+                const data = await response.json();
+
+                if (data.type === 'clarification') {
+                    displayClarification(query, data.question);
+                } else if (data.type === 'result') {
+                    displayResult(query, data);
+                }
+
+                // Clear input
+                queryInput.value = '';
+            } catch (error) {
+                responseArea.innerHTML = `<div class="response-card"><div class="response-text" style="color: #e01e5a;">Error: ${error.message}</div></div>`;
+            } finally {
+                sendButton.disabled = false;
+            }
+        }
+
+        function displayClarification(query, question) {
+            const responseArea = document.getElementById('responseArea');
+            responseArea.innerHTML = `
+                <div class="response-card">
+                    <div class="response-query"><strong>You asked:</strong> ${escapeHtml(query)}</div>
+                    <div class="response-text">
+                        I need more information to help with this request:
+
+                        ${escapeHtml(question)}
+                    </div>
+                </div>
+            `;
+        }
+
+        function displayResult(query, data) {
+            const responseArea = document.getElementById('responseArea');
+
+            let html = `
+                <div class="response-card">
+                    <div class="response-query"><strong>You asked:</strong> ${escapeHtml(query)}</div>
+                    <div class="response-text">${escapeHtml(data.response)}</div>
+            `;
+
+            // Add structured data if available
+            if (data.data) {
+                html += '<div class="data-card"><div class="data-card-title">Details</div>';
+                html += `<pre style="color: #9ca3af; font-size: 12px; overflow-x: auto;">${JSON.stringify(data.data, null, 2)}</pre>`;
+                html += '</div>';
+            }
+
+            // Add follow-ups if available
+            if (data.suggestedFollowUps && data.suggestedFollowUps.length > 0) {
+                html += '<div class="follow-ups"><div class="follow-up-label">Try these next:</div>';
+                data.suggestedFollowUps.forEach(followUp => {
+                    html += `<span class="follow-up-btn" onclick="quickAction('${escapeHtml(followUp)}')">${escapeHtml(followUp)}</span>`;
+                });
+                html += '</div>';
+            }
+
+            html += '</div>';
+            responseArea.innerHTML = html;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Query History
+        function saveQueryToHistory(query) {
+            let history = JSON.parse(localStorage.getItem('alfred-query-history') || '[]');
+
+            // Don't save duplicate consecutive queries
+            if (history.length > 0 && history[0].query === query) {
+                return;
+            }
+
+            // Add new query at the beginning
+            history.unshift({
+                query: query,
+                timestamp: new Date().toISOString()
+            });
+
+            // Keep only last 10 queries
+            history = history.slice(0, 10);
+
+            localStorage.setItem('alfred-query-history', JSON.stringify(history));
+            renderHistory();
+        }
+
+        function loadHistory() {
+            return JSON.parse(localStorage.getItem('alfred-query-history') || '[]');
+        }
+
+        function renderHistory() {
+            const history = loadHistory();
+            const historyList = document.getElementById('historyList');
+
+            if (history.length === 0) {
+                historyList.innerHTML = '<div class="history-empty">No recent queries</div>';
+                return;
+            }
+
+            historyList.innerHTML = history.map(item => {
+                const timeAgo = formatTimeAgo(new Date(item.timestamp));
+                return `
+                    <div class="history-item" onclick="quickAction('${escapeHtml(item.query)}')">
+                        <div class="history-item-text">${escapeHtml(item.query)}</div>
+                        <div class="history-item-time">${timeAgo}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function clearHistory() {
+            if (confirm('Clear all query history?')) {
+                localStorage.removeItem('alfred-query-history');
+                renderHistory();
+            }
+        }
+
+        function formatTimeAgo(date) {
+            const seconds = Math.floor((new Date() - date) / 1000);
+
+            if (seconds < 60) return 'Just now';
+            if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+            if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+            if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+
+            return date.toLocaleDateString();
+        }
+
+        // Auto-load if API key is stored
+        window.addEventListener('load', () => {
+            const storedKey = localStorage.getItem('alfred-api-key');
+            if (storedKey) {
+                apiKey = storedKey;
+                showApp();
+                renderHistory();
+            }
+        });
+    </script>
+</body>
+</html>

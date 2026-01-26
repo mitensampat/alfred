@@ -4,6 +4,7 @@ enum MessagePlatform: String, Codable {
     case imessage
     case whatsapp
     case signal
+    case email
 }
 
 enum MessageDirection: String, Codable {
@@ -66,5 +67,20 @@ enum UrgencyLevel: String, Codable, Comparable {
             return false
         }
         return lhsIndex < rhsIndex
+    }
+}
+
+struct MessageDraft: Codable {
+    let recipient: String
+    let platform: MessagePlatform
+    let content: String
+    let tone: MessageTone
+    let suggestedSendTime: Date?
+
+    enum MessageTone: String, Codable {
+        case professional
+        case casual
+        case friendly
+        case formal
     }
 }

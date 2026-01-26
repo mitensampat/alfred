@@ -265,6 +265,11 @@ class ClaudeAIService {
 
     // MARK: - Private Helpers
 
+    /// Generate text from a prompt (public method for agents and intent recognition)
+    func generateText(prompt: String, maxTokens: Int = 4096, useModel: String? = nil) async throws -> String {
+        return try await sendRequest(prompt: prompt, useModel: useModel)
+    }
+
     private func sendRequest(prompt: String, useModel: String? = nil) async throws -> String {
         let url = URL(string: baseURL)!
         var request = URLRequest(url: url)
@@ -311,7 +316,14 @@ class ClaudeAIService {
                 }
             }
 
-            throw AIError.requestFailed
+            // Provide user-friendly error messages
+            if httpResponse.statusCode == 529 {
+                throw AIError.overloaded
+            } else if httpResponse.statusCode == 429 {
+                throw AIError.rateLimited
+            } else {
+                throw AIError.requestFailed
+            }
         }
 
         let apiResponse = try JSONDecoder().decode(ClaudeResponse.self, from: data)
@@ -564,6 +576,16 @@ struct TodoItem {
     let sourceMessage: Message
 }
 
+struct TodoScanResult {
+    let messagesScanned: Int
+    let todosFound: Int
+    let todosCreated: Int
+    let duplicatesSkipped: Int
+    let notTodos: Int
+    let createdTodos: [TodoItem]
+    let lookbackDays: Int
+}
+
 struct FocusedThreadAnalysis {
     let thread: MessageThread
     let summary: String
@@ -589,6 +611,8 @@ enum AIError: Error, LocalizedError {
     case requestFailed
     case parsingFailed
     case invalidResponse
+    case overloaded
+    case rateLimited
 
     var errorDescription: String? {
         switch self {
@@ -596,6 +620,10 @@ enum AIError: Error, LocalizedError {
             return "AI API request failed"
         case .parsingFailed:
             return "Failed to parse AI response"
+        case .overloaded:
+            return "AI service is currently overloaded. Please try again in a moment."
+        case .rateLimited:
+            return "Rate limit exceeded. Please wait a moment before trying again."
         case .invalidResponse:
             return "Invalid response from AI"
         }
