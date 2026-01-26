@@ -149,6 +149,10 @@ struct AlfredApp {
                 await runShowDrafts()
             case "clear-drafts":
                 await runClearDrafts()
+            case "agents":
+                await runAgentsCommand(filteredArgs)
+            case "teach":
+                await runTeachCommand(filteredArgs)
             case "server":
                 await runServer(config, orchestrator)
             default:
@@ -1299,6 +1303,295 @@ struct AlfredApp {
         }
     }
 
+    // MARK: - Agent Commands
+
+    static func runAgentsCommand(_ args: [String]) async {
+        let memoryService = AgentMemoryService.shared
+
+        // alfred agents                    - show all agents summary
+        // alfred agents memory [agent]     - show agent's memory
+        // alfred agents skills [agent]     - show agent's skills
+        // alfred agents forget [agent] "pattern" - forget a pattern
+
+        guard args.count >= 2 else {
+            printAgentsSummary(memoryService)
+            return
+        }
+
+        if args.count == 2 {
+            // Just "alfred agents" - show summary
+            printAgentsSummary(memoryService)
+            return
+        }
+
+        let subcommand = args[2]
+
+        switch subcommand {
+        case "memory":
+            if args.count > 3 {
+                let agentName = args[3].lowercased()
+                if let agentType = parseAgentType(agentName) {
+                    printAgentMemory(memoryService, agentType: agentType)
+                } else {
+                    print("Unknown agent: \(agentName)")
+                    print("Available agents: communication, task, calendar, followup")
+                }
+            } else {
+                // Show all agents' memory summaries
+                print("\n🧠 AGENT MEMORIES")
+                print(String(repeating: "=", count: 60))
+                for agentType in [AgentType.communication, .task, .calendar, .followup] {
+                    let summary = memoryService.getMemorySummary(for: agentType)
+                    print("\n\(agentType.displayName) Agent:")
+                    print("  • Taught rules: \(summary.taughtRulesCount)")
+                    print("  • Learned patterns: \(summary.learnedPatternsCount)")
+                    if !summary.contactsKnown.isEmpty {
+                        print("  • Contacts known: \(summary.contactsKnown.joined(separator: ", "))")
+                    }
+                    print("  • Last updated: \(summary.formattedLastUpdated)")
+                }
+                print("\nUse 'alfred agents memory [agent]' to see full memory")
+            }
+
+        case "skills":
+            if args.count > 3 {
+                let agentName = args[3].lowercased()
+                if let agentType = parseAgentType(agentName) {
+                    printAgentSkills(memoryService, agentType: agentType)
+                } else {
+                    print("Unknown agent: \(agentName)")
+                    print("Available agents: communication, task, calendar, followup")
+                }
+            } else {
+                // Show all agents' skills summaries
+                print("\n⚡ AGENT SKILLS")
+                print(String(repeating: "=", count: 60))
+                for agentType in [AgentType.communication, .task, .calendar, .followup] {
+                    let skills = memoryService.getSkills(for: agentType)
+                    print("\n\(agentType.displayName) Agent:")
+                    for capability in skills.capabilities {
+                        print("  • \(capability)")
+                    }
+                }
+                print("\nUse 'alfred agents skills [agent]' to see full skills documentation")
+            }
+
+        case "forget":
+            if args.count > 4 {
+                let agentName = args[3].lowercased()
+                let pattern = args[4]
+                if let agentType = parseAgentType(agentName) {
+                    do {
+                        let found = try memoryService.forget(agentType: agentType, pattern: pattern)
+                        if !found {
+                            print("No patterns containing \"\(pattern)\" found in \(agentType.displayName) memory")
+                        }
+                    } catch {
+                        print("Error: \(error)")
+                    }
+                } else {
+                    print("Unknown agent: \(agentName)")
+                }
+            } else {
+                print("Usage: alfred agents forget [agent] \"pattern\"")
+                print("Example: alfred agents forget communication \"formal with\"")
+            }
+
+        case "consolidate":
+            print("\n🧠 Learning Consolidation")
+            print(String(repeating: "=", count: 60))
+
+            // Show summary first
+            let summary = memoryService.getConsolidationSummary()
+            print("\nLearning Database Status:")
+            print("  • Total patterns tracked: \(summary.totalPatterns)")
+            print("  • Patterns ready for consolidation: \(summary.patternsReadyForConsolidation)")
+
+            if !summary.patternsByAgent.isEmpty {
+                print("  • By agent:")
+                for (agent, count) in summary.patternsByAgent {
+                    print("    - \(agent): \(count) patterns")
+                }
+            }
+
+            if summary.patternsReadyForConsolidation > 0 {
+                print("\nConsolidating learnings to memory files...")
+                do {
+                    try memoryService.consolidateLearnings()
+                } catch {
+                    print("Error during consolidation: \(error)")
+                }
+            } else {
+                print("\nNo patterns ready for consolidation yet.")
+                print("Patterns need confidence >= 70% and at least 5 feedback instances.")
+            }
+
+        case "status":
+            print("\n🧠 Agent Learning Status")
+            print(String(repeating: "=", count: 60))
+
+            let summary = memoryService.getConsolidationSummary()
+            print("\nLearning Database:")
+            print("  • Total patterns tracked: \(summary.totalPatterns)")
+            print("  • Ready for consolidation: \(summary.patternsReadyForConsolidation)")
+
+            print("\nAgent Memories:")
+            for agentType in [AgentType.communication, .task, .calendar, .followup] {
+                let memorySummary = memoryService.getMemorySummary(for: agentType)
+                print("\n  \(agentType.displayName) Agent:")
+                print("    • Taught rules: \(memorySummary.taughtRulesCount)")
+                print("    • Learned patterns: \(memorySummary.learnedPatternsCount)")
+                print("    • Last updated: \(memorySummary.formattedLastUpdated)")
+            }
+
+        default:
+            print("Unknown subcommand: \(subcommand)")
+            printAgentsUsage()
+        }
+    }
+
+    static func runTeachCommand(_ args: [String]) async {
+        // alfred teach [agent] "rule"
+        // alfred teach [agent] --category [category] "rule"
+
+        guard args.count >= 4 else {
+            printTeachUsage()
+            return
+        }
+
+        let agentName = args[2].lowercased()
+        guard let agentType = parseAgentType(agentName) else {
+            print("Unknown agent: \(agentName)")
+            print("Available agents: communication, task, calendar, followup")
+            return
+        }
+
+        // Check for category flag
+        var category: String? = nil
+        var ruleStartIndex = 3
+
+        if args.count > 4 && args[3] == "--category" {
+            category = args[4]
+            ruleStartIndex = 5
+        }
+
+        guard args.count > ruleStartIndex else {
+            print("Please provide a rule to teach")
+            printTeachUsage()
+            return
+        }
+
+        // Combine remaining args as the rule (handles quoted strings)
+        let rule = args[ruleStartIndex...].joined(separator: " ")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+
+        let memoryService = AgentMemoryService.shared
+        do {
+            try memoryService.teach(agentType: agentType, rule: rule, category: category)
+            print("\n💡 The \(agentType.displayName) agent will now follow this rule.")
+            print("   View with: alfred agents memory \(agentName)")
+        } catch {
+            print("Error teaching agent: \(error)")
+        }
+    }
+
+    static func parseAgentType(_ name: String) -> AgentType? {
+        switch name {
+        case "communication", "comm", "com":
+            return .communication
+        case "task", "tasks":
+            return .task
+        case "calendar", "cal":
+            return .calendar
+        case "followup", "follow", "followups":
+            return .followup
+        default:
+            return nil
+        }
+    }
+
+    static func printAgentsSummary(_ memoryService: AgentMemoryService) {
+        print("\n🤖 ALFRED AGENTS")
+        print(String(repeating: "=", count: 60))
+
+        for agentType in [AgentType.communication, .task, .calendar, .followup] {
+            let summary = memoryService.getMemorySummary(for: agentType)
+            let skills = memoryService.getSkills(for: agentType)
+
+            print("\n\(agentType.displayName) Agent")
+            print("  Skills: \(skills.capabilities.joined(separator: ", "))")
+            print("  Memory: \(summary.taughtRulesCount) rules, \(summary.learnedPatternsCount) patterns learned")
+            print("  Last updated: \(summary.formattedLastUpdated)")
+        }
+
+        print("\n" + String(repeating: "-", count: 60))
+        print("Commands:")
+        print("  alfred agents memory [agent]    - View agent's memory")
+        print("  alfred agents skills [agent]    - View agent's capabilities")
+        print("  alfred teach [agent] \"rule\"     - Teach agent a new rule")
+        print("  alfred agents forget [agent] \"pattern\" - Remove a learned pattern")
+        print("")
+    }
+
+    static func printAgentMemory(_ memoryService: AgentMemoryService, agentType: AgentType) {
+        let memory = memoryService.getMemory(for: agentType)
+
+        print("\n🧠 \(agentType.displayName.uppercased()) AGENT MEMORY")
+        print(String(repeating: "=", count: 60))
+
+        // Print the raw markdown content (formatted)
+        print(memory.content)
+
+        print(String(repeating: "-", count: 60))
+        print("Edit at: ~/.alfred/agents/\(agentType.rawValue)/memory.md")
+        print("Teach:   alfred teach \(agentType.rawValue) \"your rule here\"")
+        print("")
+    }
+
+    static func printAgentSkills(_ memoryService: AgentMemoryService, agentType: AgentType) {
+        let skills = memoryService.getSkills(for: agentType)
+
+        print("\n⚡ \(agentType.displayName.uppercased()) AGENT SKILLS")
+        print(String(repeating: "=", count: 60))
+
+        // Print the raw markdown content
+        print(skills.content)
+
+        print(String(repeating: "-", count: 60))
+        print("Skills file: ~/.alfred/agents/\(agentType.rawValue)/skills.md")
+        print("")
+    }
+
+    static func printAgentsUsage() {
+        print("\nUsage:")
+        print("  alfred agents                    - Show all agents summary")
+        print("  alfred agents memory             - Show all agents' memory summaries")
+        print("  alfred agents memory [agent]     - Show specific agent's full memory")
+        print("  alfred agents skills             - Show all agents' skills summaries")
+        print("  alfred agents skills [agent]     - Show specific agent's full skills")
+        print("  alfred agents forget [agent] \"pattern\" - Remove learned pattern")
+        print("  alfred agents consolidate        - Consolidate learnings to memory files")
+        print("  alfred agents status             - Show learning status and statistics")
+        print("")
+        print("Agents: communication, task, calendar, followup")
+        print("")
+    }
+
+    static func printTeachUsage() {
+        print("\nUsage:")
+        print("  alfred teach [agent] \"rule\"")
+        print("  alfred teach [agent] --category [category] \"rule\"")
+        print("")
+        print("Examples:")
+        print("  alfred teach communication \"Always be formal with investors\"")
+        print("  alfred teach task \"Friday afternoons are for deep work\"")
+        print("  alfred teach calendar --category Prep \"Board meetings need 30 min prep\"")
+        print("  alfred teach followup \"Always follow up with VCs within 24 hours\"")
+        print("")
+        print("Agents: communication, task, calendar, followup")
+        print("")
+    }
+
     static func printBriefing(_ briefing: DailyBriefing) {
         print("Date: \(briefing.date.formatted(date: .long, time: .omitted))\n")
 
@@ -1639,6 +1932,17 @@ struct AlfredApp {
           drafts                View message drafts created by agents (review only)
           clear-drafts          Remove all drafts
 
+          agents                View all agents and their status
+          agents memory [agent] View what an agent has learned
+          agents skills [agent] View an agent's capabilities
+          agents forget [agent] "pattern"
+                                Remove a learned pattern from agent memory
+
+          teach [agent] "rule"  Teach an agent a new rule
+                                Examples: teach communication "Be formal with investors"
+                                         teach task "Fridays are for deep work"
+                                         teach calendar "Board meetings need 30 min prep"
+
         Flags:
           --notify              Send output via configured notification channels (email, Slack, push)
 
@@ -1670,6 +1974,12 @@ struct AlfredApp {
           # Agent drafts
           alfred drafts                      # Review agent-created message drafts
           alfred clear-drafts                # Clear all drafts
+
+          # Agent learning
+          alfred agents                      # See all agents status
+          alfred agents memory communication # See communication agent's memory
+          alfred teach communication "Always CC my assistant on external emails"
+          alfred teach task "Deep work before 11am"
 
         Workflow Examples:
           # Morning routine

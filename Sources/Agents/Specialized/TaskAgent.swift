@@ -9,6 +9,7 @@ class TaskAgent: AgentProtocol {
     private let learningEngine: LearningEngine
     private let attentionTracker: AttentionTracker
     private let aiService: ClaudeAIService
+    private let memoryService: AgentMemoryService
 
     init(config: AgentConfig, appConfig: AppConfig, learningEngine: LearningEngine) {
         self.config = config
@@ -17,6 +18,7 @@ class TaskAgent: AgentProtocol {
         self.learningEngine = learningEngine
         self.aiService = ClaudeAIService(config: appConfig.ai)
         self.attentionTracker = AttentionTracker(aiService: self.aiService)
+        self.memoryService = AgentMemoryService.shared
     }
 
     // MARK: - Evaluation
@@ -375,8 +377,16 @@ class TaskAgent: AgentProtocol {
     }
 
     private func askUserAboutMeeting(pattern: String, sampleMeeting: CalendarEvent) async throws -> MeetingCategory {
-        // Use AI to suggest category based on meeting details
-        let prompt = """
+        // Get memory context for task prioritization rules
+        let memoryContext = memoryService.getMemoryForPrompt(agentType: .task, context: nil)
+
+        // Use AI to suggest category based on meeting details and user preferences
+        var prompt = ""
+        if !memoryContext.isEmpty {
+            prompt += memoryContext + "\n"
+        }
+
+        prompt += """
         Analyze this meeting pattern and suggest how valuable it is:
 
         Pattern: \(pattern)
@@ -393,6 +403,7 @@ class TaskAgent: AgentProtocol {
         5. Ceremonial - Could be async
         6. Waste - Low value
 
+        Consider the user's taught rules and learned patterns when categorizing.
         Respond with just the category number and name (e.g., "3. Collaborative")
         """
 

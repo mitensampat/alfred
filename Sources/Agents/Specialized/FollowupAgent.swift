@@ -7,6 +7,7 @@ class FollowupAgent: AgentProtocol {
 
     private let appConfig: AppConfig
     private let learningEngine: LearningEngine
+    private let memoryService: AgentMemoryService
     private var commitmentAnalyzer: CommitmentAnalyzer?
     private var notionService: NotionService?
 
@@ -15,6 +16,7 @@ class FollowupAgent: AgentProtocol {
         self.autonomyLevel = config.autonomyLevel
         self.appConfig = appConfig
         self.learningEngine = learningEngine
+        self.memoryService = AgentMemoryService.shared
 
         // Initialize commitment tracking if enabled
         if let commitmentConfig = appConfig.commitmentConfig,
