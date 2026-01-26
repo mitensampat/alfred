@@ -31,6 +31,14 @@ class AlfredService: ObservableObject {
         print("✅ AlfredService initialized, isInitialized=true")
     }
 
+    func initialize(config: AppConfig, orchestrator: BriefingOrchestrator) async {
+        self.config = config
+        self.orchestrator = orchestrator
+        self.isInitialized = true
+        self.error = nil
+        print("✅ AlfredService initialized with provided config and orchestrator")
+    }
+
     // MARK: - Messages
 
     func fetchMessagesSummary(platform: String = "all", timeframe: String = "24h") async throws -> [MessageSummary] {
@@ -62,7 +70,7 @@ class AlfredService: ObservableObject {
         guard let orchestrator = orchestrator else {
             throw ServiceError.notInitialized
         }
-        return try await orchestrator.generateBriefing(for: date, sendEmail: false)
+        return try await orchestrator.generateBriefing(for: date, sendNotifications: false)
     }
 
     // MARK: - Attention Check
@@ -71,7 +79,7 @@ class AlfredService: ObservableObject {
         guard let orchestrator = orchestrator else {
             throw ServiceError.notInitialized
         }
-        return try await orchestrator.generateAttentionDefenseAlert(sendEmail: false)
+        return try await orchestrator.generateAttentionDefenseAlert(sendNotifications: false)
     }
 
     // MARK: - Notion Todos
@@ -112,14 +120,19 @@ class AlfredService: ObservableObject {
         guard let config = orchestrator.config.commitments, config.enabled else {
             throw ServiceError.commitmentsNotEnabled
         }
-        guard let databaseId = config.notionDatabaseId else {
-            throw ServiceError.notionDatabaseNotConfigured
+
+        // Query Tasks database for commitments
+        let tasks = try await orchestrator.notionServicePublic.queryActiveTasks(type: .commitment)
+
+        // Filter by commitment direction if specified
+        var filteredTasks = tasks
+        if let type = type {
+            let direction: TaskItem.CommitmentDirection = type == .iOwe ? .iOwe : .theyOweMe
+            filteredTasks = tasks.filter { $0.commitmentDirection == direction }
         }
 
-        return try await orchestrator.notionServicePublic.queryActiveCommitments(
-            databaseId: databaseId,
-            type: type
-        )
+        // Convert TaskItems to Commitments
+        return filteredTasks.compactMap { $0.toCommitment() }
     }
 
     func fetchOverdueCommitments() async throws -> [Commitment] {
@@ -129,11 +142,12 @@ class AlfredService: ObservableObject {
         guard let config = orchestrator.config.commitments, config.enabled else {
             throw ServiceError.commitmentsNotEnabled
         }
-        guard let databaseId = config.notionDatabaseId else {
-            throw ServiceError.notionDatabaseNotConfigured
-        }
 
-        return try await orchestrator.notionServicePublic.queryOverdueCommitments(databaseId: databaseId)
+        // Query Tasks database for commitments
+        let tasks = try await orchestrator.notionServicePublic.queryActiveTasks(type: .commitment)
+
+        // Filter for overdue commitments and convert to Commitment type
+        return tasks.filter { $0.isOverdue }.compactMap { $0.toCommitment() }
     }
 
     func scanCommitments(contactName: String?, lookbackDays: Int) async throws -> CommitmentScanResult {
@@ -170,7 +184,7 @@ class AlfredService: ObservableObject {
                 guard let firstMessage = threadMessages.first else { continue }
                 let messages = threadMessages.map { $0.message }
 
-                let extraction = try await orchestrator.commitmentAnalyzerPublic.analyzeMessages(
+                let extraction = try await orchestrator.commitmentAnalyzer.analyzeMessages(
                     messages,
                     platform: firstMessage.platform,
                     threadName: threadName,
@@ -234,6 +248,110 @@ class AlfredService: ObservableObject {
         let draftsFile = homeDir.appendingPathComponent(".alfred/message_drafts.json")
         let data = try JSONEncoder().encode(drafts)
         try data.write(to: draftsFile)
+    }
+
+    // MARK: - Additional API Methods
+
+    /// Scan messages for commitments with a specific contact
+    func scanMessagesForCommitments(contact: String, timeframe: String) async throws -> [Commitment] {
+        guard let orchestrator = orchestrator else {
+            throw ServiceError.notInitialized
+        }
+        guard let config = orchestrator.config.commitments, config.enabled else {
+            throw ServiceError.commitmentsNotEnabled
+        }
+
+        // Parse timeframe (e.g., "7d" -> 7 days)
+        let lookbackDays: Int
+        if timeframe.hasSuffix("d") {
+            lookbackDays = Int(timeframe.dropLast()) ?? 7
+        } else {
+            lookbackDays = 7 // default
+        }
+
+        let startDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+
+        // Fetch messages for this contact
+        let allMessages = try await orchestrator.fetchMessagesForContact(contact, since: startDate)
+
+        guard !allMessages.isEmpty else {
+            // No messages found, return existing commitments instead
+            let existingCommitments = try await fetchCommitments()
+            return existingCommitments.filter { commitment in
+                commitment.committedBy.lowercased().contains(contact.lowercased()) ||
+                commitment.committedTo.lowercased().contains(contact.lowercased())
+            }
+        }
+
+        // Group by thread and analyze for commitments
+        let groupedByThread = Dictionary(grouping: allMessages) { $0.threadName }
+        var foundCommitments: [Commitment] = []
+
+        for (threadName, threadMessages) in groupedByThread {
+            guard let firstMessage = threadMessages.first else { continue }
+            let messages = threadMessages.map { $0.message }
+
+            // Extract commitments using AI
+            let extraction = try await orchestrator.commitmentAnalyzer.analyzeMessages(
+                messages,
+                platform: firstMessage.platform,
+                threadName: threadName,
+                threadId: firstMessage.threadId
+            )
+
+            // For each found commitment, check if it already exists in Tasks database
+            for commitment in extraction.commitments {
+                let existingPageId = try await orchestrator.notionServicePublic.findTaskByHash(
+                    commitment.uniqueHash
+                )
+
+                if existingPageId == nil {
+                    // New commitment - save to Tasks database
+                    // createCommitment converts to TaskItem and saves to Tasks database
+                    _ = try await orchestrator.notionServicePublic.createCommitment(
+                        commitment,
+                        databaseId: ""  // Not used anymore, kept for compatibility
+                    )
+                }
+
+                // Add to results (whether new or existing)
+                foundCommitments.append(commitment)
+            }
+        }
+
+        return foundCommitments
+    }
+
+    /// Get message summary for a specific contact
+    func getMessagesSummaryForContact(contact: String, platform: String, timeframe: String) async throws -> (summary: String, keyPoints: [String], needsResponse: Bool, messageCount: Int) {
+        guard let orchestrator = orchestrator else {
+            throw ServiceError.notInitialized
+        }
+
+        // Only WhatsApp is currently supported for focused thread analysis
+        guard platform.lowercased() == "whatsapp" else {
+            return (
+                summary: "Platform '\(platform)' is not yet supported for message summaries. Currently only WhatsApp is available.",
+                keyPoints: ["WhatsApp is the only supported platform at this time"],
+                needsResponse: false,
+                messageCount: 0
+            )
+        }
+
+        // Use the existing getFocusedWhatsAppThread method
+        let analysis = try await orchestrator.getFocusedWhatsAppThread(contactName: contact, timeframe: timeframe)
+
+        // Extract key points from action items
+        let keyPoints = analysis.actionItems.map { actionItem in
+            "[\(actionItem.priority)] \(actionItem.item)"
+        }
+
+        return (
+            summary: analysis.summary,
+            keyPoints: keyPoints,
+            needsResponse: !analysis.actionItems.isEmpty,
+            messageCount: analysis.thread.messages.count
+        )
     }
 }
 

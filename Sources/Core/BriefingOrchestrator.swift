@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 class BriefingOrchestrator {
     let config: AppConfig
@@ -508,12 +509,48 @@ class BriefingOrchestrator {
 
         for action in actions {
             do {
-                let pageId = try await notionService.createTodo(
+                let description = action.description + "\n\nSource: " + action.source.displayName
+
+                // Generate hash for duplicate detection
+                let hash = Self.generateTaskHash(
                     title: action.title,
-                    description: action.description + "\n\nSource: " + action.source.displayName,
-                    dueDate: action.dueDate,
-                    assignee: config.user.name
+                    description: description,
+                    platform: "Alfred",
+                    threadId: "recommended-actions"
                 )
+
+                // Check if task already exists by hash
+                if let _ = try await notionService.findTaskByHash(hash) {
+                    print("  ⚠️  Skipping duplicate: \(action.title)")
+                    continue
+                }
+
+                // Create TaskItem from recommended action
+                let taskItem = TaskItem(
+                    notionId: "",
+                    title: action.title,
+                    type: .todo,
+                    status: .notStarted,
+                    description: description,
+                    dueDate: action.dueDate,
+                    priority: action.priority == .critical ? .critical : (action.priority == .high ? .high : .medium),
+                    assignee: config.user.name,
+                    commitmentDirection: nil,
+                    committedBy: nil,
+                    committedTo: nil,
+                    originalContext: nil,
+                    sourcePlatform: nil,
+                    sourceThread: action.source.displayName,
+                    sourceThreadId: nil,
+                    tags: nil,
+                    followUpDate: nil,
+                    uniqueHash: hash,
+                    notes: nil,
+                    createdDate: Date(),
+                    lastUpdated: Date()
+                )
+
+                let pageId = try await notionService.createTask(taskItem)
                 createdIds.append(pageId)
                 print("  ✓ Added: \(action.title)")
             } catch {
@@ -847,15 +884,16 @@ class BriefingOrchestrator {
 
     // MARK: - Notion Integration
 
-    func processWhatsAppTodos() async throws -> [TodoItem] {
+    func processWhatsAppTodos(lookbackDays: Int = 7) async throws -> TodoScanResult {
         print("\n📝 Processing WhatsApp messages for todos...\n")
 
-        // Fetch WhatsApp messages from last 24 hours where I'm the sender
-        let since = Calendar.current.date(byAdding: .hour, value: -24, to: Date())!
+        // Fetch WhatsApp messages from specified lookback period
+        let since = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date())!
+        print("  ↳ Scanning last \(lookbackDays) days...\n")
 
         guard config.messaging.whatsapp.enabled else {
             print("  ⚠️  WhatsApp is not enabled in config")
-            return []
+            return TodoScanResult(messagesScanned: 0, todosFound: 0, todosCreated: 0, duplicatesSkipped: 0, notTodos: 0, createdTodos: [], lookbackDays: lookbackDays)
         }
 
         print("  ↳ Reading WhatsApp database...")
@@ -864,16 +902,20 @@ class BriefingOrchestrator {
         whatsappReader.disconnect()
 
         // Filter for messages to yourself (self)
-        let selfThreads = threads.filter { thread in
-            let name = thread.contactName?.lowercased() ?? ""
-            return name.contains("miten sampat") || name.contains("sampat miten")
+        print("  ↳ All thread names found:")
+        for thread in threads {
+            print("    • \(thread.contactName ?? "Unknown")")
         }
 
-        print("  ✓ Found \(selfThreads.count) thread(s) with yourself\n")
+        let selfThreads = threads.filter { thread in
+            isSelfThread(thread, userFullName: config.user.name)
+        }
+
+        print("  ✓ Found \(selfThreads.count) thread(s) with yourself (using name: \(config.user.name))\n")
 
         if selfThreads.isEmpty {
             print("  ℹ️  No messages to yourself found")
-            return []
+            return TodoScanResult(messagesScanned: 0, todosFound: 0, todosCreated: 0, duplicatesSkipped: 0, notTodos: 0, createdTodos: [], lookbackDays: lookbackDays)
         }
 
         // Fetch existing todos from Notion for duplication check
@@ -883,8 +925,10 @@ class BriefingOrchestrator {
 
         // Extract todos from outgoing messages
         var createdTodos: [TodoItem] = []
+        var allFoundTodos: [TodoItem] = []
         var processedCount = 0
         var skippedDuplicates = 0
+        var notTodoCount = 0
 
         for thread in selfThreads {
             let outgoingMessages = thread.messages.filter { $0.direction == .outgoing }
@@ -895,6 +939,7 @@ class BriefingOrchestrator {
 
                 if let todo = try await aiService.extractTodoFromMessage(message) {
                     print("    ✓ Detected todo: \(todo.title)")
+                    allFoundTodos.append(todo)
 
                     // Check for duplicates
                     let isDuplicate = existingTitles.contains { existingTitle in
@@ -908,14 +953,28 @@ class BriefingOrchestrator {
                         continue
                     }
 
-                    // Create in Notion with assignee and tomorrow as due date
+                    // Create in Notion using unified Tasks database
                     do {
-                        let pageId = try await notionService.createTodo(
+                        // Generate hash for duplicate detection
+                        let hash = Self.generateTaskHash(
                             title: todo.title,
-                            description: todo.description,
-                            dueDate: nil,  // Will default to tomorrow in NotionService
-                            assignee: "Miten Sampat"
+                            description: todo.description ?? "",
+                            platform: "WhatsApp",
+                            threadId: thread.contactIdentifier
                         )
+
+                        // Check if task already exists by hash
+                        if let existingId = try await notionService.findTaskByHash(hash) {
+                            print("    ⚠️  Skipping duplicate (found by hash: \(existingId))\n")
+                            skippedDuplicates += 1
+                            continue
+                        }
+
+                        // Convert TodoItem to TaskItem
+                        let taskItem = TaskItem.fromTodoItem(todo, hash: hash)
+
+                        // Create task in Notion
+                        let pageId = try await notionService.createTask(taskItem)
                         print("    ✓ Created in Notion (ID: \(pageId))\n")
                         createdTodos.append(todo)
                     } catch {
@@ -923,12 +982,22 @@ class BriefingOrchestrator {
                     }
                 } else {
                     print("    • Not a todo\n")
+                    notTodoCount += 1
                 }
             }
         }
 
         print("✓ Processed \(processedCount) message(s), created \(createdTodos.count) todo(s), skipped \(skippedDuplicates) duplicate(s)\n")
-        return createdTodos
+
+        return TodoScanResult(
+            messagesScanned: processedCount,
+            todosFound: allFoundTodos.count,
+            todosCreated: createdTodos.count,
+            duplicatesSkipped: skippedDuplicates,
+            notTodos: notTodoCount,
+            createdTodos: createdTodos,
+            lookbackDays: lookbackDays
+        )
     }
 
     func saveBriefingToNotion(_ briefing: DailyBriefing) async throws -> String {
@@ -1009,5 +1078,60 @@ class BriefingOrchestrator {
         }
 
         return allMessages
+    }
+
+    /// Helper function to check if a thread is a self-thread (messages to yourself)
+    /// Handles all common name variations and formats
+    private func isSelfThread(_ thread: MessageThread, userFullName: String) -> Bool {
+        guard let contactName = thread.contactName else { return false }
+
+        // Normalize the contact name: lowercase and remove "(You)" suffix
+        let normalizedContact = contactName
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "(you)", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Parse user's full name into components
+        let nameComponents = userFullName
+            .components(separatedBy: .whitespaces)
+            .filter { !$0.isEmpty }
+
+        guard nameComponents.count >= 2 else {
+            // Fallback: if config name is not properly formatted, just check if it contains the full name
+            return normalizedContact.contains(userFullName.lowercased())
+        }
+
+        let firstName = nameComponents.first!.lowercased()
+        let lastName = nameComponents.last!.lowercased()
+
+        // Generate all possible name combinations
+        let possibleVariations = [
+            "\(firstName) \(lastName)",      // "miten sampat"
+            "\(lastName) \(firstName)",      // "sampat miten"
+            "\(firstName)\(lastName)",       // "mitensampat"
+            "\(lastName)\(firstName)",       // "sampatmiten"
+            "\(firstName)_\(lastName)",      // "miten_sampat"
+            "\(lastName)_\(firstName)",      // "sampat_miten"
+            "\(firstName).\(lastName)",      // "miten.sampat"
+            "\(lastName).\(firstName)"       // "sampat.miten"
+        ]
+
+        // Check if contact name matches any variation
+        for variation in possibleVariations {
+            if normalizedContact.contains(variation) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    /// Generate unique hash for task deduplication
+    private static func generateTaskHash(title: String, description: String, platform: String, threadId: String) -> String {
+        let combined = "\(title)|\(description)|\(platform)|\(threadId)"
+        let data = Data(combined.utf8)
+        let hash = SHA256.hash(data: data)
+        return hash.compactMap { String(format: "%02x", $0) }.joined()
     }
 }

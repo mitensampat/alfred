@@ -11,6 +11,7 @@ struct AppConfig: Codable {
     let research: ResearchConfig
     let agents: AgentsConfig?
     let commitments: CommitmentConfig?
+    let api: APIConfig?
 
     static func load(from path: String = "Config/config.json") -> AppConfig? {
         // Try multiple config locations in order of preference
@@ -112,6 +113,7 @@ struct CalendarConfig: Codable {
 struct NotionConfig: Codable {
     let apiKey: String
     let databaseId: String
+    let tasksDatabaseId: String?
     let briefingSources: BriefingSources?
 
     struct BriefingSources: Codable {
@@ -127,6 +129,7 @@ struct NotionConfig: Codable {
     enum CodingKeys: String, CodingKey {
         case apiKey = "api_key"
         case databaseId = "database_id"
+        case tasksDatabaseId = "tasks_database_id"
         case briefingSources = "briefing_sources"
     }
 }
@@ -356,5 +359,17 @@ struct AgentsConfig: Codable {
             ),
             learningMode: learning
         )
+    }
+}
+
+struct APIConfig: Codable {
+    let enabled: Bool
+    let port: Int
+    let passcode: String
+
+    enum CodingKeys: String, CodingKey {
+        case enabled
+        case port
+        case passcode
     }
 }

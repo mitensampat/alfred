@@ -1,16 +1,21 @@
 {
   "app": {
-    "name": "Exec Assistant",
-    "version": "1.0.0",
+    "name": "Alfred",
+    "version": "1.3.0",
     "briefing_time": "07:00",
     "attention_alert_time": "15:00",
-    "timezone": "Asia/Kolkata"
+    "timezone": "America/New_York"
   },
   "user": {
     "name": "Your Name",
-    "email": "your.email@cred.club",
-    "company_domain": "cred.club",
-    "company_domains": ["cred.club", "credavenue.com"]
+    "email": "your.email@company.com",
+    "company_domain": "company.com",
+    "company_domains": ["company.com"]
+  },
+  "api": {
+    "enabled": true,
+    "port": 8080,
+    "passcode": "CHANGE_THIS_TO_A_SECURE_PASSCODE"
   },
   "calendar": {
     "google": [

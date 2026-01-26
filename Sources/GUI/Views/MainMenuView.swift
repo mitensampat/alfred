@@ -31,6 +31,10 @@ struct MainMenuView: View {
                     AttentionCheckView(viewModel: viewModel)
                 case .notionTodos:
                     NotionTodosView(viewModel: viewModel)
+                case .commitments:
+                    CommitmentsView(viewModel: viewModel)
+                case .drafts:
+                    DraftsView(viewModel: viewModel)
                 }
             }
         }
@@ -64,6 +68,12 @@ struct MainMenuView: View {
 
                         MainMenuItem(icon: "message", title: "messages", subtitle: "recent conversations")
                             .onTapGesture { viewModel.showMessagesOptions() }
+
+                        MainMenuItem(icon: "list.bullet.clipboard", title: "commitments", subtitle: "track promises & obligations")
+                            .onTapGesture { viewModel.showCommitments() }
+
+                        MainMenuItem(icon: "doc.text", title: "agent drafts", subtitle: "review AI-generated messages")
+                            .onTapGesture { viewModel.showDrafts() }
 
                         MainMenuItem(icon: "checkmark.circle", title: "scan for todos", subtitle: "check whatsapp notes")
                             .onTapGesture { viewModel.navigate(to: .notionTodos) }

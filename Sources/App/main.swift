@@ -149,6 +149,8 @@ struct AlfredApp {
                 await runShowDrafts()
             case "clear-drafts":
                 await runClearDrafts()
+            case "server":
+                await runServer(config, orchestrator)
             default:
                 printUsage()
             }
@@ -1189,10 +1191,10 @@ struct AlfredApp {
     static func runNotionTodos(_ orchestrator: BriefingOrchestrator) async {
         do {
             let todos = try await orchestrator.processWhatsAppTodos()
-            if todos.isEmpty {
+            if todos.createdTodos.isEmpty {
                 print("\n✓ No todos detected in recent WhatsApp messages")
             } else {
-                print("\n✓ Successfully created \(todos.count) todo(s) in Notion")
+                print("\n✓ Successfully created \(todos.createdTodos.count) todo(s) in Notion")
             }
         } catch {
             print("Error processing todos: \(error)")
@@ -1693,6 +1695,92 @@ struct AlfredApp {
           Run 'alfred commitments init' to setup commitment tracking
         """)
     }
+
+    // MARK: - Server
+    static func runServer(_ config: AppConfig, _ orchestrator: BriefingOrchestrator) async {
+        guard let apiConfig = config.api else {
+            print("❌ API configuration not found in config.json")
+            print("Add the following to your config.json:")
+            print("""
+            "api": {
+              "enabled": true,
+              "port": 8080,
+              "passcode": "your-secure-passcode"
+            }
+            """)
+            return
+        }
+
+        guard apiConfig.enabled else {
+            print("❌ API is disabled in config.json")
+            print("Set 'enabled' to true in the 'api' section")
+            return
+        }
+
+        print("🚀 Starting Alfred HTTP Server...")
+        print("   Port: \(apiConfig.port)")
+        print("   Passcode: \(apiConfig.passcode)")
+        print("")
+
+        // Get local IP for convenience
+        let localIP = getLocalIP()
+        if let ip = localIP {
+            print("📍 Access the web interface at:")
+            print("   Local:  http://localhost:\(apiConfig.port)/web/index-notion.html?passcode=\(apiConfig.passcode)")
+            print("   Network: http://\(ip):\(apiConfig.port)/web/index-notion.html?passcode=\(apiConfig.passcode)")
+        } else {
+            print("📍 Access the web interface at:")
+            print("   http://localhost:\(apiConfig.port)/web/index-notion.html?passcode=\(apiConfig.passcode)")
+        }
+        print("")
+        print("Press Ctrl+C to stop the server")
+        print("")
+
+        do {
+            let alfredService = await MainActor.run {
+                AlfredService()
+            }
+            await alfredService.initialize(config: config, orchestrator: orchestrator)
+            let server = HTTPServer(port: apiConfig.port, passcode: apiConfig.passcode, alfredService: alfredService)
+            try server.start()
+
+            // Keep the server running indefinitely
+            try await Task.sleep(nanoseconds: UInt64.max)
+        } catch {
+            print("❌ Failed to start server: \(error)")
+        }
+    }
+
+    static func getLocalIP() -> String? {
+        // Simple approach: use ifconfig command
+        let task = Process()
+        task.launchPath = "/sbin/ifconfig"
+        let pipe = Pipe()
+        task.standardOutput = pipe
+
+        do {
+            try task.run()
+            task.waitUntilExit()
+
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            if let output = String(data: data, encoding: .utf8) {
+                // Find first "inet " line that's not 127.0.0.1
+                let lines = output.components(separatedBy: "\n")
+                for line in lines {
+                    if line.contains("inet ") && !line.contains("127.0.0.1") {
+                        let components = line.trimmingCharacters(in: .whitespaces).components(separatedBy: " ")
+                        if let index = components.firstIndex(of: "inet"), index + 1 < components.count {
+                            return components[index + 1]
+                        }
+                    }
+                }
+            }
+        } catch {
+            return nil
+        }
+
+        return nil
+    }
 }
 
 class Scheduler {
@@ -2012,56 +2100,55 @@ func runCommitmentsList(_ orchestrator: BriefingOrchestrator, args: [String]) as
         return
     }
 
-    guard let databaseId = config.notionDatabaseId else {
-        print("❌ Notion database ID not configured")
-        return
-    }
-
     // Parse type filter
-    var typeFilter: Commitment.CommitmentType?
+    var directionFilter: TaskItem.CommitmentDirection?
     if let arg = args.first {
         switch arg.lowercased() {
         case "i_owe", "iowe":
-            typeFilter = .iOwe
+            directionFilter = .iOwe
         case "they_owe", "theyowe":
-            typeFilter = .theyOwe
+            directionFilter = .theyOweMe
         default:
             print("⚠️  Unknown type filter: \(arg) (use 'i_owe' or 'they_owe')\n")
         }
     }
 
     do {
-        let commitments = try await orchestrator.notionServicePublic.queryActiveCommitments(
-            databaseId: databaseId,
-            type: typeFilter
-        )
+        // Query Tasks database for commitments
+        let tasks = try await orchestrator.notionServicePublic.queryActiveTasks(type: .commitment)
 
-        if commitments.isEmpty {
+        // Filter by direction if specified
+        var filteredTasks = tasks
+        if let direction = directionFilter {
+            filteredTasks = tasks.filter { $0.commitmentDirection == direction }
+        }
+
+        if filteredTasks.isEmpty {
             print("ℹ️  No active commitments found\n")
             return
         }
 
-        // Group by type
-        let iOwe = commitments.filter { $0.type == .iOwe }
-        let theyOwe = commitments.filter { $0.type == .theyOwe }
+        // Group by direction
+        let iOwe = filteredTasks.filter { $0.commitmentDirection == .iOwe }
+        let theyOwe = filteredTasks.filter { $0.commitmentDirection == .theyOweMe }
 
-        if !iOwe.isEmpty && (typeFilter == nil || typeFilter == .iOwe) {
+        if !iOwe.isEmpty && (directionFilter == nil || directionFilter == .iOwe) {
             print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             print("📤 I OWE (\(iOwe.count))")
             print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
-            for commitment in iOwe.sorted(by: { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }) {
-                printCommitmentDetails(commitment)
+            for task in iOwe.sorted(by: { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }) {
+                printTaskItemAsCommitment(task)
             }
         }
 
-        if !theyOwe.isEmpty && (typeFilter == nil || typeFilter == .theyOwe) {
+        if !theyOwe.isEmpty && (directionFilter == nil || directionFilter == .theyOweMe) {
             print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             print("📥 THEY OWE ME (\(theyOwe.count))")
             print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
-            for commitment in theyOwe.sorted(by: { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }) {
-                printCommitmentDetails(commitment)
+            for task in theyOwe.sorted(by: { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }) {
+                printTaskItemAsCommitment(task)
             }
         }
 
@@ -2080,32 +2167,29 @@ func runCommitmentsOverdue(_ orchestrator: BriefingOrchestrator) async {
         return
     }
 
-    guard let databaseId = config.notionDatabaseId else {
-        print("❌ Notion database ID not configured")
-        return
-    }
-
     do {
-        let overdueCommitments = try await orchestrator.notionServicePublic.queryOverdueCommitments(
-            databaseId: databaseId
-        )
+        // Query Tasks database for all active commitments
+        let tasks = try await orchestrator.notionServicePublic.queryActiveTasks(type: .commitment)
+
+        // Filter for overdue commitments
+        let overdueCommitments = tasks.filter { $0.isOverdue }
 
         if overdueCommitments.isEmpty {
             print("✅ No overdue commitments!\n")
             return
         }
 
-        // Group by type
-        let iOwe = overdueCommitments.filter { $0.type == .iOwe }
-        let theyOwe = overdueCommitments.filter { $0.type == .theyOwe }
+        // Group by direction
+        let iOwe = overdueCommitments.filter { $0.commitmentDirection == .iOwe }
+        let theyOwe = overdueCommitments.filter { $0.commitmentDirection == .theyOweMe }
 
         if !iOwe.isEmpty {
             print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             print("📤 I OWE - OVERDUE (\(iOwe.count))")
             print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
-            for commitment in iOwe.sorted(by: { ($0.dueDate ?? .distantPast) < ($1.dueDate ?? .distantPast) }) {
-                printCommitmentDetails(commitment, showOverdueWarning: true)
+            for task in iOwe.sorted(by: { ($0.dueDate ?? .distantPast) < ($1.dueDate ?? .distantPast) }) {
+                printTaskItemAsCommitment(task, showOverdueWarning: true)
             }
         }
 
@@ -2114,8 +2198,8 @@ func runCommitmentsOverdue(_ orchestrator: BriefingOrchestrator) async {
             print("📥 THEY OWE ME - OVERDUE (\(theyOwe.count))")
             print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
-            for commitment in theyOwe.sorted(by: { ($0.dueDate ?? .distantPast) < ($1.dueDate ?? .distantPast) }) {
-                printCommitmentDetails(commitment, showOverdueWarning: true)
+            for task in theyOwe.sorted(by: { ($0.dueDate ?? .distantPast) < ($1.dueDate ?? .distantPast) }) {
+                printTaskItemAsCommitment(task, showOverdueWarning: true)
             }
         }
 
@@ -2146,3 +2230,52 @@ func printCommitmentDetails(_ commitment: Commitment, showOverdueWarning: Bool =
     print("     Priority: \(commitment.priority.emoji) \(commitment.priority.displayName)")
     print("")
 }
+
+func printTaskItemAsCommitment(_ task: TaskItem, showOverdueWarning: Bool = false) {
+    // Status emoji
+    let statusEmoji: String
+    switch task.status {
+    case .notStarted: statusEmoji = "⭕"
+    case .inProgress: statusEmoji = "🔄"
+    case .done: statusEmoji = "✅"
+    case .blocked: statusEmoji = "🚫"
+    case .cancelled: statusEmoji = "❌"
+    }
+
+    print("  \(statusEmoji) \(task.title)")
+
+    if let committedBy = task.committedBy, let committedTo = task.committedTo {
+        print("     From: \(committedBy) → To: \(committedTo)")
+    }
+
+    if let platform = task.sourcePlatform, let thread = task.sourceThread {
+        print("     Source: \(platform.rawValue) - \(thread)")
+    }
+
+    if let dueDate = task.dueDate {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        let dueDateStr = formatter.string(from: dueDate)
+
+        if showOverdueWarning && task.isOverdue {
+            let daysOverdue = Calendar.current.dateComponents([.day], from: dueDate, to: Date()).day ?? 0
+            print("     Due: \(dueDateStr) ⚠️  \(abs(daysOverdue)) days overdue!")
+        } else {
+            print("     Due: \(dueDateStr)")
+        }
+    }
+
+    if let priority = task.priority {
+        let priorityEmoji: String
+        switch priority {
+        case .critical: priorityEmoji = "🔴"
+        case .high: priorityEmoji = "🟠"
+        case .medium: priorityEmoji = "🟡"
+        case .low: priorityEmoji = "⚪"
+        }
+        print("     Priority: \(priorityEmoji) \(priority.rawValue)")
+    }
+
+    print("")
+}
+

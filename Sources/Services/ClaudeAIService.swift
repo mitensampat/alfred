@@ -298,6 +298,12 @@ class ClaudeAIService {
         }
 
         let apiResponse = try JSONDecoder().decode(ClaudeResponse.self, from: data)
+
+        // Log if response was cut off
+        if let stopReason = apiResponse.stopReason, stopReason == "max_tokens" {
+            print("⚠️  WARNING: Response hit max_tokens limit and was truncated")
+        }
+
         return apiResponse.content.first?.text ?? ""
     }
 
@@ -472,6 +478,12 @@ class ClaudeAIService {
 
 private struct ClaudeResponse: Codable {
     let content: [Content]
+    let stopReason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case content
+        case stopReason = "stop_reason"
+    }
 
     struct Content: Codable {
         let text: String
@@ -545,6 +557,16 @@ struct TodoItem {
     let description: String?
     let dueDate: Date?
     let sourceMessage: Message
+}
+
+struct TodoScanResult {
+    let messagesScanned: Int
+    let todosFound: Int
+    let todosCreated: Int
+    let duplicatesSkipped: Int
+    let notTodos: Int
+    let createdTodos: [TodoItem]
+    let lookbackDays: Int
 }
 
 struct FocusedThreadAnalysis {

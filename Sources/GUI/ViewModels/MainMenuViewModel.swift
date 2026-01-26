@@ -61,11 +61,16 @@ class MainMenuViewModel: ObservableObject {
         case messageDetail
         case attentionCheck
         case notionTodos
+        case commitments
+        case drafts
     }
 
     init() {
+        print("🔧 MainMenuViewModel init() called")
         self.alfredService = AlfredService()
+        print("🔧 AlfredService created")
         updateGreeting()
+        print("🔧 MainMenuViewModel init() complete")
     }
 
     func loadData() {
@@ -302,11 +307,21 @@ class MainMenuViewModel: ObservableObject {
     private func updatePopoverSize(for destination: ViewDestination) {
         // Expand popover for content-heavy views
         switch destination {
-        case .briefing, .calendar, .messages, .messageDetail, .notionTodos:
+        case .briefing, .calendar, .messages, .messageDetail, .notionTodos, .commitments, .drafts:
             shouldExpandPopover = true
         case .main, .briefingOptions, .calendarOptions, .messagesOptions, .attentionCheck:
             shouldExpandPopover = false
         }
+    }
+
+    func showCommitments() {
+        currentView = .commitments
+        shouldExpandPopover = true
+    }
+
+    func showDrafts() {
+        currentView = .drafts
+        shouldExpandPopover = true
     }
 
     func showBriefingOptions() {

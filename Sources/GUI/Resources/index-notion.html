@@ -1,0 +1,2167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Alfred">
+    <title>Alfred</title>
+    <style>
+        /* Notion-inspired Design System */
+        :root {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f7f6f3;
+            --bg-tertiary: #f1f0ee;
+            --text-primary: #37352f;
+            --text-secondary: #787774;
+            --text-tertiary: #9b9a97;
+            --border-color: #e9e9e7;
+            --accent-color: #2383e2;
+            --accent-hover: #1a73d9;
+            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+            --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
+            --radius-sm: 3px;
+            --radius-md: 6px;
+            --radius-lg: 8px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Layout */
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 60px 24px 24px 24px;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 48px;
+        }
+
+        .header h1 {
+            font-size: 40px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            letter-spacing: -0.03em;
+        }
+
+        .header p {
+            font-size: 16px;
+            color: var(--text-secondary);
+        }
+
+        /* Chat Container */
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        /* Message Bubbles */
+        .message {
+            display: flex;
+            gap: 12px;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: var(--radius-md);
+            background: var(--bg-tertiary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        .message-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .message-header {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+
+        .message-sender {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .message-time {
+            font-size: 12px;
+            color: var(--text-tertiary);
+        }
+
+        .message-text {
+            font-size: 15px;
+            color: var(--text-primary);
+            line-height: 1.6;
+            word-wrap: break-word;
+        }
+
+        .message.user .message-text {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 12px 16px;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .message.assistant .message-text {
+            color: var(--text-primary);
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Droid Sans Mono', 'Source Code Pro', monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 16px;
+            overflow-x: auto;
+        }
+
+        /* Data Cards within Messages */
+        .data-card {
+            margin-top: 12px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .data-card-header {
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border-color);
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .data-card-content {
+            padding: 4px;
+        }
+
+        .data-item {
+            padding: 10px 12px;
+            border-radius: var(--radius-sm);
+            margin: 4px;
+            transition: background 0.15s;
+        }
+
+        .data-item:hover {
+            background: var(--bg-secondary);
+        }
+
+        .data-item-title {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-primary);
+            margin-bottom: 2px;
+        }
+
+        .data-item-meta {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        /* Suggested Actions */
+        .suggested-actions {
+            margin-top: 12px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .action-chip {
+            padding: 6px 12px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .action-chip:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border-color: var(--text-tertiary);
+        }
+
+        /* Loading State */
+        .message.loading .message-text {
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+
+        .typing-indicator {
+            display: inline-flex;
+            gap: 4px;
+            align-items: center;
+        }
+
+        .typing-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--text-tertiary);
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typing {
+            0%, 60%, 100% { opacity: 0.3; }
+            30% { opacity: 1; }
+        }
+
+        /* Input Area */
+        .input-container {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 12px;
+            box-shadow: var(--shadow-md);
+            position: sticky;
+            bottom: 24px;
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
+        }
+
+        .input-field {
+            flex: 1;
+            min-height: 42px;
+            max-height: 200px;
+            padding: 10px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 15px;
+            font-family: inherit;
+            color: var(--text-primary);
+            background: var(--bg-secondary);
+            resize: none;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        .input-field:focus {
+            border-color: var(--accent-color);
+            background: var(--bg-primary);
+        }
+
+        .input-field::placeholder {
+            color: var(--text-tertiary);
+        }
+
+        .send-button {
+            width: 42px;
+            height: 42px;
+            border: none;
+            border-radius: var(--radius-md);
+            background: var(--accent-color);
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s;
+            flex-shrink: 0;
+        }
+
+        .send-button:hover:not(:disabled) {
+            background: var(--accent-hover);
+        }
+
+        .send-button:disabled {
+            background: var(--bg-tertiary);
+            cursor: not-allowed;
+            color: var(--text-tertiary);
+        }
+
+        /* Quick Prompts */
+        .quick-prompts {
+            margin-bottom: 24px;
+        }
+
+        .quick-prompts-header {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .quick-prompts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 12px;
+        }
+
+        /* Recent Activity */
+        .recent-activity {
+            margin-bottom: 32px;
+        }
+
+        .recent-activity-header {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .recent-activity-list {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            overflow: hidden;
+        }
+
+        .recent-activity-item {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: background 0.15s;
+        }
+
+        .recent-activity-item:last-child {
+            border-bottom: none;
+        }
+
+        .recent-activity-item:hover {
+            background: var(--bg-secondary);
+        }
+
+        .recent-activity-item:hover .recent-activity-delete {
+            opacity: 1;
+        }
+
+        .recent-activity-main {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .recent-activity-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .recent-activity-label {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-primary);
+            margin-bottom: 2px;
+        }
+
+        .recent-activity-time {
+            font-size: 13px;
+            color: var(--text-tertiary);
+        }
+
+        .recent-activity-icon {
+            font-size: 16px;
+            color: var(--text-tertiary);
+            margin-left: 12px;
+        }
+
+        .recent-activity-delete {
+            padding: 6px 8px;
+            margin-left: 8px;
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: var(--radius-sm);
+            color: var(--text-tertiary);
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.15s;
+            opacity: 0;
+        }
+
+        .recent-activity-delete:hover {
+            background: #fee;
+            border-color: #fcc;
+            color: #c33;
+        }
+
+        .recent-activity-empty {
+            padding: 24px;
+            text-align: center;
+            color: var(--text-tertiary);
+            font-size: 14px;
+        }
+
+        .quick-prompt {
+            padding: 16px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .quick-prompt:hover {
+            border-color: var(--accent-color);
+            box-shadow: var(--shadow-sm);
+            transform: translateY(-1px);
+        }
+
+        .quick-prompt-icon {
+            font-size: 20px;
+            margin-bottom: 8px;
+        }
+
+        .quick-prompt-title {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .quick-prompt-desc {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 80px 24px;
+            color: var(--text-tertiary);
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .empty-state-text {
+            font-size: 15px;
+        }
+
+        /* Auth Screen */
+        .auth-screen {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 24px;
+        }
+
+        .auth-card {
+            width: 100%;
+            max-width: 400px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 48px;
+            box-shadow: var(--shadow-md);
+            text-align: center;
+        }
+
+        .auth-logo {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            letter-spacing: -0.03em;
+        }
+
+        .auth-subtitle {
+            font-size: 15px;
+            color: var(--text-secondary);
+            margin-bottom: 32px;
+        }
+
+        .auth-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 15px;
+            font-family: inherit;
+            margin-bottom: 16px;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        .auth-input:focus {
+            border-color: var(--accent-color);
+        }
+
+        .auth-button {
+            width: 100%;
+            padding: 12px;
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            border-radius: var(--radius-md);
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .auth-button:hover {
+            background: var(--accent-hover);
+        }
+
+        .auth-error {
+            margin-top: 12px;
+            padding: 10px;
+            background: #fee;
+            color: #c33;
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Back Home Button */
+        .back-home-button {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            padding: 10px 20px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.15s;
+            box-shadow: var(--shadow-sm);
+            z-index: 100;
+        }
+
+        .back-home-button:hover {
+            background: var(--bg-tertiary);
+            border-color: var(--accent-color);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .back-home-button::before {
+            content: '← ';
+        }
+
+        /* Settings Button */
+        .settings-button {
+            position: fixed;
+            top: 24px;
+            left: 24px;
+            width: 42px;
+            height: 42px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 18px;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.15s;
+            box-shadow: var(--shadow-sm);
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .settings-button:hover {
+            background: var(--bg-tertiary);
+            border-color: var(--accent-color);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-md);
+        }
+
+        /* Settings Page */
+        .settings-page {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .settings-section {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            margin-bottom: 16px;
+        }
+
+        .settings-section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 16px;
+        }
+
+        .settings-item {
+            margin-bottom: 16px;
+        }
+
+        .settings-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .settings-item-label {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+        }
+
+        .settings-item-desc {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .settings-current-value {
+            padding: 10px 12px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            word-break: break-all;
+        }
+
+        .settings-current-value::before {
+            content: 'Current: ';
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .settings-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            color: var(--text-primary);
+            background: var(--bg-secondary);
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        .settings-input:focus {
+            border-color: var(--accent-color);
+            background: var(--bg-primary);
+        }
+
+        .settings-button-save {
+            width: 100%;
+            padding: 12px;
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            border-radius: var(--radius-md);
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .settings-button-save:hover {
+            background: var(--accent-hover);
+        }
+
+        .settings-button-danger {
+            width: 100%;
+            padding: 12px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: var(--radius-md);
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .settings-button-danger:hover {
+            background: #c82333;
+        }
+
+        .settings-success {
+            margin-top: 12px;
+            padding: 10px;
+            background: #d4edda;
+            color: #155724;
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+        }
+
+        .settings-error {
+            margin-top: 12px;
+            padding: 10px;
+            background: #f8d7da;
+            color: #721c24;
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+        }
+
+        /* Form Page */
+        .form-page {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 32px;
+            box-shadow: var(--shadow-md);
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .form-page-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 24px;
+        }
+
+        .form-page-form {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .form-page-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 8px;
+        }
+
+        .form-page-button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: var(--radius-md);
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .form-page-button-primary {
+            background: var(--accent-color);
+            color: white;
+        }
+
+        .form-page-button-primary:hover {
+            background: var(--accent-hover);
+        }
+
+        .form-page-button-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .form-page-button-secondary:hover {
+            background: var(--border-color);
+        }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 24px;
+        }
+
+        .modal {
+            background: var(--bg-primary);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            max-width: 480px;
+            width: 100%;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.16);
+        }
+
+        .modal-header {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 20px;
+        }
+
+        .modal-form {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .form-label {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .form-input {
+            padding: 10px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 15px;
+            font-family: inherit;
+            color: var(--text-primary);
+            background: var(--bg-secondary);
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        .form-input:focus {
+            border-color: var(--accent-color);
+            background: var(--bg-primary);
+        }
+
+        .radio-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .radio-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .radio-option:hover {
+            background: var(--bg-secondary);
+            border-color: var(--text-tertiary);
+        }
+
+        .radio-option input[type="radio"] {
+            cursor: pointer;
+        }
+
+        .radio-option.selected {
+            background: var(--bg-tertiary);
+            border-color: var(--accent-color);
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .modal-button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: var(--radius-md);
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .modal-button-primary {
+            background: var(--accent-color);
+            color: white;
+        }
+
+        .modal-button-primary:hover {
+            background: var(--accent-hover);
+        }
+
+        .modal-button-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .modal-button-secondary:hover {
+            background: var(--border-color);
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .container {
+                padding: 12px 12px 80px 12px;
+            }
+
+            .header {
+                margin-bottom: 20px;
+            }
+
+            .header h1 {
+                font-size: 26px;
+                margin-bottom: 4px;
+            }
+
+            .header p {
+                font-size: 13px;
+            }
+
+            .quick-prompts {
+                margin-bottom: 12px;
+            }
+
+            .quick-prompts-header {
+                font-size: 12px;
+                margin-bottom: 10px;
+            }
+
+            .quick-prompts-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 8px;
+            }
+
+            .quick-prompt {
+                padding: 12px 10px;
+            }
+
+            .quick-prompt-icon {
+                font-size: 18px;
+                margin-bottom: 6px;
+            }
+
+            .quick-prompt-title {
+                font-size: 13px;
+                margin-bottom: 2px;
+            }
+
+            .quick-prompt-desc {
+                font-size: 11px;
+                line-height: 1.3;
+            }
+
+            /* Recent Activity Mobile */
+            .recent-activity {
+                margin-bottom: 16px;
+            }
+
+            .recent-activity-header {
+                font-size: 12px;
+                margin-bottom: 8px;
+            }
+
+            .recent-activity-item {
+                padding: 10px 12px;
+            }
+
+            .recent-activity-label {
+                font-size: 12px;
+            }
+
+            .recent-activity-time {
+                font-size: 11px;
+            }
+
+            .recent-activity-icon {
+                font-size: 14px;
+            }
+
+            .recent-activity-delete {
+                opacity: 1; /* Always visible on mobile */
+                font-size: 16px;
+                padding: 4px 6px;
+            }
+
+            /* Back Home Button */
+            .back-home-button {
+                top: 12px;
+                right: 12px;
+                padding: 8px 16px;
+                font-size: 13px;
+            }
+
+            /* Form Page */
+            .form-page {
+                padding: 24px;
+            }
+
+            .form-page-title {
+                font-size: 20px;
+                margin-bottom: 20px;
+            }
+
+            .form-input {
+                font-size: 16px; /* Prevent iOS zoom */
+            }
+
+            .form-label {
+                font-size: 13px;
+            }
+
+            /* Modal */
+            .modal-overlay {
+                padding: 16px;
+            }
+
+            .modal {
+                padding: 20px;
+            }
+
+            .modal-header {
+                font-size: 16px;
+                margin-bottom: 16px;
+            }
+
+            /* Input Area */
+            .input-container {
+                bottom: 12px;
+                padding: 10px;
+            }
+
+            .input-field {
+                font-size: 16px; /* Prevent iOS zoom */
+                padding: 9px 11px;
+            }
+
+            .send-button {
+                width: 38px;
+                height: 38px;
+            }
+
+            /* Messages */
+            .message-avatar {
+                width: 28px;
+                height: 28px;
+                font-size: 16px;
+            }
+
+            .message-sender {
+                font-size: 13px;
+            }
+
+            .message-time {
+                font-size: 11px;
+            }
+
+            .message-text {
+                font-size: 14px;
+            }
+
+            .message.assistant .message-text {
+                font-size: 13px;
+                padding: 14px;
+            }
+
+            /* Auth Screen */
+            .auth-card {
+                padding: 36px 24px;
+            }
+
+            .auth-logo {
+                font-size: 28px;
+            }
+
+            .auth-subtitle {
+                font-size: 14px;
+                margin-bottom: 24px;
+            }
+
+            .auth-input {
+                font-size: 16px; /* Prevent iOS zoom */
+            }
+
+            /* Settings */
+            .settings-button {
+                top: 12px;
+                left: 12px;
+                width: 38px;
+                height: 38px;
+                font-size: 16px;
+            }
+
+            .settings-page {
+                padding: 0;
+            }
+
+            .settings-section {
+                padding: 20px;
+                margin-bottom: 12px;
+            }
+
+            .settings-section-title {
+                font-size: 16px;
+                margin-bottom: 14px;
+            }
+
+            .settings-item-label {
+                font-size: 13px;
+            }
+
+            .settings-item-desc {
+                font-size: 12px;
+            }
+
+            .settings-input {
+                font-size: 16px; /* Prevent iOS zoom */
+            }
+        }
+
+        /* Extra small mobile devices */
+        @media (max-width: 375px) {
+            .container {
+                padding: 12px 10px 80px 10px;
+            }
+
+            .header h1 {
+                font-size: 24px;
+            }
+
+            .quick-prompt {
+                padding: 12px;
+            }
+
+            .form-page {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Auth Screen -->
+    <div id="authScreen" class="auth-screen">
+        <div class="auth-card">
+            <div class="auth-logo">Alfred</div>
+            <div class="auth-subtitle">Your executive assistant</div>
+            <input type="password" id="passcodeInput" class="auth-input" placeholder="Enter passcode"
+                   onkeypress="if(event.key==='Enter')authenticate()" autofocus />
+            <button class="auth-button" onclick="authenticate()">Continue</button>
+            <div id="authError" class="auth-error hidden"></div>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="appContainer" class="container hidden">
+        <!-- Back Home Button -->
+        <button id="backHomeButton" class="back-home-button hidden" onclick="goBackHome()">Back Home</button>
+
+        <div class="header">
+            <h1>Alfred</h1>
+            <p>Ask me anything about your schedule, commitments, or messages</p>
+        </div>
+
+        <!-- Form View (for parameterized actions) -->
+        <div id="formView" class="hidden" style="max-width: 600px; margin: 0 auto;">
+            <div id="formContent"></div>
+        </div>
+
+        <!-- Settings View -->
+        <div id="settingsView" class="hidden settings-page">
+            <div class="settings-section">
+                <div class="settings-section-title">Notion Configuration</div>
+                <div class="settings-item">
+                    <div class="settings-item-label">Tasks Database ID</div>
+                    <div class="settings-item-desc">The Notion database ID for your unified Tasks (Todos & Commitments)</div>
+                    <div id="currentTasksDatabaseId" class="settings-current-value hidden"></div>
+                    <input type="text" id="tasksDatabaseId" class="settings-input" placeholder="Enter new database ID..." />
+                </div>
+                <button class="settings-button-save" onclick="saveNotionConfig()">Save Notion Config</button>
+                <div id="notionConfigStatus" class="hidden"></div>
+            </div>
+
+            <div class="settings-section">
+                <div class="settings-section-title">Security</div>
+                <div class="settings-item">
+                    <div class="settings-item-label">Current Passcode</div>
+                    <input type="password" id="currentPasscode" class="settings-input" placeholder="Enter current passcode..." />
+                </div>
+                <div class="settings-item">
+                    <div class="settings-item-label">New Passcode</div>
+                    <input type="password" id="newPasscode" class="settings-input" placeholder="Enter new passcode..." />
+                </div>
+                <div class="settings-item">
+                    <div class="settings-item-label">Confirm New Passcode</div>
+                    <input type="password" id="confirmPasscode" class="settings-input" placeholder="Confirm new passcode..." />
+                </div>
+                <div class="settings-item-desc" style="color: var(--text-tertiary); font-size: 12px; margin-top: -8px;">
+                    Note: After changing your passcode, you'll need to log in again with the new passcode.
+                </div>
+                <button class="settings-button-save" onclick="changePasscode()">Change Passcode</button>
+                <div id="passcodeStatus" class="hidden"></div>
+            </div>
+
+            <div class="settings-section">
+                <div class="settings-section-title">Cache Management</div>
+                <div class="settings-item">
+                    <div class="settings-item-desc">Clear cached API responses to force fresh data</div>
+                </div>
+                <button class="settings-button-danger" onclick="clearCache()">Clear All Cache</button>
+                <div id="cacheStatus" class="hidden"></div>
+            </div>
+        </div>
+
+        <!-- Quick Actions (shown when empty) -->
+        <div id="quickPromptsSection" class="quick-prompts">
+            <div class="quick-prompts-header">Actions</div>
+            <div class="quick-prompts-grid">
+                <div class="quick-prompt" onclick="showBriefingOptions()">
+                    <div class="quick-prompt-icon">📋</div>
+                    <div class="quick-prompt-title">Daily Briefing</div>
+                    <div class="quick-prompt-desc">Get your priorities and schedule</div>
+                </div>
+                <div class="quick-prompt" onclick="showCalendarOptions()">
+                    <div class="quick-prompt-icon">📅</div>
+                    <div class="quick-prompt-title">Calendar</div>
+                    <div class="quick-prompt-desc">View calendar (personal/work/all)</div>
+                </div>
+                <div class="quick-prompt" onclick="callDirectAPI('/api/commitments', 'My Commitments')">
+                    <div class="quick-prompt-icon">✅</div>
+                    <div class="quick-prompt-title">My Commitments</div>
+                    <div class="quick-prompt-desc">See what you owe and what's owed</div>
+                </div>
+                <div class="quick-prompt" onclick="showCommitmentCheckPrompt()">
+                    <div class="quick-prompt-icon">🤝</div>
+                    <div class="quick-prompt-title">Commitment Check</div>
+                    <div class="quick-prompt-desc">Check commitments with someone</div>
+                </div>
+                <div class="quick-prompt" onclick="callDirectAPI('/api/todos/scan', 'Scan Todos')">
+                    <div class="quick-prompt-icon">📝</div>
+                    <div class="quick-prompt-title">Scan Todos</div>
+                    <div class="quick-prompt-desc">Extract todos from WhatsApp</div>
+                </div>
+                <div class="quick-prompt" onclick="showMessagesPrompt()">
+                    <div class="quick-prompt-icon">💬</div>
+                    <div class="quick-prompt-title">Messages</div>
+                    <div class="quick-prompt-desc">Summarize conversation</div>
+                </div>
+                <div class="quick-prompt" onclick="callDirectAPI('/api/attention-check', 'Attention Check')">
+                    <div class="quick-prompt-icon">🎯</div>
+                    <div class="quick-prompt-title">Attention Check</div>
+                    <div class="quick-prompt-desc">What needs focus right now</div>
+                </div>
+                <div class="quick-prompt" onclick="showSettings()">
+                    <div class="quick-prompt-icon">⚙️</div>
+                    <div class="quick-prompt-title">Settings</div>
+                    <div class="quick-prompt-desc">Notion config, passcode & cache</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity (shown when empty) -->
+        <div id="recentActivitySection" class="recent-activity">
+            <div class="recent-activity-header">Recent Activity</div>
+            <div id="recentActivityList" class="recent-activity-list">
+                <div class="recent-activity-empty">No recent activity yet</div>
+            </div>
+        </div>
+
+        <!-- Chat Messages -->
+        <div id="chatContainer" class="chat-container"></div>
+
+        <!-- Input Area -->
+        <div class="input-container">
+            <div class="input-wrapper">
+                <textarea id="queryInput" class="input-field"
+                          placeholder="Ask Alfred anything..."
+                          rows="1"
+                          onkeydown="handleInputKeydown(event)"
+                          oninput="autoResizeTextarea(this)"></textarea>
+                <button id="sendButton" class="send-button" onclick="sendMessage()">
+                    ↑
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let passcode = '';
+        let sessionId = generateSessionId();
+        let conversationHistory = [];
+        let currentModalCallback = null;
+
+        function generateSessionId() {
+            return 'session-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        }
+
+        function authenticate() {
+            const input = document.getElementById('passcodeInput');
+            const error = document.getElementById('authError');
+            passcode = input.value;
+
+            if (!passcode) {
+                error.textContent = 'Please enter a passcode';
+                error.classList.remove('hidden');
+                return;
+            }
+
+            // Test authentication with a simple health check
+            fetch('/api/health?passcode=' + encodeURIComponent(passcode))
+                .then(response => {
+                    if (response.ok) {
+                        document.getElementById('authScreen').classList.add('hidden');
+                        document.getElementById('appContainer').classList.remove('hidden');
+                        document.getElementById('queryInput').focus();
+                    } else {
+                        error.textContent = 'Invalid passcode';
+                        error.classList.remove('hidden');
+                    }
+                })
+                .catch(err => {
+                    error.textContent = 'Connection error';
+                    error.classList.remove('hidden');
+                });
+        }
+
+        function autoResizeTextarea(textarea) {
+            textarea.style.height = 'auto';
+            textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+        }
+
+        function handleInputKeydown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        function sendQuickPrompt(query) {
+            document.getElementById('queryInput').value = query;
+            sendMessage();
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('queryInput');
+            const query = input.value.trim();
+
+            if (!query) return;
+
+            // Hide quick prompts and recent activity after first message
+            document.getElementById('quickPromptsSection').classList.add('hidden');
+            document.getElementById('recentActivitySection').classList.add('hidden');
+            // Show back home button
+            document.getElementById('backHomeButton').classList.remove('hidden');
+
+            // Clear input
+            input.value = '';
+            input.style.height = 'auto';
+
+            // Add user message
+            addMessage('user', query);
+
+            // Show loading message
+            const loadingId = addLoadingMessage();
+
+            // Disable input
+            document.getElementById('sendButton').disabled = true;
+
+            try {
+                const response = await fetch('/api/query?passcode=' + encodeURIComponent(passcode), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, sessionId })
+                });
+
+                const data = await response.json();
+
+                // Remove loading message
+                removeMessage(loadingId);
+
+                if (data.type === 'result') {
+                    addMessage('assistant', data.response, data.data, data.suggestedFollowUps);
+                } else if (data.type === 'clarification') {
+                    addMessage('assistant', data.question);
+                } else if (data.error) {
+                    addMessage('assistant', 'Error: ' + data.error);
+                }
+            } catch (error) {
+                removeMessage(loadingId);
+                addMessage('assistant', 'Failed to send message. Please try again.');
+            }
+
+            // Re-enable input
+            document.getElementById('sendButton').disabled = false;
+            input.focus();
+        }
+
+        async function callDirectAPI(endpoint, title) {
+            // Hide quick prompts and recent activity after first interaction
+            document.getElementById('quickPromptsSection').classList.add('hidden');
+            document.getElementById('recentActivitySection').classList.add('hidden');
+            // Show back home button
+            document.getElementById('backHomeButton').classList.remove('hidden');
+
+            // Add user message showing what was clicked
+            addMessage('user', title);
+
+            // Show loading message
+            const loadingId = addLoadingMessage();
+
+            // Disable input
+            document.getElementById('sendButton').disabled = true;
+
+            try {
+                // Add passcode to URL (use & if there are already query params)
+                const separator = endpoint.includes('?') ? '&' : '?';
+                const url = endpoint + separator + 'passcode=' + encodeURIComponent(passcode);
+
+                const response = await fetch(url, {
+                    method: 'GET'
+                });
+
+                const data = await response.json();
+
+                // Remove loading message
+                removeMessage(loadingId);
+
+                if (response.ok) {
+                    // Display the response
+                    if (data.response) {
+                        addMessage('assistant', data.response);
+                    } else if (data.message) {
+                        addMessage('assistant', data.message);
+                    } else {
+                        // Fallback: show the whole JSON as formatted text
+                        addMessage('assistant', JSON.stringify(data, null, 2));
+                    }
+                } else {
+                    addMessage('assistant', 'Error: ' + (data.error || 'Request failed'));
+                }
+            } catch (error) {
+                removeMessage(loadingId);
+                addMessage('assistant', 'Failed to connect to Alfred. Make sure the server is running.');
+            }
+
+            // Re-enable input
+            document.getElementById('sendButton').disabled = false;
+            document.getElementById('queryInput').focus();
+        }
+
+        function addMessage(sender, text, data = null, suggestions = null) {
+            const container = document.getElementById('chatContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}`;
+            messageDiv.id = 'msg-' + Date.now();
+
+            const avatar = sender === 'user' ? '👤' : '🤖';
+            const name = sender === 'user' ? 'You' : 'Alfred';
+            const time = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+            let html = `
+                <div class="message-avatar">${avatar}</div>
+                <div class="message-content">
+                    <div class="message-header">
+                        <span class="message-sender">${name}</span>
+                        <span class="message-time">${time}</span>
+                    </div>
+                    <div class="message-text">${escapeHtml(text)}</div>
+            `;
+
+            // Add data card if present
+            if (data && data.commitments) {
+                html += formatCommitments(data.commitments);
+            }
+
+            // Add suggested actions if present
+            if (suggestions && suggestions.length > 0) {
+                html += '<div class="suggested-actions">';
+                suggestions.forEach(suggestion => {
+                    html += `<div class="action-chip" onclick="sendQuickPrompt('${escapeHtml(suggestion)}')">${escapeHtml(suggestion)}</div>`;
+                });
+                html += '</div>';
+            }
+
+            html += '</div></div>';
+            messageDiv.innerHTML = html;
+
+            container.appendChild(messageDiv);
+            messageDiv.scrollIntoView({ behavior: 'smooth', block: 'end' });
+
+            return messageDiv.id;
+        }
+
+        function addLoadingMessage() {
+            const container = document.getElementById('chatContainer');
+            const messageDiv = document.createElement('div');
+            const id = 'loading-' + Date.now();
+            messageDiv.id = id;
+            messageDiv.className = 'message assistant loading';
+
+            messageDiv.innerHTML = `
+                <div class="message-avatar">🤖</div>
+                <div class="message-content">
+                    <div class="message-header">
+                        <span class="message-sender">Alfred</span>
+                    </div>
+                    <div class="message-text">
+                        <div class="typing-indicator">
+                            <span class="typing-dot"></span>
+                            <span class="typing-dot"></span>
+                            <span class="typing-dot"></span>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            container.appendChild(messageDiv);
+            messageDiv.scrollIntoView({ behavior: 'smooth', block: 'end' });
+
+            return id;
+        }
+
+        function removeMessage(id) {
+            const element = document.getElementById(id);
+            if (element) element.remove();
+        }
+
+        function formatCommitments(commitments) {
+            if (!commitments || commitments.length === 0) return '';
+
+            let html = '<div class="data-card">';
+            html += '<div class="data-card-header">Commitments</div>';
+            html += '<div class="data-card-content">';
+
+            commitments.forEach(commitment => {
+                html += `
+                    <div class="data-item">
+                        <div class="data-item-title">${escapeHtml(commitment.title)}</div>
+                        <div class="data-item-meta">${commitment.committedBy} → ${commitment.committedTo}</div>
+                    </div>
+                `;
+            });
+
+            html += '</div></div>';
+            return html;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Form page helper functions
+        function showFormPage(title, formHTML, onSubmit) {
+            // Hide everything else
+            document.getElementById('quickPromptsSection').classList.add('hidden');
+            document.getElementById('recentActivitySection').classList.add('hidden');
+            document.getElementById('chatContainer').innerHTML = '';
+            document.getElementById('backHomeButton').classList.remove('hidden');
+
+            // Show form view
+            const formView = document.getElementById('formView');
+            formView.classList.remove('hidden');
+
+            formView.innerHTML = `
+                <div class="form-page">
+                    <h2 class="form-page-title">${title}</h2>
+                    <form id="pageForm" class="form-page-form" onsubmit="return false;">
+                        ${formHTML}
+                        <div class="form-page-actions">
+                            <button type="button" class="form-page-button form-page-button-secondary" onclick="goBackHome()">Cancel</button>
+                            <button type="submit" class="form-page-button form-page-button-primary" onclick="submitFormPage()">Continue</button>
+                        </div>
+                    </form>
+                </div>
+            `;
+
+            currentModalCallback = onSubmit;
+
+            // Focus first input
+            setTimeout(() => {
+                const firstInput = formView.querySelector('input[type="text"], input[type="date"]');
+                if (firstInput) firstInput.focus();
+            }, 100);
+        }
+
+        function submitFormPage() {
+            if (currentModalCallback) {
+                const form = document.getElementById('pageForm');
+                const formData = new FormData(form);
+                const data = Object.fromEntries(formData.entries());
+
+                // Hide form
+                document.getElementById('formView').classList.add('hidden');
+
+                // Execute callback
+                currentModalCallback(data);
+                currentModalCallback = null;
+            }
+        }
+
+        // Show briefing options
+        function showBriefingOptions() {
+            const formHTML = `
+                <div class="form-group">
+                    <label class="form-label">Date</label>
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="dateOption" value="today" checked />
+                            <span>Today</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="dateOption" value="tomorrow" />
+                            <span>Tomorrow</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="dateOption" value="custom" />
+                            <span>Specific Date</span>
+                        </label>
+                    </div>
+                    <input type="date" name="customDate" class="form-input" style="margin-top: 8px;" />
+                </div>
+            `;
+
+            showFormPage('Daily Briefing', formHTML, (data) => {
+                let date = new Date();
+                if (data.dateOption === 'tomorrow') {
+                    date.setDate(date.getDate() + 1);
+                } else if (data.dateOption === 'custom' && data.customDate) {
+                    date = new Date(data.customDate);
+                }
+
+                const dateStr = date.toISOString().split('T')[0];
+                const endpoint = `/api/briefing?date=${dateStr}`;
+                const title = `Daily Briefing - ${date.toLocaleDateString()}`;
+                callDirectAPI(endpoint, title);
+            });
+        }
+
+        // Show calendar options
+        function showCalendarOptions() {
+            const formHTML = `
+                <div class="form-group">
+                    <label class="form-label">Calendar Type</label>
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="calendar" value="personal" />
+                            <span>Personal Calendar</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="calendar" value="work" />
+                            <span>Work Calendar</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="calendar" value="all" checked />
+                            <span>All Calendars</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Date</label>
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="dateOption" value="today" checked />
+                            <span>Today</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="dateOption" value="tomorrow" />
+                            <span>Tomorrow</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="dateOption" value="custom" />
+                            <span>Specific Date</span>
+                        </label>
+                    </div>
+                    <input type="date" name="customDate" class="form-input" style="margin-top: 8px;" />
+                </div>
+            `;
+
+            showFormPage('View Calendar', formHTML, (data) => {
+                let date = new Date();
+                if (data.dateOption === 'tomorrow') {
+                    date.setDate(date.getDate() + 1);
+                } else if (data.dateOption === 'custom' && data.customDate) {
+                    date = new Date(data.customDate);
+                }
+
+                const dateStr = date.toISOString().split('T')[0];
+                const endpoint = `/api/calendar?calendar=${data.calendar}&date=${dateStr}`;
+                const title = `Calendar (${data.calendar}) - ${date.toLocaleDateString()}`;
+                callDirectAPI(endpoint, title);
+            });
+        }
+
+        // Show commitment check prompt
+        function showCommitmentCheckPrompt() {
+            const formHTML = `
+                <div class="form-group">
+                    <label class="form-label">Contact Name or Group</label>
+                    <input type="text" name="contact" class="form-input" placeholder="Enter name..." required autofocus />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Timeframe</label>
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="timeframe" value="1d" />
+                            <span>1 Day</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="timeframe" value="3d" />
+                            <span>3 Days</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="timeframe" value="7d" checked />
+                            <span>1 Week</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="timeframe" value="14d" />
+                            <span>2 Weeks</span>
+                        </label>
+                    </div>
+                </div>
+            `;
+
+            showFormPage('Commitment Check', formHTML, (data) => {
+                if (!data.contact) return;
+                const endpoint = `/api/commitment-check?contact=${encodeURIComponent(data.contact)}&timeframe=${data.timeframe}`;
+                const title = `Commitment Check: ${data.contact} (${data.timeframe})`;
+                callDirectAPI(endpoint, title);
+            });
+        }
+
+        // Show messages prompt
+        function showMessagesPrompt() {
+            const formHTML = `
+                <div class="form-group">
+                    <label class="form-label">Contact Name or Group</label>
+                    <input type="text" name="contact" class="form-input" placeholder="Enter name..." required autofocus />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Platform</label>
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="platform" value="whatsapp" checked />
+                            <span>WhatsApp</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="platform" value="imessage" />
+                            <span>iMessage</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Timeframe</label>
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="timeframe" value="1d" />
+                            <span>1 Day</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="timeframe" value="3d" />
+                            <span>3 Days</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="timeframe" value="7d" checked />
+                            <span>1 Week</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="timeframe" value="14d" />
+                            <span>2 Weeks</span>
+                        </label>
+                    </div>
+                </div>
+            `;
+
+            showFormPage('Messages Summary', formHTML, (data) => {
+                if (!data.contact) return;
+                const endpoint = `/api/messages/summary?contact=${encodeURIComponent(data.contact)}&platform=${data.platform}&timeframe=${data.timeframe}`;
+                const title = `Messages: ${data.contact} on ${data.platform} (${data.timeframe})`;
+                callDirectAPI(endpoint, title);
+            });
+        }
+
+        // Go back home - clear chat and show quick prompts
+        function goBackHome() {
+            // Clear chat container
+            document.getElementById('chatContainer').innerHTML = '';
+
+            // Hide form view and settings
+            document.getElementById('formView').classList.add('hidden');
+            document.getElementById('settingsView').classList.add('hidden');
+
+            // Show quick prompts
+            document.getElementById('quickPromptsSection').classList.remove('hidden');
+
+            // Show recent activity
+            document.getElementById('recentActivitySection').classList.remove('hidden');
+
+            // Hide back home button
+            document.getElementById('backHomeButton').classList.add('hidden');
+
+            // Clear and focus input
+            const input = document.getElementById('queryInput');
+            input.value = '';
+            input.style.height = 'auto';
+
+            // Clear any pending callbacks
+            currentModalCallback = null;
+
+            // Reload recent activity
+            loadRecentActivity();
+        }
+
+        // Load recent activity from API
+        async function loadRecentActivity() {
+            try {
+                const response = await fetch('/api/recent-activity?passcode=' + encodeURIComponent(passcode));
+                if (!response.ok) return;
+
+                const data = await response.json();
+                const listEl = document.getElementById('recentActivityList');
+
+                if (!data.activities || data.activities.length === 0) {
+                    listEl.innerHTML = '<div class="recent-activity-empty">No recent activity yet</div>';
+                    return;
+                }
+
+                // Limit to 7 most recent activities
+                const activities = data.activities.slice(0, 7);
+
+                let html = '';
+                activities.forEach((activity, index) => {
+                    const activityJson = JSON.stringify(activity).replace(/'/g, "&apos;");
+                    html += `
+                        <div class="recent-activity-item">
+                            <div class="recent-activity-main" onclick='rerunActivity(${activityJson})'>
+                                <div class="recent-activity-content">
+                                    <div class="recent-activity-label">${escapeHtml(activity.label)}</div>
+                                    <div class="recent-activity-time">${escapeHtml(activity.timestamp)}</div>
+                                </div>
+                                <div class="recent-activity-icon">↻</div>
+                            </div>
+                            <button class="recent-activity-delete" onclick="deleteRecentActivity(event, '${activity.endpoint}', '${encodeURIComponent(JSON.stringify(activity.params))}')">×</button>
+                        </div>
+                    `;
+                });
+
+                listEl.innerHTML = html;
+            } catch (error) {
+                console.error('Failed to load recent activity:', error);
+            }
+        }
+
+        // Re-run an activity from recent list
+        function rerunActivity(activity) {
+            const endpoint = activity.endpoint;
+            const params = activity.params;
+
+            // Build query string
+            const queryParts = Object.entries(params).map(([key, value]) =>
+                `${key}=${encodeURIComponent(value)}`
+            ).join('&');
+
+            const url = queryParts ? `${endpoint}?${queryParts}` : endpoint;
+            callDirectAPI(url, activity.label);
+        }
+
+        // Delete a recent activity entry
+        async function deleteRecentActivity(event, endpoint, paramsEncoded) {
+            event.stopPropagation(); // Prevent triggering rerun
+
+            try {
+                const params = JSON.parse(decodeURIComponent(paramsEncoded));
+                const queryParts = Object.entries(params).map(([key, value]) =>
+                    `${key}=${encodeURIComponent(value)}`
+                ).join('&');
+
+                const url = `/api/recent-activity/delete?passcode=${encodeURIComponent(passcode)}&endpoint=${encodeURIComponent(endpoint)}&${queryParts}`;
+
+                const response = await fetch(url, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    // Reload the list
+                    loadRecentActivity();
+                }
+            } catch (error) {
+                console.error('Failed to delete activity:', error);
+            }
+        }
+
+        // Show settings page
+        function showSettings() {
+            // Hide everything else
+            document.getElementById('quickPromptsSection').classList.add('hidden');
+            document.getElementById('recentActivitySection').classList.add('hidden');
+            document.getElementById('chatContainer').innerHTML = '';
+            document.getElementById('formView').classList.add('hidden');
+            document.getElementById('backHomeButton').classList.remove('hidden');
+
+            // Show settings view
+            document.getElementById('settingsView').classList.remove('hidden');
+
+            // Load current config
+            loadSettings();
+        }
+
+        // Load settings from API
+        async function loadSettings() {
+            try {
+                const response = await fetch('/api/config/notion?passcode=' + encodeURIComponent(passcode));
+                if (!response.ok) return;
+
+                const data = await response.json();
+                const currentValueEl = document.getElementById('currentTasksDatabaseId');
+
+                if (data.tasksDatabaseId) {
+                    currentValueEl.textContent = data.tasksDatabaseId;
+                    currentValueEl.classList.remove('hidden');
+                } else {
+                    currentValueEl.classList.add('hidden');
+                }
+            } catch (error) {
+                console.error('Failed to load settings:', error);
+            }
+        }
+
+        // Save Notion config
+        async function saveNotionConfig() {
+            const tasksDatabaseId = document.getElementById('tasksDatabaseId').value.trim();
+            const statusEl = document.getElementById('notionConfigStatus');
+
+            if (!tasksDatabaseId) {
+                statusEl.className = 'settings-error';
+                statusEl.textContent = 'Please enter a Tasks Database ID';
+                statusEl.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/config/notion?passcode=' + encodeURIComponent(passcode), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tasksDatabaseId })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    statusEl.className = 'settings-success';
+                    statusEl.textContent = 'Notion configuration saved successfully!';
+                    statusEl.classList.remove('hidden');
+                } else {
+                    statusEl.className = 'settings-error';
+                    statusEl.textContent = 'Error: ' + (data.error || 'Failed to save config');
+                    statusEl.classList.remove('hidden');
+                }
+            } catch (error) {
+                statusEl.className = 'settings-error';
+                statusEl.textContent = 'Failed to connect to server';
+                statusEl.classList.remove('hidden');
+            }
+        }
+
+        // Change passcode
+        async function changePasscode() {
+            const current = document.getElementById('currentPasscode').value;
+            const newPass = document.getElementById('newPasscode').value;
+            const confirm = document.getElementById('confirmPasscode').value;
+            const statusEl = document.getElementById('passcodeStatus');
+
+            if (!current || !newPass || !confirm) {
+                statusEl.className = 'settings-error';
+                statusEl.textContent = 'Please fill in all fields';
+                statusEl.classList.remove('hidden');
+                return;
+            }
+
+            if (newPass !== confirm) {
+                statusEl.className = 'settings-error';
+                statusEl.textContent = 'New passcodes do not match';
+                statusEl.classList.remove('hidden');
+                return;
+            }
+
+            if (current !== passcode) {
+                statusEl.className = 'settings-error';
+                statusEl.textContent = 'Current passcode is incorrect';
+                statusEl.classList.remove('hidden');
+                return;
+            }
+
+            if (newPass.length < 8) {
+                statusEl.className = 'settings-error';
+                statusEl.textContent = 'New passcode must be at least 8 characters';
+                statusEl.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/config/passcode?passcode=' + encodeURIComponent(passcode), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ newPasscode: newPass })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Show success message
+                    statusEl.className = 'settings-success';
+                    statusEl.textContent = 'Passcode changed successfully! Redirecting to login...';
+                    statusEl.classList.remove('hidden');
+
+                    // Clear inputs
+                    document.getElementById('currentPasscode').value = '';
+                    document.getElementById('newPasscode').value = '';
+                    document.getElementById('confirmPasscode').value = '';
+
+                    // Wait 2 seconds then redirect to login
+                    setTimeout(() => {
+                        // Clear the old passcode and redirect
+                        window.location.href = window.location.pathname;
+                    }, 2000);
+                } else {
+                    statusEl.className = 'settings-error';
+                    statusEl.textContent = 'Error: ' + (data.error || 'Failed to change passcode');
+                    statusEl.classList.remove('hidden');
+                }
+            } catch (error) {
+                statusEl.className = 'settings-error';
+                statusEl.textContent = 'Failed to connect to server';
+                statusEl.classList.remove('hidden');
+            }
+        }
+
+        // Clear cache
+        async function clearCache() {
+            const statusEl = document.getElementById('cacheStatus');
+
+            if (!confirm('Are you sure you want to clear all cached data?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/cache/clear?passcode=' + encodeURIComponent(passcode), {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    statusEl.className = 'settings-success';
+                    statusEl.textContent = 'Cache cleared successfully!';
+                    statusEl.classList.remove('hidden');
+                } else {
+                    statusEl.className = 'settings-error';
+                    statusEl.textContent = 'Error: ' + (data.error || 'Failed to clear cache');
+                    statusEl.classList.remove('hidden');
+                }
+            } catch (error) {
+                statusEl.className = 'settings-error';
+                statusEl.textContent = 'Failed to connect to server';
+                statusEl.classList.remove('hidden');
+            }
+        }
+
+        // Auto-authentication and setup on load
+        document.addEventListener('DOMContentLoaded', () => {
+            // Check if passcode is in URL query parameters
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlPasscode = urlParams.get('passcode');
+
+            if (urlPasscode) {
+                // Auto-authenticate with URL passcode
+                passcode = urlPasscode;
+                document.getElementById('passcodeInput').value = urlPasscode;
+                authenticate();
+                // Load recent activity after auth
+                setTimeout(() => loadRecentActivity(), 500);
+            } else {
+                // Manual entry - focus input
+                document.getElementById('passcodeInput').focus();
+            }
+
+            // Handle radio option visual feedback
+            document.addEventListener('click', (e) => {
+                const radioOption = e.target.closest('.radio-option');
+                if (radioOption) {
+                    const radio = radioOption.querySelector('input[type="radio"]');
+                    if (radio) {
+                        radio.checked = true;
+                        // Update visual state
+                        const group = radioOption.closest('.radio-group');
+                        group.querySelectorAll('.radio-option').forEach(opt => {
+                            opt.classList.remove('selected');
+                        });
+                        radioOption.classList.add('selected');
+                    }
+                }
+            });
+
+            // Handle form submission with Enter key
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    const formView = document.getElementById('formView');
+                    if (!formView.classList.contains('hidden')) {
+                        e.preventDefault();
+                        submitFormPage();
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>

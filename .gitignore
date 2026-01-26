@@ -35,6 +35,14 @@ credentials.json
 *.swp
 *.swo
 *~
+*.bak
+*.backup
+*.disabled
+
+# Test/temp scripts
+test_*.swift
+fix_*.swift
+create_*.swift
 
 # Notion database backups
 notion_backup/
