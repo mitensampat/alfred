@@ -32,6 +32,13 @@ An AI-powered personal assistant that helps you manage your schedule, track comm
 - Identify what needs attention
 - Prioritize important tasks
 
+### 🧠 Agent Memory System
+- Teach agents your preferences and rules
+- View what agents have learned
+- Transparent, editable memory files
+- Automatic learning consolidation from usage patterns
+- Per-contact and per-platform customization
+
 ### 🌐 Web Interface
 - Clean, Notion-inspired UI
 - Works on any device (phone, tablet, laptop)
@@ -87,6 +94,7 @@ The web interface provides quick action buttons for:
 - 🔍 Scan Commitments
 - 📝 Scan Todos
 - 🎯 Attention Check
+- 🧠 Agents (teach, view memory, manage skills)
 
 ### CLI Commands
 
@@ -111,6 +119,15 @@ alfred commitments check "Person Name"
 
 # Attention
 alfred attention
+
+# Agent Memory
+alfred teach communication "Always be concise with John"
+alfred teach task "Sprint tasks are high priority"
+alfred agents memory communication    # View what agent knows
+alfred agents skills task             # View agent capabilities
+alfred agents forget communication 2  # Remove a learned rule
+alfred agents consolidate             # Extract patterns from usage
+alfred agents status                  # Show learning statistics
 ```
 
 ## Configuration
@@ -156,7 +173,13 @@ See [SETUP.md](SETUP.md) for detailed configuration instructions.
     ┌────▼────┐ ┌────▼────┐ ┌────▼────┐ ┌────▼────┐ ┌────▼────┐
     │ Google  │ │ Message │ │  Notion │ │ Claude  │ │  Query  │
     │Calendar │ │ Readers │ │   API   │ │   AI    │ │  Cache  │
-    └─────────┘ └─────────┘ └─────────┘ └─────────┘ └─────────┘
+    └─────────┘ └─────────┘ └─────────┘ └────┬────┘ └─────────┘
+                                             │
+                                    ┌────────▼────────┐
+                                    │  Agent Memory   │
+                                    │  (~/.alfred/    │
+                                    │    agents/)     │
+                                    └─────────────────┘
 ```
 
 ## Remote Access

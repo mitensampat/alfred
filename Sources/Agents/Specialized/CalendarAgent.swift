@@ -7,12 +7,14 @@ class CalendarAgent: AgentProtocol {
 
     private let appConfig: AppConfig
     private let learningEngine: LearningEngine
+    private let memoryService: AgentMemoryService
 
     init(config: AgentConfig, appConfig: AppConfig, learningEngine: LearningEngine) {
         self.config = config
         self.autonomyLevel = config.autonomyLevel
         self.appConfig = appConfig
         self.learningEngine = learningEngine
+        self.memoryService = AgentMemoryService.shared
     }
 
     // MARK: - Evaluation

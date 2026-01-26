@@ -8,6 +8,7 @@ class CommunicationAgent: AgentProtocol {
     private let appConfig: AppConfig
     private let learningEngine: LearningEngine
     private let aiService: ClaudeAIService
+    private let memoryService: AgentMemoryService
     private var training: CommunicationTraining?
 
     init(config: AgentConfig, appConfig: AppConfig, learningEngine: LearningEngine) {
@@ -16,6 +17,7 @@ class CommunicationAgent: AgentProtocol {
         self.appConfig = appConfig
         self.learningEngine = learningEngine
         self.aiService = ClaudeAIService(config: appConfig.ai)
+        self.memoryService = AgentMemoryService.shared
 
         // Load training examples
         self.training = CommunicationTrainingLoader.load()
@@ -92,7 +94,8 @@ class CommunicationAgent: AgentProtocol {
         let draftContent = try await generateDraftContent(
             summary: summary,
             tone: tone,
-            context: context
+            context: context,
+            contactName: contactName
         )
 
         // Create message draft
@@ -177,22 +180,31 @@ class CommunicationAgent: AgentProtocol {
     private func generateDraftContent(
         summary: String,
         tone: MessageDraft.MessageTone,
-        context: AgentContext
+        context: AgentContext,
+        contactName: String? = nil
     ) async throws -> String {
-        // Use AI-powered generation with training examples
-        return try await generateAIDraft(summary: summary, tone: tone, context: context)
+        // Use AI-powered generation with training examples and memory
+        return try await generateAIDraft(summary: summary, tone: tone, context: context, contactName: contactName)
     }
 
     private func generateAIDraft(
         summary: String,
         tone: MessageDraft.MessageTone,
-        context: AgentContext
+        context: AgentContext,
+        contactName: String? = nil
     ) async throws -> String {
-        // Build context-aware prompt with training examples
+        // Build context-aware prompt with training examples and memory
         var prompt = """
         You are drafting a message reply on behalf of the user. Generate ONLY the message text, nothing else.
 
         """
+
+        // Add memory-based rules and patterns (highest priority)
+        let promptContext = PromptContext(contactName: contactName, platform: nil, urgency: nil)
+        let memoryContext = memoryService.getMemoryForPrompt(agentType: .communication, context: promptContext)
+        if !memoryContext.isEmpty {
+            prompt += memoryContext
+        }
 
         // Add user profile if training available
         if let training = training {
@@ -239,6 +251,7 @@ class CommunicationAgent: AgentProtocol {
         CURRENT MESSAGE:
         Summary: \(summary)
         Required tone: \(tone.rawValue)
+        \(contactName != nil ? "Recipient: \(contactName!)" : "")
 
         """
 

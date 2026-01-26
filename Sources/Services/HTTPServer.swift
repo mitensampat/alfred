@@ -168,6 +168,28 @@ class HTTPServer {
         case ("POST", "/api/query"):
             return await handleNaturalLanguageQuery(request)
 
+        // Agent endpoints
+        case ("GET", "/api/agents"):
+            return handleGetAgents()
+
+        case ("GET", "/api/agents/memory"):
+            return handleGetAgentMemory(request)
+
+        case ("GET", "/api/agents/skills"):
+            return handleGetAgentSkills(request)
+
+        case ("POST", "/api/agents/teach"):
+            return handleTeachAgent(request)
+
+        case ("POST", "/api/agents/forget"):
+            return handleForgetPattern(request)
+
+        case ("POST", "/api/agents/consolidate"):
+            return handleConsolidateLearnings(request)
+
+        case ("GET", "/api/agents/status"):
+            return handleAgentLearningStatus(request)
+
         default:
             return HTTPResponse(
                 statusCode: 404,
@@ -1170,6 +1192,362 @@ The Commitment Check feature requires a properly configured Notion database.
             statusCode: 200,
             body: ["message": "All cache cleared successfully"]
         )
+    }
+
+    // MARK: - Agent Handlers
+
+    private func handleGetAgents() -> HTTPResponse {
+        let memoryService = AgentMemoryService.shared
+        let agentTypes: [AgentType] = [.communication, .task, .calendar, .followup]
+
+        var agents: [[String: Any]] = []
+        for agentType in agentTypes {
+            let summary = memoryService.getMemorySummary(for: agentType)
+            let skills = memoryService.getSkills(for: agentType)
+
+            agents.append([
+                "type": agentType.rawValue,
+                "displayName": agentType.displayName,
+                "skills": skills.capabilities,
+                "memory": [
+                    "taughtRulesCount": summary.taughtRulesCount,
+                    "learnedPatternsCount": summary.learnedPatternsCount,
+                    "contactsKnown": summary.contactsKnown,
+                    "lastUpdated": summary.formattedLastUpdated
+                ]
+            ])
+        }
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "agents": agents,
+                "response": formatAgentsSummary(agents)
+            ]
+        )
+    }
+
+    private func handleGetAgentMemory(_ request: HTTPRequest) -> HTTPResponse {
+        guard let agentName = request.queryParams["agent"] else {
+            // Return all agents' memory summaries
+            let memoryService = AgentMemoryService.shared
+            let agentTypes: [AgentType] = [.communication, .task, .calendar, .followup]
+
+            var memories: [[String: Any]] = []
+            for agentType in agentTypes {
+                let summary = memoryService.getMemorySummary(for: agentType)
+                memories.append([
+                    "type": agentType.rawValue,
+                    "displayName": agentType.displayName,
+                    "taughtRulesCount": summary.taughtRulesCount,
+                    "learnedPatternsCount": summary.learnedPatternsCount,
+                    "contactsKnown": summary.contactsKnown,
+                    "lastUpdated": summary.formattedLastUpdated
+                ])
+            }
+
+            return HTTPResponse(
+                statusCode: 200,
+                body: ["memories": memories]
+            )
+        }
+
+        guard let agentType = parseAgentType(agentName) else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Unknown agent: \(agentName). Valid agents: communication, task, calendar, followup"]
+            )
+        }
+
+        let memoryService = AgentMemoryService.shared
+        let memory = memoryService.getMemory(for: agentType)
+        let summary = memoryService.getMemorySummary(for: agentType)
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "agent": agentType.rawValue,
+                "displayName": agentType.displayName,
+                "content": memory.content,
+                "sections": memory.sections,
+                "summary": [
+                    "taughtRulesCount": summary.taughtRulesCount,
+                    "learnedPatternsCount": summary.learnedPatternsCount,
+                    "contactsKnown": summary.contactsKnown,
+                    "lastUpdated": summary.formattedLastUpdated
+                ],
+                "response": "🧠 **\(agentType.displayName) Agent Memory**\n\n\(memory.content)"
+            ]
+        )
+    }
+
+    private func handleGetAgentSkills(_ request: HTTPRequest) -> HTTPResponse {
+        guard let agentName = request.queryParams["agent"] else {
+            // Return all agents' skills summaries
+            let memoryService = AgentMemoryService.shared
+            let agentTypes: [AgentType] = [.communication, .task, .calendar, .followup]
+
+            var allSkills: [[String: Any]] = []
+            for agentType in agentTypes {
+                let skills = memoryService.getSkills(for: agentType)
+                allSkills.append([
+                    "type": agentType.rawValue,
+                    "displayName": agentType.displayName,
+                    "capabilities": skills.capabilities
+                ])
+            }
+
+            return HTTPResponse(
+                statusCode: 200,
+                body: ["skills": allSkills]
+            )
+        }
+
+        guard let agentType = parseAgentType(agentName) else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Unknown agent: \(agentName). Valid agents: communication, task, calendar, followup"]
+            )
+        }
+
+        let memoryService = AgentMemoryService.shared
+        let skills = memoryService.getSkills(for: agentType)
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "agent": agentType.rawValue,
+                "displayName": agentType.displayName,
+                "content": skills.content,
+                "capabilities": skills.capabilities,
+                "response": "⚡ **\(agentType.displayName) Agent Skills**\n\n\(skills.content)"
+            ]
+        )
+    }
+
+    private func handleTeachAgent(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let agentName = json["agent"] as? String,
+              let rule = json["rule"] as? String else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Missing required fields: 'agent' and 'rule'"]
+            )
+        }
+
+        guard let agentType = parseAgentType(agentName) else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Unknown agent: \(agentName). Valid agents: communication, task, calendar, followup"]
+            )
+        }
+
+        let category = json["category"] as? String
+
+        let memoryService = AgentMemoryService.shared
+        do {
+            try memoryService.teach(agentType: agentType, rule: rule, category: category)
+            return HTTPResponse(
+                statusCode: 200,
+                body: [
+                    "success": true,
+                    "message": "Taught \(agentType.displayName) agent: \"\(rule)\"",
+                    "agent": agentType.rawValue,
+                    "rule": rule,
+                    "response": "✅ **Rule Taught**\n\nThe \(agentType.displayName) agent will now follow this rule:\n\n> \(rule)"
+                ]
+            )
+        } catch {
+            return HTTPResponse(
+                statusCode: 500,
+                body: ["error": "Failed to teach agent: \(error.localizedDescription)"]
+            )
+        }
+    }
+
+    private func handleForgetPattern(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let agentName = json["agent"] as? String,
+              let pattern = json["pattern"] as? String else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Missing required fields: 'agent' and 'pattern'"]
+            )
+        }
+
+        guard let agentType = parseAgentType(agentName) else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Unknown agent: \(agentName). Valid agents: communication, task, calendar, followup"]
+            )
+        }
+
+        let memoryService = AgentMemoryService.shared
+        do {
+            let found = try memoryService.forget(agentType: agentType, pattern: pattern)
+            if found {
+                return HTTPResponse(
+                    statusCode: 200,
+                    body: [
+                        "success": true,
+                        "message": "Removed pattern containing \"\(pattern)\" from \(agentType.displayName) memory",
+                        "response": "✅ **Pattern Removed**\n\nRemoved patterns containing \"\(pattern)\" from \(agentType.displayName) agent memory."
+                    ]
+                )
+            } else {
+                return HTTPResponse(
+                    statusCode: 404,
+                    body: [
+                        "success": false,
+                        "message": "No patterns containing \"\(pattern)\" found in \(agentType.displayName) memory",
+                        "response": "⚠️ No patterns containing \"\(pattern)\" found in \(agentType.displayName) agent memory."
+                    ]
+                )
+            }
+        } catch {
+            return HTTPResponse(
+                statusCode: 500,
+                body: ["error": "Failed to forget pattern: \(error.localizedDescription)"]
+            )
+        }
+    }
+
+    private func parseAgentType(_ name: String) -> AgentType? {
+        switch name.lowercased() {
+        case "communication", "comm", "com":
+            return .communication
+        case "task", "tasks":
+            return .task
+        case "calendar", "cal":
+            return .calendar
+        case "followup", "follow", "followups":
+            return .followup
+        default:
+            return nil
+        }
+    }
+
+    private func handleConsolidateLearnings(_ request: HTTPRequest) -> HTTPResponse {
+        let memoryService = AgentMemoryService.shared
+
+        // Get summary first
+        let summary = memoryService.getConsolidationSummary()
+
+        if summary.patternsReadyForConsolidation == 0 {
+            return HTTPResponse(
+                statusCode: 200,
+                body: [
+                    "success": true,
+                    "message": "No patterns ready for consolidation",
+                    "response": "🧠 **Learning Consolidation**\n\nNo patterns ready for consolidation yet.\n\nPatterns need:\n- Confidence >= 70%\n- At least 5 feedback instances\n\nTotal patterns tracked: \(summary.totalPatterns)",
+                    "summary": [
+                        "totalPatterns": summary.totalPatterns,
+                        "patternsReadyForConsolidation": summary.patternsReadyForConsolidation,
+                        "patternsByAgent": summary.patternsByAgent
+                    ]
+                ]
+            )
+        }
+
+        do {
+            try memoryService.consolidateLearnings()
+
+            var agentDetails = ""
+            for (agent, count) in summary.patternsByAgent {
+                agentDetails += "\n- \(agent): \(count) patterns"
+            }
+
+            return HTTPResponse(
+                statusCode: 200,
+                body: [
+                    "success": true,
+                    "message": "Consolidated \(summary.patternsReadyForConsolidation) patterns to agent memory files",
+                    "response": "🧠 **Learning Consolidation Complete**\n\nConsolidated \(summary.patternsReadyForConsolidation) high-confidence patterns to agent memories.\n\n**By Agent:**\(agentDetails)\n\nThese learnings are now incorporated into agent prompts.",
+                    "summary": [
+                        "totalPatterns": summary.totalPatterns,
+                        "patternsConsolidated": summary.patternsReadyForConsolidation,
+                        "patternsByAgent": summary.patternsByAgent
+                    ]
+                ]
+            )
+        } catch {
+            return HTTPResponse(
+                statusCode: 500,
+                body: ["error": "Failed to consolidate learnings: \(error.localizedDescription)"]
+            )
+        }
+    }
+
+    private func handleAgentLearningStatus(_ request: HTTPRequest) -> HTTPResponse {
+        let memoryService = AgentMemoryService.shared
+        let consolidationSummary = memoryService.getConsolidationSummary()
+
+        var agentStatuses: [[String: Any]] = []
+
+        for agentType in [AgentType.communication, .task, .calendar, .followup] {
+            let memorySummary = memoryService.getMemorySummary(for: agentType)
+            agentStatuses.append([
+                "type": agentType.rawValue,
+                "displayName": agentType.displayName,
+                "taughtRulesCount": memorySummary.taughtRulesCount,
+                "learnedPatternsCount": memorySummary.learnedPatternsCount,
+                "contactsKnown": memorySummary.contactsKnown,
+                "lastUpdated": memorySummary.formattedLastUpdated
+            ])
+        }
+
+        var responseText = "🧠 **Agent Learning Status**\n\n"
+        responseText += "**Learning Database:**\n"
+        responseText += "- Total patterns tracked: \(consolidationSummary.totalPatterns)\n"
+        responseText += "- Ready for consolidation: \(consolidationSummary.patternsReadyForConsolidation)\n\n"
+        responseText += "**Agent Memories:**\n"
+
+        for status in agentStatuses {
+            let displayName = status["displayName"] as? String ?? ""
+            let rules = status["taughtRulesCount"] as? Int ?? 0
+            let patterns = status["learnedPatternsCount"] as? Int ?? 0
+            let lastUpdated = status["lastUpdated"] as? String ?? "Never"
+            responseText += "\n**\(displayName) Agent**\n"
+            responseText += "- Taught rules: \(rules)\n"
+            responseText += "- Learned patterns: \(patterns)\n"
+            responseText += "- Last updated: \(lastUpdated)\n"
+        }
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "response": responseText,
+                "learningDatabase": [
+                    "totalPatterns": consolidationSummary.totalPatterns,
+                    "patternsReadyForConsolidation": consolidationSummary.patternsReadyForConsolidation,
+                    "patternsByAgent": consolidationSummary.patternsByAgent
+                ],
+                "agents": agentStatuses
+            ]
+        )
+    }
+
+    private func formatAgentsSummary(_ agents: [[String: Any]]) -> String {
+        var output = "🤖 **Alfred Agents**\n\n"
+
+        for agent in agents {
+            let displayName = agent["displayName"] as? String ?? "Unknown"
+            let skills = agent["skills"] as? [String] ?? []
+            let memory = agent["memory"] as? [String: Any] ?? [:]
+            let rulesCount = memory["taughtRulesCount"] as? Int ?? 0
+            let patternsCount = memory["learnedPatternsCount"] as? Int ?? 0
+
+            output += "**\(displayName) Agent**\n"
+            output += "• Skills: \(skills.joined(separator: ", "))\n"
+            output += "• Memory: \(rulesCount) rules, \(patternsCount) patterns learned\n\n"
+        }
+
+        output += "---\n"
+        output += "Use the Agents panel to view details, teach rules, or manage memory."
+
+        return output
     }
 
     private func handleNaturalLanguageQuery(_ request: HTTPRequest) async -> HTTPResponse {

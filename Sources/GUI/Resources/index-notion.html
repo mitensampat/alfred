@@ -760,6 +760,149 @@
             font-size: 14px;
         }
 
+        /* Agents View Styles */
+        .agents-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .agent-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .agent-card:hover {
+            border-color: var(--accent-color);
+            box-shadow: var(--shadow-sm);
+            transform: translateY(-1px);
+        }
+
+        .agent-card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .agent-card-icon {
+            font-size: 24px;
+        }
+
+        .agent-card-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .agent-card-desc {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+
+        .agent-card-stats {
+            display: flex;
+            gap: 16px;
+            font-size: 12px;
+            color: var(--text-tertiary);
+        }
+
+        .agent-card-stat {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .loading-agents {
+            text-align: center;
+            padding: 24px;
+            color: var(--text-tertiary);
+        }
+
+        /* Agent Detail View */
+        .agent-memory-section {
+            margin-bottom: 20px;
+        }
+
+        .agent-memory-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .agent-memory-content {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 16px;
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            color: var(--text-primary);
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .agent-memory-empty {
+            color: var(--text-tertiary);
+            font-style: italic;
+        }
+
+        .memory-rule {
+            padding: 10px 12px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .memory-rule:last-child {
+            margin-bottom: 0;
+        }
+
+        .memory-rule-text {
+            flex: 1;
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+
+        .memory-rule-meta {
+            font-size: 12px;
+            color: var(--text-tertiary);
+            margin-top: 4px;
+        }
+
+        .memory-rule-delete {
+            padding: 4px 8px;
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: var(--radius-sm);
+            color: var(--text-tertiary);
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.15s;
+        }
+
+        .memory-rule-delete:hover {
+            background: #fee;
+            border-color: #fcc;
+            color: #c33;
+        }
+
         /* Form Page */
         .form-page {
             background: var(--bg-primary);
@@ -1261,6 +1404,58 @@
             </div>
         </div>
 
+        <!-- Agents View -->
+        <div id="agentsView" class="hidden settings-page">
+            <div class="settings-section">
+                <div class="settings-section-title">Your AI Agents</div>
+                <div class="settings-item-desc" style="margin-bottom: 16px;">
+                    These agents learn from your usage and can be taught specific rules.
+                </div>
+                <div id="agentsList" class="agents-list">
+                    <div class="loading-agents">Loading agents...</div>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <div class="settings-section-title">Teach an Agent</div>
+                <div class="settings-item-desc" style="margin-bottom: 16px;">
+                    Add a rule or pattern for an agent to follow.
+                </div>
+                <div class="settings-item">
+                    <div class="settings-item-label">Agent</div>
+                    <select id="teachAgentSelect" class="form-input">
+                        <option value="communication">Communication Agent</option>
+                        <option value="task">Task Agent</option>
+                        <option value="calendar">Calendar Agent</option>
+                        <option value="followup">Follow-up Agent</option>
+                    </select>
+                </div>
+                <div class="settings-item">
+                    <div class="settings-item-label">Rule or Pattern</div>
+                    <textarea id="teachRuleInput" class="form-input" rows="3" placeholder="e.g., Always suggest formal language when emailing executives..."></textarea>
+                </div>
+                <div class="settings-item">
+                    <div class="settings-item-label">Context (optional)</div>
+                    <input type="text" id="teachContextInput" class="settings-input" placeholder="e.g., email drafting, scheduling..." />
+                </div>
+                <button class="settings-button-save" onclick="teachAgent()">Teach Agent</button>
+                <div id="teachStatus" class="hidden"></div>
+            </div>
+        </div>
+
+        <!-- Agent Detail View -->
+        <div id="agentDetailView" class="hidden settings-page">
+            <div class="settings-section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <div class="settings-section-title" id="agentDetailTitle" style="margin-bottom: 0;">Agent Details</div>
+                    <button class="form-page-button form-page-button-secondary" style="flex: none; padding: 8px 16px;" onclick="showAgents()">← Back to Agents</button>
+                </div>
+                <div id="agentDetailContent">
+                    <div class="loading-agents">Loading...</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Quick Actions (shown when empty) -->
         <div id="quickPromptsSection" class="quick-prompts">
             <div class="quick-prompts-header">Actions</div>
@@ -1299,6 +1494,11 @@
                     <div class="quick-prompt-icon">🎯</div>
                     <div class="quick-prompt-title">Attention Check</div>
                     <div class="quick-prompt-desc">What needs focus right now</div>
+                </div>
+                <div class="quick-prompt" onclick="showAgents()">
+                    <div class="quick-prompt-icon">🧠</div>
+                    <div class="quick-prompt-title">Agents</div>
+                    <div class="quick-prompt-desc">View & teach your AI agents</div>
                 </div>
                 <div class="quick-prompt" onclick="showSettings()">
                     <div class="quick-prompt-icon">⚙️</div>
@@ -1836,9 +2036,11 @@
             // Clear chat container
             document.getElementById('chatContainer').innerHTML = '';
 
-            // Hide form view and settings
+            // Hide form view, settings, and agents views
             document.getElementById('formView').classList.add('hidden');
             document.getElementById('settingsView').classList.add('hidden');
+            document.getElementById('agentsView').classList.add('hidden');
+            document.getElementById('agentDetailView').classList.add('hidden');
 
             // Show quick prompts
             document.getElementById('quickPromptsSection').classList.remove('hidden');
@@ -2113,6 +2315,258 @@
                 statusEl.className = 'settings-error';
                 statusEl.textContent = 'Failed to connect to server';
                 statusEl.classList.remove('hidden');
+            }
+        }
+
+        // Agent icons and descriptions
+        const agentInfo = {
+            communication: { icon: '💬', name: 'Communication Agent', desc: 'Generates personalized message drafts and responses' },
+            task: { icon: '✅', name: 'Task Agent', desc: 'Identifies action items and deadlines from conversations' },
+            calendar: { icon: '📅', name: 'Calendar Agent', desc: 'Suggests meeting scheduling and time management' },
+            followup: { icon: '🔔', name: 'Follow-up Agent', desc: 'Tracks conversations needing follow-up' }
+        };
+
+        // Show agents page
+        function showAgents() {
+            // Hide everything else
+            document.getElementById('quickPromptsSection').classList.add('hidden');
+            document.getElementById('recentActivitySection').classList.add('hidden');
+            document.getElementById('chatContainer').innerHTML = '';
+            document.getElementById('formView').classList.add('hidden');
+            document.getElementById('settingsView').classList.add('hidden');
+            document.getElementById('agentDetailView').classList.add('hidden');
+            document.getElementById('backHomeButton').classList.remove('hidden');
+
+            // Show agents view
+            document.getElementById('agentsView').classList.remove('hidden');
+
+            // Load agents data
+            loadAgents();
+        }
+
+        // Load agents list
+        async function loadAgents() {
+            const listEl = document.getElementById('agentsList');
+            listEl.innerHTML = '<div class="loading-agents">Loading agents...</div>';
+
+            try {
+                const response = await fetch('/api/agents?passcode=' + encodeURIComponent(passcode));
+                if (!response.ok) throw new Error('Failed to load agents');
+
+                const data = await response.json();
+
+                if (!data.agents || data.agents.length === 0) {
+                    listEl.innerHTML = '<div class="loading-agents">No agents found</div>';
+                    return;
+                }
+
+                let html = '';
+                data.agents.forEach(agent => {
+                    const info = agentInfo[agent.type] || { icon: '🤖', name: agent.type, desc: '' };
+                    const memory = agent.memory || {};
+                    html += `
+                        <div class="agent-card" onclick="showAgentDetail('${agent.type}')">
+                            <div class="agent-card-header">
+                                <span class="agent-card-icon">${info.icon}</span>
+                                <span class="agent-card-name">${info.name}</span>
+                            </div>
+                            <div class="agent-card-desc">${info.desc}</div>
+                            <div class="agent-card-stats">
+                                <span class="agent-card-stat">📝 ${memory.taughtRulesCount || 0} rules</span>
+                                <span class="agent-card-stat">🧠 ${memory.learnedPatternsCount || 0} learned patterns</span>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                listEl.innerHTML = html;
+            } catch (error) {
+                listEl.innerHTML = '<div class="loading-agents">Failed to load agents. Make sure the server is running.</div>';
+                console.error('Failed to load agents:', error);
+            }
+        }
+
+        // Show agent detail view
+        async function showAgentDetail(agentType) {
+            // Hide agents list, show detail view
+            document.getElementById('agentsView').classList.add('hidden');
+            document.getElementById('agentDetailView').classList.remove('hidden');
+
+            const info = agentInfo[agentType] || { icon: '🤖', name: agentType, desc: '' };
+            document.getElementById('agentDetailTitle').innerHTML = `${info.icon} ${info.name}`;
+
+            const contentEl = document.getElementById('agentDetailContent');
+            contentEl.innerHTML = '<div class="loading-agents">Loading...</div>';
+
+            try {
+                // Load memory and skills in parallel
+                const [memoryRes, skillsRes] = await Promise.all([
+                    fetch(`/api/agents/memory?agent=${agentType}&passcode=${encodeURIComponent(passcode)}`),
+                    fetch(`/api/agents/skills?agent=${agentType}&passcode=${encodeURIComponent(passcode)}`)
+                ]);
+
+                const memoryData = await memoryRes.json();
+                const skillsData = await skillsRes.json();
+
+                let html = '';
+                const summary = memoryData.summary || {};
+                const sections = memoryData.sections || {};
+
+                // User-Taught Rules section
+                html += `
+                    <div class="agent-memory-section">
+                        <div class="agent-memory-title">📝 User-Taught Rules (${summary.taughtRulesCount || 0})</div>
+                `;
+
+                const userRulesContent = sections['User-Taught Rules'] || '';
+                if (userRulesContent && !userRulesContent.includes('_Rules you\'ve explicitly taught me')) {
+                    // Parse rules from the markdown content
+                    const ruleLines = userRulesContent.split('\n').filter(line => line.trim().startsWith('- ['));
+                    if (ruleLines.length > 0) {
+                        html += '<div class="agent-memory-rules">';
+                        ruleLines.forEach(line => {
+                            // Parse format: - [2026-01-26T17:28:08Z] Rule text
+                            const match = line.match(/- \[([^\]]+)\] (.+)/);
+                            if (match) {
+                                const date = match[1];
+                                const ruleText = match[2];
+                                const ruleEscaped = ruleText.replace(/'/g, "\\'").replace(/"/g, "&quot;");
+                                html += `
+                                    <div class="memory-rule">
+                                        <div class="memory-rule-content">
+                                            <div class="memory-rule-text">${escapeHtml(ruleText)}</div>
+                                            <div class="memory-rule-meta">Added: ${escapeHtml(date)}</div>
+                                        </div>
+                                        <button class="memory-rule-delete" onclick="forgetRule('${agentType}', '${ruleEscaped.substring(0, 50)}')">×</button>
+                                    </div>
+                                `;
+                            }
+                        });
+                        html += '</div>';
+                    } else {
+                        html += '<div class="agent-memory-content agent-memory-empty">No user-taught rules yet. Use the "Teach an Agent" section below to add rules.</div>';
+                    }
+                } else {
+                    html += '<div class="agent-memory-content agent-memory-empty">No user-taught rules yet. Use the "Teach an Agent" section below to add rules.</div>';
+                }
+
+                html += '</div>';
+
+                // Learned Patterns section
+                html += `
+                    <div class="agent-memory-section">
+                        <div class="agent-memory-title">🧠 Learned Patterns (${summary.learnedPatternsCount || 0})</div>
+                `;
+
+                const learnedContent = sections['Learned Patterns'] || '';
+                if (learnedContent && !learnedContent.includes('_Patterns learned from your feedback')) {
+                    html += `<div class="agent-memory-content">${escapeHtml(learnedContent)}</div>`;
+                } else {
+                    html += '<div class="agent-memory-content agent-memory-empty">No learned patterns yet. The agent will learn from your feedback over time.</div>';
+                }
+
+                html += '</div>';
+
+                // Your Style section (for communication agent)
+                const styleContent = sections['Your Style'];
+                if (styleContent) {
+                    html += `
+                        <div class="agent-memory-section">
+                            <div class="agent-memory-title">✨ Your Style</div>
+                            <div class="agent-memory-content">${escapeHtml(styleContent)}</div>
+                        </div>
+                    `;
+                }
+
+                // Skills section
+                html += `
+                    <div class="agent-memory-section">
+                        <div class="agent-memory-title">⚡ Skills</div>
+                        <div class="agent-memory-content">${escapeHtml(skillsData.content || skillsData.skills || 'No skills defined')}</div>
+                    </div>
+                `;
+
+                contentEl.innerHTML = html;
+            } catch (error) {
+                contentEl.innerHTML = '<div class="loading-agents">Failed to load agent details.</div>';
+                console.error('Failed to load agent details:', error);
+            }
+        }
+
+        // Teach an agent
+        async function teachAgent() {
+            const agentType = document.getElementById('teachAgentSelect').value;
+            const rule = document.getElementById('teachRuleInput').value.trim();
+            const context = document.getElementById('teachContextInput').value.trim();
+            const statusEl = document.getElementById('teachStatus');
+
+            if (!rule) {
+                statusEl.className = 'settings-error';
+                statusEl.textContent = 'Please enter a rule or pattern to teach';
+                statusEl.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/agents/teach?passcode=' + encodeURIComponent(passcode), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        agent: agentType,
+                        rule: rule,
+                        context: context || undefined
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    statusEl.className = 'settings-success';
+                    statusEl.textContent = `Successfully taught ${agentInfo[agentType]?.name || agentType}!`;
+                    statusEl.classList.remove('hidden');
+
+                    // Clear inputs
+                    document.getElementById('teachRuleInput').value = '';
+                    document.getElementById('teachContextInput').value = '';
+
+                    // Reload agents list
+                    loadAgents();
+                } else {
+                    statusEl.className = 'settings-error';
+                    statusEl.textContent = 'Error: ' + (data.error || 'Failed to teach agent');
+                    statusEl.classList.remove('hidden');
+                }
+            } catch (error) {
+                statusEl.className = 'settings-error';
+                statusEl.textContent = 'Failed to connect to server';
+                statusEl.classList.remove('hidden');
+            }
+        }
+
+        // Forget a rule
+        async function forgetRule(agentType, rulePattern) {
+            if (!confirm('Are you sure you want to remove this rule?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/agents/forget?passcode=' + encodeURIComponent(passcode), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        agent: agentType,
+                        pattern: rulePattern
+                    })
+                });
+
+                if (response.ok) {
+                    // Reload agent detail
+                    showAgentDetail(agentType);
+                } else {
+                    alert('Failed to remove rule');
+                }
+            } catch (error) {
+                alert('Failed to connect to server');
             }
         }
 
