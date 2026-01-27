@@ -157,7 +157,9 @@ class AlfredService: ObservableObject {
         guard let config = orchestrator.config.commitments, config.enabled else {
             throw ServiceError.commitmentsNotEnabled
         }
-        guard let databaseId = config.notionDatabaseId else {
+
+        // Use unified Tasks database
+        guard orchestrator.notionServicePublic.tasksDatabaseId != nil else {
             throw ServiceError.notionDatabaseNotConfigured
         }
 
@@ -194,16 +196,13 @@ class AlfredService: ObservableObject {
                 totalFound += extraction.commitments.count
 
                 for commitment in extraction.commitments {
-                    let existingCommitment = try await orchestrator.notionServicePublic.findCommitmentByHash(
-                        commitment.uniqueHash,
-                        databaseId: databaseId
+                    // Use unified Tasks database
+                    let existingCommitment = try await orchestrator.notionServicePublic.findCommitmentByHashInTasks(
+                        commitment.uniqueHash
                     )
 
                     if existingCommitment == nil {
-                        _ = try await orchestrator.notionServicePublic.createCommitment(
-                            commitment,
-                            databaseId: databaseId
-                        )
+                        _ = try await orchestrator.notionServicePublic.createCommitmentInTasks(commitment)
                         totalSaved += 1
                     }
                 }
@@ -323,7 +322,7 @@ class AlfredService: ObservableObject {
     }
 
     /// Get message summary for a specific contact
-    func getMessagesSummaryForContact(contact: String, platform: String, timeframe: String) async throws -> (summary: String, keyPoints: [String], needsResponse: Bool, messageCount: Int) {
+    func getMessagesSummaryForContact(contact: String, platform: String, timeframe: String) async throws -> (summary: String, keyPoints: [String], needsResponse: Bool, messageCount: Int, actionItems: [FocusedThreadAnalysis.FocusedActionItem]) {
         guard let orchestrator = orchestrator else {
             throw ServiceError.notInitialized
         }
@@ -334,7 +333,8 @@ class AlfredService: ObservableObject {
                 summary: "Platform '\(platform)' is not yet supported for message summaries. Currently only WhatsApp is available.",
                 keyPoints: ["WhatsApp is the only supported platform at this time"],
                 needsResponse: false,
-                messageCount: 0
+                messageCount: 0,
+                actionItems: []
             )
         }
 
@@ -350,7 +350,8 @@ class AlfredService: ObservableObject {
             summary: analysis.summary,
             keyPoints: keyPoints,
             needsResponse: !analysis.actionItems.isEmpty,
-            messageCount: analysis.thread.messages.count
+            messageCount: analysis.thread.messages.count,
+            actionItems: analysis.actionItems
         )
     }
 
@@ -361,6 +362,170 @@ class AlfredService: ObservableObject {
             throw ServiceError.notInitialized
         }
         return try await orchestrator.generateAgentDigest()
+    }
+
+    // MARK: - Interactive Task Extraction (for GUI approval flow)
+
+    /// Extract commitments from messages for review (without auto-saving)
+    func extractCommitmentsForReview(contactName: String?, lookbackDays: Int) async throws -> [ExtractedItem] {
+        guard let orchestrator = orchestrator else {
+            throw ServiceError.notInitialized
+        }
+        guard let config = orchestrator.config.commitments, config.enabled else {
+            throw ServiceError.commitmentsNotEnabled
+        }
+
+        // Use unified Tasks database
+        guard orchestrator.notionServicePublic.tasksDatabaseId != nil else {
+            throw ServiceError.notionDatabaseNotConfigured
+        }
+
+        let contactsToScan: [String]
+        if let contact = contactName {
+            contactsToScan = [contact]
+        } else {
+            contactsToScan = config.autoScanContacts
+        }
+
+        let startDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+        var extractedItems: [ExtractedItem] = []
+
+        for contact in contactsToScan {
+            let allMessages = try await orchestrator.fetchMessagesForContact(contact, since: startDate)
+            guard !allMessages.isEmpty else { continue }
+
+            let groupedByThread = Dictionary(grouping: allMessages) { $0.threadName }
+
+            for (threadName, threadMessages) in groupedByThread {
+                guard let firstMessage = threadMessages.first else { continue }
+                let messages = threadMessages.map { $0.message }
+
+                let extraction = try await orchestrator.commitmentAnalyzer.analyzeMessages(
+                    messages,
+                    platform: firstMessage.platform,
+                    threadName: threadName,
+                    threadId: firstMessage.threadId
+                )
+
+                for commitment in extraction.commitments {
+                    // Check if already exists in unified Tasks database
+                    let existing = try? await orchestrator.notionServicePublic.findCommitmentByHashInTasks(
+                        commitment.uniqueHash
+                    )
+
+                    if existing == nil {
+                        // Convert to ExtractedItem for review
+                        let item = ExtractedItem.fromCommitment(commitment)
+                        extractedItems.append(item)
+                    }
+                }
+            }
+        }
+
+        return extractedItems
+    }
+
+    /// Extract todos from WhatsApp self-messages for review (without auto-saving)
+    func extractTodosForReview(lookbackDays: Int = 7) async throws -> [ExtractedItem] {
+        guard let orchestrator = orchestrator else {
+            throw ServiceError.notInitialized
+        }
+        return try await orchestrator.extractWhatsAppTodosForReview(lookbackDays: lookbackDays)
+    }
+
+    /// Analyze a specific contact thread and extract all actionable items for review
+    func extractItemsFromThread(contactName: String, timeframe: String) async throws -> [ExtractedItem] {
+        guard let orchestrator = orchestrator else {
+            throw ServiceError.notInitialized
+        }
+
+        var extractedItems: [ExtractedItem] = []
+
+        // Parse timeframe to hours
+        let lookbackHours: Int
+        if timeframe.hasSuffix("h") {
+            lookbackHours = Int(timeframe.dropLast()) ?? 24
+        } else if timeframe.hasSuffix("d") {
+            lookbackHours = (Int(timeframe.dropLast()) ?? 1) * 24
+        } else {
+            lookbackHours = 24
+        }
+
+        let since = Calendar.current.date(byAdding: .hour, value: -lookbackHours, to: Date()) ?? Date()
+
+        // Get focused thread analysis for recommended actions
+        let analysis = try await orchestrator.getFocusedWhatsAppThread(contactName: contactName, timeframe: timeframe)
+
+        // Extract recommended actions as ExtractedItems
+        let recommendedActions = orchestrator.extractRecommendedActions(from: analysis)
+        for action in recommendedActions {
+            let priority: ExtractedItem.ItemPriority = action.priority == .critical ? .critical : .high
+            let item = ExtractedItem(
+                type: .todo,
+                title: action.title,
+                description: action.description,
+                priority: priority,
+                source: ExtractedItem.ItemSource(
+                    platform: .whatsapp,
+                    contact: contactName,
+                    threadName: analysis.thread.contactName,
+                    threadId: analysis.thread.contactIdentifier
+                ),
+                dueDate: action.dueDate,
+                originalContext: action.context
+            )
+            extractedItems.append(item)
+        }
+
+        // Also scan for commitments
+        let messages = try await orchestrator.fetchMessagesForContact(contactName, since: since)
+
+        if !messages.isEmpty {
+            let groupedByThread = Dictionary(grouping: messages) { $0.threadName }
+
+            for (threadName, threadMessages) in groupedByThread {
+                guard let firstMessage = threadMessages.first else { continue }
+                let messageObjects = threadMessages.map { $0.message }
+
+                let extraction = try await orchestrator.commitmentAnalyzer.analyzeMessages(
+                    messageObjects,
+                    platform: firstMessage.platform,
+                    threadName: threadName,
+                    threadId: firstMessage.threadId
+                )
+
+                for commitment in extraction.commitments {
+                    // Check if already exists in unified Tasks database
+                    let existing = try? await orchestrator.notionServicePublic.findCommitmentByHashInTasks(
+                        commitment.uniqueHash
+                    )
+                    if existing != nil { continue }
+
+                    let item = ExtractedItem.fromCommitment(commitment)
+                    extractedItems.append(item)
+                }
+            }
+        }
+
+        return extractedItems
+    }
+
+    /// Save approved extracted items to Notion
+    func saveApprovedItems(_ items: [ExtractedItem]) async throws -> (saved: Int, failed: Int) {
+        guard let orchestrator = orchestrator else {
+            throw ServiceError.notInitialized
+        }
+        return try await orchestrator.saveExtractedItems(items)
+    }
+
+    /// Save a single extracted item by its unique hash
+    func saveItemByHash(_ hash: String, from items: [ExtractedItem]) async throws -> Bool {
+        guard let item = items.first(where: { $0.uniqueHash == hash }) else {
+            return false
+        }
+
+        let (saved, _) = try await saveApprovedItems([item])
+        return saved > 0
     }
 }
 

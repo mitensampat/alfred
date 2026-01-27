@@ -112,14 +112,13 @@ class AlfredService: ObservableObject {
         guard let config = orchestrator.config.commitments, config.enabled else {
             throw ServiceError.commitmentsNotEnabled
         }
-        guard let databaseId = config.notionDatabaseId else {
+
+        // Use unified Tasks database
+        guard orchestrator.notionServicePublic.tasksDatabaseId != nil else {
             throw ServiceError.notionDatabaseNotConfigured
         }
 
-        return try await orchestrator.notionServicePublic.queryActiveCommitments(
-            databaseId: databaseId,
-            type: type
-        )
+        return try await orchestrator.notionServicePublic.queryActiveCommitmentsFromTasks(type: type)
     }
 
     func fetchOverdueCommitments() async throws -> [Commitment] {
@@ -129,11 +128,13 @@ class AlfredService: ObservableObject {
         guard let config = orchestrator.config.commitments, config.enabled else {
             throw ServiceError.commitmentsNotEnabled
         }
-        guard let databaseId = config.notionDatabaseId else {
+
+        // Use unified Tasks database
+        guard orchestrator.notionServicePublic.tasksDatabaseId != nil else {
             throw ServiceError.notionDatabaseNotConfigured
         }
 
-        return try await orchestrator.notionServicePublic.queryOverdueCommitments(databaseId: databaseId)
+        return try await orchestrator.notionServicePublic.queryOverdueCommitmentsFromTasks()
     }
 
     func scanCommitments(contactName: String?, lookbackDays: Int) async throws -> CommitmentScanResult {
@@ -143,7 +144,9 @@ class AlfredService: ObservableObject {
         guard let config = orchestrator.config.commitments, config.enabled else {
             throw ServiceError.commitmentsNotEnabled
         }
-        guard let databaseId = config.notionDatabaseId else {
+
+        // Use unified Tasks database
+        guard orchestrator.notionServicePublic.tasksDatabaseId != nil else {
             throw ServiceError.notionDatabaseNotConfigured
         }
 
@@ -180,16 +183,13 @@ class AlfredService: ObservableObject {
                 totalFound += extraction.commitments.count
 
                 for commitment in extraction.commitments {
-                    let existingCommitment = try await orchestrator.notionServicePublic.findCommitmentByHash(
-                        commitment.uniqueHash,
-                        databaseId: databaseId
+                    // Use unified Tasks database
+                    let existingCommitment = try await orchestrator.notionServicePublic.findCommitmentByHashInTasks(
+                        commitment.uniqueHash
                     )
 
                     if existingCommitment == nil {
-                        _ = try await orchestrator.notionServicePublic.createCommitment(
-                            commitment,
-                            databaseId: databaseId
-                        )
+                        _ = try await orchestrator.notionServicePublic.createCommitmentInTasks(commitment)
                         totalSaved += 1
                     }
                 }

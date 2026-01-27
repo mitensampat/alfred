@@ -193,6 +193,19 @@ class HTTPServer {
         case ("GET", "/api/agent-digest"):
             return await handleAgentDigest()
 
+        // Interactive extraction endpoints (for GUI approval flow)
+        case ("POST", "/api/extract/commitments"):
+            return await handleExtractCommitments(request)
+
+        case ("POST", "/api/extract/todos"):
+            return await handleExtractTodos(request)
+
+        case ("POST", "/api/extract/thread"):
+            return await handleExtractFromThread(request)
+
+        case ("POST", "/api/extract/approve"):
+            return await handleApproveExtractedItems(request)
+
         default:
             return HTTPResponse(
                 statusCode: 404,
@@ -545,7 +558,7 @@ class HTTPServer {
             // Cache (1 hour)
             if let jsonData = try? JSONSerialization.data(withJSONObject: responseBody),
                let jsonString = String(data: jsonData, encoding: .utf8) {
-                cache.cache(endpoint: "/api/calendar", params: cacheParams, response: jsonString, ttl: 3600)
+                cache.cache(endpoint: "/api/calendar", params: cacheParams, response: jsonString, ttl: 600)
             }
 
             return HTTPResponse(statusCode: 200, body: responseBody)
@@ -718,7 +731,7 @@ class HTTPServer {
             // Cache the response (30 min)
             if let jsonData = try? JSONSerialization.data(withJSONObject: responseBody),
                let jsonString = String(data: jsonData, encoding: .utf8) {
-                cache.cache(endpoint: "/api/todos/scan", response: jsonString, ttl: 1800)
+                cache.cache(endpoint: "/api/todos/scan", response: jsonString, ttl: 600)
             }
 
             return HTTPResponse(statusCode: 200, body: responseBody)
@@ -813,7 +826,7 @@ class HTTPServer {
             // Cache (1 hour)
             if let jsonData = try? JSONSerialization.data(withJSONObject: responseBody),
                let jsonString = String(data: jsonData, encoding: .utf8) {
-                cache.cache(endpoint: "/api/commitment-check", params: cacheParams, response: jsonString, ttl: 3600)
+                cache.cache(endpoint: "/api/commitment-check", params: cacheParams, response: jsonString, ttl: 600)
             }
 
             return HTTPResponse(statusCode: 200, body: responseBody)
@@ -905,13 +918,23 @@ The Commitment Check feature requires a properly configured Notion database.
                 "summary": summary.summary,
                 "keyPoints": summary.keyPoints,
                 "needsResponse": summary.needsResponse,
-                "messageCount": summary.messageCount
+                "messageCount": summary.messageCount,
+                "actionItems": summary.actionItems.map { item in
+                    [
+                        "id": UUID().uuidString,
+                        "title": item.item,
+                        "priority": item.priority,
+                        "deadline": item.deadline as Any,
+                        "source": "message",
+                        "category": "task"
+                    ] as [String: Any]
+                }
             ]
 
             // Cache (30 min)
             if let jsonData = try? JSONSerialization.data(withJSONObject: responseBody),
                let jsonString = String(data: jsonData, encoding: .utf8) {
-                cache.cache(endpoint: "/api/messages/summary", params: cacheParams, response: jsonString, ttl: 1800)
+                cache.cache(endpoint: "/api/messages/summary", params: cacheParams, response: jsonString, ttl: 600)
             }
 
             return HTTPResponse(statusCode: 200, body: responseBody)
@@ -1068,19 +1091,23 @@ The Commitment Check feature requires a properly configured Notion database.
             let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
             let config = try JSONSerialization.jsonObject(with: data) as? [String: Any]
 
-            // Try to find tasks_database_id in various locations
+            // Try to find tasks_database_id - check top-level first, then briefing_sources as fallback
             var tasksDatabaseId: String?
 
-            // Check notion.briefing_sources.tasks_database_id
+            // Check notion.tasks_database_id first (top-level takes priority)
             if let notion = config?["notion"] as? [String: Any],
-               let briefingSources = notion["briefing_sources"] as? [String: Any],
-               let dbId = briefingSources["tasks_database_id"] as? String {
+               let dbId = notion["tasks_database_id"] as? String,
+               dbId != "YOUR_TASKS_DATABASE_ID" {
                 tasksDatabaseId = dbId
             }
 
-            // Fallback to top-level tasks_database_id
-            if tasksDatabaseId == nil {
-                tasksDatabaseId = config?["tasks_database_id"] as? String
+            // Fallback to notion.briefing_sources.tasks_database_id
+            if tasksDatabaseId == nil,
+               let notion = config?["notion"] as? [String: Any],
+               let briefingSources = notion["briefing_sources"] as? [String: Any],
+               let dbId = briefingSources["tasks_database_id"] as? String,
+               dbId != "YOUR_TASKS_DATABASE_ID" {
+                tasksDatabaseId = dbId
             }
 
             return HTTPResponse(
@@ -1113,20 +1140,17 @@ The Commitment Check feature requires a properly configured Notion database.
             orchestrator.notionServicePublic.setTasksDatabaseId(tasksDatabaseId)
         }
 
-        // Also update in config file
+        // Also update in config file (top-level notion.tasks_database_id)
         let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
         do {
             if FileManager.default.fileExists(atPath: configPath) {
                 let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
                 var config = try JSONSerialization.jsonObject(with: data) as! [String: Any]
 
-                // Update in notion.briefing_sources.tasks_database_id
+                // Update notion.tasks_database_id (top-level takes priority)
                 if var notion = config["notion"] as? [String: Any] {
-                    if var briefingSources = notion["briefing_sources"] as? [String: Any] {
-                        briefingSources["tasks_database_id"] = tasksDatabaseId
-                        notion["briefing_sources"] = briefingSources
-                        config["notion"] = notion
-                    }
+                    notion["tasks_database_id"] = tasksDatabaseId
+                    config["notion"] = notion
                 }
 
                 let updatedData = try JSONSerialization.data(withJSONObject: config, options: .prettyPrinted)
@@ -1617,6 +1641,222 @@ The Commitment Check feature requires a properly configured Notion database.
                 ]
             )
         }
+    }
+
+    // MARK: - Interactive Extraction Handlers (for GUI approval flow)
+
+    private func handleExtractCommitments(_ request: HTTPRequest) async -> HTTPResponse {
+        do {
+            // Parse body
+            let json = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            let contactName = json["contactName"] as? String
+            let lookbackDays = json["lookbackDays"] as? Int ?? 14
+
+            let items = try await alfredService.extractCommitmentsForReview(
+                contactName: contactName,
+                lookbackDays: lookbackDays
+            )
+
+            return HTTPResponse(
+                statusCode: 200,
+                body: [
+                    "success": true,
+                    "count": items.count,
+                    "items": items.map { serializeExtractedItem($0) }
+                ]
+            )
+        } catch {
+            return HTTPResponse(
+                statusCode: 500,
+                body: ["error": error.localizedDescription]
+            )
+        }
+    }
+
+    private func handleExtractTodos(_ request: HTTPRequest) async -> HTTPResponse {
+        do {
+            let json = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            let lookbackDays = json["lookbackDays"] as? Int ?? 7
+
+            let items = try await alfredService.extractTodosForReview(lookbackDays: lookbackDays)
+
+            return HTTPResponse(
+                statusCode: 200,
+                body: [
+                    "success": true,
+                    "count": items.count,
+                    "items": items.map { serializeExtractedItem($0) }
+                ]
+            )
+        } catch {
+            return HTTPResponse(
+                statusCode: 500,
+                body: ["error": error.localizedDescription]
+            )
+        }
+    }
+
+    private func handleExtractFromThread(_ request: HTTPRequest) async -> HTTPResponse {
+        do {
+            guard let bodyData = request.body,
+                  let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+                  let contactName = json["contactName"] as? String else {
+                return HTTPResponse(
+                    statusCode: 400,
+                    body: ["error": "Missing 'contactName' parameter"]
+                )
+            }
+
+            let timeframe = json["timeframe"] as? String ?? "24h"
+
+            let items = try await alfredService.extractItemsFromThread(
+                contactName: contactName,
+                timeframe: timeframe
+            )
+
+            return HTTPResponse(
+                statusCode: 200,
+                body: [
+                    "success": true,
+                    "count": items.count,
+                    "contact": contactName,
+                    "timeframe": timeframe,
+                    "items": items.map { serializeExtractedItem($0) }
+                ]
+            )
+        } catch {
+            return HTTPResponse(
+                statusCode: 500,
+                body: ["error": error.localizedDescription]
+            )
+        }
+    }
+
+    private func handleApproveExtractedItems(_ request: HTTPRequest) async -> HTTPResponse {
+        do {
+            guard let bodyData = request.body,
+                  let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+                  let itemsArray = json["items"] as? [[String: Any]] else {
+                return HTTPResponse(
+                    statusCode: 400,
+                    body: ["error": "Missing 'items' array in request body"]
+                )
+            }
+
+            // Deserialize items back to ExtractedItem
+            var items: [ExtractedItem] = []
+            for itemDict in itemsArray {
+                if let item = deserializeExtractedItem(itemDict) {
+                    items.append(item)
+                }
+            }
+
+            if items.isEmpty {
+                return HTTPResponse(
+                    statusCode: 400,
+                    body: ["error": "No valid items to save"]
+                )
+            }
+
+            let (saved, failed) = try await alfredService.saveApprovedItems(items)
+
+            return HTTPResponse(
+                statusCode: 200,
+                body: [
+                    "success": true,
+                    "saved": saved,
+                    "failed": failed,
+                    "message": "Successfully saved \(saved) item(s) to Notion"
+                ]
+            )
+        } catch {
+            return HTTPResponse(
+                statusCode: 500,
+                body: ["error": error.localizedDescription]
+            )
+        }
+    }
+
+    private func serializeExtractedItem(_ item: ExtractedItem) -> [String: Any] {
+        var dict: [String: Any] = [
+            "id": item.id.uuidString,
+            "type": item.type.rawValue,
+            "title": item.title,
+            "priority": item.priority.rawValue,
+            "uniqueHash": item.uniqueHash,
+            "source": [
+                "platform": item.source.platform.rawValue,
+                "contact": item.source.contact,
+                "threadName": item.source.threadName as Any,
+                "threadId": item.source.threadId as Any
+            ]
+        ]
+
+        if let desc = item.description {
+            dict["description"] = desc
+        }
+        if let dueDate = item.dueDate {
+            dict["dueDate"] = ISO8601DateFormatter().string(from: dueDate)
+        }
+        if let direction = item.commitmentDirection {
+            dict["commitmentDirection"] = direction.rawValue
+        }
+        if let by = item.committedBy {
+            dict["committedBy"] = by
+        }
+        if let to = item.committedTo {
+            dict["committedTo"] = to
+        }
+        if let context = item.originalContext {
+            dict["originalContext"] = context
+        }
+
+        return dict
+    }
+
+    private func deserializeExtractedItem(_ dict: [String: Any]) -> ExtractedItem? {
+        guard let typeStr = dict["type"] as? String,
+              let type = ExtractedItem.ItemType(rawValue: typeStr),
+              let title = dict["title"] as? String,
+              let priorityStr = dict["priority"] as? String,
+              let priority = ExtractedItem.ItemPriority(rawValue: priorityStr),
+              let sourceDict = dict["source"] as? [String: Any],
+              let platformStr = sourceDict["platform"] as? String,
+              let platform = ExtractedItem.ItemSource.SourcePlatform(rawValue: platformStr),
+              let contact = sourceDict["contact"] as? String else {
+            return nil
+        }
+
+        let uniqueHash = dict["uniqueHash"] as? String ?? UUID().uuidString
+
+        var direction: ExtractedItem.CommitmentDirection?
+        if let dirStr = dict["commitmentDirection"] as? String {
+            direction = ExtractedItem.CommitmentDirection(rawValue: dirStr)
+        }
+
+        var dueDate: Date?
+        if let dueDateStr = dict["dueDate"] as? String {
+            dueDate = ISO8601DateFormatter().date(from: dueDateStr)
+        }
+
+        return ExtractedItem(
+            type: type,
+            title: title,
+            description: dict["description"] as? String,
+            priority: priority,
+            source: ExtractedItem.ItemSource(
+                platform: platform,
+                contact: contact,
+                threadName: sourceDict["threadName"] as? String,
+                threadId: sourceDict["threadId"] as? String
+            ),
+            dueDate: dueDate,
+            commitmentDirection: direction,
+            committedBy: dict["committedBy"] as? String,
+            committedTo: dict["committedTo"] as? String,
+            originalContext: dict["originalContext"] as? String,
+            uniqueHash: uniqueHash
+        )
     }
 
     private func formatAgentsSummary(_ agents: [[String: Any]]) -> String {

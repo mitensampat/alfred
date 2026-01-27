@@ -313,6 +313,60 @@ extension NotionService {
         return id
     }
 
+    // MARK: - Commitment Compatibility Methods (use unified Tasks database)
+
+    /// Query active commitments from the unified Tasks database
+    /// Returns Commitment objects for backward compatibility with existing code
+    func queryActiveCommitmentsFromTasks(type: Commitment.CommitmentType? = nil) async throws -> [Commitment] {
+        // Map Commitment type filter to TaskItem type filter
+        let taskType: TaskItem.TaskType = .commitment
+
+        // Query tasks filtered by commitment type
+        let tasks = try await queryActiveTasks(type: taskType)
+
+        // Convert TaskItems to Commitments and filter by direction if specified
+        var commitments = tasks.compactMap { $0.toCommitment() }
+
+        if let type = type {
+            commitments = commitments.filter { $0.type == type }
+        }
+
+        return commitments
+    }
+
+    /// Query overdue commitments from the unified Tasks database
+    func queryOverdueCommitmentsFromTasks() async throws -> [Commitment] {
+        let commitments = try await queryActiveCommitmentsFromTasks()
+        return commitments.filter { $0.isOverdue }
+    }
+
+    /// Query upcoming commitments (due within specified hours) from the unified Tasks database
+    func queryUpcomingCommitmentsFromTasks(withinHours: Int) async throws -> [Commitment] {
+        let commitments = try await queryActiveCommitmentsFromTasks()
+        let now = Date()
+        let future = Calendar.current.date(byAdding: .hour, value: withinHours, to: now) ?? now
+
+        return commitments.filter { commitment in
+            guard let dueDate = commitment.dueDate else { return false }
+            return dueDate >= now && dueDate <= future
+        }
+    }
+
+    /// Find commitment by hash in the unified Tasks database
+    /// Wrapper around findTaskByHash for backward compatibility
+    func findCommitmentByHashInTasks(_ hash: String) async throws -> String? {
+        return try await findTaskByHash(hash)
+    }
+
+    /// Create a commitment in the unified Tasks database
+    /// Wrapper that converts Commitment to TaskItem
+    func createCommitmentInTasks(_ commitment: Commitment) async throws -> String {
+        let taskItem = TaskItem.fromCommitment(commitment)
+        return try await createTask(taskItem)
+    }
+
+    // MARK: - Parsing
+
     /// Parse Task from Notion page JSON
     private func parseTaskFromNotionPage(_ result: [String: Any]) -> TaskItem? {
         guard let id = result["id"] as? String,

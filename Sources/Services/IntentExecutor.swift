@@ -92,9 +92,13 @@ class IntentExecutor {
     // MARK: - Helper Methods
 
     private func scanCommitments(contactName: String?, lookbackDays: Int) async throws -> CommitmentScanResult {
-        guard let config = config.commitments, config.enabled,
-              let databaseId = config.notionDatabaseId else {
+        guard let config = config.commitments, config.enabled else {
             throw IntentExecutionError.featureNotEnabled("commitments")
+        }
+
+        // Use unified Tasks database (tasksDatabaseId)
+        guard orchestrator.notionServicePublic.tasksDatabaseId != nil else {
+            throw IntentExecutionError.featureNotEnabled("tasks database not configured")
         }
 
         let contactsToScan: [String]
@@ -128,16 +132,13 @@ class IntentExecutor {
                 totalFound += extraction.commitments.count
 
                 for commitment in extraction.commitments {
-                    let existingCommitment = try await orchestrator.notionServicePublic.findCommitmentByHash(
-                        commitment.uniqueHash,
-                        databaseId: databaseId
+                    // Use unified Tasks database
+                    let existingCommitment = try await orchestrator.notionServicePublic.findCommitmentByHashInTasks(
+                        commitment.uniqueHash
                     )
 
                     if existingCommitment == nil {
-                        _ = try await orchestrator.notionServicePublic.createCommitment(
-                            commitment,
-                            databaseId: databaseId
-                        )
+                        _ = try await orchestrator.notionServicePublic.createCommitmentInTasks(commitment)
                         totalSaved += 1
                     }
                 }
@@ -152,9 +153,13 @@ class IntentExecutor {
     }
 
     private func fetchCommitments(type: UserIntent.IntentFilters.CommitmentType?, contactName: String?) async throws -> [Commitment] {
-        guard let config = config.commitments, config.enabled,
-              let databaseId = config.notionDatabaseId else {
+        guard let config = config.commitments, config.enabled else {
             throw IntentExecutionError.featureNotEnabled("commitments")
+        }
+
+        // Use unified Tasks database
+        guard orchestrator.notionServicePublic.tasksDatabaseId != nil else {
+            throw IntentExecutionError.featureNotEnabled("tasks database not configured")
         }
 
         let commitmentType: Commitment.CommitmentType?
@@ -164,8 +169,8 @@ class IntentExecutor {
         case .all, .none: commitmentType = nil
         }
 
-        var allCommitments = try await orchestrator.notionServicePublic.queryActiveCommitments(
-            databaseId: databaseId,
+        // Query from unified Tasks database
+        var allCommitments = try await orchestrator.notionServicePublic.queryActiveCommitmentsFromTasks(
             type: commitmentType
         )
 

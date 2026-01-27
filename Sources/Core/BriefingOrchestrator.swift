@@ -108,8 +108,9 @@ class BriefingOrchestrator {
                 }
             }
 
-            // Query tasks database
-            if let tasksDatabaseId = briefingSources.tasksDatabaseId, tasksDatabaseId != "YOUR_TASKS_DATABASE_ID" {
+            // Query tasks database - check top-level first, then briefing_sources
+            let tasksDbId = config.notion.tasksDatabaseId ?? briefingSources.tasksDatabaseId
+            if let tasksDatabaseId = tasksDbId, tasksDatabaseId != "YOUR_TASKS_DATABASE_ID" {
                 print("✅ Querying Notion for active tasks...")
                 do {
                     notionTasks = try await notionService.queryActiveTasks(databaseId: tasksDatabaseId)
@@ -207,8 +208,9 @@ class BriefingOrchestrator {
                 }
             }
 
-            // Query tasks database
-            if let tasksDatabaseId = briefingSources.tasksDatabaseId, tasksDatabaseId != "YOUR_TASKS_DATABASE_ID" {
+            // Query tasks database - check top-level first, then briefing_sources
+            let tasksDbId = config.notion.tasksDatabaseId ?? briefingSources.tasksDatabaseId
+            if let tasksDatabaseId = tasksDbId, tasksDatabaseId != "YOUR_TASKS_DATABASE_ID" {
                 print("✅ Querying Notion for active tasks...")
                 do {
                     notionTasks = try await notionService.queryActiveTasks(databaseId: tasksDatabaseId)
@@ -253,9 +255,28 @@ class BriefingOrchestrator {
 
     private func generateCalendarContext(schedule: DailySchedule) -> String {
         var context = "Calendar context:\n"
-        context += "- Total meetings: \(schedule.events.count)\n"
-        context += "- External meetings: \(schedule.externalMeetings.map { $0.title }.joined(separator: ", "))\n"
-        context += "- Focus time: \(schedule.freeSlots.reduce(0) { $0 + $1.duration } / 3600) hours\n"
+
+        // Include all meeting titles for keyword extraction
+        context += "- Meeting titles: \(schedule.events.map { $0.title }.joined(separator: ", "))\n"
+
+        // Include attendee names and emails (important for finding related notes)
+        var attendeeNames: [String] = []
+        var attendeeEmails: [String] = []
+        for event in schedule.events {
+            for attendee in event.attendees {
+                if let name = attendee.name, !name.isEmpty {
+                    attendeeNames.append(name)
+                }
+                attendeeEmails.append(attendee.email)
+            }
+        }
+        if !attendeeNames.isEmpty {
+            context += "- Attendee names: \(Array(Set(attendeeNames)).joined(separator: ", "))\n"
+        }
+        if !attendeeEmails.isEmpty {
+            context += "- Attendee emails: \(Array(Set(attendeeEmails)).joined(separator: ", "))\n"
+        }
+
         return context
     }
 
@@ -834,9 +855,44 @@ class BriefingOrchestrator {
 
     private func generateBriefingContext(messagingSummary: MessagingSummary, schedule: DailySchedule) -> String {
         var context = "Briefing context:\n"
-        context += "- Meetings today: \(schedule.events.count)\n"
-        context += "- Critical messages: \(messagingSummary.criticalMessages.count)\n"
-        context += "- External meetings: \(schedule.externalMeetings.map { $0.title }.joined(separator: ", "))\n"
+
+        // Include meeting titles for keyword extraction
+        context += "- Meeting titles: \(schedule.events.map { $0.title }.joined(separator: ", "))\n"
+
+        // Include attendee names and emails (important for finding related notes)
+        var attendeeNames: [String] = []
+        var attendeeEmails: [String] = []
+        for event in schedule.events {
+            for attendee in event.attendees {
+                if let name = attendee.name, !name.isEmpty {
+                    attendeeNames.append(name)
+                }
+                attendeeEmails.append(attendee.email)
+            }
+        }
+        if !attendeeNames.isEmpty {
+            context += "- Attendee names: \(Array(Set(attendeeNames)).joined(separator: ", "))\n"
+        }
+        if !attendeeEmails.isEmpty {
+            context += "- Attendee emails: \(Array(Set(attendeeEmails)).joined(separator: ", "))\n"
+        }
+
+        // Include message contact names
+        var messageContacts: [String] = []
+        for summary in messagingSummary.keyInteractions {
+            if let name = summary.thread.contactName {
+                messageContacts.append(name)
+            }
+        }
+        for summary in messagingSummary.criticalMessages {
+            if let name = summary.thread.contactName {
+                messageContacts.append(name)
+            }
+        }
+        if !messageContacts.isEmpty {
+            context += "- Message contacts: \(Array(Set(messageContacts)).joined(separator: ", "))\n"
+        }
+
         return context
     }
 
@@ -1022,6 +1078,126 @@ class BriefingOrchestrator {
         let url = try await notionService.saveBriefing(briefing)
         print("✓ Briefing saved to Notion\n")
         return url
+    }
+
+    // MARK: - Interactive Todo Extraction (without auto-save)
+
+    /// Extracts todos from WhatsApp messages without automatically saving them
+    /// Returns ExtractedItems for interactive review
+    func extractWhatsAppTodosForReview(lookbackDays: Int = 7) async throws -> [ExtractedItem] {
+        print("\n📝 Extracting todos from WhatsApp messages...\n")
+
+        let since = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date())!
+        print("  ↳ Scanning last \(lookbackDays) days...\n")
+
+        guard config.messaging.whatsapp.enabled else {
+            print("  ⚠️  WhatsApp is not enabled in config")
+            return []
+        }
+
+        print("  ↳ Reading WhatsApp database...")
+        try whatsappReader.connect()
+        let threads = try whatsappReader.fetchThreads(since: since)
+        whatsappReader.disconnect()
+
+        // Filter for messages to yourself
+        let selfThreads = threads.filter { thread in
+            isSelfThread(thread, userFullName: config.user.name)
+        }
+
+        print("  ✓ Found \(selfThreads.count) thread(s) with yourself\n")
+
+        if selfThreads.isEmpty {
+            return []
+        }
+
+        // Fetch existing todos for duplicate check
+        print("  ↳ Checking existing todos in Notion...")
+        let existingTitles = (try? await notionService.searchExistingTodos(title: "")) ?? []
+
+        var extractedItems: [ExtractedItem] = []
+        var processedCount = 0
+
+        for thread in selfThreads {
+            let outgoingMessages = thread.messages.filter { $0.direction == .outgoing }
+
+            for message in outgoingMessages {
+                processedCount += 1
+                print("  ↳ Analyzing message \(processedCount)...")
+
+                if let todo = try await aiService.extractTodoFromMessage(message) {
+                    // Generate hash for duplicate check
+                    let hash = Self.generateTaskHash(
+                        title: todo.title,
+                        description: todo.description ?? "",
+                        platform: "WhatsApp",
+                        threadId: thread.contactIdentifier
+                    )
+
+                    // Check for duplicates by title
+                    let isDuplicateByTitle = existingTitles.contains { existingTitle in
+                        existingTitle.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) ==
+                        todo.title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+
+                    // Check by hash if not already a duplicate
+                    var isDuplicateByHash = false
+                    if !isDuplicateByTitle {
+                        if let _ = try? await notionService.findTaskByHash(hash) {
+                            isDuplicateByHash = true
+                        }
+                    }
+
+                    if isDuplicateByTitle || isDuplicateByHash {
+                        print("    ⊘ Already exists: \(todo.title)")
+                        continue
+                    }
+
+                    print("    ✓ Found todo: \(todo.title)")
+
+                    // Convert to ExtractedItem
+                    let item = ExtractedItem(
+                        type: .todo,
+                        title: todo.title,
+                        description: todo.description,
+                        priority: .medium,
+                        source: ExtractedItem.ItemSource(
+                            platform: .whatsapp,
+                            contact: config.user.name,
+                            threadName: thread.contactName,
+                            threadId: thread.contactIdentifier
+                        ),
+                        dueDate: todo.dueDate,
+                        uniqueHash: hash
+                    )
+                    extractedItems.append(item)
+                } else {
+                    print("    • Not a todo")
+                }
+            }
+        }
+
+        print("\n✓ Found \(extractedItems.count) new todo(s) for review\n")
+        return extractedItems
+    }
+
+    /// Save extracted items to Notion Tasks database
+    func saveExtractedItems(_ items: [ExtractedItem]) async throws -> (saved: Int, failed: Int) {
+        var savedCount = 0
+        var failedCount = 0
+
+        for item in items {
+            do {
+                let taskItem = item.toTaskItem()
+                _ = try await notionService.createTask(taskItem)
+                savedCount += 1
+            } catch {
+                print("  ✗ Failed to save: \(item.title) - \(error)")
+                failedCount += 1
+            }
+        }
+
+        return (savedCount, failedCount)
     }
 
     // MARK: - Public Helpers for Attention System
@@ -1239,13 +1415,13 @@ class BriefingOrchestrator {
             ))
         }
 
-        // 3. Check for commitment reminders (from Notion)
+        // 3. Check for commitment reminders (from unified Tasks database)
         var commitmentReminders: [CommitmentReminder] = []
 
-        if let commitmentConfig = config.commitments,
-           let databaseId = commitmentConfig.notionDatabaseId {
+        if config.commitments?.enabled == true, notionService.tasksDatabaseId != nil {
             do {
-                let overdueCommitments = try await notionService.queryOverdueCommitments(databaseId: databaseId)
+                // Query overdue commitments from unified Tasks database
+                let overdueCommitments = try await notionService.queryOverdueCommitmentsFromTasks()
 
                 for commitment in overdueCommitments.prefix(5) {
                     let daysOverdue: Int?
@@ -1266,7 +1442,7 @@ class BriefingOrchestrator {
                 }
 
                 // Also check for upcoming commitments (due within 24 hours)
-                let upcomingCommitments = try await notionService.queryUpcomingCommitments(databaseId: databaseId, withinHours: 24)
+                let upcomingCommitments = try await notionService.queryUpcomingCommitmentsFromTasks(withinHours: 24)
                 for commitment in upcomingCommitments.prefix(3) {
                     commitmentReminders.append(CommitmentReminder(
                         commitment: commitment.title,
@@ -1460,8 +1636,7 @@ class BriefingOrchestrator {
 
         // 4. Get follow-ups due soon
         var upcomingFollowups: [FollowupDigestItem] = []
-        if let tasksDbId = config.notion.briefingSources?.tasksDatabaseId {
-            notionService.setTasksDatabaseId(tasksDbId)
+        if notionService.tasksDatabaseId != nil {
             let followups = try await notionService.queryActiveTasks(type: .followup)
             let now = Date()
             let threeDaysFromNow = Calendar.current.date(byAdding: .day, value: 3, to: now)!
@@ -1489,8 +1664,7 @@ class BriefingOrchestrator {
             upcomingThisWeek: 0
         )
 
-        if let tasksDbId = config.notion.briefingSources?.tasksDatabaseId {
-            notionService.setTasksDatabaseId(tasksDbId)
+        if notionService.tasksDatabaseId != nil {
             let commitments = try await notionService.queryActiveTasks(type: .commitment)
 
             let now = Date()

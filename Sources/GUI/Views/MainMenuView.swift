@@ -86,19 +86,40 @@ struct MainMenuView: View {
                 }
 
                 Spacer()
+
+                // Footer branding
+                footerView
             }
     }
 
-    private var headerView: some View {
-        VStack(spacing: 2) {
-            Text("ALFRED")
-                .font(.system(size: 18, weight: .bold, design: .default))
-                .foregroundColor(SlackTheme.inverseText)
-                .tracking(1.5)
+    private var footerView: some View {
+        Text("crafted by ms foundry")
+            .font(.system(size: 10, weight: .regular))
+            .foregroundColor(SlackTheme.tertiaryText)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity)
+            .background(SlackTheme.surfaceBackground)
+    }
 
-            Text(viewModel.greetingText)
-                .font(.system(size: 11, weight: .regular))
-                .foregroundColor(SlackTheme.inverseText.opacity(0.8))
+    private var headerView: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 6) {
+                Text("alfred")
+                    .font(.system(size: 18, weight: .semibold, design: .serif))
+                    .foregroundColor(SlackTheme.inverseText)
+
+                Text("v1.4.2")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(SlackTheme.inverseText.opacity(0.6))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(SlackTheme.inverseText.opacity(0.15))
+                    .cornerRadius(4)
+            }
+
+            Text("judgement from noise")
+                .font(.system(size: 10, weight: .regular, design: .serif))
+                .foregroundColor(SlackTheme.inverseText.opacity(0.7))
         }
     }
 

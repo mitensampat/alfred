@@ -94,8 +94,9 @@ class BriefingOrchestrator {
                 }
             }
 
-            // Query tasks database
-            if let tasksDatabaseId = briefingSources.tasksDatabaseId, tasksDatabaseId != "YOUR_TASKS_DATABASE_ID" {
+            // Query tasks database - check top-level first, then briefing_sources
+            let tasksDbId = config.notion.tasksDatabaseId ?? briefingSources.tasksDatabaseId
+            if let tasksDatabaseId = tasksDbId, tasksDatabaseId != "YOUR_TASKS_DATABASE_ID" {
                 print("✅ Querying Notion for active tasks...")
                 do {
                     notionTasks = try await notionService.queryActiveTasks(databaseId: tasksDatabaseId)
@@ -154,8 +155,9 @@ class BriefingOrchestrator {
                 }
             }
 
-            // Query tasks database
-            if let tasksDatabaseId = briefingSources.tasksDatabaseId, tasksDatabaseId != "YOUR_TASKS_DATABASE_ID" {
+            // Query tasks database - check top-level first, then briefing_sources
+            let tasksDbId = config.notion.tasksDatabaseId ?? briefingSources.tasksDatabaseId
+            if let tasksDatabaseId = tasksDbId, tasksDatabaseId != "YOUR_TASKS_DATABASE_ID" {
                 print("✅ Querying Notion for active tasks...")
                 do {
                     notionTasks = try await notionService.queryActiveTasks(databaseId: tasksDatabaseId)
@@ -200,9 +202,28 @@ class BriefingOrchestrator {
 
     private func generateCalendarContext(schedule: DailySchedule) -> String {
         var context = "Calendar context:\n"
-        context += "- Total meetings: \(schedule.events.count)\n"
-        context += "- External meetings: \(schedule.externalMeetings.map { $0.title }.joined(separator: ", "))\n"
-        context += "- Focus time: \(schedule.freeSlots.reduce(0) { $0 + $1.duration } / 3600) hours\n"
+
+        // Include all meeting titles for keyword extraction
+        context += "- Meeting titles: \(schedule.events.map { $0.title }.joined(separator: ", "))\n"
+
+        // Include attendee names and emails (important for finding related notes)
+        var attendeeNames: [String] = []
+        var attendeeEmails: [String] = []
+        for event in schedule.events {
+            for attendee in event.attendees {
+                if let name = attendee.name, !name.isEmpty {
+                    attendeeNames.append(name)
+                }
+                attendeeEmails.append(attendee.email)
+            }
+        }
+        if !attendeeNames.isEmpty {
+            context += "- Attendee names: \(Array(Set(attendeeNames)).joined(separator: ", "))\n"
+        }
+        if !attendeeEmails.isEmpty {
+            context += "- Attendee emails: \(Array(Set(attendeeEmails)).joined(separator: ", "))\n"
+        }
+
         return context
     }
 
@@ -479,9 +500,44 @@ class BriefingOrchestrator {
 
     private func generateBriefingContext(messagingSummary: MessagingSummary, schedule: DailySchedule) -> String {
         var context = "Briefing context:\n"
-        context += "- Meetings today: \(schedule.events.count)\n"
-        context += "- Critical messages: \(messagingSummary.criticalMessages.count)\n"
-        context += "- External meetings: \(schedule.externalMeetings.map { $0.title }.joined(separator: ", "))\n"
+
+        // Include meeting titles for keyword extraction
+        context += "- Meeting titles: \(schedule.events.map { $0.title }.joined(separator: ", "))\n"
+
+        // Include attendee names and emails (important for finding related notes)
+        var attendeeNames: [String] = []
+        var attendeeEmails: [String] = []
+        for event in schedule.events {
+            for attendee in event.attendees {
+                if let name = attendee.name, !name.isEmpty {
+                    attendeeNames.append(name)
+                }
+                attendeeEmails.append(attendee.email)
+            }
+        }
+        if !attendeeNames.isEmpty {
+            context += "- Attendee names: \(Array(Set(attendeeNames)).joined(separator: ", "))\n"
+        }
+        if !attendeeEmails.isEmpty {
+            context += "- Attendee emails: \(Array(Set(attendeeEmails)).joined(separator: ", "))\n"
+        }
+
+        // Include message contact names
+        var messageContacts: [String] = []
+        for summary in messagingSummary.keyInteractions {
+            if let name = summary.thread.contactName {
+                messageContacts.append(name)
+            }
+        }
+        for summary in messagingSummary.criticalMessages {
+            if let name = summary.thread.contactName {
+                messageContacts.append(name)
+            }
+        }
+        if !messageContacts.isEmpty {
+            context += "- Message contacts: \(Array(Set(messageContacts)).joined(separator: ", "))\n"
+        }
+
         return context
     }
 

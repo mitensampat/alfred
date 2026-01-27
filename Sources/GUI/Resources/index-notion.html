@@ -5,11 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="Alfred">
-    <title>Alfred</title>
+    <meta name="apple-mobile-web-app-title" content="alfred">
+    <title>alfred</title>
+    <!-- Google Fonts - Playfair Display for elegant headlines -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
     <style>
         /* Notion-inspired Design System */
         :root {
+            /* Typography */
+            --font-display: "Playfair Display", Georgia, "Times New Roman", serif;
+            --font-serif: "Libre Baskerville", Georgia, serif;
+            --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+
+            /* Colors */
             --bg-primary: #ffffff;
             --bg-secondary: #f7f6f3;
             --bg-tertiary: #f1f0ee;
@@ -33,7 +43,7 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif;
+            font-family: var(--font-body);
             background: var(--bg-secondary);
             color: var(--text-primary);
             line-height: 1.5;
@@ -57,16 +67,51 @@
         }
 
         .header h1 {
-            font-size: 40px;
-            font-weight: 700;
+            font-family: var(--font-display);
+            font-size: 42px;
+            font-weight: 600;
             color: var(--text-primary);
             margin-bottom: 8px;
-            letter-spacing: -0.03em;
+            letter-spacing: -0.01em;
         }
 
         .header p {
-            font-size: 16px;
+            font-family: var(--font-serif);
+            font-size: 15px;
             color: var(--text-secondary);
+        }
+
+        .header .version-tag {
+            display: inline-block;
+            font-family: var(--font-body);
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--accent-color);
+            background: rgba(35, 131, 226, 0.1);
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+
+        /* Footer */
+        .app-footer {
+            text-align: center;
+            padding: 24px 0;
+            margin-top: auto;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .app-footer .branding {
+            font-family: var(--font-serif);
+            font-size: 11px;
+            color: var(--text-tertiary);
+            letter-spacing: 0.5px;
+        }
+
+        .app-footer .branding strong {
+            color: var(--text-secondary);
+            font-weight: 600;
         }
 
         /* Chat Container */
@@ -121,6 +166,7 @@
         }
 
         .message-sender {
+            font-family: var(--font-serif);
             font-size: 14px;
             font-weight: 600;
             color: var(--text-primary);
@@ -148,15 +194,25 @@
 
         .message.assistant .message-text {
             color: var(--text-primary);
-            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Droid Sans Mono', 'Source Code Pro', monospace;
-            font-size: 14px;
-            line-height: 1.5;
+            font-family: var(--font-serif);
+            font-size: 15px;
+            line-height: 1.7;
             white-space: pre-wrap;
             background: var(--bg-primary);
             border: 1px solid var(--border-color);
             border-radius: var(--radius-lg);
-            padding: 16px;
+            padding: 16px 20px;
             overflow-x: auto;
+        }
+
+        /* Inline code/data within assistant messages */
+        .message.assistant .message-text code,
+        .message.assistant .message-text .data-mono {
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+            font-size: 13px;
+            background: var(--bg-tertiary);
+            padding: 1px 5px;
+            border-radius: 3px;
         }
 
         /* Data Cards within Messages */
@@ -173,8 +229,9 @@
             padding: 12px 16px;
             background: var(--bg-tertiary);
             border-bottom: 1px solid var(--border-color);
+            font-family: var(--font-serif);
             font-size: 13px;
-            font-weight: 600;
+            font-weight: 700;
             color: var(--text-secondary);
         }
 
@@ -194,14 +251,16 @@
         }
 
         .data-item-title {
+            font-family: var(--font-serif);
             font-size: 14px;
-            font-weight: 500;
+            font-weight: 700;
             color: var(--text-primary);
             margin-bottom: 2px;
         }
 
         .data-item-meta {
-            font-size: 13px;
+            font-family: var(--font-body);
+            font-size: 12px;
             color: var(--text-secondary);
         }
 
@@ -218,6 +277,7 @@
             background: var(--bg-primary);
             border: 1px solid var(--border-color);
             border-radius: 16px;
+            font-family: var(--font-serif);
             font-size: 13px;
             color: var(--text-secondary);
             cursor: pointer;
@@ -233,7 +293,6 @@
         /* Loading State */
         .message.loading .message-text {
             color: var(--text-secondary);
-            font-style: italic;
         }
 
         .typing-indicator {
@@ -402,8 +461,9 @@
         }
 
         .recent-activity-label {
+            font-family: var(--font-serif);
             font-size: 14px;
-            font-weight: 500;
+            font-weight: 700;
             color: var(--text-primary);
             margin-bottom: 2px;
         }
@@ -515,14 +575,16 @@
         }
 
         .auth-logo {
-            font-size: 32px;
-            font-weight: 700;
+            font-family: var(--font-display);
+            font-size: 36px;
+            font-weight: 600;
             margin-bottom: 8px;
-            letter-spacing: -0.03em;
+            letter-spacing: -0.01em;
         }
 
         .auth-subtitle {
-            font-size: 15px;
+            font-family: var(--font-serif);
+            font-size: 14px;
             color: var(--text-secondary);
             margin-bottom: 32px;
         }
@@ -567,6 +629,59 @@
             color: #c33;
             border-radius: var(--radius-sm);
             font-size: 14px;
+        }
+
+        .auth-version {
+            display: inline-block;
+            font-family: var(--font-body);
+            font-size: 10px;
+            font-weight: 500;
+            color: var(--accent-color);
+            background: rgba(35, 131, 226, 0.1);
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-left: 6px;
+            vertical-align: middle;
+        }
+
+        .auth-footer {
+            font-family: var(--font-serif);
+            margin-top: 32px;
+            font-size: 11px;
+            color: var(--text-tertiary);
+            letter-spacing: 0.3px;
+        }
+
+        /* Monogram */
+        .monogram {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, #37352f 0%, #525046 100%);
+            border-radius: 14px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(55, 53, 47, 0.15);
+        }
+
+        .monogram-letter {
+            font-family: var(--font-display);
+            font-size: 32px;
+            font-weight: 600;
+            color: #ffffff;
+            line-height: 1;
+        }
+
+        .monogram-small {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            margin-bottom: 0;
+        }
+
+        .monogram-small .monogram-letter {
+            font-size: 18px;
         }
 
         .hidden {
@@ -645,6 +760,7 @@
         }
 
         .settings-section-title {
+            font-family: var(--font-display);
             font-size: 18px;
             font-weight: 600;
             color: var(--text-primary);
@@ -660,8 +776,9 @@
         }
 
         .settings-item-label {
+            font-family: var(--font-serif);
             font-size: 14px;
-            font-weight: 500;
+            font-weight: 700;
             color: var(--text-primary);
             margin-bottom: 6px;
         }
@@ -794,12 +911,14 @@
         }
 
         .agent-card-name {
+            font-family: var(--font-serif);
             font-size: 16px;
-            font-weight: 600;
+            font-weight: 700;
             color: var(--text-primary);
         }
 
         .agent-card-desc {
+            font-family: var(--font-serif);
             font-size: 13px;
             color: var(--text-secondary);
             margin-bottom: 12px;
@@ -830,8 +949,9 @@
         }
 
         .agent-memory-title {
+            font-family: var(--font-serif);
             font-size: 14px;
-            font-weight: 600;
+            font-weight: 700;
             color: var(--text-primary);
             margin-bottom: 8px;
             display: flex;
@@ -844,9 +964,9 @@
             border: 1px solid var(--border-color);
             border-radius: var(--radius-md);
             padding: 16px;
-            font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
-            font-size: 13px;
-            line-height: 1.6;
+            font-family: var(--font-serif);
+            font-size: 14px;
+            line-height: 1.7;
             white-space: pre-wrap;
             color: var(--text-primary);
             max-height: 400px;
@@ -855,7 +975,6 @@
 
         .agent-memory-empty {
             color: var(--text-tertiary);
-            font-style: italic;
         }
 
         .memory-rule {
@@ -959,6 +1078,188 @@
 
         .form-page-button-secondary:hover {
             background: var(--border-color);
+        }
+
+        /* Extracted Items Approval */
+        /* Approval UI */
+        .approval-container {
+            margin-top: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .approval-summary {
+            font-family: var(--font-serif);
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+            line-height: 1.5;
+        }
+
+        .approval-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px 14px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            background: var(--bg-primary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .approval-item:hover {
+            border-color: var(--text-tertiary);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .approval-item.selected {
+            background: var(--bg-primary);
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 1px var(--accent-color);
+        }
+
+        .approval-item-checkbox {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            accent-color: var(--accent-color);
+            flex-shrink: 0;
+            margin-top: 3px;
+        }
+
+        .approval-item-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .approval-item-header {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .approval-item-type {
+            font-size: 13px;
+            line-height: 1;
+        }
+
+        .approval-item-priority {
+            font-size: 11px;
+            line-height: 1;
+        }
+
+        .approval-item-title {
+            font-family: var(--font-serif);
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            line-height: 1.45;
+        }
+
+        .approval-item-meta {
+            font-family: var(--font-serif);
+            font-size: 12.5px;
+            color: var(--text-secondary);
+            margin-top: 3px;
+            line-height: 1.45;
+        }
+
+        .approval-item-direction {
+            font-family: var(--font-body);
+            font-size: 11px;
+            color: var(--text-tertiary);
+            margin-top: 3px;
+        }
+
+        .approval-item-source {
+            font-family: var(--font-body);
+            font-size: 11px;
+            color: var(--text-tertiary);
+            margin-top: 2px;
+            letter-spacing: 0.01em;
+        }
+
+        .approval-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 14px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border-color);
+            flex-wrap: wrap;
+        }
+
+        .approval-count {
+            font-family: var(--font-body);
+            font-size: 12px;
+            color: var(--text-tertiary);
+            display: flex;
+            align-items: center;
+            flex: 1;
+            min-width: 80px;
+        }
+
+        .select-all-btn {
+            padding: 6px 14px;
+            font-family: var(--font-body);
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            background: transparent;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .select-all-btn:hover {
+            color: var(--text-primary);
+            border-color: var(--text-tertiary);
+            background: var(--bg-secondary);
+        }
+
+        .approval-btn {
+            padding: 7px 16px;
+            font-family: var(--font-body);
+            font-size: 12px;
+            font-weight: 500;
+            border: none;
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all 0.15s;
+            white-space: nowrap;
+            letter-spacing: 0.01em;
+        }
+
+        .approval-btn-primary {
+            background: var(--text-primary);
+            color: white;
+        }
+
+        .approval-btn-primary:hover {
+            background: #1a1a17;
+        }
+
+        .approval-btn-secondary {
+            background: transparent;
+            color: var(--text-tertiary);
+            border: 1px solid var(--border-color);
+        }
+
+        .approval-btn-secondary:hover {
+            color: var(--text-secondary);
+            border-color: var(--text-tertiary);
+        }
+
+        .approval-empty {
+            font-family: var(--font-serif);
+            text-align: center;
+            padding: 28px 16px;
+            color: var(--text-secondary);
+            font-size: 14px;
         }
 
         /* Modal */
@@ -1253,8 +1554,70 @@
             }
 
             .message.assistant .message-text {
+                font-size: 14px;
+                padding: 14px 16px;
+            }
+
+            /* Approval UI Mobile */
+            .approval-container {
+                gap: 5px;
+            }
+
+            .approval-summary {
                 font-size: 13px;
-                padding: 14px;
+                margin-bottom: 8px;
+            }
+
+            .approval-item {
+                padding: 9px 11px;
+                gap: 8px;
+            }
+
+            .approval-item-checkbox {
+                width: 15px;
+                height: 15px;
+                margin-top: 2px;
+            }
+
+            .approval-item-title {
+                font-size: 13px;
+            }
+
+            .approval-item-meta {
+                font-size: 12px;
+            }
+
+            .approval-item-type {
+                font-size: 12px;
+            }
+
+            .approval-item-priority {
+                font-size: 10px;
+            }
+
+            .approval-item-source,
+            .approval-item-direction {
+                font-size: 10px;
+            }
+
+            .approval-actions {
+                gap: 6px;
+                margin-top: 10px;
+                padding-top: 10px;
+            }
+
+            .approval-count {
+                font-size: 11px;
+            }
+
+            .select-all-btn {
+                padding: 5px 10px;
+                font-size: 11px;
+            }
+
+            .approval-btn {
+                padding: 6px 12px;
+                font-size: 11px;
             }
 
             /* Auth Screen */
@@ -1335,12 +1698,13 @@
     <!-- Auth Screen -->
     <div id="authScreen" class="auth-screen">
         <div class="auth-card">
-            <div class="auth-logo">Alfred</div>
-            <div class="auth-subtitle">Your executive assistant</div>
-            <input type="password" id="passcodeInput" class="auth-input" placeholder="Enter passcode"
+            <div class="auth-logo">alfred <span class="auth-version">v1.4.2</span></div>
+            <div class="auth-subtitle">judgement from noise</div>
+            <input type="password" id="passcodeInput" class="auth-input" placeholder="enter passcode"
                    onkeypress="if(event.key==='Enter')authenticate()" autofocus />
-            <button class="auth-button" onclick="authenticate()">Continue</button>
+            <button class="auth-button" onclick="authenticate()">continue</button>
             <div id="authError" class="auth-error hidden"></div>
+            <div class="auth-footer">crafted by ms foundry</div>
         </div>
     </div>
 
@@ -1350,8 +1714,8 @@
         <button id="backHomeButton" class="back-home-button hidden" onclick="goBackHome()">Back Home</button>
 
         <div class="header">
-            <h1>Alfred</h1>
-            <p>Ask me anything about your schedule, commitments, or messages</p>
+            <h1>alfred <span class="version-tag">v1.4.2</span></h1>
+            <p>judgement from noise</p>
         </div>
 
         <!-- Form View (for parameterized actions) -->
@@ -1485,10 +1849,15 @@
                     <div class="quick-prompt-title">Agent Digest</div>
                     <div class="quick-prompt-desc">Daily summary of agent activity</div>
                 </div>
-                <div class="quick-prompt" onclick="callDirectAPI('/api/todos/scan', 'Scan Todos')">
+                <div class="quick-prompt" onclick="showExtractTodosPrompt()">
                     <div class="quick-prompt-icon">📝</div>
                     <div class="quick-prompt-title">Scan Todos</div>
                     <div class="quick-prompt-desc">Extract todos from WhatsApp</div>
+                </div>
+                <div class="quick-prompt" onclick="showExtractFromThreadPrompt()">
+                    <div class="quick-prompt-icon">🔍</div>
+                    <div class="quick-prompt-title">Analyze Thread</div>
+                    <div class="quick-prompt-desc">Extract actions from conversation</div>
                 </div>
                 <div class="quick-prompt" onclick="showMessagesPrompt()">
                     <div class="quick-prompt-icon">💬</div>
@@ -1528,7 +1897,7 @@
         <div class="input-container">
             <div class="input-wrapper">
                 <textarea id="queryInput" class="input-field"
-                          placeholder="Ask Alfred anything..."
+                          placeholder="ask alfred anything..."
                           rows="1"
                           onkeydown="handleInputKeydown(event)"
                           oninput="autoResizeTextarea(this)"></textarea>
@@ -1689,17 +2058,257 @@
                         // Fallback: show the whole JSON as formatted text
                         addMessage('assistant', JSON.stringify(data, null, 2));
                     }
+
+                    // If response has action items, show approval UI
+                    if (data.actionItems && data.actionItems.length > 0) {
+                        const source = data.contact
+                            ? `action items from ${data.contact}`
+                            : 'action items from briefing';
+                        const platform = data.platform || 'briefing';
+                        const contact = data.contact || 'Briefing';
+                        showActionItemsApproval(data.actionItems, source, platform, contact);
+                    }
                 } else {
                     addMessage('assistant', 'Error: ' + (data.error || 'Request failed'));
                 }
             } catch (error) {
                 removeMessage(loadingId);
-                addMessage('assistant', 'Failed to connect to Alfred. Make sure the server is running.');
+                addMessage('assistant', 'Failed to connect to alfred. Make sure the server is running.');
             }
 
             // Re-enable input
             document.getElementById('sendButton').disabled = false;
             document.getElementById('queryInput').focus();
+        }
+
+        // Store briefing action items for approval
+        let pendingBriefingItems = [];
+
+        // Show action items approval UI inline (used by briefing and messages)
+        function showActionItemsApproval(actionItems, sourceLabel, platform, contact) {
+            pendingBriefingItems = actionItems;
+            // Store context for saving
+            pendingBriefingItems._platform = platform || 'briefing';
+            pendingBriefingItems._contact = contact || 'Briefing';
+
+            const container = document.getElementById('chatContainer');
+            const approvalDiv = document.createElement('div');
+            approvalDiv.className = 'message assistant';
+            approvalDiv.id = 'briefing-approval-' + Date.now();
+
+            const categoryEmoji = (cat) => {
+                switch (cat) {
+                    case 'respond': return '💬';
+                    case 'prepare': return '📋';
+                    case 'follow_up': return '🔄';
+                    case 'decision': return '🎯';
+                    case 'task': return '✅';
+                    default: return '📌';
+                }
+            };
+
+            const priorityEmoji = (p) => {
+                switch (p) {
+                    case 'critical': return '🔴';
+                    case 'high': return '🟠';
+                    case 'medium': return '🟡';
+                    case 'low': return '🟢';
+                    default: return '🟡';
+                }
+            };
+
+            let itemsHtml = '';
+            actionItems.forEach((item, index) => {
+                const catEmoji = categoryEmoji(item.category);
+                const priEmoji = priorityEmoji(item.priority);
+                const descHtml = item.description
+                    ? `<div class="approval-item-meta">${escapeHtml(item.description.substring(0, 120))}${item.description.length > 120 ? '...' : ''}</div>`
+                    : '';
+                const sourceHtml = item.source
+                    ? `<div class="approval-item-source">${escapeHtml(item.source)}</div>`
+                    : '';
+                const dueDateHtml = item.dueDate
+                    ? `<div class="approval-item-meta" style="font-size: 11px; opacity: 0.7;">due: ${new Date(item.dueDate).toLocaleDateString()}</div>`
+                    : '';
+
+                itemsHtml += `
+                    <div class="approval-item selected" onclick="toggleBriefingItem(${index})" data-index="${index}">
+                        <input type="checkbox" class="approval-item-checkbox" checked onchange="toggleBriefingItem(${index})" onclick="event.stopPropagation()">
+                        <div class="approval-item-content">
+                            <div class="approval-item-header">
+                                <span class="approval-item-type">${catEmoji}</span>
+                                <span class="approval-item-priority">${priEmoji}</span>
+                                <span class="approval-item-title">${escapeHtml(item.title)}</span>
+                            </div>
+                            ${descHtml}
+                            ${sourceHtml}
+                            ${dueDateHtml}
+                        </div>
+                    </div>
+                `;
+            });
+
+            approvalDiv.innerHTML = `
+                <div class="message-avatar">🤖</div>
+                <div class="message-content">
+                    <div class="message-text">
+                        <strong>${escapeHtml(sourceLabel)}</strong>
+                        <div class="approval-summary">Found ${actionItems.length} action item(s). Select items to add to your Notion Tasks.</div>
+                        <div class="approval-container" id="briefingApprovalContainer">
+                            ${itemsHtml}
+                        </div>
+                        <div class="approval-actions">
+                            <span class="approval-count"><span id="briefingSelectedCount">${actionItems.length}</span> / ${actionItems.length} selected</span>
+                            <button class="select-all-btn" onclick="toggleAllBriefingItems()">toggle all</button>
+                            <button class="approval-btn approval-btn-secondary" onclick="dismissBriefingApproval()">skip</button>
+                            <button class="approval-btn approval-btn-primary" onclick="saveBriefingActionItems()">add to notion</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            container.appendChild(approvalDiv);
+            approvalDiv.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+
+        // Toggle a briefing approval item
+        function toggleBriefingItem(index) {
+            const item = document.querySelector(`#briefingApprovalContainer .approval-item[data-index="${index}"]`);
+            const checkbox = item.querySelector('.approval-item-checkbox');
+            checkbox.checked = !checkbox.checked;
+            item.classList.toggle('selected', checkbox.checked);
+            updateBriefingSelectedCount();
+        }
+
+        // Toggle all briefing items
+        function toggleAllBriefingItems() {
+            const items = document.querySelectorAll('#briefingApprovalContainer .approval-item');
+            const allSelected = Array.from(items).every(item => item.classList.contains('selected'));
+            items.forEach((item) => {
+                const checkbox = item.querySelector('.approval-item-checkbox');
+                checkbox.checked = !allSelected;
+                item.classList.toggle('selected', !allSelected);
+            });
+            updateBriefingSelectedCount();
+        }
+
+        // Update briefing selected count
+        function updateBriefingSelectedCount() {
+            const selectedCount = document.querySelectorAll('#briefingApprovalContainer .approval-item.selected').length;
+            document.getElementById('briefingSelectedCount').textContent = selectedCount;
+        }
+
+        // Dismiss briefing approval UI
+        function dismissBriefingApproval() {
+            const approvalEl = document.querySelector('[id^="briefing-approval-"]');
+            if (approvalEl) {
+                approvalEl.remove();
+            }
+            pendingBriefingItems = [];
+        }
+
+        // Convert briefing action items to ExtractedItem format and save
+        async function saveBriefingActionItems() {
+            const selectedIndices = Array.from(document.querySelectorAll('#briefingApprovalContainer .approval-item.selected'))
+                .map(item => parseInt(item.dataset.index));
+
+            if (selectedIndices.length === 0) {
+                alert('Please select at least one item to add.');
+                return;
+            }
+
+            // Convert action items to ExtractedItem format
+            const storedPlatform = pendingBriefingItems._platform || 'briefing';
+            const storedContact = pendingBriefingItems._contact || 'Briefing';
+
+            const selectedItems = selectedIndices.map(i => {
+                const item = pendingBriefingItems[i];
+
+                // Map category to ExtractedItem type
+                let type = 'Todo';
+                if (item.category === 'follow_up') type = 'Follow-up';
+
+                // Capitalize priority to match ExtractedItem.ItemPriority rawValues
+                const priorityMap = { 'critical': 'Critical', 'high': 'High', 'medium': 'Medium', 'low': 'Low' };
+                const priority = priorityMap[(item.priority || '').toLowerCase()] || 'Medium';
+
+                // Map platform string
+                const platformMap = { 'whatsapp': 'WhatsApp', 'imessage': 'iMessage', 'message': 'WhatsApp', 'meeting': 'iMessage', 'calendar': 'iMessage', 'system': 'iMessage', 'briefing': 'iMessage' };
+                const mappedPlatform = platformMap[storedPlatform.toLowerCase()] || platformMap[item.source] || 'WhatsApp';
+
+                return {
+                    type: type,
+                    title: item.title,
+                    description: item.description || '',
+                    priority: priority,
+                    source: {
+                        platform: mappedPlatform,
+                        contact: storedContact,
+                        threadName: storedContact
+                    },
+                    dueDate: item.dueDate || item.deadline || null,
+                    uniqueHash: item.id || (item.title + '-' + storedContact + '-' + Date.now())
+                };
+            });
+
+            // Replace the approval UI with saving state
+            const approvalEl = document.querySelector('[id^="briefing-approval-"]');
+            if (approvalEl) {
+                approvalEl.innerHTML = `
+                    <div class="message-avatar">🤖</div>
+                    <div class="message-content">
+                        <div class="message-text">Saving ${selectedItems.length} item(s) to Notion...</div>
+                    </div>
+                `;
+            }
+
+            try {
+                const response = await fetch('/api/extract/approve?passcode=' + encodeURIComponent(passcode), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items: selectedItems })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to save items');
+                }
+
+                const savedCount = data.saved || 0;
+                const failedCount = data.failed || 0;
+
+                let resultMessage = `Successfully added ${savedCount} item(s) to Notion Tasks.`;
+                if (failedCount > 0) {
+                    resultMessage += ` ${failedCount} item(s) failed or were duplicates.`;
+                }
+
+                if (approvalEl) {
+                    approvalEl.innerHTML = `
+                        <div class="message-avatar">🤖</div>
+                        <div class="message-content">
+                            <div class="message-text">
+                                <strong>done!</strong>
+                                <p>${escapeHtml(resultMessage)}</p>
+                            </div>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                if (approvalEl) {
+                    approvalEl.innerHTML = `
+                        <div class="message-avatar">🤖</div>
+                        <div class="message-content">
+                            <div class="message-text">
+                                <strong>error</strong>
+                                <p>${escapeHtml(error.message)}</p>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+
+            pendingBriefingItems = [];
         }
 
         function addMessage(sender, text, data = null, suggestions = null) {
@@ -1709,7 +2318,7 @@
             messageDiv.id = 'msg-' + Date.now();
 
             const avatar = sender === 'user' ? '👤' : '🤖';
-            const name = sender === 'user' ? 'You' : 'Alfred';
+            const name = sender === 'user' ? 'You' : 'alfred';
             const time = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
             let html = `
@@ -1756,7 +2365,7 @@
                 <div class="message-avatar">🤖</div>
                 <div class="message-content">
                     <div class="message-header">
-                        <span class="message-sender">Alfred</span>
+                        <span class="message-sender">alfred</span>
                     </div>
                     <div class="message-text">
                         <div class="typing-indicator">
@@ -2093,6 +2702,331 @@
                 callDirectAPI(endpoint, title);
             });
         }
+
+        // ===== EXTRACTION AND APPROVAL FLOW =====
+
+        // Store extracted items for approval
+        let pendingExtractedItems = [];
+
+        // Show extract todos prompt
+        function showExtractTodosPrompt() {
+            const formHTML = `
+                <div class="form-group">
+                    <label class="form-label">Lookback Period</label>
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="lookback" value="3" />
+                            <span>3 Days</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="lookback" value="7" checked />
+                            <span>1 Week</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="lookback" value="14" />
+                            <span>2 Weeks</span>
+                        </label>
+                    </div>
+                </div>
+            `;
+
+            showFormPage('Scan Todos', formHTML, async (data) => {
+                const lookback = data.lookback || '7';
+                await extractAndShowApproval('/api/extract/todos', { lookbackDays: parseInt(lookback) }, 'Extracted Todos');
+            });
+        }
+
+        // Show extract from thread prompt
+        function showExtractFromThreadPrompt() {
+            const formHTML = `
+                <div class="form-group">
+                    <label class="form-label">Contact Name or Group</label>
+                    <input type="text" name="contact" class="form-input" placeholder="Enter name..." required autofocus />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Timeframe</label>
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="timeframe" value="1d" />
+                            <span>1 Day</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="timeframe" value="3d" />
+                            <span>3 Days</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="timeframe" value="7d" checked />
+                            <span>1 Week</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="timeframe" value="14d" />
+                            <span>2 Weeks</span>
+                        </label>
+                    </div>
+                </div>
+            `;
+
+            showFormPage('Analyze Thread', formHTML, async (data) => {
+                if (!data.contact) return;
+                await extractAndShowApproval('/api/extract/thread', {
+                    contact: data.contact,
+                    timeframe: data.timeframe || '7d'
+                }, `Actions from ${data.contact}`);
+            });
+        }
+
+        // Extract items and show approval UI
+        async function extractAndShowApproval(endpoint, params, title) {
+            // Show loading state
+            document.getElementById('quickPromptsSection').classList.add('hidden');
+            document.getElementById('recentActivitySection').classList.add('hidden');
+            document.getElementById('formView').classList.add('hidden');
+            document.getElementById('backHomeButton').classList.remove('hidden');
+
+            const chatContainer = document.getElementById('chatContainer');
+            chatContainer.innerHTML = `
+                <div class="message assistant">
+                    <div class="message-avatar">🤖</div>
+                    <div class="message-content">
+                        <div class="message-text">Analyzing messages and extracting items...</div>
+                    </div>
+                </div>
+            `;
+
+            try {
+                const response = await fetch(endpoint + '?passcode=' + encodeURIComponent(passcode), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(params)
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to extract items');
+                }
+
+                pendingExtractedItems = data.items || [];
+
+                if (pendingExtractedItems.length === 0) {
+                    chatContainer.innerHTML = `
+                        <div class="message assistant">
+                            <div class="message-avatar">🤖</div>
+                            <div class="message-content">
+                                <div class="message-text">
+                                    <strong>${escapeHtml(title)}</strong>
+                                    <div class="approval-empty">No items found to extract.</div>
+                                    <button class="form-page-button form-page-button-secondary" style="margin-top: 16px;" onclick="goBackHome()">Back to Home</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Show approval UI
+                showApprovalUI(title);
+            } catch (error) {
+                chatContainer.innerHTML = `
+                    <div class="message assistant">
+                        <div class="message-avatar">🤖</div>
+                        <div class="message-content">
+                            <div class="message-text">
+                                <strong>Error</strong>
+                                <p>${escapeHtml(error.message)}</p>
+                                <button class="form-page-button form-page-button-secondary" style="margin-top: 16px;" onclick="goBackHome()">Back to Home</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // Show approval UI with extracted items
+        function showApprovalUI(title) {
+            const chatContainer = document.getElementById('chatContainer');
+
+            // Group items by type
+            const commitments = pendingExtractedItems.filter(i => i.type === 'Commitment');
+            const todos = pendingExtractedItems.filter(i => i.type === 'Todo');
+            const followups = pendingExtractedItems.filter(i => i.type === 'Follow-up');
+
+            let summaryParts = [];
+            if (commitments.length > 0) summaryParts.push(`${commitments.length} commitment(s)`);
+            if (todos.length > 0) summaryParts.push(`${todos.length} todo(s)`);
+            if (followups.length > 0) summaryParts.push(`${followups.length} follow-up(s)`);
+
+            let itemsHtml = '';
+            pendingExtractedItems.forEach((item, index) => {
+                const typeEmoji = item.type === 'Commitment' ? '🤝' : (item.type === 'Todo' ? '✅' : '🔄');
+                const priorityEmoji = getPriorityEmoji(item.priority);
+                const directionHtml = item.commitmentDirection
+                    ? `<div class="approval-item-direction">${item.commitmentDirection === 'I Owe' ? '📤' : '📥'} ${escapeHtml(item.commitmentDirection)}</div>`
+                    : '';
+                const sourceHtml = item.source
+                    ? `<div class="approval-item-source">${escapeHtml(item.source.platform)}: ${escapeHtml(item.source.contact || item.source.threadName || '')}</div>`
+                    : '';
+                const descHtml = item.description
+                    ? `<div class="approval-item-meta">${escapeHtml(item.description.substring(0, 100))}${item.description.length > 100 ? '...' : ''}</div>`
+                    : '';
+
+                itemsHtml += `
+                    <div class="approval-item selected" onclick="toggleApprovalItem(${index})" data-index="${index}">
+                        <input type="checkbox" class="approval-item-checkbox" checked onchange="toggleApprovalItem(${index})" onclick="event.stopPropagation()">
+                        <div class="approval-item-content">
+                            <div class="approval-item-header">
+                                <span class="approval-item-type">${typeEmoji}</span>
+                                <span class="approval-item-priority">${priorityEmoji}</span>
+                                <span class="approval-item-title">${escapeHtml(item.title)}</span>
+                            </div>
+                            ${descHtml}
+                            ${directionHtml}
+                            ${sourceHtml}
+                        </div>
+                    </div>
+                `;
+            });
+
+            chatContainer.innerHTML = `
+                <div class="message assistant">
+                    <div class="message-avatar">🤖</div>
+                    <div class="message-content">
+                        <div class="message-text">
+                            <strong>${escapeHtml(title)}</strong>
+                            <div class="approval-summary">Found ${summaryParts.join(', ')}. Select items to add to Notion Tasks.</div>
+                            <div class="approval-container">
+                                ${itemsHtml}
+                            </div>
+                            <div class="approval-actions">
+                                <span class="approval-count"><span id="selectedCount">${pendingExtractedItems.length}</span> / ${pendingExtractedItems.length} selected</span>
+                                <button class="select-all-btn" onclick="toggleAllApprovalItems()">toggle all</button>
+                                <button class="approval-btn approval-btn-secondary" onclick="goBackHome()">cancel</button>
+                                <button class="approval-btn approval-btn-primary" onclick="saveApprovedItems()">add to notion</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Get priority emoji
+        function getPriorityEmoji(priority) {
+            switch (priority) {
+                case 'Critical': return '🔴';
+                case 'High': return '🟠';
+                case 'Medium': return '🟡';
+                case 'Low': return '🟢';
+                default: return '🟡';
+            }
+        }
+
+        // Toggle approval item selection
+        function toggleApprovalItem(index) {
+            const item = document.querySelector(`.approval-item[data-index="${index}"]`);
+            const checkbox = item.querySelector('.approval-item-checkbox');
+
+            checkbox.checked = !checkbox.checked;
+            item.classList.toggle('selected', checkbox.checked);
+
+            updateSelectedCount();
+        }
+
+        // Toggle all approval items
+        function toggleAllApprovalItems() {
+            const items = document.querySelectorAll('.approval-item');
+            const allSelected = Array.from(items).every(item => item.classList.contains('selected'));
+
+            items.forEach((item, index) => {
+                const checkbox = item.querySelector('.approval-item-checkbox');
+                checkbox.checked = !allSelected;
+                item.classList.toggle('selected', !allSelected);
+            });
+
+            updateSelectedCount();
+        }
+
+        // Update selected count display
+        function updateSelectedCount() {
+            const selectedCount = document.querySelectorAll('.approval-item.selected').length;
+            document.getElementById('selectedCount').textContent = selectedCount;
+        }
+
+        // Save approved items to Notion
+        async function saveApprovedItems() {
+            const selectedIndices = Array.from(document.querySelectorAll('.approval-item.selected'))
+                .map(item => parseInt(item.dataset.index));
+
+            if (selectedIndices.length === 0) {
+                alert('Please select at least one item to add.');
+                return;
+            }
+
+            const selectedItems = selectedIndices.map(i => pendingExtractedItems[i]);
+
+            // Show saving state
+            const chatContainer = document.getElementById('chatContainer');
+            chatContainer.innerHTML = `
+                <div class="message assistant">
+                    <div class="message-avatar">🤖</div>
+                    <div class="message-content">
+                        <div class="message-text">Saving ${selectedItems.length} item(s) to Notion...</div>
+                    </div>
+                </div>
+            `;
+
+            try {
+                const response = await fetch('/api/extract/approve?passcode=' + encodeURIComponent(passcode), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items: selectedItems })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to save items');
+                }
+
+                const savedCount = data.saved || 0;
+                const failedCount = data.failed || 0;
+
+                let resultMessage = `Successfully added ${savedCount} item(s) to Notion Tasks.`;
+                if (failedCount > 0) {
+                    resultMessage += ` ${failedCount} item(s) failed or were duplicates.`;
+                }
+
+                chatContainer.innerHTML = `
+                    <div class="message assistant">
+                        <div class="message-avatar">🤖</div>
+                        <div class="message-content">
+                            <div class="message-text">
+                                <strong>Done!</strong>
+                                <p>${escapeHtml(resultMessage)}</p>
+                                <button class="form-page-button form-page-button-primary" style="margin-top: 16px;" onclick="goBackHome()">Back to Home</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                pendingExtractedItems = [];
+            } catch (error) {
+                chatContainer.innerHTML = `
+                    <div class="message assistant">
+                        <div class="message-avatar">🤖</div>
+                        <div class="message-content">
+                            <div class="message-text">
+                                <strong>Error</strong>
+                                <p>${escapeHtml(error.message)}</p>
+                                <button class="form-page-button form-page-button-secondary" style="margin-top: 16px;" onclick="showApprovalUI('Retry')">Try Again</button>
+                                <button class="form-page-button form-page-button-secondary" style="margin-top: 16px; margin-left: 8px;" onclick="goBackHome()">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // ===== END EXTRACTION AND APPROVAL FLOW =====
 
         // Go back home - clear chat and show quick prompts
         function goBackHome() {
@@ -2680,5 +3614,10 @@
             });
         });
     </script>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+        <div class="branding">crafted by ms foundry</div>
+    </footer>
 </body>
 </html>
