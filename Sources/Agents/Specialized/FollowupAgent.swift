@@ -296,36 +296,37 @@ class FollowupAgent: AgentProtocol {
 
     // MARK: - Commitment Persistence
 
-    /// Save commitment to Notion database
+    /// Save commitment to Notion database (using unified Tasks database)
     func saveCommitmentToNotion(_ commitment: Commitment) async throws -> String? {
         guard let notionService = notionService,
-              let commitmentConfig = appConfig.commitmentConfig,
-              let databaseId = commitmentConfig.notionDatabaseId else {
-            print("⚠️  Commitment tracking not configured")
+              appConfig.commitmentConfig?.enabled == true,
+              notionService.tasksDatabaseId != nil else {
+            print("⚠️  Tasks database not configured")
             return nil
         }
 
-        // Check for duplicates
-        if let existingId = try await notionService.findCommitmentByHash(commitment.uniqueHash, databaseId: databaseId) {
+        // Check for duplicates in unified Tasks database
+        if let existingId = try await notionService.findCommitmentByHashInTasks(commitment.uniqueHash) {
             print("ℹ️  Commitment already exists (hash: \(commitment.uniqueHash.prefix(8))...)")
             return existingId
         }
 
-        // Create new commitment
-        let notionId = try await notionService.createCommitment(commitment, databaseId: databaseId)
-        print("✅ Saved commitment to Notion: \(notionId)")
+        // Create new commitment in unified Tasks database
+        let notionId = try await notionService.createCommitmentInTasks(commitment)
+        print("✅ Saved commitment to Notion Tasks: \(notionId)")
         return notionId
     }
 
-    /// Check Notion for overdue commitments and create reminders
+    /// Check Notion for overdue commitments and create reminders (using unified Tasks database)
     func syncOverdueCommitments() async throws -> [AgentDecision] {
         guard let notionService = notionService,
-              let commitmentConfig = appConfig.commitmentConfig,
-              let databaseId = commitmentConfig.notionDatabaseId else {
+              appConfig.commitmentConfig?.enabled == true,
+              notionService.tasksDatabaseId != nil else {
             return []
         }
 
-        let overdueCommitments = try await notionService.queryOverdueCommitments(databaseId: databaseId)
+        // Query overdue commitments from unified Tasks database
+        let overdueCommitments = try await notionService.queryOverdueCommitmentsFromTasks()
         var decisions: [AgentDecision] = []
 
         for commitment in overdueCommitments where commitment.type == .iOwe {

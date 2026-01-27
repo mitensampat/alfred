@@ -5,6 +5,92 @@ All notable changes to Alfred will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2026-01-27
+
+### Added
+- **Smart Notes Retrieval**: Intelligent context-aware notes for briefings and meetings
+  - Extracts keywords from attendee names, companies, and email domains
+  - Uses Notion Search API for keyword-based note discovery
+  - Fetches note content (first 1000 chars) for relevance scoring
+  - Ranks notes by relevance (title match: 10pts, content match: 5pts, recency boost)
+  - Falls back to recent notes when no keywords available
+
+### Fixed
+- **Notion "Due Date" property error**: Fixed sort property mismatch
+  - Changed from "Due" to "Due Date" to match unified Tasks database schema
+  - Fixed in both CLI and GUI NotionService implementations
+- **Config priority for Tasks database**: Top-level `notion.tasks_database_id` now takes priority
+  - Checks `notion.tasks_database_id` first
+  - Falls back to `notion.briefing_sources.tasks_database_id`
+  - Consistent behavior across CLI, GUI, and API
+
+### Changed
+- `queryRelevantNotes()` now uses smart search instead of date-only filtering
+- `generateBriefingContext()` includes attendee names and emails for better note matching
+- `generateCalendarContext()` includes attendee info for meeting prep notes
+
+### Technical
+- New NotionService methods:
+  - `extractSearchKeywords(from:)` - Regex extraction of names/companies
+  - `searchNotesWithKeyword(_:databaseId:)` - Notion Search API integration
+  - `fetchNoteContent(pageId:)` - Block children API for content retrieval
+  - `queryRecentNotes(databaseId:limit:)` - Fallback for no keywords
+  - `rankNotesByRelevance(notes:keywords:)` - Scoring and sorting
+- Updated config loading in NotionService.init, HTTPServer, BriefingOrchestrator
+
+## [1.4.1] - 2026-01-27
+
+### Added
+- **Interactive Task Approval**: Y/N/S prompts before adding items to Notion
+  - Commitment scanning (`alfred commitments scan`) now prompts for approval
+  - Todo scanning (`alfred notion-todos`) now prompts for approval
+  - Focused thread analysis (`alfred messages whatsapp "Name"`) extracts commitments + actions
+  - Select mode allows choosing individual items to add
+- **ExtractedItem Model**: Unified model for commitments, todos, and follow-ups
+  - Standardized format for displaying extracted items
+  - Conversion to TaskItem for Notion storage
+  - Factory methods from Commitment, TodoItem, and FollowupReminder
+- **BriefingOrchestrator Enhancements**
+  - `extractWhatsAppTodosForReview()` - Extract todos without auto-saving
+  - `saveExtractedItems()` - Batch save approved items to Notion
+- **Web UI Interactive Approval**
+  - New "Scan Todos" button with lookback period selection and approval UI
+  - New "Analyze Thread" button to extract actions from specific conversations
+  - Visual item approval with checkboxes for selecting which items to add
+  - Select/deselect all functionality with item count display
+  - Type and priority indicators for each extracted item
+- **Extraction API Endpoints**
+  - `POST /api/extract/todos` - Extract todos for review without auto-saving
+  - `POST /api/extract/thread` - Extract items from specific thread
+  - `POST /api/extract/approve` - Save approved items to Notion
+
+### Changed
+- Commitment scan now collects items first, then prompts for approval
+- Todo scan now collects items first, then prompts for approval
+- Focused WhatsApp thread analysis includes commitment extraction
+- All extraction commands provide consistent Y/N/S interactive prompts
+- Web UI "Scan Todos" now shows approval UI instead of auto-adding items
+- **Unified Tasks Database**: Consolidated all storage to single Notion database
+  - Commitments, Todos, and Follow-ups now all stored in `tasksDatabaseId`
+  - Legacy `commitments.notionDatabaseId` config no longer required
+  - Simplified configuration: just set `notion.tasks_database_id`
+  - All extraction and query operations use unified Tasks database
+
+### Technical
+- New `ExtractedItem.swift` model with `ItemType`, `ItemPriority`, `ItemSource`
+- Interactive prompt helper: `parseTimeframeToHours()`
+- Deduplication checks during extraction phase
+- AlfredService extraction methods for GUI support
+- HTTPServer handlers for extraction and approval endpoints
+- New CSS styles for approval item list with checkboxes
+- NotionService+Tasks compatibility methods:
+  - `queryActiveCommitmentsFromTasks()` - Query commitments from unified DB
+  - `queryOverdueCommitmentsFromTasks()` - Query overdue commitments
+  - `queryUpcomingCommitmentsFromTasks()` - Query upcoming commitments
+  - `findCommitmentByHashInTasks()` - Deduplication check
+  - `createCommitmentInTasks()` - Create commitment in unified DB
+- Removed dependency on legacy `commitments.notionDatabaseId` across all services
+
 ## [1.4.0] - 2026-01-26
 
 ### Added
@@ -169,6 +255,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 1.4.2 | 2026-01-27 | Smart notes retrieval, Due Date fix, config priority |
+| 1.4.1 | 2026-01-27 | Interactive task approval with Y/N/S prompts |
 | 1.4.0 | 2026-01-26 | Proactive insights, unified commitments, agent digest, cross-agent coordination |
 | 1.3.1 | 2026-01-26 | Agent memory system, teach mode, learning consolidation |
 | 1.3.0 | 2026-01-26 | Web interface, HTTP API, query caching |

@@ -8,8 +8,10 @@ class NotionService {
         self.apiKey = config.apiKey
         self.databaseId = config.databaseId
 
-        // Initialize tasks database ID if available
-        if let tasksDbId = config.tasksDatabaseId {
+        // Initialize tasks database ID - check top-level first, then briefing_sources as fallback
+        if let tasksDbId = config.tasksDatabaseId, tasksDbId != "YOUR_TASKS_DATABASE_ID" {
+            self.setTasksDatabaseId(tasksDbId)
+        } else if let tasksDbId = config.briefingSources?.tasksDatabaseId, tasksDbId != "YOUR_TASKS_DATABASE_ID" {
             self.setTasksDatabaseId(tasksDbId)
         }
     }
@@ -186,17 +188,17 @@ class NotionService {
             ]
         }
 
-        // Use hardcoded "Due" property for due date
+        // Use "Due Date" property for due date (matches unified Tasks database schema)
         // If no due date provided, default to tomorrow
         let dueDateToUse = dueDate ?? Calendar.current.date(byAdding: .day, value: 1, to: Date())!
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withFullDate]
-        properties["Due"] = [
+        properties["Due Date"] = [
             "date": [
                 "start": formatter.string(from: dueDateToUse)
             ]
         ]
-        print("✓ Writing to 'Due': '\(formatter.string(from: dueDateToUse))'" )
+        print("✓ Writing to 'Due Date': '\(formatter.string(from: dueDateToUse))'" )
 
         // Note: "Assign" property requires people type with user IDs, not text
         // Skipping assignee for now - would need to fetch user IDs from Notion API
@@ -433,8 +435,195 @@ class NotionService {
         return "\(cleaned[..<index8])-\(cleaned[index8..<index12])-\(cleaned[index12..<index16])-\(cleaned[index16..<index20])-\(cleaned[index20...])"
     }
 
-    /// Query notes database for contextually relevant notes
+    /// Query notes database for contextually relevant notes using smart keyword search
     func queryRelevantNotes(context: String, databaseId: String) async throws -> [NotionNote] {
+        // Extract keywords from context for searching
+        let keywords = extractSearchKeywords(from: context)
+
+        if keywords.isEmpty {
+            // Fallback to recent notes if no keywords
+            return try await queryRecentNotes(databaseId: databaseId, limit: 10)
+        }
+
+        // Use Notion search API to find relevant notes
+        var allNotes: [NotionNote] = []
+        var seenIds = Set<String>()
+
+        // Search for each keyword
+        for keyword in keywords.prefix(5) { // Limit to top 5 keywords
+            let notes = try await searchNotesWithKeyword(keyword, databaseId: databaseId)
+            for note in notes where !seenIds.contains(note.id) {
+                seenIds.insert(note.id)
+                allNotes.append(note)
+            }
+        }
+
+        // Fetch content for top notes (limit to 10 to avoid too many API calls)
+        var notesWithContent: [NotionNote] = []
+        for note in allNotes.prefix(10) {
+            let content = try await fetchNoteContent(pageId: note.id)
+            notesWithContent.append(NotionNote(
+                id: note.id,
+                title: note.title,
+                content: content,
+                lastEdited: note.lastEdited
+            ))
+        }
+
+        // Rank notes by relevance to context
+        let rankedNotes = rankNotesByRelevance(notes: notesWithContent, keywords: keywords)
+
+        return Array(rankedNotes.prefix(5)) // Return top 5 most relevant
+    }
+
+    /// Extract search keywords from briefing context
+    private func extractSearchKeywords(from context: String) -> [String] {
+        var keywords: [String] = []
+
+        // Extract names (look for capitalized words that could be names/companies)
+        let namePattern = try? NSRegularExpression(pattern: "\\b[A-Z][a-z]+(?:\\s+[A-Z][a-z]+)*\\b", options: [])
+        if let matches = namePattern?.matches(in: context, options: [], range: NSRange(context.startIndex..., in: context)) {
+            for match in matches {
+                if let range = Range(match.range, in: context) {
+                    let name = String(context[range])
+                    // Filter out common words
+                    let commonWords = ["Meeting", "Calendar", "Meetings", "Today", "Tomorrow", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December", "External", "Internal", "Critical", "Messages", "Total", "Focus"]
+                    if !commonWords.contains(name) && name.count >= 3 {
+                        keywords.append(name)
+                    }
+                }
+            }
+        }
+
+        // Extract email domains (companies)
+        let emailPattern = try? NSRegularExpression(pattern: "@([a-zA-Z0-9-]+)\\.", options: [])
+        if let matches = emailPattern?.matches(in: context, options: [], range: NSRange(context.startIndex..., in: context)) {
+            for match in matches {
+                if let range = Range(match.range(at: 1), in: context) {
+                    let domain = String(context[range])
+                    if domain.count >= 3 {
+                        keywords.append(domain.capitalized)
+                    }
+                }
+            }
+        }
+
+        // Remove duplicates and return
+        return Array(Set(keywords))
+    }
+
+    /// Search notes using Notion search API
+    private func searchNotesWithKeyword(_ keyword: String, databaseId: String) async throws -> [NotionNote] {
+        let url = URL(string: "https://api.notion.com/v1/search")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "query": keyword,
+            "filter": [
+                "property": "object",
+                "value": "page"
+            ],
+            "sort": [
+                "direction": "descending",
+                "timestamp": "last_edited_time"
+            ],
+            "page_size": 10
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            return []
+        }
+
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let results = json?["results"] as? [[String: Any]] ?? []
+
+        // Filter to only include pages from the notes database
+        let formattedDbId = formatNotionId(databaseId).lowercased()
+
+        return results.compactMap { result -> NotionNote? in
+            guard let id = result["id"] as? String,
+                  let parent = result["parent"] as? [String: Any],
+                  let parentDbId = parent["database_id"] as? String,
+                  parentDbId.lowercased().replacingOccurrences(of: "-", with: "") == formattedDbId.replacingOccurrences(of: "-", with: ""),
+                  let properties = result["properties"] as? [String: Any] else {
+                return nil
+            }
+
+            // Extract title from various possible property names
+            var title = ""
+            for propName in ["Name", "Title", "name", "title"] {
+                if let titleProp = properties[propName] as? [String: Any],
+                   let titleArray = titleProp["title"] as? [[String: Any]],
+                   let firstTitle = titleArray.first,
+                   let text = firstTitle["plain_text"] as? String {
+                    title = text
+                    break
+                }
+            }
+
+            // Extract last edited time
+            var lastEdited = Date()
+            if let lastEditedStr = result["last_edited_time"] as? String {
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                lastEdited = formatter.date(from: lastEditedStr) ?? Date()
+            }
+
+            return NotionNote(id: id, title: title, content: "", lastEdited: lastEdited)
+        }
+    }
+
+    /// Fetch content blocks for a note page
+    private func fetchNoteContent(pageId: String) async throws -> String {
+        let formattedId = formatNotionId(pageId)
+        let url = URL(string: "https://api.notion.com/v1/blocks/\(formattedId)/children?page_size=50")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            return ""
+        }
+
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let results = json?["results"] as? [[String: Any]] ?? []
+
+        var contentParts: [String] = []
+
+        for block in results {
+            guard let blockType = block["type"] as? String else { continue }
+
+            // Extract text from various block types
+            if let blockContent = block[blockType] as? [String: Any],
+               let richText = blockContent["rich_text"] as? [[String: Any]] {
+                let text = richText.compactMap { $0["plain_text"] as? String }.joined()
+                if !text.isEmpty {
+                    contentParts.append(text)
+                }
+            }
+        }
+
+        // Return first 1000 characters to keep context manageable
+        let fullContent = contentParts.joined(separator: "\n")
+        if fullContent.count > 1000 {
+            return String(fullContent.prefix(1000)) + "..."
+        }
+        return fullContent
+    }
+
+    /// Query recent notes without keyword search (fallback)
+    private func queryRecentNotes(databaseId: String, limit: Int) async throws -> [NotionNote] {
         let formattedId = formatNotionId(databaseId)
         let url = URL(string: "https://api.notion.com/v1/databases/\(formattedId)/query")!
         var request = URLRequest(url: url)
@@ -443,24 +632,15 @@ class NotionService {
         request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        // Query for recent notes (last 30 days)
-        let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
-        let dateString = ISO8601DateFormatter().string(from: thirtyDaysAgo)
-
+        // Just get recent pages sorted by last edited
         let body: [String: Any] = [
-            "filter": [
-                "property": "Date",
-                "date": [
-                    "on_or_after": dateString
-                ]
-            ],
             "sorts": [
                 [
-                    "property": "Date",
+                    "timestamp": "last_edited_time",
                     "direction": "descending"
                 ]
             ],
-            "page_size": 20
+            "page_size": limit
         ]
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -468,8 +648,7 @@ class NotionService {
         let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw NSError(domain: "NotionService", code: 4, userInfo: [NSLocalizedDescriptionKey: "Failed to query notes: \(errorBody)"])
+            return []
         }
 
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -481,21 +660,63 @@ class NotionService {
                 return nil
             }
 
-            // Extract title
             var title = ""
-            if let titleProp = properties["Name"] as? [String: Any] ?? properties["Title"] as? [String: Any],
-               let titleArray = titleProp["title"] as? [[String: Any]],
-               let firstTitle = titleArray.first,
-               let text = firstTitle["plain_text"] as? String {
-                title = text
+            for propName in ["Name", "Title", "name", "title"] {
+                if let titleProp = properties[propName] as? [String: Any],
+                   let titleArray = titleProp["title"] as? [[String: Any]],
+                   let firstTitle = titleArray.first,
+                   let text = firstTitle["plain_text"] as? String {
+                    title = text
+                    break
+                }
             }
 
-            // Extract content preview (first block)
-            var content = ""
-            // Note: We'd need to fetch block children for full content, but for now just use title
+            var lastEdited = Date()
+            if let lastEditedStr = result["last_edited_time"] as? String {
+                let formatter = ISO8601DateFormatter()
+                formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                lastEdited = formatter.date(from: lastEditedStr) ?? Date()
+            }
 
-            return NotionNote(id: id, title: title, content: content, lastEdited: Date())
+            return NotionNote(id: id, title: title, content: "", lastEdited: lastEdited)
         }
+    }
+
+    /// Rank notes by relevance to search keywords
+    private func rankNotesByRelevance(notes: [NotionNote], keywords: [String]) -> [NotionNote] {
+        let scoredNotes = notes.map { note -> (note: NotionNote, score: Int) in
+            var score = 0
+            let titleLower = note.title.lowercased()
+            let contentLower = note.content.lowercased()
+
+            for keyword in keywords {
+                let keywordLower = keyword.lowercased()
+                // Title match is worth more
+                if titleLower.contains(keywordLower) {
+                    score += 10
+                }
+                // Content match
+                if contentLower.contains(keywordLower) {
+                    score += 5
+                }
+            }
+
+            // Boost recent notes
+            let daysSinceEdit = Calendar.current.dateComponents([.day], from: note.lastEdited, to: Date()).day ?? 0
+            if daysSinceEdit < 7 {
+                score += 3
+            } else if daysSinceEdit < 30 {
+                score += 1
+            }
+
+            return (note, score)
+        }
+
+        // Sort by score descending, filter out zero-score notes
+        return scoredNotes
+            .filter { $0.score > 0 }
+            .sorted { $0.score > $1.score }
+            .map { $0.note }
     }
 
     /// Query tasks database for active/upcoming tasks
@@ -528,7 +749,7 @@ class NotionService {
             ],
             "sorts": [
                 [
-                    "property": "Due",
+                    "property": "Due Date",
                     "direction": "ascending"
                 ]
             ],

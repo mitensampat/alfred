@@ -68,7 +68,9 @@ class ExecutionEngine {
 
     private func executeTaskAdjustment(_ adjustment: TaskAdjustment) async throws -> ExecutionResult {
         // Update task priority in Notion
-        guard appConfig.notion.briefingSources?.tasksDatabaseId != nil else {
+        // Check top-level tasks_database_id first, then briefing_sources as fallback
+        let hasTasksDb = appConfig.notion.tasksDatabaseId != nil || appConfig.notion.briefingSources?.tasksDatabaseId != nil
+        guard hasTasksDb else {
             return .failure(error: "Notion tasks database not configured")
         }
 
@@ -125,10 +127,10 @@ class ExecutionEngine {
         try data.write(to: followupsFile)
 
         // 2. Also save to Notion unified Tasks database (if configured)
-        if let tasksDatabaseId = appConfig.notion.briefingSources?.tasksDatabaseId,
-           tasksDatabaseId != "YOUR_TASKS_DATABASE_ID" {
+        // NotionService.init handles checking top-level and briefing_sources
+        let notionService = NotionService(config: appConfig.notion)
+        if notionService.tasksDatabaseId != nil {
             do {
-                let notionService = NotionService(config: appConfig.notion)
 
                 // Generate hash for deduplication
                 let hashInput = "\(followup.followupAction)|\(followup.originalContext)|\(followup.scheduledFor.timeIntervalSince1970)"

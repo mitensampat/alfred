@@ -11,8 +11,10 @@ Task {
 RunLoop.main.run()
 
 struct AlfredApp {
+    static let version = "1.4.2"
+
     static func main() async {
-        print("Alfred Starting...")
+        print("alfred v\(version) starting...")
 
         // Load configuration
         guard let config = AppConfig.load(from: "Config/config.json") else {
@@ -273,36 +275,184 @@ struct AlfredApp {
                 print("💡 Tip: Run 'alfred drafts' to review and send the draft\n")
             }
 
-            // Extract recommended actions
+            // Collect all extracted items for review
+            var allExtractedItems: [ExtractedItem] = []
+
+            // Extract recommended actions and convert to ExtractedItem
             let recommendedActions = orchestrator.extractRecommendedActions(from: analysis)
+            for action in recommendedActions {
+                let priority: ExtractedItem.ItemPriority = action.priority == .critical ? .critical : .high
+                let item = ExtractedItem(
+                    type: .todo,
+                    title: action.title,
+                    description: action.description,
+                    priority: priority,
+                    source: ExtractedItem.ItemSource(
+                        platform: .whatsapp,
+                        contact: contactName,
+                        threadName: analysis.thread.contactName,
+                        threadId: analysis.thread.contactIdentifier
+                    ),
+                    dueDate: action.dueDate,
+                    originalContext: action.context
+                )
+                allExtractedItems.append(item)
+            }
 
-            if !recommendedActions.isEmpty {
-                print("\n" + String(repeating: "=", count: 60))
-                print("\n💡 RECOMMENDED ACTIONS FOR NOTION")
-                print(String(repeating: "-", count: 60))
-                print("\nI found \(recommendedActions.count) critical action item(s) from this conversation:\n")
+            // Also scan for commitments in this thread
+            print("\n🔍 Scanning for commitments in this conversation...\n")
 
-                for (index, action) in recommendedActions.enumerated() {
-                    print("\(index + 1). \(action.priority.emoji) \(action.title)")
-                    print("   \(action.description)")
-                    if let dueDate = action.dueDate {
-                        print("   Due: \(dueDate.formatted(date: .abbreviated, time: .omitted))")
+            let lookbackHours = parseTimeframeToHours(timeframe)
+            let since = Calendar.current.date(byAdding: .hour, value: -lookbackHours, to: Date()) ?? Date()
+
+            // Fetch messages from this specific contact
+            let messages = try await orchestrator.fetchMessagesForContact(contactName, since: since)
+
+            if !messages.isEmpty {
+                // Group by thread and analyze
+                let groupedByThread = Dictionary(grouping: messages) { $0.threadName }
+
+                for (threadName, threadMessages) in groupedByThread {
+                    guard let firstMessage = threadMessages.first else { continue }
+                    let platform = firstMessage.platform
+                    let threadId = firstMessage.threadId
+                    let messageObjects = threadMessages.map { $0.message }
+
+                    let extraction = try await orchestrator.commitmentAnalyzer.analyzeMessages(
+                        messageObjects,
+                        platform: platform,
+                        threadName: threadName,
+                        threadId: threadId
+                    )
+
+                    if !extraction.commitments.isEmpty {
+                        print("  ✓ Found \(extraction.commitments.count) commitment(s)")
+
+                        // Check for duplicates and add non-duplicates (using unified Tasks database)
+                        for commitment in extraction.commitments {
+                            // Check if already exists in Notion Tasks database
+                            let existing = try? await orchestrator.notionServicePublic.findCommitmentByHashInTasks(
+                                commitment.uniqueHash
+                            )
+                            if existing != nil {
+                                print("    ⊘ Already exists: \(commitment.title)")
+                                continue
+                            }
+
+                            let item = ExtractedItem.fromCommitment(commitment)
+                            allExtractedItems.append(item)
+                        }
+                    } else {
+                        print("  ℹ️  No commitments found")
                     }
+                }
+            }
+
+            // Display all extracted items for review
+            if !allExtractedItems.isEmpty {
+                print("\n" + String(repeating: "=", count: 60))
+                print("\n📋 EXTRACTED ITEMS FOR REVIEW")
+                print(String(repeating: "-", count: 60))
+                print("\nI found \(allExtractedItems.count) item(s) from this conversation:\n")
+
+                for (index, item) in allExtractedItems.enumerated() {
+                    print(item.formattedForDisplay(index: index + 1))
                     print("")
                 }
 
-                print("Would you like to add these to your Notion todo list? (yes/no): ", terminator: "")
+                // Interactive prompt
+                print(String(repeating: "-", count: 60))
+                print("\nOptions:")
+                print("  [Y] Yes - Add all items to Notion Tasks")
+                print("  [N] No - Skip all items")
+                print("  [S] Select - Choose which items to add")
+                print("")
+                print("Your choice (Y/N/S): ", terminator: "")
 
-                if let response = readLine()?.lowercased(), response == "yes" || response == "y" {
-                    print("\n📓 Adding actions to Notion...")
-                    let createdIds = try await orchestrator.addRecommendedActionsToNotion(recommendedActions)
-                    print("\n✓ Successfully added \(createdIds.count) action item(s) to Notion\n")
-                } else {
-                    print("\n⏭️  Skipped adding actions to Notion\n")
+                guard let response = readLine()?.lowercased() else {
+                    print("\n⏭️  No response - skipping all items\n")
+                    return
+                }
+
+                var itemsToSave: [ExtractedItem] = []
+
+                switch response {
+                case "y", "yes":
+                    itemsToSave = allExtractedItems
+                case "n", "no":
+                    print("\n⏭️  Skipped all items\n")
+                    return
+                case "s", "select":
+                    // Individual selection
+                    print("\nFor each item, enter Y to add or N to skip:\n")
+                    for (index, item) in allExtractedItems.enumerated() {
+                        print("\(index + 1). \(item.type.emoji) \(item.priority.emoji) \(item.title)")
+                        if let direction = item.commitmentDirection {
+                            print("   \(direction.emoji) \(direction.rawValue)")
+                        }
+                        print("   Add this item? (Y/n): ", terminator: "")
+
+                        if let itemResponse = readLine()?.lowercased(), itemResponse != "n" && itemResponse != "no" {
+                            itemsToSave.append(item)
+                            print("   ✓ Queued\n")
+                        } else {
+                            print("   ⏭️  Skipped\n")
+                        }
+                    }
+                default:
+                    print("\n⚠️  Invalid choice - skipping all items\n")
+                    return
+                }
+
+                // Save approved items
+                if !itemsToSave.isEmpty {
+                    print("\n📓 Saving \(itemsToSave.count) item(s) to Notion Tasks...\n")
+
+                    var savedCount = 0
+                    var failedCount = 0
+
+                    for item in itemsToSave {
+                        do {
+                            // All items now saved to unified Tasks database
+                            let taskItem = item.toTaskItem()
+                            _ = try await orchestrator.notionServicePublic.createTask(taskItem)
+                            print("  ✓ Saved: \(item.title)")
+                            savedCount += 1
+                        } catch {
+                            print("  ✗ Failed: \(item.title) - \(error)")
+                            failedCount += 1
+                        }
+                    }
+
+                    // Summary
+                    print("\n✓ Saved \(savedCount) item(s) to Notion")
+                    if failedCount > 0 {
+                        print("⚠️  Failed to save \(failedCount) item(s)")
+                    }
+                    print("")
                 }
             }
         } catch {
             print("Error analyzing WhatsApp thread: \(error)")
+        }
+    }
+
+    /// Parse timeframe string to hours (e.g., "24h" -> 24, "7d" -> 168)
+    static func parseTimeframeToHours(_ timeframe: String) -> Int {
+        let pattern = try? NSRegularExpression(pattern: "^(\\d+)([hdw])$", options: .caseInsensitive)
+        guard let match = pattern?.firstMatch(in: timeframe, range: NSRange(timeframe.startIndex..., in: timeframe)),
+              let valueRange = Range(match.range(at: 1), in: timeframe),
+              let unitRange = Range(match.range(at: 2), in: timeframe),
+              let value = Int(timeframe[valueRange]) else {
+            return 24 // Default to 24 hours
+        }
+
+        let unit = String(timeframe[unitRange]).lowercased()
+        switch unit {
+        case "h": return value
+        case "d": return value * 24
+        case "w": return value * 24 * 7
+        default: return 24
         }
     }
 
@@ -1196,12 +1346,90 @@ struct AlfredApp {
 
     static func runNotionTodos(_ orchestrator: BriefingOrchestrator) async {
         do {
-            let todos = try await orchestrator.processWhatsAppTodos()
-            if todos.createdTodos.isEmpty {
-                print("\n✓ No todos detected in recent WhatsApp messages")
-            } else {
-                print("\n✓ Successfully created \(todos.createdTodos.count) todo(s) in Notion")
+            // Extract todos for review (without auto-saving)
+            let extractedItems = try await orchestrator.extractWhatsAppTodosForReview()
+
+            if extractedItems.isEmpty {
+                print("\n✓ No new todos detected in recent WhatsApp messages\n")
+                return
             }
+
+            // Display items for review
+            print("\n" + String(repeating: "=", count: 60))
+            print("\n📋 EXTRACTED TODOS FOR REVIEW")
+            print(String(repeating: "-", count: 60))
+            print("\nI found \(extractedItems.count) new todo(s) to add to your Tasks:\n")
+
+            for (index, item) in extractedItems.enumerated() {
+                print(item.formattedForDisplay(index: index + 1))
+                print("")
+            }
+
+            // Interactive prompt
+            print(String(repeating: "-", count: 60))
+            print("\nOptions:")
+            print("  [Y] Yes - Add all items to Notion Tasks")
+            print("  [N] No - Skip all items")
+            print("  [S] Select - Choose which items to add")
+            print("")
+            print("Your choice (Y/N/S): ", terminator: "")
+
+            guard let response = readLine()?.lowercased() else {
+                print("\n⏭️  No response - skipping all items\n")
+                return
+            }
+
+            var itemsToSave: [ExtractedItem] = []
+
+            switch response {
+            case "y", "yes":
+                itemsToSave = extractedItems
+            case "n", "no":
+                print("\n⏭️  Skipped all items\n")
+                return
+            case "s", "select":
+                // Individual selection
+                print("\nFor each item, enter Y to add or N to skip:\n")
+                for (index, item) in extractedItems.enumerated() {
+                    print("\(index + 1). \(item.type.emoji) \(item.title)")
+                    if let desc = item.description, !desc.isEmpty {
+                        let truncated = desc.count > 60 ? String(desc.prefix(57)) + "..." : desc
+                        print("   \(truncated)")
+                    }
+                    print("   Add this item? (Y/n): ", terminator: "")
+
+                    if let itemResponse = readLine()?.lowercased(), itemResponse != "n" && itemResponse != "no" {
+                        itemsToSave.append(item)
+                        print("   ✓ Queued\n")
+                    } else {
+                        print("   ⏭️  Skipped\n")
+                    }
+                }
+            default:
+                print("\n⚠️  Invalid choice - skipping all items\n")
+                return
+            }
+
+            // Save approved items
+            if itemsToSave.isEmpty {
+                print("\n⏭️  No items selected to save\n")
+                return
+            }
+
+            print("\n📓 Saving \(itemsToSave.count) todo(s) to Notion Tasks...\n")
+
+            let (savedCount, failedCount) = try await orchestrator.saveExtractedItems(itemsToSave)
+
+            // Final summary
+            print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            print("📊 TODO SCAN SUMMARY")
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            print("Todos found: \(extractedItems.count)")
+            print("Todos saved: \(savedCount)")
+            if failedCount > 0 {
+                print("Failed to save: \(failedCount)")
+            }
+            print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
         } catch {
             print("Error processing todos: \(error)")
         }
@@ -2021,7 +2249,8 @@ struct AlfredApp {
 
     static func printUsage() {
         print("""
-        Alfred - Your Personal Assistant 🦇
+        alfred v\(version) — judgement from noise
+        crafted by ms foundry
 
         Usage:
           alfred <command> [options]
@@ -2438,9 +2667,10 @@ func runCommitmentsScan(_ orchestrator: BriefingOrchestrator, args: [String]) as
         return
     }
 
-    guard let databaseId = config.notionDatabaseId else {
-        print("❌ Notion database ID not configured")
-        print("Run 'alfred commitments init' for setup instructions")
+    // Use unified Tasks database
+    guard orchestrator.notionServicePublic.tasksDatabaseId != nil else {
+        print("❌ Tasks database ID not configured")
+        print("Set notion.tasks_database_id in your config.json")
         return
     }
 
@@ -2477,8 +2707,9 @@ func runCommitmentsScan(_ orchestrator: BriefingOrchestrator, args: [String]) as
 
     let startDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
 
-    var totalCommitmentsFound = 0
-    var totalCommitmentsSaved = 0
+    // Collect all extracted items for review
+    var allExtractedItems: [ExtractedItem] = []
+    var duplicateHashes: Set<String> = []
 
     for contact in contactsToScan {
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -2530,29 +2761,22 @@ func runCommitmentsScan(_ orchestrator: BriefingOrchestrator, args: [String]) as
                         print("  ℹ️  No commitments found in: \(threadName)")
                     } else {
                         print("  ✓ Found \(extraction.commitments.count) commitment(s) in: \(threadName)")
-                        totalCommitmentsFound += extraction.commitments.count
 
-                        // Save to Notion
+                        // Check for duplicates and collect non-duplicates for review
                         for commitment in extraction.commitments {
-                            do {
-                                // Check if commitment already exists
-                                let existingCommitment = try await orchestrator.notionServicePublic.findCommitmentByHash(
-                                    commitment.uniqueHash,
-                                    databaseId: databaseId
-                                )
+                            // Check if commitment already exists in unified Tasks database
+                            let existingCommitment = try? await orchestrator.notionServicePublic.findCommitmentByHashInTasks(
+                                commitment.uniqueHash
+                            )
 
-                                if existingCommitment != nil {
-                                    print("    ⊘ Skipped (duplicate): \(commitment.title)")
-                                } else {
-                                    try await orchestrator.notionServicePublic.createCommitment(
-                                        commitment,
-                                        databaseId: databaseId
-                                    )
-                                    print("    ✓ Saved: \(commitment.title)")
-                                    totalCommitmentsSaved += 1
-                                }
-                            } catch {
-                                print("    ✗ Failed to save: \(commitment.title) - \(error)")
+                            if existingCommitment != nil {
+                                duplicateHashes.insert(commitment.uniqueHash)
+                                print("    ⊘ Already exists: \(commitment.title)")
+                            } else {
+                                // Convert to ExtractedItem for review
+                                let item = ExtractedItem.fromCommitment(commitment)
+                                allExtractedItems.append(item)
+                                print("    📝 Queued for review: \(commitment.title)")
                             }
                         }
                     }
@@ -2567,12 +2791,107 @@ func runCommitmentsScan(_ orchestrator: BriefingOrchestrator, args: [String]) as
         }
     }
 
+    // If no new items found, show summary and exit
+    if allExtractedItems.isEmpty {
+        print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print("📊 SCAN SUMMARY")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print("Total commitments found: \(duplicateHashes.count)")
+        print("All items already exist in Notion")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+        return
+    }
+
+    // Display items for review
+    print("\n" + String(repeating: "=", count: 60))
+    print("\n📋 EXTRACTED ITEMS FOR REVIEW")
+    print(String(repeating: "-", count: 60))
+    print("\nI found \(allExtractedItems.count) new item(s) to add to your Tasks:\n")
+
+    for (index, item) in allExtractedItems.enumerated() {
+        print(item.formattedForDisplay(index: index + 1))
+        print("")
+    }
+
+    // Interactive prompt
+    print(String(repeating: "-", count: 60))
+    print("\nOptions:")
+    print("  [Y] Yes - Add all items to Notion Tasks")
+    print("  [N] No - Skip all items")
+    print("  [S] Select - Choose which items to add")
+    print("")
+    print("Your choice (Y/N/S): ", terminator: "")
+
+    guard let response = readLine()?.lowercased() else {
+        print("\n⏭️  No response - skipping all items\n")
+        return
+    }
+
+    var itemsToSave: [ExtractedItem] = []
+
+    switch response {
+    case "y", "yes":
+        itemsToSave = allExtractedItems
+    case "n", "no":
+        print("\n⏭️  Skipped all items\n")
+        return
+    case "s", "select":
+        // Individual selection
+        print("\nFor each item, enter Y to add or N to skip:\n")
+        for (index, item) in allExtractedItems.enumerated() {
+            print("\(index + 1). \(item.type.emoji) \(item.title)")
+            if let direction = item.commitmentDirection {
+                print("   \(direction.emoji) \(direction.rawValue)")
+            }
+            print("   Add this item? (Y/n): ", terminator: "")
+
+            if let itemResponse = readLine()?.lowercased(), itemResponse != "n" && itemResponse != "no" {
+                itemsToSave.append(item)
+                print("   ✓ Queued\n")
+            } else {
+                print("   ⏭️  Skipped\n")
+            }
+        }
+    default:
+        print("\n⚠️  Invalid choice - skipping all items\n")
+        return
+    }
+
+    // Save approved items
+    if itemsToSave.isEmpty {
+        print("\n⏭️  No items selected to save\n")
+        return
+    }
+
+    print("\n📓 Saving \(itemsToSave.count) item(s) to Notion Tasks...\n")
+
+    var savedCount = 0
+    var failedCount = 0
+
+    for item in itemsToSave {
+        do {
+            // Save all items to unified Tasks database
+            let taskItem = item.toTaskItem()
+            _ = try await orchestrator.notionServicePublic.createTask(taskItem)
+            print("  ✓ Saved: \(item.title)")
+            savedCount += 1
+        } catch {
+            print("  ✗ Failed: \(item.title) - \(error)")
+            failedCount += 1
+        }
+    }
+
+    // Final summary
     print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     print("📊 SCAN SUMMARY")
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    print("Total commitments found: \(totalCommitmentsFound)")
-    print("New commitments saved: \(totalCommitmentsSaved)")
-    print("Duplicates skipped: \(totalCommitmentsFound - totalCommitmentsSaved)")
+    print("Total items found: \(allExtractedItems.count + duplicateHashes.count)")
+    print("Already in Notion: \(duplicateHashes.count)")
+    print("New items reviewed: \(allExtractedItems.count)")
+    print("Items saved: \(savedCount)")
+    if failedCount > 0 {
+        print("Items failed: \(failedCount)")
+    }
     print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 }
 
