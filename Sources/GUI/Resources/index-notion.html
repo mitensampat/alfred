@@ -2042,11 +2042,11 @@
                 removeMessage(loadingId);
 
                 if (response.ok) {
-                    // Display the response
+                    // Display the response (pass full data for rich cards like commitments)
                     if (data.response) {
-                        addMessage('assistant', data.response);
+                        addMessage('assistant', data.response, data);
                     } else if (data.message) {
-                        addMessage('assistant', data.message);
+                        addMessage('assistant', data.message, data);
                     } else {
                         // Fallback: show the whole JSON as formatted text
                         addMessage('assistant', JSON.stringify(data, null, 2));
@@ -2440,20 +2440,48 @@
                 html += '</div></div>';
             }
 
-            // Fallback for legacy format without categorization
+            // Fallback: group by direction using committedBy/committedTo
             if (html === '' && commitments.length > 0) {
-                html += '<div class="data-card">';
-                html += '<div class="data-card-header">Commitments</div>';
-                html += '<div class="data-card-content">';
-                commitments.forEach(commitment => {
-                    html += `
-                        <div class="data-item">
-                            <div class="data-item-title">${escapeHtml(commitment.title)}</div>
-                            <div class="data-item-meta">${commitment.committedBy} → ${commitment.committedTo}</div>
-                        </div>
-                    `;
-                });
-                html += '</div></div>';
+                const userName = 'Miten Sampat';
+                const isMe = (name) => name === userName || name === 'You';
+                const cleanId = (id) => {
+                    if (!id) return 'Unknown';
+                    if (id === userName) return 'you';
+                    // Strip WhatsApp/iMessage suffixes for display
+                    if (id.includes('@s.whatsapp.net') || id.includes('@lid') || id.includes('@g.us')) return null;
+                    return id;
+                };
+
+                const youCommitted = commitments.filter(c => isMe(c.committedBy));
+                const theyCommitted = commitments.filter(c => !isMe(c.committedBy));
+
+                const renderItem = (c) => {
+                    const overdueTag = c.isOverdue ? '<span style="color:#e03e3e;margin-left:6px;font-size:10px;">overdue</span>' : '';
+                    const statusIcon = c.status === 'Completed' ? '&#10003;' : '&#9675;';
+                    let dueLine = '';
+                    if (c.dueDate) {
+                        const d = new Date(c.dueDate);
+                        dueLine = `<span style="color:var(--text-tertiary);font-size:11px;margin-left:4px;">due ${d.toLocaleDateString('en-GB', {day:'numeric',month:'short'})}</span>`;
+                    }
+                    return `<div class="data-item">
+                        <div class="data-item-title">${statusIcon} ${escapeHtml(c.title)}${overdueTag}${dueLine}</div>
+                    </div>`;
+                };
+
+                if (youCommitted.length > 0) {
+                    html += '<div class="data-card">';
+                    html += `<div class="data-card-header">you committed (${youCommitted.length})</div>`;
+                    html += '<div class="data-card-content">';
+                    youCommitted.forEach(c => { html += renderItem(c); });
+                    html += '</div></div>';
+                }
+                if (theyCommitted.length > 0) {
+                    html += '<div class="data-card">';
+                    html += `<div class="data-card-header">committed to you (${theyCommitted.length})</div>`;
+                    html += '<div class="data-card-content">';
+                    theyCommitted.forEach(c => { html += renderItem(c); });
+                    html += '</div></div>';
+                }
             }
 
             return html;
