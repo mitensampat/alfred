@@ -2508,9 +2508,11 @@
                 // Hide form
                 document.getElementById('formView').classList.add('hidden');
 
-                // Execute callback
-                currentModalCallback(data);
+                // Capture and clear callback before executing
+                // (callback may set a new currentModalCallback via showFormPage)
+                const callback = currentModalCallback;
                 currentModalCallback = null;
+                callback(data);
             }
         }
 
