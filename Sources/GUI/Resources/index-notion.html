@@ -1771,6 +1771,14 @@
         <!-- Agents View -->
         <div id="agentsView" class="hidden settings-page">
             <div class="settings-section">
+                <div class="settings-section-title">Agent Digest</div>
+                <div class="settings-item-desc" style="margin-bottom: 12px;">
+                    Daily summary of what your agents have been doing.
+                </div>
+                <button class="approval-btn approval-btn-primary" style="width: 100%; padding: 10px 16px; font-size: 13px;" onclick="hideAgentsAndRun('/api/agent-digest', 'Agent Digest')">view agent digest</button>
+            </div>
+
+            <div class="settings-section">
                 <div class="settings-section-title">Your AI Agents</div>
                 <div class="settings-item-desc" style="margin-bottom: 16px;">
                     These agents learn from your usage and can be taught specific rules.
@@ -1834,45 +1842,30 @@
                     <div class="quick-prompt-title">Calendar</div>
                     <div class="quick-prompt-desc">View calendar (personal/work/all)</div>
                 </div>
-                <div class="quick-prompt" onclick="callDirectAPI('/api/commitments', 'My Commitments')">
+                <div class="quick-prompt" onclick="showCommitmentsOptions()">
                     <div class="quick-prompt-icon">✅</div>
                     <div class="quick-prompt-title">Commitments</div>
-                    <div class="quick-prompt-desc">I owe, they owe me, follow-ups</div>
-                </div>
-                <div class="quick-prompt" onclick="showCommitmentCheckPrompt()">
-                    <div class="quick-prompt-icon">🤝</div>
-                    <div class="quick-prompt-title">Commitment Check</div>
-                    <div class="quick-prompt-desc">Check commitments with someone</div>
-                </div>
-                <div class="quick-prompt" onclick="callDirectAPI('/api/agent-digest', 'Agent Digest')">
-                    <div class="quick-prompt-icon">📊</div>
-                    <div class="quick-prompt-title">Agent Digest</div>
-                    <div class="quick-prompt-desc">Daily summary of agent activity</div>
-                </div>
-                <div class="quick-prompt" onclick="showExtractTodosPrompt()">
-                    <div class="quick-prompt-icon">📝</div>
-                    <div class="quick-prompt-title">Scan Todos</div>
-                    <div class="quick-prompt-desc">Extract todos from WhatsApp</div>
-                </div>
-                <div class="quick-prompt" onclick="showExtractFromThreadPrompt()">
-                    <div class="quick-prompt-icon">🔍</div>
-                    <div class="quick-prompt-title">Analyze Thread</div>
-                    <div class="quick-prompt-desc">Extract actions from conversation</div>
+                    <div class="quick-prompt-desc">track promises & check on people</div>
                 </div>
                 <div class="quick-prompt" onclick="showMessagesPrompt()">
                     <div class="quick-prompt-icon">💬</div>
                     <div class="quick-prompt-title">Messages</div>
-                    <div class="quick-prompt-desc">Summarize conversation</div>
+                    <div class="quick-prompt-desc">summarize any conversation</div>
+                </div>
+                <div class="quick-prompt" onclick="showExtractTodosPrompt()">
+                    <div class="quick-prompt-icon">📝</div>
+                    <div class="quick-prompt-title">Scan Todos</div>
+                    <div class="quick-prompt-desc">extract todos from WhatsApp</div>
                 </div>
                 <div class="quick-prompt" onclick="callDirectAPI('/api/attention-check', 'Attention Check')">
                     <div class="quick-prompt-icon">🎯</div>
                     <div class="quick-prompt-title">Attention Check</div>
-                    <div class="quick-prompt-desc">What needs focus right now</div>
+                    <div class="quick-prompt-desc">what needs focus right now</div>
                 </div>
                 <div class="quick-prompt" onclick="showAgents()">
                     <div class="quick-prompt-icon">🧠</div>
                     <div class="quick-prompt-title">Agents</div>
-                    <div class="quick-prompt-desc">View & teach your AI agents</div>
+                    <div class="quick-prompt-desc">digest, rules & memory</div>
                 </div>
                 <div class="quick-prompt" onclick="showSettings()">
                     <div class="quick-prompt-icon">⚙️</div>
@@ -2614,7 +2607,75 @@
             });
         }
 
-        // Show commitment check prompt
+        // Show commitments options (combined view)
+        function showCommitmentsOptions() {
+            const formHTML = `
+                <div class="form-group">
+                    <label class="form-label">What would you like to do?</label>
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="action" value="view" checked />
+                            <span>View all commitments</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="action" value="check" />
+                            <span>Check commitments with someone</span>
+                        </label>
+                    </div>
+                </div>
+                <div id="commitmentCheckFields" class="hidden">
+                    <div class="form-group">
+                        <label class="form-label">Contact Name or Group</label>
+                        <input type="text" name="contact" class="form-input" placeholder="Enter name..." />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Timeframe</label>
+                        <div class="radio-group">
+                            <label class="radio-option">
+                                <input type="radio" name="timeframe" value="3d" />
+                                <span>3 Days</span>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="timeframe" value="7d" checked />
+                                <span>1 Week</span>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="timeframe" value="14d" />
+                                <span>2 Weeks</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            showFormPage('Commitments', formHTML, (data) => {
+                if (data.action === 'check') {
+                    if (!data.contact) return;
+                    const endpoint = `/api/commitment-check?contact=${encodeURIComponent(data.contact)}&timeframe=${data.timeframe || '7d'}`;
+                    const title = `Commitment Check: ${data.contact} (${data.timeframe || '7d'})`;
+                    callDirectAPI(endpoint, title);
+                } else {
+                    callDirectAPI('/api/commitments', 'My Commitments');
+                }
+            });
+
+            // Toggle check fields based on radio selection
+            setTimeout(() => {
+                const radios = document.querySelectorAll('input[name="action"]');
+                const checkFields = document.getElementById('commitmentCheckFields');
+                radios.forEach(radio => {
+                    radio.addEventListener('change', () => {
+                        if (radio.value === 'check' && radio.checked) {
+                            checkFields.classList.remove('hidden');
+                        } else if (radio.value === 'view' && radio.checked) {
+                            checkFields.classList.add('hidden');
+                        }
+                    });
+                });
+            }, 100);
+        }
+
+        // Show commitment check prompt (legacy, kept for direct access)
         function showCommitmentCheckPrompt() {
             const formHTML = `
                 <div class="form-group">
@@ -3339,6 +3400,12 @@
 
             // Load agents data
             loadAgents();
+        }
+
+        // Hide agents view and run a direct API call
+        function hideAgentsAndRun(endpoint, title) {
+            document.getElementById('agentsView').classList.add('hidden');
+            callDirectAPI(endpoint, title);
         }
 
         // Load agents list
