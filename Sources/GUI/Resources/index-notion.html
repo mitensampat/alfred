@@ -2614,19 +2614,19 @@
                     <label class="form-label">What would you like to do?</label>
                     <div class="radio-group">
                         <label class="radio-option">
-                            <input type="radio" name="action" value="view" checked />
+                            <input type="radio" name="commitAction" value="view" checked onchange="toggleCommitmentCheckFields()" />
                             <span>View all commitments</span>
                         </label>
                         <label class="radio-option">
-                            <input type="radio" name="action" value="check" />
+                            <input type="radio" name="commitAction" value="check" onchange="toggleCommitmentCheckFields()" />
                             <span>Check commitments with someone</span>
                         </label>
                     </div>
                 </div>
-                <div id="commitmentCheckFields" class="hidden">
+                <div id="commitmentCheckFields" style="display: none;">
                     <div class="form-group">
                         <label class="form-label">Contact Name or Group</label>
-                        <input type="text" name="contact" class="form-input" placeholder="Enter name..." />
+                        <input type="text" name="contact" class="form-input" placeholder="Enter name..." id="commitContactInput" />
                     </div>
                     <div class="form-group">
                         <label class="form-label">Timeframe</label>
@@ -2649,30 +2649,33 @@
             `;
 
             showFormPage('Commitments', formHTML, (data) => {
-                if (data.action === 'check') {
-                    if (!data.contact) return;
-                    const endpoint = `/api/commitment-check?contact=${encodeURIComponent(data.contact)}&timeframe=${data.timeframe || '7d'}`;
-                    const title = `Commitment Check: ${data.contact} (${data.timeframe || '7d'})`;
+                if (data.commitAction === 'check') {
+                    if (!data.contact || !data.contact.trim()) {
+                        alert('Please enter a contact name.');
+                        return;
+                    }
+                    const endpoint = `/api/commitment-check?contact=${encodeURIComponent(data.contact.trim())}&timeframe=${data.timeframe || '7d'}`;
+                    const title = `Commitment Check: ${data.contact.trim()} (${data.timeframe || '7d'})`;
                     callDirectAPI(endpoint, title);
                 } else {
                     callDirectAPI('/api/commitments', 'My Commitments');
                 }
             });
+        }
 
-            // Toggle check fields based on radio selection
-            setTimeout(() => {
-                const radios = document.querySelectorAll('input[name="action"]');
-                const checkFields = document.getElementById('commitmentCheckFields');
-                radios.forEach(radio => {
-                    radio.addEventListener('change', () => {
-                        if (radio.value === 'check' && radio.checked) {
-                            checkFields.classList.remove('hidden');
-                        } else if (radio.value === 'view' && radio.checked) {
-                            checkFields.classList.add('hidden');
-                        }
-                    });
-                });
-            }, 100);
+        function toggleCommitmentCheckFields() {
+            const checkRadio = document.querySelector('input[name="commitAction"][value="check"]');
+            const checkFields = document.getElementById('commitmentCheckFields');
+            if (!checkFields) return;
+            if (checkRadio && checkRadio.checked) {
+                checkFields.style.display = 'block';
+                setTimeout(() => {
+                    const contactInput = document.getElementById('commitContactInput');
+                    if (contactInput) contactInput.focus();
+                }, 50);
+            } else {
+                checkFields.style.display = 'none';
+            }
         }
 
         // Show commitment check prompt (legacy, kept for direct access)
