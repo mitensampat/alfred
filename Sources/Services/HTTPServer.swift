@@ -364,6 +364,16 @@ class HTTPServer {
         case ("GET", "/api/corrections"):
             return handleGetCorrections(request)
 
+        // Contact learning endpoints
+        case ("POST", "/api/contacts/participation"):
+            return handleRecordParticipation(request)
+
+        case ("POST", "/api/contacts/extraction"):
+            return handleRecordExtraction(request)
+
+        case ("GET", "/api/contacts"):
+            return handleGetContacts(request)
+
         default:
             return HTTPResponse(
                 statusCode: 404,
@@ -2710,6 +2720,117 @@ extension HTTPServer {
                     "falsePositives": stats.falsePositives,
                     "edits": stats.edits,
                     "byType": stats.byItemType
+                ]
+            ]
+        )
+    }
+
+    // MARK: - Contact Learning Handlers
+
+    private func handleRecordParticipation(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Invalid request body"]
+            )
+        }
+
+        guard let platform = json["platform"] as? String,
+              let threadId = json["threadId"] as? String,
+              let threadName = json["threadName"] as? String,
+              let userMessages = json["userMessages"] as? Int,
+              let totalMessages = json["totalMessages"] as? Int else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Missing required fields: platform, threadId, threadName, userMessages, totalMessages"]
+            )
+        }
+
+        let isGroup = json["isGroup"] as? Bool ?? false
+
+        ContactLearner.shared.recordParticipation(
+            platform: platform,
+            threadId: threadId,
+            threadName: threadName,
+            isGroup: isGroup,
+            userMessages: userMessages,
+            totalMessages: totalMessages
+        )
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: ["success": true, "message": "Participation recorded"]
+        )
+    }
+
+    private func handleRecordExtraction(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Invalid request body"]
+            )
+        }
+
+        guard let platform = json["platform"] as? String,
+              let threadId = json["threadId"] as? String,
+              let itemsExtracted = json["itemsExtracted"] as? Int,
+              let itemsRejected = json["itemsRejected"] as? Int else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Missing required fields: platform, threadId, itemsExtracted, itemsRejected"]
+            )
+        }
+
+        ContactLearner.shared.recordExtractionResult(
+            platform: platform,
+            threadId: threadId,
+            itemsExtracted: itemsExtracted,
+            itemsRejected: itemsRejected
+        )
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: ["success": true, "message": "Extraction result recorded"]
+        )
+    }
+
+    private func handleGetContacts(_ request: HTTPRequest) -> HTTPResponse {
+        let classification = request.queryParams["classification"]
+        let stats = ContactLearner.shared.getStats()
+
+        var threads: [ThreadRecord]
+        if let classStr = classification, let cls = ThreadClassification(rawValue: classStr) {
+            threads = ContactLearner.shared.getThreads(classification: cls)
+        } else {
+            threads = ContactLearner.shared.getAllThreads()
+        }
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "threads": threads.map { thread -> [String: Any] in
+                    return [
+                        "platform": thread.platform,
+                        "threadId": thread.threadId,
+                        "threadName": thread.threadName,
+                        "isGroup": thread.isGroup,
+                        "avgParticipation": thread.avgParticipation,
+                        "classification": thread.classification.rawValue,
+                        "lastSeen": thread.lastSeen,
+                        "extractionStats": [
+                            "itemsExtracted": thread.extractionStats.itemsExtracted,
+                            "itemsRejected": thread.extractionStats.itemsRejected,
+                            "rejectionRate": thread.extractionStats.rejectionRate
+                        ]
+                    ]
+                },
+                "stats": [
+                    "totalThreads": stats.totalThreads,
+                    "observeThreads": stats.observeThreads,
+                    "minimalThreads": stats.minimalThreads,
+                    "activeThreads": stats.activeThreads
                 ]
             ]
         )

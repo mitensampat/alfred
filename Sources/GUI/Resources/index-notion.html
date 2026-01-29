@@ -3703,21 +3703,25 @@
 
             // Record extraction results for contact learning
             // Group by platform/thread to record per-thread stats
+            // Use threadId (the actual ID) to match what backend records during participation tracking
             const threadStats = {};
             selectedItems.forEach(item => {
                 if (item.source) {
-                    const key = `${item.source.platform}:${item.source.threadName || item.source.contact || 'unknown'}`;
+                    // Prefer threadId, fallback to threadName, then contact
+                    const actualThreadId = item.source.threadId || item.source.threadName || item.source.contact || 'unknown';
+                    const key = `${item.source.platform}:${actualThreadId}`;
                     if (!threadStats[key]) {
-                        threadStats[key] = { platform: item.source.platform, threadId: item.source.threadName || item.source.contact || 'unknown', extracted: 0, rejected: 0 };
+                        threadStats[key] = { platform: item.source.platform, threadId: actualThreadId, extracted: 0, rejected: 0 };
                     }
                     threadStats[key].extracted++;
                 }
             });
             rejectedItems.forEach(item => {
                 if (item.source) {
-                    const key = `${item.source.platform}:${item.source.threadName || item.source.contact || 'unknown'}`;
+                    const actualThreadId = item.source.threadId || item.source.threadName || item.source.contact || 'unknown';
+                    const key = `${item.source.platform}:${actualThreadId}`;
                     if (!threadStats[key]) {
-                        threadStats[key] = { platform: item.source.platform, threadId: item.source.threadName || item.source.contact || 'unknown', extracted: 0, rejected: 0 };
+                        threadStats[key] = { platform: item.source.platform, threadId: actualThreadId, extracted: 0, rejected: 0 };
                     }
                     threadStats[key].rejected++;
                 }

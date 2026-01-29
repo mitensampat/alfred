@@ -249,12 +249,15 @@ class ContactLearner {
 
     private func loadContacts() {
         guard FileManager.default.fileExists(atPath: contactsFile.path) else {
+            print("📁 No contacts.json found at \(contactsFile.path)")
             return
         }
 
         do {
             let data = try Data(contentsOf: contactsFile)
-            store = try JSONDecoder().decode(ContactStore.self, from: data)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            store = try decoder.decode(ContactStore.self, from: data)
             print("✓ Loaded \(store.threads.count) thread records from memory")
         } catch {
             print("⚠️ Failed to load contacts: \(error)")

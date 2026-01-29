@@ -1,5 +1,6 @@
 import Foundation
 import UserNotifications
+import AppKit
 
 // Main entry point - using Task with explicit exit
 Task {
@@ -12,6 +13,7 @@ RunLoop.main.run()
 
 struct AlfredApp {
     static let version = "1.5.0"
+    static var menuBarController: MenuBarController?  // Keep reference to prevent deallocation
 
     static func main() async {
         print("alfred v\(version) starting...")
@@ -159,6 +161,10 @@ struct AlfredApp {
                 await runAgentDigest(orchestrator)
             case "server":
                 await runServer(config, orchestrator)
+            case "menubar":
+                await runMenuBar(config, orchestrator)
+            case "install":
+                runInstall()
             default:
                 printUsage()
             }
@@ -2402,6 +2408,11 @@ struct AlfredApp {
           alfred drafts                      # Review suggested responses
           # (Send messages manually based on drafts)
 
+        Server:
+          server                        Run HTTP API server (headless)
+          menubar                       Run as menu bar app with 🎩 icon
+          install                       Install to ~/.local/bin and restart menubar
+
         Configuration:
           Edit ~/.config/alfred/config.json with your credentials
           Run 'alfred attention init' to setup attention preferences
@@ -2462,6 +2473,131 @@ struct AlfredApp {
         } catch {
             print("❌ Failed to start server: \(error)")
         }
+    }
+
+    static func runMenuBar(_ config: AppConfig, _ orchestrator: BriefingOrchestrator) async {
+        guard let apiConfig = config.api, apiConfig.enabled else {
+            print("❌ API not configured. Please add 'api' section to config.json")
+            return
+        }
+
+        print("")
+        print("🎩 Alfred Menu Bar")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print("")
+
+        // Initialize Alfred service
+        let alfredService = await MainActor.run {
+            AlfredService()
+        }
+        await alfredService.initialize(config: config, orchestrator: orchestrator)
+
+        // Setup NSApplication for menu bar (must be on main thread)
+        await MainActor.run {
+            let app = NSApplication.shared
+            app.setActivationPolicy(.accessory)  // Hide from dock
+        }
+
+        // Create and setup menu bar controller on main thread
+        // Store in a static var to prevent deallocation
+        await MainActor.run {
+            AlfredApp.menuBarController = MenuBarController(config: config, alfredService: alfredService)
+            AlfredApp.menuBarController?.setup()
+        }
+
+        print("✅ Menu bar active - look for the 🎩 hat icon")
+        print("   Click it to control the server")
+        print("")
+
+        // Start the NSApplication run loop on the main thread
+        // This is required for menu bar to work, but it blocks async
+        // So we need to ensure HTTP handlers don't rely on MainActor
+        DispatchQueue.main.async {
+            NSApplication.shared.run()
+        }
+
+        // Keep the async context alive for HTTP server operations
+        // The HTTP server runs on its own threads and doesn't need MainActor
+        try? await Task.sleep(nanoseconds: UInt64.max)
+    }
+
+    static func runInstall() {
+        print("")
+        print("🎩 Installing Alfred")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print("")
+
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        let installPath = "\(homeDir)/.local/bin/alfred"
+        let launchAgentPath = "\(homeDir)/Library/LaunchAgents/com.msfoundry.alfred.plist"
+
+        // Create ~/.local/bin if needed
+        let binDir = "\(homeDir)/.local/bin"
+        if !FileManager.default.fileExists(atPath: binDir) {
+            do {
+                try FileManager.default.createDirectory(atPath: binDir, withIntermediateDirectories: true)
+                print("✅ Created \(binDir)")
+            } catch {
+                print("❌ Failed to create \(binDir): \(error)")
+                return
+            }
+        }
+
+        // Get path to current executable
+        let currentExePath = CommandLine.arguments[0]
+        let resolvedPath: String
+        if currentExePath.hasPrefix("/") {
+            resolvedPath = currentExePath
+        } else {
+            resolvedPath = FileManager.default.currentDirectoryPath + "/" + currentExePath
+        }
+
+        // Stop existing menubar if running
+        print("⏹  Stopping existing Alfred menubar...")
+        let stopTask = Process()
+        stopTask.launchPath = "/bin/launchctl"
+        stopTask.arguments = ["unload", launchAgentPath]
+        try? stopTask.run()
+        stopTask.waitUntilExit()
+
+        // Also kill any running processes
+        let killTask = Process()
+        killTask.launchPath = "/usr/bin/pkill"
+        killTask.arguments = ["-9", "-f", "alfred menubar"]
+        try? killTask.run()
+        killTask.waitUntilExit()
+
+        sleep(1)
+
+        // Copy binary
+        print("📦 Copying binary to \(installPath)...")
+        do {
+            if FileManager.default.fileExists(atPath: installPath) {
+                try FileManager.default.removeItem(atPath: installPath)
+            }
+            try FileManager.default.copyItem(atPath: resolvedPath, toPath: installPath)
+            print("✅ Binary installed")
+        } catch {
+            print("❌ Failed to copy binary: \(error)")
+            return
+        }
+
+        // Start menubar
+        print("▶️  Starting Alfred menubar...")
+        let startTask = Process()
+        startTask.launchPath = "/bin/launchctl"
+        startTask.arguments = ["load", launchAgentPath]
+        try? startTask.run()
+        startTask.waitUntilExit()
+
+        print("")
+        print("✅ Alfred installed and running!")
+        print("   Binary: \(installPath)")
+        print("   Launch Agent: \(launchAgentPath)")
+        print("")
+        print("   Alfred will auto-start on login.")
+        print("   Run 'alfred install' again after rebuilding to update.")
+        print("")
     }
 
     static func getLocalIP() -> String? {
