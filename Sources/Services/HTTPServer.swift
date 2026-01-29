@@ -4,6 +4,12 @@ import FoundationNetworking
 #endif
 
 /// Simple HTTP server for remote API access
+/// Fast in-memory cache entry
+private struct MemoryCacheEntry {
+    let data: Any
+    let expiresAt: Date
+}
+
 class HTTPServer {
     private let port: Int
     private var passcode: String  // Changed to var for hot reload
@@ -11,10 +17,35 @@ class HTTPServer {
     private var listener: ServerSocket?
     private let cache: QueryCacheService
 
+    // Fast in-memory cache for expensive operations (bypasses SQLite overhead)
+    private var memoryCache: [String: MemoryCacheEntry] = [:]
+    private let memoryCacheLock = NSLock()
+    private let memoryCacheTTL: TimeInterval = 300 // 5 minutes
+
+    // Static date formatters (expensive to create, reuse across requests)
+    private static let iso8601Formatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        return formatter
+    }()
+
+    private static let iso8601DateOnlyFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate, .withDashSeparatorInDate]
+        return formatter
+    }()
+
+    private static let simpleDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone.current
+        return formatter
+    }()
+
     // Session management
     private var activeSessions: [String: Session] = [:]
     private let sessionLock = NSLock()
     private let sessionDuration: TimeInterval = 24 * 60 * 60 // 24 hours
+    private var lastSessionCleanup: Date = Date()
 
     struct Session {
         let token: String
@@ -29,6 +60,27 @@ class HTTPServer {
         self.cache = QueryCacheService()
     }
 
+    // MARK: - Memory Cache Helpers
+
+    private func getFromMemoryCache<T>(_ key: String) -> T? {
+        memoryCacheLock.lock()
+        defer { memoryCacheLock.unlock() }
+
+        guard let entry = memoryCache[key],
+              entry.expiresAt > Date() else {
+            return nil
+        }
+        return entry.data as? T
+    }
+
+    private func setInMemoryCache(_ key: String, value: Any, ttl: TimeInterval? = nil) {
+        memoryCacheLock.lock()
+        defer { memoryCacheLock.unlock() }
+
+        let expiresAt = Date().addingTimeInterval(ttl ?? memoryCacheTTL)
+        memoryCache[key] = MemoryCacheEntry(data: value, expiresAt: expiresAt)
+    }
+
     // MARK: - Session Management
 
     private func createSession() -> Session {
@@ -38,9 +90,12 @@ class HTTPServer {
 
         sessionLock.lock()
         activeSessions[token] = session
-        // Cleanup expired sessions
-        let currentTime = Date()
-        activeSessions = activeSessions.filter { $0.value.expiresAt > currentTime }
+
+        // Only cleanup expired sessions every 5 minutes (not every request)
+        if now.timeIntervalSince(lastSessionCleanup) > 300 {
+            lastSessionCleanup = now
+            activeSessions = activeSessions.filter { $0.value.expiresAt > now }
+        }
         sessionLock.unlock()
 
         return session
@@ -213,7 +268,7 @@ class HTTPServer {
             body: [
                 "success": true,
                 "token": session.token,
-                "expiresAt": ISO8601DateFormatter().string(from: session.expiresAt)
+                "expiresAt": Self.iso8601Formatter.string(from: session.expiresAt)
             ]
         )
     }
@@ -471,7 +526,7 @@ class HTTPServer {
             statusCode: 200,
             body: [
                 "status": "ok",
-                "timestamp": ISO8601DateFormatter().string(from: Date())
+                "timestamp": Self.iso8601Formatter.string(from: Date())
             ]
         )
     }
@@ -498,7 +553,7 @@ class HTTPServer {
                     "committedTo": commitment.committedTo,
                     "sourcePlatform": commitment.sourcePlatform.rawValue,
                     "sourceThread": commitment.sourceThread,
-                    "dueDate": commitment.dueDate.map { ISO8601DateFormatter().string(from: $0) } as Any,
+                    "dueDate": commitment.dueDate.map { Self.iso8601Formatter.string(from: $0) } as Any,
                     "priority": commitment.priority.rawValue,
                     "isOverdue": commitment.isOverdue
                 ]
@@ -534,7 +589,7 @@ class HTTPServer {
                     "committedTo": commitment.committedTo,
                     "sourcePlatform": commitment.sourcePlatform.rawValue,
                     "sourceThread": commitment.sourceThread,
-                    "dueDate": commitment.dueDate.map { ISO8601DateFormatter().string(from: $0) } as Any,
+                    "dueDate": commitment.dueDate.map { Self.iso8601Formatter.string(from: $0) } as Any,
                     "priority": commitment.priority.rawValue,
                     "daysOverdue": commitment.daysUntilDue.map { -$0 } as Any
                 ]
@@ -602,8 +657,8 @@ class HTTPServer {
                 statusCode: 200,
                 body: [
                     "response": formattedResponse,
-                    "date": ISO8601DateFormatter().string(from: briefing.date),
-                    "generatedAt": ISO8601DateFormatter().string(from: briefing.generatedAt),
+                    "date": Self.iso8601Formatter.string(from: briefing.date),
+                    "generatedAt": Self.iso8601Formatter.string(from: briefing.generatedAt),
                     "stats": [
                         "meetings": briefing.calendarBriefing.schedule.events.count,
                         "messages": briefing.messagingSummary.stats.totalMessages,
@@ -616,7 +671,7 @@ class HTTPServer {
                             "description": item.description,
                             "source": item.source.rawValue,
                             "priority": item.priority.rawValue,
-                            "dueDate": item.dueDate.map { ISO8601DateFormatter().string(from: $0) } as Any,
+                            "dueDate": item.dueDate.map { Self.iso8601Formatter.string(from: $0) } as Any,
                             "category": item.category.rawValue
                         ]
                     },
@@ -625,8 +680,8 @@ class HTTPServer {
                             [
                                 "id": event.id,
                                 "title": event.title,
-                                "start": ISO8601DateFormatter().string(from: event.startTime),
-                                "end": ISO8601DateFormatter().string(from: event.endTime),
+                                "start": Self.iso8601Formatter.string(from: event.startTime),
+                                "end": Self.iso8601Formatter.string(from: event.endTime),
                                 "location": event.location as Any,
                                 "isAllDay": event.isAllDay,
                                 "hasExternalAttendees": event.hasExternalAttendees
@@ -660,7 +715,7 @@ class HTTPServer {
         // Parse date and calendar filter
         let date = parseDate(from: request.queryParams["date"])
         let calendar = request.queryParams["calendar"] ?? "all"
-        let dateString = ISO8601DateFormatter().string(from: date)
+        let dateString = Self.iso8601Formatter.string(from: date)
 
         // Check cache
         let cacheParams = ["date": dateString, "calendar": calendar]
@@ -690,13 +745,13 @@ class HTTPServer {
                 "response": formattedResponse,
                 "calendar": calendar,
                 "schedule": [
-                    "date": ISO8601DateFormatter().string(from: briefing.schedule.date),
+                    "date": Self.iso8601Formatter.string(from: briefing.schedule.date),
                     "events": briefing.schedule.events.map { event in
                         [
                             "id": event.id,
                             "title": event.title,
-                            "start": ISO8601DateFormatter().string(from: event.startTime),
-                            "end": ISO8601DateFormatter().string(from: event.endTime),
+                            "start": Self.iso8601Formatter.string(from: event.startTime),
+                            "end": Self.iso8601Formatter.string(from: event.endTime),
                             "location": event.location as Any,
                             "isAllDay": event.isAllDay,
                             "hasExternalAttendees": event.hasExternalAttendees,
@@ -710,8 +765,8 @@ class HTTPServer {
                         "event": [
                             "id": meeting.event.id,
                             "title": meeting.event.title,
-                            "start": ISO8601DateFormatter().string(from: meeting.event.startTime),
-                            "end": ISO8601DateFormatter().string(from: meeting.event.endTime)
+                            "start": Self.iso8601Formatter.string(from: meeting.event.startTime),
+                            "end": Self.iso8601Formatter.string(from: meeting.event.endTime)
                         ],
                         "preparation": meeting.preparation,
                         "suggestedTopics": meeting.suggestedTopics,
@@ -807,14 +862,14 @@ class HTTPServer {
                 statusCode: 200,
                 body: [
                     "response": formattedResponse,
-                    "currentTime": ISO8601DateFormatter().string(from: report.currentTime),
+                    "currentTime": Self.iso8601Formatter.string(from: report.currentTime),
                     "mustDoToday": report.mustDoToday.map { item in
                         [
                             "id": item.id,
                             "title": item.title,
                             "description": item.description,
                             "priority": item.priority.rawValue,
-                            "dueDate": item.dueDate.map { ISO8601DateFormatter().string(from: $0) } as Any
+                            "dueDate": item.dueDate.map { Self.iso8601Formatter.string(from: $0) } as Any
                         ]
                     },
                     "canPushOff": report.canPushOff.map { suggestion in
@@ -825,7 +880,7 @@ class HTTPServer {
                                 "description": suggestion.item.description
                             ],
                             "reason": suggestion.reason,
-                            "suggestedNewDate": ISO8601DateFormatter().string(from: suggestion.suggestedNewDate),
+                            "suggestedNewDate": Self.iso8601Formatter.string(from: suggestion.suggestedNewDate),
                             "impact": suggestion.impact.rawValue
                         ]
                     },
@@ -833,7 +888,7 @@ class HTTPServer {
                         [
                             "id": item.id,
                             "title": item.title,
-                            "dueDate": item.dueDate.map { ISO8601DateFormatter().string(from: $0) } as Any
+                            "dueDate": item.dueDate.map { Self.iso8601Formatter.string(from: $0) } as Any
                         ]
                     },
                     "timeAvailable": report.timeAvailable,
@@ -885,11 +940,11 @@ class HTTPServer {
                     [
                         "title": todo.title,
                         "description": todo.description as Any,
-                        "dueDate": todo.dueDate.map { ISO8601DateFormatter().string(from: $0) } as Any,
+                        "dueDate": todo.dueDate.map { Self.iso8601Formatter.string(from: $0) } as Any,
                         "source": [
                             "platform": todo.sourceMessage.platform.rawValue,
                             "sender": todo.sourceMessage.senderName ?? todo.sourceMessage.sender,
-                            "timestamp": ISO8601DateFormatter().string(from: todo.sourceMessage.timestamp)
+                            "timestamp": Self.iso8601Formatter.string(from: todo.sourceMessage.timestamp)
                         ]
                     ]
                 },
@@ -985,7 +1040,7 @@ class HTTPServer {
                         "committedBy": commitment.committedBy,
                         "committedTo": commitment.committedTo,
                         "status": commitment.status.rawValue,
-                        "dueDate": commitment.dueDate.map { ISO8601DateFormatter().string(from: $0) } as Any
+                        "dueDate": commitment.dueDate.map { Self.iso8601Formatter.string(from: $0) } as Any
                     ]
                 },
                 "count": commitments.count
@@ -1124,7 +1179,7 @@ The Commitment Check feature requires a properly configured Notion database.
                     "recipient": draft.recipient,
                     "content": draft.content,
                     "tone": draft.tone.rawValue,
-                    "suggestedSendTime": draft.suggestedSendTime.map { ISO8601DateFormatter().string(from: $0) } as Any
+                    "suggestedSendTime": draft.suggestedSendTime.map { Self.iso8601Formatter.string(from: $0) } as Any
                 ]
             }
 
@@ -1875,7 +1930,7 @@ The Commitment Check feature requires a properly configured Notion database.
                         ],
                         "upcomingFollowups": digest.upcomingFollowups.map { [
                             "title": $0.title,
-                            "scheduledFor": ISO8601DateFormatter().string(from: $0.scheduledFor),
+                            "scheduledFor": Self.iso8601Formatter.string(from: $0.scheduledFor),
                             "context": $0.context,
                             "isOverdue": $0.isOverdue
                         ] },
@@ -2047,7 +2102,7 @@ The Commitment Check feature requires a properly configured Notion database.
             dict["description"] = desc
         }
         if let dueDate = item.dueDate {
-            dict["dueDate"] = ISO8601DateFormatter().string(from: dueDate)
+            dict["dueDate"] = Self.iso8601Formatter.string(from: dueDate)
         }
         if let direction = item.commitmentDirection {
             dict["commitmentDirection"] = direction.rawValue
@@ -2087,7 +2142,7 @@ The Commitment Check feature requires a properly configured Notion database.
 
         var dueDate: Date?
         if let dueDateStr = dict["dueDate"] as? String {
-            dueDate = ISO8601DateFormatter().date(from: dueDateStr)
+            dueDate = Self.iso8601Formatter.date(from: dueDateStr)
         }
 
         return ExtractedItem(
@@ -2226,7 +2281,7 @@ The Commitment Check feature requires a properly configured Notion database.
             "summary": summary.summary,
             "urgency": summary.urgency.rawValue,
             "unreadCount": summary.thread.unreadCount,
-            "lastMessageDate": ISO8601DateFormatter().string(from: summary.thread.lastMessageDate),
+            "lastMessageDate": Self.iso8601Formatter.string(from: summary.thread.lastMessageDate),
             "actionItems": summary.actionItems,
             "sentiment": summary.sentiment,
             "suggestedResponse": summary.suggestedResponse as Any
@@ -2246,29 +2301,24 @@ The Commitment Check feature requires a properly configured Notion database.
 
     /// Parse a date string from query parameters, supporting multiple formats.
     /// Handles both full ISO8601 (with time) and date-only formats (YYYY-MM-DD).
+    /// Uses static formatters for performance.
     private func parseDate(from dateString: String?) -> Date {
         guard let dateString = dateString else {
             return Date()
         }
 
         // Try full ISO8601 format first (e.g., "2026-01-27T00:00:00Z")
-        let fullFormatter = ISO8601DateFormatter()
-        if let parsedDate = fullFormatter.date(from: dateString) {
+        if let parsedDate = Self.iso8601Formatter.date(from: dateString) {
             return parsedDate
         }
 
         // Try date-only ISO8601 format (e.g., "2026-01-27")
-        let dateOnlyFormatter = ISO8601DateFormatter()
-        dateOnlyFormatter.formatOptions = [.withFullDate, .withDashSeparatorInDate]
-        if let parsedDate = dateOnlyFormatter.date(from: dateString) {
+        if let parsedDate = Self.iso8601DateOnlyFormatter.date(from: dateString) {
             return parsedDate
         }
 
         // Fallback: try DateFormatter for YYYY-MM-DD with local timezone
-        let fallbackFormatter = DateFormatter()
-        fallbackFormatter.dateFormat = "yyyy-MM-dd"
-        fallbackFormatter.timeZone = TimeZone.current
-        return fallbackFormatter.date(from: dateString) ?? Date()
+        return Self.simpleDateFormatter.date(from: dateString) ?? Date()
     }
 }
 
@@ -2704,7 +2754,7 @@ extension HTTPServer {
                         "type": correction.type.rawValue,
                         "itemType": correction.itemType,
                         "title": correction.title,
-                        "timestamp": ISO8601DateFormatter().string(from: correction.timestamp)
+                        "timestamp": Self.iso8601Formatter.string(from: correction.timestamp)
                     ]
                     if let desc = correction.description { dict["description"] = desc }
                     if let reason = correction.reason { dict["reason"] = reason }

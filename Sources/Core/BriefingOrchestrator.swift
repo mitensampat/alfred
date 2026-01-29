@@ -91,34 +91,49 @@ class BriefingOrchestrator {
             recommendations: generateScheduleRecommendations(schedule)
         )
 
-        // 4. Query Notion for context (if configured)
+        // 4. Query Notion for context (if configured) - PARALLEL for performance
         var notionNotes: [NotionNote] = []
         var notionTasks: [NotionTask] = []
 
         if let briefingSources = config.notion.briefingSources {
-            // Query notes database
-            if let notesDatabaseId = briefingSources.notesDatabaseId, notesDatabaseId != "YOUR_NOTES_DATABASE_ID" {
+            let notesDatabaseId = briefingSources.notesDatabaseId
+            let tasksDbId = config.notion.tasksDatabaseId ?? briefingSources.tasksDatabaseId
+
+            // Run both queries in parallel using async let
+            async let notesTask: [NotionNote] = {
+                guard let dbId = notesDatabaseId, dbId != "YOUR_NOTES_DATABASE_ID" else {
+                    return []
+                }
                 print("📓 Querying Notion notes for context...")
                 do {
-                    let context = generateBriefingContext(messagingSummary: messagingSummary, schedule: schedule)
-                    notionNotes = try await notionService.queryRelevantNotes(context: context, databaseId: notesDatabaseId)
-                    print("✓ Found \(notionNotes.count) relevant note(s)\n")
+                    let context = self.generateBriefingContext(messagingSummary: messagingSummary, schedule: schedule)
+                    let notes = try await self.notionService.queryRelevantNotes(context: context, databaseId: dbId)
+                    print("✓ Found \(notes.count) relevant note(s)\n")
+                    return notes
                 } catch {
                     print("⚠️  Failed to query notes: \(error)\n")
+                    return []
                 }
-            }
+            }()
 
-            // Query tasks database - check top-level first, then briefing_sources
-            let tasksDbId = config.notion.tasksDatabaseId ?? briefingSources.tasksDatabaseId
-            if let tasksDatabaseId = tasksDbId, tasksDatabaseId != "YOUR_TASKS_DATABASE_ID" {
+            async let tasksTask: [NotionTask] = {
+                guard let dbId = tasksDbId, dbId != "YOUR_TASKS_DATABASE_ID" else {
+                    return []
+                }
                 print("✅ Querying Notion for active tasks...")
                 do {
-                    notionTasks = try await notionService.queryActiveTasks(databaseId: tasksDatabaseId)
-                    print("✓ Found \(notionTasks.count) active task(s)\n")
+                    let tasks = try await self.notionService.queryActiveTasks(databaseId: dbId)
+                    print("✓ Found \(tasks.count) active task(s)\n")
+                    return tasks
                 } catch {
                     print("⚠️  Failed to query tasks: \(error)\n")
+                    return []
                 }
-            }
+            }()
+
+            // Wait for both to complete (parallel execution)
+            notionNotes = await notesTask
+            notionTasks = await tasksTask
         }
 
         // 5. Extract action items
@@ -191,34 +206,49 @@ class BriefingOrchestrator {
         let schedule = try await calendarService.fetchEvents(for: date, userSettings: config.user, calendarFilter: calendar)
         print("")
 
-        // Query Notion for context (if configured)
+        // Query Notion for context (if configured) - PARALLEL for performance
         var notionNotes: [NotionNote] = []
         var notionTasks: [NotionTask] = []
 
         if let briefingSources = config.notion.briefingSources {
-            // Query notes database
-            if let notesDatabaseId = briefingSources.notesDatabaseId, notesDatabaseId != "YOUR_NOTES_DATABASE_ID" {
+            let notesDatabaseId = briefingSources.notesDatabaseId
+            let tasksDbId = config.notion.tasksDatabaseId ?? briefingSources.tasksDatabaseId
+
+            // Run both queries in parallel using async let
+            async let notesTask: [NotionNote] = {
+                guard let dbId = notesDatabaseId, dbId != "YOUR_NOTES_DATABASE_ID" else {
+                    return []
+                }
                 print("📓 Querying Notion notes for context...")
                 do {
-                    let context = generateCalendarContext(schedule: schedule)
-                    notionNotes = try await notionService.queryRelevantNotes(context: context, databaseId: notesDatabaseId)
-                    print("✓ Found \(notionNotes.count) relevant note(s)\n")
+                    let context = self.generateCalendarContext(schedule: schedule)
+                    let notes = try await self.notionService.queryRelevantNotes(context: context, databaseId: dbId)
+                    print("✓ Found \(notes.count) relevant note(s)\n")
+                    return notes
                 } catch {
                     print("⚠️  Failed to query notes: \(error)\n")
+                    return []
                 }
-            }
+            }()
 
-            // Query tasks database - check top-level first, then briefing_sources
-            let tasksDbId = config.notion.tasksDatabaseId ?? briefingSources.tasksDatabaseId
-            if let tasksDatabaseId = tasksDbId, tasksDatabaseId != "YOUR_TASKS_DATABASE_ID" {
+            async let tasksTask: [NotionTask] = {
+                guard let dbId = tasksDbId, dbId != "YOUR_TASKS_DATABASE_ID" else {
+                    return []
+                }
                 print("✅ Querying Notion for active tasks...")
                 do {
-                    notionTasks = try await notionService.queryActiveTasks(databaseId: tasksDatabaseId)
-                    print("✓ Found \(notionTasks.count) active task(s)\n")
+                    let tasks = try await self.notionService.queryActiveTasks(databaseId: dbId)
+                    print("✓ Found \(tasks.count) active task(s)\n")
+                    return tasks
                 } catch {
                     print("⚠️  Failed to query tasks: \(error)\n")
+                    return []
                 }
-            }
+            }()
+
+            // Wait for both to complete (parallel execution)
+            notionNotes = await notesTask
+            notionTasks = await tasksTask
         }
 
         // Generate meeting briefings for external meetings
@@ -1040,8 +1070,10 @@ class BriefingOrchestrator {
 
         // Fetch existing todos from Notion for duplication check
         print("  ↳ Checking existing todos in Notion...")
-        let existingTitles = (try? await notionService.searchExistingTodos(title: "")) ?? []
-        print("  ✓ Found \(existingTitles.count) existing todo(s)\n")
+        let existingTitlesArray = (try? await notionService.searchExistingTodos(title: "")) ?? []
+        // Convert to Set for O(1) lookup instead of O(n)
+        let existingTitlesSet = Set(existingTitlesArray.map { $0.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) })
+        print("  ✓ Found \(existingTitlesSet.count) existing todo(s)\n")
 
         // Extract todos from outgoing messages
         var createdTodos: [TodoItem] = []
@@ -1061,11 +1093,9 @@ class BriefingOrchestrator {
                     print("    ✓ Detected todo: \(todo.title)")
                     allFoundTodos.append(todo)
 
-                    // Check for duplicates
-                    let isDuplicate = existingTitles.contains { existingTitle in
-                        existingTitle.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) ==
-                        todo.title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-                    }
+                    // Check for duplicates using O(1) Set lookup
+                    let normalizedTitle = todo.title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                    let isDuplicate = existingTitlesSet.contains(normalizedTitle)
 
                     if isDuplicate {
                         print("    ⚠️  Skipping duplicate todo\n")
@@ -1160,7 +1190,9 @@ class BriefingOrchestrator {
 
         // Fetch existing todos for duplicate check
         print("  ↳ Checking existing todos in Notion...")
-        let existingTitles = (try? await notionService.searchExistingTodos(title: "")) ?? []
+        let existingTitlesArray = (try? await notionService.searchExistingTodos(title: "")) ?? []
+        // Convert to Set for O(1) lookup instead of O(n)
+        let existingTitlesSet = Set(existingTitlesArray.map { $0.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) })
 
         var extractedItems: [ExtractedItem] = []
         var processedCount = 0
@@ -1181,11 +1213,9 @@ class BriefingOrchestrator {
                         threadId: thread.contactIdentifier
                     )
 
-                    // Check for duplicates by title
-                    let isDuplicateByTitle = existingTitles.contains { existingTitle in
-                        existingTitle.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) ==
-                        todo.title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-                    }
+                    // Check for duplicates by title using O(1) Set lookup
+                    let normalizedTitle = todo.title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                    let isDuplicateByTitle = existingTitlesSet.contains(normalizedTitle)
 
                     // Check by hash if not already a duplicate
                     var isDuplicateByHash = false
