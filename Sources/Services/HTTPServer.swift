@@ -11,11 +11,56 @@ class HTTPServer {
     private var listener: ServerSocket?
     private let cache: QueryCacheService
 
+    // Session management
+    private var activeSessions: [String: Session] = [:]
+    private let sessionLock = NSLock()
+    private let sessionDuration: TimeInterval = 24 * 60 * 60 // 24 hours
+
+    struct Session {
+        let token: String
+        let createdAt: Date
+        let expiresAt: Date
+    }
+
     init(port: Int, passcode: String, alfredService: AlfredService) {
         self.port = port
         self.passcode = passcode
         self.alfredService = alfredService
         self.cache = QueryCacheService()
+    }
+
+    // MARK: - Session Management
+
+    private func createSession() -> Session {
+        let token = UUID().uuidString + "-" + UUID().uuidString
+        let now = Date()
+        let session = Session(token: token, createdAt: now, expiresAt: now.addingTimeInterval(sessionDuration))
+
+        sessionLock.lock()
+        activeSessions[token] = session
+        // Cleanup expired sessions
+        let currentTime = Date()
+        activeSessions = activeSessions.filter { $0.value.expiresAt > currentTime }
+        sessionLock.unlock()
+
+        return session
+    }
+
+    private func validateSession(token: String) -> Bool {
+        sessionLock.lock()
+        defer { sessionLock.unlock() }
+
+        guard let session = activeSessions[token] else {
+            return false
+        }
+
+        return session.expiresAt > Date()
+    }
+
+    private func invalidateSession(token: String) {
+        sessionLock.lock()
+        activeSessions.removeValue(forKey: token)
+        sessionLock.unlock()
     }
 
     func start() throws {
@@ -74,6 +119,13 @@ class HTTPServer {
                 return
             }
 
+            // Allow auth endpoints without authentication (they validate passcode internally)
+            if request.path == "/api/auth/login" || request.path == "/api/auth/logout" || request.path == "/api/auth/validate" {
+                let response = await routeAuth(request)
+                try await client.send(response)
+                return
+            }
+
             // Authenticate API requests
             guard authenticate(request) else {
                 try await client.send(HTTPResponse(
@@ -93,17 +145,110 @@ class HTTPServer {
     }
 
     private func authenticate(_ request: HTTPRequest) -> Bool {
-        // Check X-API-Key header
+        // Check Authorization header for session token (preferred)
+        if let authHeader = request.headers["authorization"] {
+            let parts = authHeader.split(separator: " ")
+            if parts.count == 2 && parts[0].lowercased() == "bearer" {
+                let token = String(parts[1])
+                if validateSession(token: token) {
+                    return true
+                }
+            }
+        }
+
+        // Check X-API-Key header (legacy, still works with passcode)
         if let apiKey = request.headers["x-api-key"], apiKey == passcode {
             return true
         }
 
-        // Check query parameter
+        // Check query parameter (legacy, still works with passcode)
         if let queryPasscode = request.queryParams["passcode"], queryPasscode == passcode {
             return true
         }
 
         return false
+    }
+
+    // MARK: - Auth Routes
+
+    private func routeAuth(_ request: HTTPRequest) async -> HTTPResponse {
+        switch (request.method, request.path) {
+        case ("POST", "/api/auth/login"):
+            return handleLogin(request)
+
+        case ("POST", "/api/auth/logout"):
+            return handleLogout(request)
+
+        case ("GET", "/api/auth/validate"):
+            return handleValidateSession(request)
+
+        default:
+            return HTTPResponse(statusCode: 404, body: ["error": "Auth endpoint not found"])
+        }
+    }
+
+    private func handleLogin(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let providedPasscode = json["passcode"] as? String else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Missing passcode in request body"]
+            )
+        }
+
+        // Validate passcode
+        guard providedPasscode == passcode else {
+            return HTTPResponse(
+                statusCode: 401,
+                body: ["error": "Invalid passcode"]
+            )
+        }
+
+        // Create session
+        let session = createSession()
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "success": true,
+                "token": session.token,
+                "expiresAt": ISO8601DateFormatter().string(from: session.expiresAt)
+            ]
+        )
+    }
+
+    private func handleLogout(_ request: HTTPRequest) -> HTTPResponse {
+        // Get token from Authorization header
+        if let authHeader = request.headers["authorization"] {
+            let parts = authHeader.split(separator: " ")
+            if parts.count == 2 && parts[0].lowercased() == "bearer" {
+                let token = String(parts[1])
+                invalidateSession(token: token)
+            }
+        }
+
+        return HTTPResponse(statusCode: 200, body: ["success": true])
+    }
+
+    private func handleValidateSession(_ request: HTTPRequest) -> HTTPResponse {
+        // Check Authorization header
+        guard let authHeader = request.headers["authorization"] else {
+            return HTTPResponse(statusCode: 401, body: ["valid": false, "error": "No token provided"])
+        }
+
+        let parts = authHeader.split(separator: " ")
+        guard parts.count == 2 && parts[0].lowercased() == "bearer" else {
+            return HTTPResponse(statusCode: 401, body: ["valid": false, "error": "Invalid token format"])
+        }
+
+        let token = String(parts[1])
+
+        if validateSession(token: token) {
+            return HTTPResponse(statusCode: 200, body: ["valid": true])
+        } else {
+            return HTTPResponse(statusCode: 401, body: ["valid": false, "error": "Token expired or invalid"])
+        }
     }
 
     private func route(_ request: HTTPRequest) async -> HTTPResponse {
@@ -162,6 +307,12 @@ class HTTPServer {
         case ("POST", "/api/config/passcode"):
             return handleUpdatePasscode(request)
 
+        case ("GET", "/api/config/scheduled"):
+            return handleGetScheduledConfig()
+
+        case ("POST", "/api/config/scheduled"):
+            return handleUpdateScheduledConfig(request)
+
         case ("POST", "/api/cache/clear"):
             return handleClearCache()
 
@@ -205,6 +356,13 @@ class HTTPServer {
 
         case ("POST", "/api/extract/approve"):
             return await handleApproveExtractedItems(request)
+
+        // Correction tracking for learning
+        case ("POST", "/api/corrections"):
+            return handleRecordCorrection(request)
+
+        case ("GET", "/api/corrections"):
+            return handleGetCorrections(request)
 
         default:
             return HTTPResponse(
@@ -1219,6 +1377,87 @@ The Commitment Check feature requires a properly configured Notion database.
             statusCode: 200,
             body: ["message": "All cache cleared successfully"]
         )
+    }
+
+    // MARK: - Scheduled Config Handlers
+
+    private func handleGetScheduledConfig() -> HTTPResponse {
+        let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
+
+        guard FileManager.default.fileExists(atPath: configPath) else {
+            return HTTPResponse(statusCode: 200, body: [
+                "briefing_time": "07:00",
+                "attention_alert_time": "15:00",
+                "briefing_enabled": true,
+                "attention_enabled": true,
+                "email_to": ""
+            ] as [String: Any])
+        }
+
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
+            let config = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+
+            let app = config?["app"] as? [String: Any]
+            let scheduled = config?["scheduled"] as? [String: Any]
+
+            return HTTPResponse(statusCode: 200, body: [
+                "briefing_time": app?["briefing_time"] as? String ?? "07:00",
+                "attention_alert_time": app?["attention_alert_time"] as? String ?? "15:00",
+                "briefing_enabled": scheduled?["briefing_enabled"] as? Bool ?? true,
+                "attention_enabled": scheduled?["attention_enabled"] as? Bool ?? true,
+                "email_to": scheduled?["email_to"] as? String ?? ""
+            ] as [String: Any])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to read config: \(error.localizedDescription)"])
+        }
+    }
+
+    private func handleUpdateScheduledConfig(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Invalid request body"])
+        }
+
+        let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
+
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
+            var config = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+
+            // Update app.briefing_time and app.attention_alert_time
+            if var app = config["app"] as? [String: Any] {
+                if let briefingTime = json["briefing_time"] as? String, !briefingTime.isEmpty {
+                    app["briefing_time"] = briefingTime
+                }
+                if let attentionAlertTime = json["attention_alert_time"] as? String, !attentionAlertTime.isEmpty {
+                    app["attention_alert_time"] = attentionAlertTime
+                }
+                config["app"] = app
+            }
+
+            // Update scheduled section
+            var scheduled = config["scheduled"] as? [String: Any] ?? [:]
+            if let briefingEnabled = json["briefing_enabled"] as? Bool {
+                scheduled["briefing_enabled"] = briefingEnabled
+            }
+            if let attentionEnabled = json["attention_enabled"] as? Bool {
+                scheduled["attention_enabled"] = attentionEnabled
+            }
+            if let emailTo = json["email_to"] as? String {
+                scheduled["email_to"] = emailTo
+            }
+            config["scheduled"] = scheduled
+
+            let updatedData = try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
+            try updatedData.write(to: URL(fileURLWithPath: configPath))
+
+            print("📅 Scheduled config updated successfully")
+
+            return HTTPResponse(statusCode: 200, body: ["message": "Schedule settings saved successfully"])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to update config: \(error.localizedDescription)"])
+        }
     }
 
     // MARK: - Agent Handlers
@@ -2395,5 +2634,84 @@ extension HTTPServer {
         } else {
             return "0m"
         }
+    }
+
+    // MARK: - Correction Tracking
+
+    private func handleRecordCorrection(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Invalid request body"]
+            )
+        }
+
+        let type = json["type"] as? String ?? "false_positive"
+        let itemType = json["itemType"] as? String ?? "Unknown"
+        let title = json["title"] as? String ?? ""
+        let description = json["description"] as? String
+        let reason = json["reason"] as? String
+        let source = json["source"] as? String
+
+        if type == "false_positive" {
+            CorrectionTracker.shared.recordFalsePositive(
+                itemType: itemType,
+                title: title,
+                description: description,
+                reason: reason,
+                source: source
+            )
+        } else if type == "edited" {
+            let editedTitle = json["editedTitle"] as? String
+            let editedDescription = json["editedDescription"] as? String
+
+            CorrectionTracker.shared.recordEdit(
+                itemType: itemType,
+                originalTitle: title,
+                editedTitle: editedTitle,
+                originalDescription: description,
+                editedDescription: editedDescription,
+                source: source
+            )
+        }
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: ["success": true, "message": "Correction recorded"]
+        )
+    }
+
+    private func handleGetCorrections(_ request: HTTPRequest) -> HTTPResponse {
+        let itemType = request.queryParams["itemType"]
+        let corrections = CorrectionTracker.shared.getCorrections(forType: itemType)
+        let stats = CorrectionTracker.shared.getStats()
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "corrections": corrections.map { correction -> [String: Any] in
+                    var dict: [String: Any] = [
+                        "id": correction.id,
+                        "type": correction.type.rawValue,
+                        "itemType": correction.itemType,
+                        "title": correction.title,
+                        "timestamp": ISO8601DateFormatter().string(from: correction.timestamp)
+                    ]
+                    if let desc = correction.description { dict["description"] = desc }
+                    if let reason = correction.reason { dict["reason"] = reason }
+                    if let source = correction.source { dict["source"] = source }
+                    if let editedTitle = correction.editedTitle { dict["editedTitle"] = editedTitle }
+                    if let editedDesc = correction.editedDescription { dict["editedDescription"] = editedDesc }
+                    return dict
+                },
+                "stats": [
+                    "total": stats.totalCorrections,
+                    "falsePositives": stats.falsePositives,
+                    "edits": stats.edits,
+                    "byType": stats.byItemType
+                ]
+            ]
+        )
     }
 }

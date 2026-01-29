@@ -11,7 +11,7 @@ Task {
 RunLoop.main.run()
 
 struct AlfredApp {
-    static let version = "1.4.2"
+    static let version = "1.5.0"
 
     static func main() async {
         print("alfred v\(version) starting...")
@@ -2497,19 +2497,29 @@ struct AlfredApp {
 }
 
 class Scheduler {
-    private let config: AppConfig
+    private let initialConfig: AppConfig
     private let orchestrator: BriefingOrchestrator
     private var timer: Timer?
 
     init(config: AppConfig, orchestrator: BriefingOrchestrator) {
-        self.config = config
+        self.initialConfig = config
         self.orchestrator = orchestrator
     }
 
+    /// Re-reads config from disk for hot-reload. Falls back to initial config.
+    private func currentConfig() -> AppConfig {
+        return AppConfig.load() ?? initialConfig
+    }
+
     func start() async {
+        let config = currentConfig()
         print("Scheduler started")
         print("Morning briefing scheduled for: \(config.app.briefingTime)")
         print("Attention defense scheduled for: \(config.app.attentionAlertTime)")
+        if let scheduled = config.scheduled {
+            print("Email delivery to: \(scheduled.emailTo)")
+            print("Briefing enabled: \(scheduled.briefingEnabled), Attention enabled: \(scheduled.attentionEnabled)")
+        }
 
         // Check every minute if it's time to run tasks
         let timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
@@ -2524,25 +2534,35 @@ class Scheduler {
     }
 
     private func checkAndRunTasks() async {
+        let config = currentConfig()
+        let scheduled = config.scheduled
+
         let now = Date()
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
         let currentTime = formatter.string(from: now)
 
-        if currentTime == config.app.briefingTime {
+        let emailTo = scheduled?.emailTo.isEmpty == false ? scheduled?.emailTo : nil
+
+        // Briefing: runs at configured time, only if enabled
+        let briefingEnabled = scheduled?.briefingEnabled ?? true
+        if briefingEnabled && currentTime == config.app.briefingTime {
             print("\n\(Date()) - Running morning briefing...")
             do {
-                _ = try await orchestrator.generateMorningBriefing()
+                let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
+                _ = try await orchestrator.generateBriefing(for: tomorrow, sendNotifications: true, toAddress: emailTo)
                 print("Morning briefing sent successfully")
             } catch {
                 print("Error generating briefing: \(error)")
             }
         }
 
-        if currentTime == config.app.attentionAlertTime {
+        // Attention check: runs at configured time, only if enabled
+        let attentionEnabled = scheduled?.attentionEnabled ?? true
+        if attentionEnabled && currentTime == config.app.attentionAlertTime {
             print("\n\(Date()) - Running attention defense alert...")
             do {
-                _ = try await orchestrator.generateAttentionDefenseAlert()
+                _ = try await orchestrator.generateAttentionDefenseAlert(sendNotifications: true, toAddress: emailTo)
                 print("Attention defense alert sent successfully")
             } catch {
                 print("Error generating alert: \(error)")

@@ -10,10 +10,58 @@ class HTTPServer {
     private let alfredService: AlfredService
     private var listener: ServerSocket?
 
+    // Session management
+    private var activeSessions: [String: Session] = [:]
+    private let sessionLock = NSLock()
+    private let sessionDuration: TimeInterval = 24 * 60 * 60 // 24 hours
+
+    struct Session {
+        let token: String
+        let createdAt: Date
+        let expiresAt: Date
+    }
+
     init(port: Int, passcode: String, alfredService: AlfredService) {
         self.port = port
         self.passcode = passcode
         self.alfredService = alfredService
+    }
+
+    // MARK: - Session Management
+
+    private func createSession() -> Session {
+        let token = UUID().uuidString + "-" + UUID().uuidString
+        let now = Date()
+        let session = Session(
+            token: token,
+            createdAt: now,
+            expiresAt: now.addingTimeInterval(sessionDuration)
+        )
+
+        sessionLock.lock()
+        activeSessions[token] = session
+        // Clean up expired sessions
+        activeSessions = activeSessions.filter { $0.value.expiresAt > now }
+        sessionLock.unlock()
+
+        return session
+    }
+
+    private func validateSession(token: String) -> Bool {
+        sessionLock.lock()
+        defer { sessionLock.unlock() }
+
+        guard let session = activeSessions[token] else {
+            return false
+        }
+
+        return session.expiresAt > Date()
+    }
+
+    private func invalidateSession(token: String) {
+        sessionLock.lock()
+        activeSessions.removeValue(forKey: token)
+        sessionLock.unlock()
     }
 
     func start() throws {
@@ -72,6 +120,13 @@ class HTTPServer {
                 return
             }
 
+            // Allow auth endpoints without authentication (they validate passcode internally)
+            if request.path == "/api/auth/login" || request.path == "/api/auth/logout" || request.path == "/api/auth/validate" {
+                let response = await routeAuth(request)
+                try await client.send(response)
+                return
+            }
+
             // Authenticate API requests
             guard authenticate(request) else {
                 try await client.send(HTTPResponse(
@@ -91,17 +146,114 @@ class HTTPServer {
     }
 
     private func authenticate(_ request: HTTPRequest) -> Bool {
-        // Check X-API-Key header
+        // Check Authorization header for session token (preferred)
+        if let authHeader = request.headers["authorization"] {
+            let parts = authHeader.split(separator: " ")
+            if parts.count == 2 && parts[0].lowercased() == "bearer" {
+                let token = String(parts[1])
+                if validateSession(token: token) {
+                    return true
+                }
+            }
+        }
+
+        // Check X-API-Key header (legacy, still works with passcode)
         if let apiKey = request.headers["x-api-key"], apiKey == passcode {
             return true
         }
 
-        // Check query parameter
+        // Check query parameter (legacy, still works with passcode)
         if let queryPasscode = request.queryParams["passcode"], queryPasscode == passcode {
             return true
         }
 
         return false
+    }
+
+    // MARK: - Auth Routes
+
+    private func routeAuth(_ request: HTTPRequest) async -> HTTPResponse {
+        switch (request.method, request.path) {
+        case ("POST", "/api/auth/login"):
+            return handleLogin(request)
+
+        case ("POST", "/api/auth/logout"):
+            return handleLogout(request)
+
+        case ("GET", "/api/auth/validate"):
+            return handleValidateSession(request)
+
+        default:
+            return HTTPResponse(statusCode: 404, body: ["error": "Auth endpoint not found"])
+        }
+    }
+
+    private func handleLogin(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let providedPasscode = json["passcode"] as? String else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Missing passcode in request body"]
+            )
+        }
+
+        // Validate passcode
+        guard providedPasscode == passcode else {
+            return HTTPResponse(
+                statusCode: 401,
+                body: ["error": "Invalid passcode"]
+            )
+        }
+
+        // Create session
+        let session = createSession()
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "success": true,
+                "token": session.token,
+                "expiresAt": ISO8601DateFormatter().string(from: session.expiresAt)
+            ]
+        )
+    }
+
+    private func handleLogout(_ request: HTTPRequest) -> HTTPResponse {
+        // Get token from Authorization header
+        if let authHeader = request.headers["authorization"] {
+            let parts = authHeader.split(separator: " ")
+            if parts.count == 2 && parts[0].lowercased() == "bearer" {
+                let token = String(parts[1])
+                invalidateSession(token: token)
+            }
+        }
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: ["success": true, "message": "Logged out successfully"]
+        )
+    }
+
+    private func handleValidateSession(_ request: HTTPRequest) -> HTTPResponse {
+        // Check Authorization header
+        if let authHeader = request.headers["authorization"] {
+            let parts = authHeader.split(separator: " ")
+            if parts.count == 2 && parts[0].lowercased() == "bearer" {
+                let token = String(parts[1])
+                if validateSession(token: token) {
+                    return HTTPResponse(
+                        statusCode: 200,
+                        body: ["valid": true]
+                    )
+                }
+            }
+        }
+
+        return HTTPResponse(
+            statusCode: 401,
+            body: ["valid": false, "error": "Invalid or expired session"]
+        )
     }
 
     private func route(_ request: HTTPRequest) async -> HTTPResponse {
@@ -138,6 +290,23 @@ class HTTPServer {
 
         case ("POST", "/api/query"):
             return await handleNaturalLanguageQuery(request)
+
+        // Correction tracking for learning
+        case ("POST", "/api/corrections"):
+            return handleRecordCorrection(request)
+
+        case ("GET", "/api/corrections"):
+            return handleGetCorrections(request)
+
+        // Contact learning
+        case ("POST", "/api/contacts/participation"):
+            return handleRecordParticipation(request)
+
+        case ("POST", "/api/contacts/extraction"):
+            return handleRecordExtraction(request)
+
+        case ("GET", "/api/contacts"):
+            return handleGetContacts(request)
 
         default:
             return HTTPResponse(
@@ -724,6 +893,196 @@ class HTTPServer {
         default:
             return nil
         }
+    }
+
+    // MARK: - Correction Tracking
+
+    private func handleRecordCorrection(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Invalid request body"]
+            )
+        }
+
+        let type = json["type"] as? String ?? "false_positive"
+        let itemType = json["itemType"] as? String ?? "Unknown"
+        let title = json["title"] as? String ?? ""
+        let description = json["description"] as? String
+        let reason = json["reason"] as? String
+        let source = json["source"] as? String
+
+        if type == "false_positive" {
+            CorrectionTracker.shared.recordFalsePositive(
+                itemType: itemType,
+                title: title,
+                description: description,
+                reason: reason,
+                source: source
+            )
+        } else if type == "edited" {
+            let editedTitle = json["editedTitle"] as? String
+            let editedDescription = json["editedDescription"] as? String
+
+            CorrectionTracker.shared.recordEdit(
+                itemType: itemType,
+                originalTitle: title,
+                editedTitle: editedTitle,
+                originalDescription: description,
+                editedDescription: editedDescription,
+                source: source
+            )
+        }
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: ["success": true, "message": "Correction recorded"]
+        )
+    }
+
+    private func handleGetCorrections(_ request: HTTPRequest) -> HTTPResponse {
+        let itemType = request.queryParams["itemType"]
+        let corrections = CorrectionTracker.shared.getCorrections(forType: itemType)
+        let stats = CorrectionTracker.shared.getStats()
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "corrections": corrections.map { correction -> [String: Any] in
+                    var dict: [String: Any] = [
+                        "id": correction.id,
+                        "type": correction.type.rawValue,
+                        "itemType": correction.itemType,
+                        "title": correction.title,
+                        "timestamp": ISO8601DateFormatter().string(from: correction.timestamp)
+                    ]
+                    if let desc = correction.description { dict["description"] = desc }
+                    if let reason = correction.reason { dict["reason"] = reason }
+                    if let source = correction.source { dict["source"] = source }
+                    if let editedTitle = correction.editedTitle { dict["editedTitle"] = editedTitle }
+                    if let editedDesc = correction.editedDescription { dict["editedDescription"] = editedDesc }
+                    return dict
+                },
+                "stats": [
+                    "total": stats.totalCorrections,
+                    "falsePositives": stats.falsePositives,
+                    "edits": stats.edits,
+                    "byType": stats.byItemType
+                ]
+            ]
+        )
+    }
+
+    // MARK: - Contact Learning
+
+    private func handleRecordParticipation(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Invalid request body"]
+            )
+        }
+
+        guard let platform = json["platform"] as? String,
+              let threadId = json["threadId"] as? String,
+              let threadName = json["threadName"] as? String,
+              let userMessages = json["userMessages"] as? Int,
+              let totalMessages = json["totalMessages"] as? Int else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Missing required fields: platform, threadId, threadName, userMessages, totalMessages"]
+            )
+        }
+
+        let isGroup = json["isGroup"] as? Bool ?? false
+
+        ContactLearner.shared.recordParticipation(
+            platform: platform,
+            threadId: threadId,
+            threadName: threadName,
+            isGroup: isGroup,
+            userMessages: userMessages,
+            totalMessages: totalMessages
+        )
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: ["success": true, "message": "Participation recorded"]
+        )
+    }
+
+    private func handleRecordExtraction(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Invalid request body"]
+            )
+        }
+
+        guard let platform = json["platform"] as? String,
+              let threadId = json["threadId"] as? String,
+              let itemsExtracted = json["itemsExtracted"] as? Int,
+              let itemsRejected = json["itemsRejected"] as? Int else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Missing required fields: platform, threadId, itemsExtracted, itemsRejected"]
+            )
+        }
+
+        ContactLearner.shared.recordExtractionResult(
+            platform: platform,
+            threadId: threadId,
+            itemsExtracted: itemsExtracted,
+            itemsRejected: itemsRejected
+        )
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: ["success": true, "message": "Extraction result recorded"]
+        )
+    }
+
+    private func handleGetContacts(_ request: HTTPRequest) -> HTTPResponse {
+        let classification = request.queryParams["classification"]
+        let stats = ContactLearner.shared.getStats()
+
+        var threads: [ThreadRecord]
+        if let classStr = classification, let cls = ThreadClassification(rawValue: classStr) {
+            threads = ContactLearner.shared.getThreads(classification: cls)
+        } else {
+            threads = ContactLearner.shared.getAllThreads()
+        }
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "threads": threads.map { thread -> [String: Any] in
+                    return [
+                        "platform": thread.platform,
+                        "threadId": thread.threadId,
+                        "threadName": thread.threadName,
+                        "isGroup": thread.isGroup,
+                        "avgParticipation": thread.avgParticipation,
+                        "classification": thread.classification.rawValue,
+                        "lastSeen": thread.lastSeen,
+                        "extractionStats": [
+                            "itemsExtracted": thread.extractionStats.itemsExtracted,
+                            "itemsRejected": thread.extractionStats.itemsRejected,
+                            "rejectionRate": thread.extractionStats.rejectionRate
+                        ]
+                    ]
+                },
+                "stats": [
+                    "totalThreads": stats.totalThreads,
+                    "observeThreads": stats.observeThreads,
+                    "minimalThreads": stats.minimalThreads,
+                    "activeThreads": stats.activeThreads
+                ]
+            ]
+        )
     }
 }
 

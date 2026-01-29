@@ -50,19 +50,94 @@ class ClaudeAIService {
             "[\(msg.timestamp.formatted())] \(msg.direction == .incoming ? thread.contactName ?? "Unknown" : "You"): \(msg.content)"
         }.joined(separator: "\n")
 
-        let prompt = """
+        // Calculate user participation
+        let totalMessages = thread.messages.count
+        let userMessages = thread.messages.filter { $0.direction == .outgoing }
+        let userMessageCount = userMessages.count
+        let participationPercent = totalMessages > 0 ? Int((Double(userMessageCount) / Double(totalMessages)) * 100) : 0
+
+        // Record participation for contact learning
+        let uniqueSenders = Set(thread.messages.map { $0.sender }).count
+        ContactLearner.shared.recordParticipation(
+            platform: thread.platform.rawValue,
+            threadId: thread.contactIdentifier,
+            threadName: thread.contactName ?? thread.contactIdentifier,
+            isGroup: totalMessages > 2 && uniqueSenders > 2,
+            userMessages: userMessageCount,
+            totalMessages: totalMessages
+        )
+
+        // Get historical context from contact learning
+        let historicalContext = ContactLearner.shared.getPromptContext(
+            platform: thread.platform.rawValue,
+            threadId: thread.contactIdentifier
+        )
+
+        // Build participation context for the prompt
+        let participationContext: String
+        let actionItemGuidance: String
+
+        if userMessageCount == 0 {
+            participationContext = """
+            ## USER PARTICIPATION: PASSIVE OBSERVER
+            The user (Miten/You) sent 0 messages in this conversation. They are ONLY OBSERVING.
+            """
+            actionItemGuidance = """
+            CRITICAL RULE FOR ACTION ITEMS:
+            - Since the user sent NO messages, they are a PASSIVE OBSERVER in this conversation
+            - Do NOT extract action items - the user was not addressed or involved
+            - Conversations between OTHER people in a group do NOT create action items for the observer
+            - Return an EMPTY actionItems array: []
+            - Only summarize what was discussed between the other participants
+            """
+        } else if participationPercent < 20 {
+            participationContext = """
+            ## USER PARTICIPATION: MINIMAL (\(userMessageCount) of \(totalMessages) messages, \(participationPercent)%)
+            The user had minimal participation in this conversation.
+            """
+            actionItemGuidance = """
+            ACTION ITEM GUIDANCE:
+            - Only extract action items that the user explicitly committed to in their \(userMessageCount) message(s)
+            - Only extract action items that were explicitly assigned TO the user by name
+            - Do NOT infer action items from conversations between other people
+            - Be very conservative - if unclear whether it's for the user, don't include it
+            """
+        } else {
+            participationContext = """
+            ## USER PARTICIPATION: ACTIVE (\(userMessageCount) of \(totalMessages) messages, \(participationPercent)%)
+            The user actively participated in this conversation.
+            """
+            actionItemGuidance = """
+            ACTION ITEM GUIDANCE:
+            - Extract action items the user committed to or were assigned to them
+            - Focus on what the OTHER person asked, requested, or expects from the user
+            """
+        }
+
+        var prompt = """
         Analyze this entire WhatsApp message thread and provide a detailed analysis.
 
         IMPORTANT: In this thread, "You" refers to the user (Miten), and "\(thread.contactName ?? "Unknown")" is the other person/group.
 
+        \(participationContext)
+
+        \(actionItemGuidance)
+        """
+
+        // Add historical context if available
+        if !historicalContext.isEmpty {
+            prompt += "\n\n\(historicalContext)"
+        }
+
+        prompt += """
+
+
         Provide:
         1. A comprehensive summary (3-5 sentences) - be clear about who said what
-        2. Top 3 action items for MITEN (the user marked as "You") based ONLY on what the OTHER PERSON (\(thread.contactName ?? "Unknown")) has asked, requested, or expects from him
+        2. Action items for MITEN (the user marked as "You") - ONLY if they participated and were asked to do something
         3. Key quotes or messages from the OTHER PERSON that are most important (include exact quotes with timestamps)
         4. Overall context and what this conversation is about
-        5. Any deadlines, commitments, or time-sensitive information that the OTHER PERSON mentioned or that MITEN committed to
-
-        If "You" (Miten) sent messages but hasn't received a response yet, there are NO action items - just summarize what was shared.
+        5. Any deadlines, commitments, or time-sensitive information
 
         Message thread:
         \(messagesText)
@@ -71,17 +146,16 @@ class ClaudeAIService {
         {
             "summary": "comprehensive summary of the conversation",
             "actionItems": [
-                {"item": "action description", "priority": "high|medium|low", "deadline": "optional deadline if mentioned"},
-                {"item": "action description", "priority": "high|medium|low", "deadline": "optional deadline if mentioned"},
                 {"item": "action description", "priority": "high|medium|low", "deadline": "optional deadline if mentioned"}
             ],
             "keyQuotes": [
-                {"timestamp": "timestamp", "speaker": "name", "quote": "exact quote"},
                 {"timestamp": "timestamp", "speaker": "name", "quote": "exact quote"}
             ],
             "context": "overall context of the conversation",
             "timeSensitive": ["any deadlines or time-sensitive info"]
         }
+
+        If the user is a passive observer with no action items, return: "actionItems": []
         """
 
         let response = try await sendRequest(prompt: prompt)
@@ -98,18 +172,73 @@ class ClaudeAIService {
     }
 
     private func analyzeThread(_ thread: MessageThread, useModel: String? = nil) async throws -> MessageSummary {
-        let recentMessages = thread.messages.prefix(20)
+        let recentMessages = Array(thread.messages.prefix(20))
         let messagesText = recentMessages.map { msg in
             "[\(msg.timestamp.formatted())] \(msg.direction == .incoming ? thread.contactName ?? "Unknown" : "You"): \(msg.content)"
         }.joined(separator: "\n")
 
-        let prompt = """
+        // Calculate user participation
+        let totalMessages = recentMessages.count
+        let userMessages = recentMessages.filter { $0.direction == .outgoing }
+        let userMessageCount = userMessages.count
+        let participationPercent = totalMessages > 0 ? Int((Double(userMessageCount) / Double(totalMessages)) * 100) : 0
+
+        // Record participation for contact learning
+        let uniqueSenders = Set(recentMessages.map { $0.sender }).count
+        ContactLearner.shared.recordParticipation(
+            platform: thread.platform.rawValue,
+            threadId: thread.contactIdentifier,
+            threadName: thread.contactName ?? thread.contactIdentifier,
+            isGroup: totalMessages > 2 && uniqueSenders > 2,
+            userMessages: userMessageCount,
+            totalMessages: totalMessages
+        )
+
+        // Get historical context from contact learning
+        let historicalContext = ContactLearner.shared.getPromptContext(
+            platform: thread.platform.rawValue,
+            threadId: thread.contactIdentifier
+        )
+
+        let participationContext: String
+        if userMessageCount == 0 {
+            participationContext = """
+            USER PARTICIPATION: PASSIVE OBSERVER (0 messages sent)
+            - Only list action items that were explicitly assigned to the user by name
+            - Do NOT infer action items from conversations between other people
+            - If no one directly addressed the user, actionItems should be empty
+            """
+        } else if participationPercent < 20 {
+            participationContext = """
+            USER PARTICIPATION: MINIMAL (\(userMessageCount) of \(totalMessages) messages, \(participationPercent)%)
+            - Only list action items from the user's own messages or explicitly assigned to them
+            - Be conservative about inferring action items
+            """
+        } else {
+            participationContext = """
+            USER PARTICIPATION: ACTIVE (\(userMessageCount) of \(totalMessages) messages, \(participationPercent)%)
+            - List action items the user committed to or were assigned to them
+            """
+        }
+
+        var prompt = """
         Analyze this message thread and provide:
         1. A concise summary (2-3 sentences max)
         2. Urgency level (critical/high/medium/low)
-        3. Key action items if any
+        3. Key action items FOR THE USER (not action items between other people)
         4. Sentiment (positive/neutral/negative/urgent)
         5. Whether it needs a response and suggested response if applicable
+
+        \(participationContext)
+        """
+
+        // Add historical context if available
+        if !historicalContext.isEmpty {
+            prompt += "\n\n\(historicalContext)"
+        }
+
+        prompt += """
+
 
         Message thread:
         \(messagesText)
@@ -209,46 +338,92 @@ class ClaudeAIService {
 
     func generateAttentionDefenseReport(
         actionItems: [ActionItem],
-        schedule: DailySchedule,
+        todaySchedule: DailySchedule,
+        tomorrowSchedule: DailySchedule,
         currentTime: Date
     ) async throws -> AttentionDefenseReport {
         let calendar = Calendar.current
         let endOfDay = calendar.date(bySettingHour: 18, minute: 0, second: 0, of: currentTime)!
-        let timeRemaining = endOfDay.timeIntervalSince(currentTime)
+        let timeRemaining = max(0, endOfDay.timeIntervalSince(currentTime))
 
-        let itemsText = actionItems.map { item in
-            "- [\(item.priority.rawValue)] \(item.title): \(item.description) (Source: \(item.source.rawValue), Est: \(item.estimatedDuration.map { "\(Int($0/60))min" } ?? "unknown"))"
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let todayStr = dateFormatter.string(from: currentTime)
+        let tomorrowDate = calendar.date(byAdding: .day, value: 1, to: currentTime)!
+        let tomorrowStr = dateFormatter.string(from: tomorrowDate)
+
+        // Today's remaining meetings
+        let remainingMeetings = todaySchedule.events.filter { $0.startTime > currentTime }
+        let todayMeetingsText = remainingMeetings.isEmpty ? "No more meetings today." : remainingMeetings.map { event in
+            let isExternal = todaySchedule.externalMeetings.contains { $0.title == event.title }
+            let extFlag = isExternal ? " [EXTERNAL]" : ""
+            return "- \(event.startTime.formatted(.dateTime.hour().minute()))-\(event.endTime.formatted(.dateTime.hour().minute())): \(event.title) (\(Int(event.duration/60))min)\(extFlag)"
         }.joined(separator: "\n")
 
-        let upcomingMeetings = schedule.events.filter { $0.startTime > currentTime }
-        let meetingsText = upcomingMeetings.map { event in
-            "- \(event.startTime.formatted(.dateTime.hour().minute())): \(event.title) (\(Int(event.duration/60))min)"
+        // Tomorrow's full schedule
+        let tomorrowMeetingCount = tomorrowSchedule.events.count
+        let tomorrowMeetingHours = tomorrowSchedule.totalMeetingTime / 3600.0
+        let tomorrowFreeTime = tomorrowSchedule.freeSlots.reduce(0.0) { $0 + $1.duration } / 3600.0
+        let tomorrowEarlyMeeting = tomorrowSchedule.events.first.map { event in
+            "First meeting: \(event.startTime.formatted(.dateTime.hour().minute())) - \(event.title)"
+        } ?? "No meetings scheduled"
+
+        let tomorrowMeetingsText = tomorrowSchedule.events.isEmpty ? "No meetings tomorrow." : tomorrowSchedule.events.map { event in
+            let isExternal = tomorrowSchedule.externalMeetings.contains { $0.title == event.title }
+            let extFlag = isExternal ? " [EXTERNAL]" : ""
+            return "- \(event.startTime.formatted(.dateTime.hour().minute()))-\(event.endTime.formatted(.dateTime.hour().minute())): \(event.title) (\(Int(event.duration/60))min)\(extFlag)"
+        }.joined(separator: "\n")
+
+        // Action items with rich context
+        let itemsText = actionItems.isEmpty ? "No open tasks found." : actionItems.map { item in
+            var line = "- [\(item.id)] [\(item.priority.rawValue.uppercased())] \(item.title)"
+            if item.description != item.title {
+                line += ": \(item.description)"
+            }
+            line += " (Category: \(item.category.rawValue), Source: \(item.source.rawValue))"
+            if let dueDate = item.dueDate {
+                let dueDateStr = dateFormatter.string(from: dueDate)
+                let isOverdue = dueDate < currentTime
+                line += " | Due: \(dueDateStr)\(isOverdue ? " [OVERDUE]" : "")"
+            }
+            return line
         }.joined(separator: "\n")
 
         let prompt = """
-        It's currently \(currentTime.formatted()) and the workday ends at 18:00.
-        Time remaining: \(Int(timeRemaining/3600))h \(Int((timeRemaining.truncatingRemainder(dividingBy: 3600))/60))m
+        You are the executive assistant for a busy professional. It's currently \(currentTime.formatted()) on \(todayStr).
+        Workday ends at 18:00. Time remaining today: \(Int(timeRemaining/3600))h \(Int((timeRemaining.truncatingRemainder(dividingBy: 3600))/60))m
 
-        Upcoming meetings:
-        \(meetingsText)
+        === TODAY'S REMAINING MEETINGS ===
+        \(todayMeetingsText)
 
-        Action items to evaluate:
+        === TOMORROW'S SCHEDULE (\(tomorrowStr)) ===
+        \(tomorrowMeetingsText)
+        Summary: \(tomorrowMeetingCount) meetings, ~\(String(format: "%.1f", tomorrowMeetingHours))h in meetings, ~\(String(format: "%.1f", tomorrowFreeTime))h free time
+        \(tomorrowEarlyMeeting)
+
+        === OPEN TASKS & COMMITMENTS ===
         \(itemsText)
 
-        Analyze and provide:
-        1. Which tasks MUST be done before end of day (critical deadlines, time-sensitive responses)
-        2. Which tasks can be pushed to tomorrow with low impact
-        3. Prioritized list for rest of day
-        4. Strategic recommendations
+        === YOUR ANALYSIS ===
+        Consider:
+        1. What MUST be done today? (overdue items, critical priority, time-sensitive responses, items due today)
+        2. What can safely be pushed to tomorrow or later? Give clear reasoning for each.
+        3. Does tomorrow's schedule allow space for pushed items, or is it already packed?
+        4. Are there any preparation tasks needed for tomorrow's meetings?
+        5. Strategic recommendations: what's the highest-leverage use of remaining time today?
 
         Format as JSON:
         {
             "mustDoToday": ["task_id1", "task_id2"],
             "canPushOff": [
-                {"taskId": "id", "reason": "why it can wait", "suggestedDate": "2024-01-12", "impact": "low|medium|high"}
+                {"taskId": "id", "reason": "why it can wait", "suggestedDate": "\(tomorrowStr)", "impact": "low|medium|high"}
             ],
             "recommendations": ["recommendation1", "recommendation2"]
         }
+
+        IMPORTANT: Use the exact task IDs from the brackets (e.g. [abc123]) in mustDoToday and canPushOff.taskId fields.
+        Every task should appear in either mustDoToday or canPushOff — don't skip any.
+        Keep recommendations actionable and specific.
         """
 
         let response = try await sendRequest(prompt: prompt)

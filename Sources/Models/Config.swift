@@ -12,6 +12,7 @@ struct AppConfig: Codable {
     let agents: AgentsConfig?
     let commitments: CommitmentConfig?
     let api: APIConfig?
+    let scheduled: ScheduledConfig?
 
     static func load(from path: String = "Config/config.json") -> AppConfig? {
         // Try multiple config locations in order of preference
@@ -53,6 +54,18 @@ struct AppConfig: Codable {
 
     var aiConfig: AIConfig {
         return ai
+    }
+}
+
+struct ScheduledConfig: Codable {
+    let briefingEnabled: Bool
+    let attentionEnabled: Bool
+    let emailTo: String
+
+    enum CodingKeys: String, CodingKey {
+        case briefingEnabled = "briefing_enabled"
+        case attentionEnabled = "attention_enabled"
+        case emailTo = "email_to"
     }
 }
 

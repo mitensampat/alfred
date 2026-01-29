@@ -8,13 +8,14 @@ class NotificationService {
         self.config = config
     }
 
-    func sendBriefing(_ briefing: DailyBriefing) async throws {
+    func sendBriefing(_ briefing: DailyBriefing, toAddress: String? = nil) async throws {
         let formatted = formatBriefing(briefing)
 
         if config.email.enabled {
             try await sendEmail(
                 subject: "Daily Briefing - \(briefing.date.formatted(date: .abbreviated, time: .omitted))",
-                body: formatted.html
+                body: formatted.html,
+                toAddress: toAddress
             )
         }
 
@@ -34,13 +35,14 @@ class NotificationService {
         }
     }
 
-    func sendAttentionDefenseReport(_ report: AttentionDefenseReport) async throws {
+    func sendAttentionDefenseReport(_ report: AttentionDefenseReport, toAddress: String? = nil) async throws {
         let formatted = formatAttentionReport(report)
 
         if config.email.enabled {
             try await sendEmail(
                 subject: "Attention Defense - End of Day Planning",
-                body: formatted.html
+                body: formatted.html,
+                toAddress: toAddress
             )
         }
 
@@ -62,11 +64,13 @@ class NotificationService {
 
     // MARK: - Email
 
-    private func sendEmail(subject: String, body: String) async throws {
+    private func sendEmail(subject: String, body: String, toAddress: String? = nil) async throws {
         guard config.email.enabled else {
             print("Email disabled in config")
             return
         }
+
+        let recipient = toAddress ?? config.email.smtpUsername
 
         // Use Python smtplib to send email
         let pythonScript = """
@@ -77,7 +81,7 @@ class NotificationService {
         msg = MIMEMultipart('alternative')
         msg['Subject'] = '\(subject.replacingOccurrences(of: "'", with: "\\'"))'
         msg['From'] = '\(config.email.smtpUsername)'
-        msg['To'] = '\(config.email.smtpUsername)'
+        msg['To'] = '\(recipient)'
 
         html_part = MIMEText('''
         \(body.replacingOccurrences(of: "'", with: "\\'"))

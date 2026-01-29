@@ -125,17 +125,13 @@ struct ExtractedItem: Codable, Identifiable {
     func formattedForDisplay(index: Int) -> String {
         var lines: [String] = []
 
-        lines.append("\(index). \(type.emoji) \(priority.emoji) \(title)")
-
+        // For commitments, use arrow format: "→ John: Send Q4 deck" or "← Sarah: Review proposal"
         if let direction = commitmentDirection {
-            lines.append("   Direction: \(direction.emoji) \(direction.rawValue)")
-            if let by = committedBy, let to = committedTo {
-                if direction == .iOwe {
-                    lines.append("   From: You → To: \(to)")
-                } else {
-                    lines.append("   From: \(by) → To: You")
-                }
-            }
+            let arrow = direction == .iOwe ? "→" : "←"
+            let counterparty = direction == .iOwe ? (committedTo ?? "them") : (committedBy ?? "them")
+            lines.append("\(index). \(type.emoji) \(priority.emoji) \(arrow) \(counterparty): \(title)")
+        } else {
+            lines.append("\(index). \(type.emoji) \(priority.emoji) \(title)")
         }
 
         if let desc = description, !desc.isEmpty {
