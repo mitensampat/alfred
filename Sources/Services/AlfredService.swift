@@ -1,18 +1,18 @@
 import Foundation
 
 /// Main service interface for the GUI app to interact with Alfred's core functionality
-@MainActor
+/// Note: Removed @MainActor to allow HTTP handlers to access this from background threads
+/// The orchestrator handles its own thread safety
 class AlfredService: ObservableObject {
     var orchestrator: BriefingOrchestrator? // Made public for HTTP server access
     private var config: AppConfig?
 
+    // These @Published properties are only used by GUI, which runs on MainActor anyway
     @Published var isInitialized = false
     @Published var error: String?
 
     init() {
-        Task {
-            await initialize()
-        }
+        // Don't auto-initialize - let caller decide when to initialize
     }
 
     func initialize() async {

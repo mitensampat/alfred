@@ -1301,12 +1301,14 @@ The Commitment Check feature requires a properly configured Notion database.
         }
 
         // Update the Tasks database ID in the orchestrator's NotionService
-        await MainActor.run {
-            guard let orchestrator = alfredService.orchestrator else {
-                return
-            }
-            orchestrator.notionServicePublic.setTasksDatabaseId(tasksDatabaseId)
+        // No longer needs MainActor since AlfredService is not @MainActor
+        guard let orchestrator = alfredService.orchestrator else {
+            return HTTPResponse(
+                statusCode: 500,
+                body: ["error": "Alfred not initialized"]
+            )
         }
+        orchestrator.notionServicePublic.setTasksDatabaseId(tasksDatabaseId)
 
         // Also update in config file (top-level notion.tasks_database_id)
         let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
@@ -2152,12 +2154,8 @@ The Commitment Check feature requires a properly configured Notion database.
                 )
             }
 
-            // Access orchestrator from main actor
-            let orchestrator = await MainActor.run {
-                alfredService.orchestrator
-            }
-
-            guard let orchestrator = orchestrator else {
+            // Access orchestrator directly (no longer needs MainActor)
+            guard let orchestrator = alfredService.orchestrator else {
                 return HTTPResponse(
                     statusCode: 500,
                     body: ["error": "Alfred not initialized"]

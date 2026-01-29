@@ -2486,21 +2486,17 @@ struct AlfredApp {
         print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         print("")
 
-        // Initialize Alfred service
-        let alfredService = await MainActor.run {
-            AlfredService()
-        }
+        // Initialize Alfred service (no longer needs MainActor)
+        let alfredService = AlfredService()
         await alfredService.initialize(config: config, orchestrator: orchestrator)
 
         // Setup NSApplication for menu bar (must be on main thread)
         await MainActor.run {
             let app = NSApplication.shared
             app.setActivationPolicy(.accessory)  // Hide from dock
-        }
 
-        // Create and setup menu bar controller on main thread
-        // Store in a static var to prevent deallocation
-        await MainActor.run {
+            // Create and setup menu bar controller on main thread
+            // Store in a static var to prevent deallocation
             AlfredApp.menuBarController = MenuBarController(config: config, alfredService: alfredService)
             AlfredApp.menuBarController?.setup()
         }
