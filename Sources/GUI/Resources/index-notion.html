@@ -94,6 +94,40 @@
             vertical-align: middle;
         }
 
+        .header .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .header .header-left {
+            flex: 1;
+        }
+
+        .header .logout-button {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 8px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .header .logout-button:hover {
+            background: rgba(235, 87, 87, 0.1);
+            border-color: #eb5757;
+            color: #eb5757;
+        }
+
+        .header .logout-button svg {
+            width: 16px;
+            height: 16px;
+        }
+
         /* Footer */
         .app-footer {
             text-align: center;
@@ -599,6 +633,7 @@
             margin-bottom: 16px;
             outline: none;
             transition: border-color 0.15s;
+            text-align: center;
         }
 
         .auth-input:focus {
@@ -648,7 +683,7 @@
             font-family: var(--font-serif);
             margin-top: 32px;
             font-size: 11px;
-            color: var(--text-tertiary);
+            color: var(--text-secondary);
             letter-spacing: 0.3px;
         }
 
@@ -877,6 +912,81 @@
             font-size: 14px;
         }
 
+        /* Toggle Switch */
+        .settings-toggle-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .settings-toggle-row:last-of-type {
+            border-bottom: none;
+        }
+
+        .settings-toggle-label {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .settings-toggle-title {
+            font-family: var(--font-serif);
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .settings-toggle-desc {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            flex-shrink: 0;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            transition: 0.2s;
+        }
+
+        .toggle-slider:before {
+            content: "";
+            position: absolute;
+            height: 18px;
+            width: 18px;
+            left: 2px;
+            bottom: 2px;
+            background: white;
+            border-radius: 50%;
+            transition: 0.2s;
+        }
+
+        .toggle-switch input:checked + .toggle-slider {
+            background: var(--accent-color);
+            border-color: var(--accent-color);
+        }
+
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(20px);
+        }
+
         /* Agents View Styles */
         .agents-list {
             display: flex;
@@ -1084,9 +1194,8 @@
         /* Approval UI */
         .approval-container {
             margin-top: 14px;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
+            display: block;
+            white-space: normal;
         }
 
         .approval-summary {
@@ -1097,6 +1206,170 @@
             line-height: 1.5;
         }
 
+        /* Tweet-Card Style Approval Items - Compact Notion Theme */
+        .approval-card {
+            display: flex;
+            align-items: flex-start;
+            gap: 0;
+            padding: 0;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: var(--bg-primary);
+            cursor: pointer;
+            transition: all 0.15s ease;
+            margin-bottom: 6px;
+            overflow: hidden;
+            position: relative;
+            white-space: normal;
+        }
+
+        .approval-card:hover {
+            background: var(--bg-secondary);
+            border-color: var(--text-tertiary);
+        }
+
+        .approval-card.selected {
+            border-color: var(--text-tertiary);
+            background: rgba(55, 53, 47, 0.03);
+        }
+
+        .approval-card-checkbox {
+            width: 14px;
+            height: 14px;
+            cursor: pointer;
+            accent-color: var(--text-secondary);
+            flex-shrink: 0;
+            opacity: 0;
+            transition: opacity 0.15s;
+            margin: 10px 0 0 10px;
+        }
+
+        .approval-card:hover .approval-card-checkbox,
+        .approval-card.selected .approval-card-checkbox {
+            opacity: 1;
+        }
+
+        /* Left border indicator using pseudo-element for reliable rendering */
+        .approval-card::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: transparent;
+            border-radius: 6px 0 0 6px;
+        }
+
+        .approval-card.iowe::before {
+            background: #eb5757; /* Notion red */
+        }
+
+        .approval-card.theyowe::before {
+            background: #0f7b6c; /* Notion teal */
+        }
+
+        .approval-card.todo::before {
+            background: #787774; /* Notion gray - darker */
+        }
+
+        .approval-card.followup::before {
+            background: #6940a5; /* Notion purple */
+        }
+
+        .approval-card-body {
+            flex: 0 1 auto;
+            min-width: 0;
+            padding: 8px 10px 8px 8px;
+        }
+
+        .approval-card-direction {
+            font-family: var(--font-body);
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--text-tertiary);
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            margin-bottom: 2px;
+        }
+
+        .approval-card-direction .arrow {
+            font-size: 12px;
+        }
+
+        .approval-card-title {
+            font-family: var(--font-body);
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+            line-height: 1.3;
+            display: -webkit-box;
+            -webkit-line-clamp: 1;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .approval-card-description {
+            font-family: var(--font-body);
+            font-size: 12px;
+            color: var(--text-tertiary);
+            line-height: 1.3;
+            display: -webkit-box;
+            -webkit-line-clamp: 1;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            margin-top: 2px;
+        }
+
+        .approval-card-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 4px;
+        }
+
+        .approval-card-source {
+            font-family: var(--font-body);
+            font-size: 10px;
+            color: var(--text-tertiary);
+        }
+
+        .approval-card-priority {
+            font-family: var(--font-body);
+            font-size: 9px;
+            padding: 1px 5px;
+            border-radius: 3px;
+            background: rgba(55, 53, 47, 0.08);
+            color: var(--text-secondary);
+            text-transform: lowercase;
+        }
+
+        .approval-card-priority.critical {
+            background: rgba(235, 87, 87, 0.15);
+            color: #eb5757;
+        }
+
+        .approval-card-priority.high {
+            background: rgba(255, 163, 68, 0.15);
+            color: #d9730d;
+        }
+
+        .approval-section-header {
+            font-family: var(--font-body);
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin: 12px 0 6px 0;
+        }
+
+        .approval-section-header:first-child {
+            margin-top: 0;
+        }
+
+        /* Legacy support - keep old classes working */
         .approval-item {
             display: flex;
             align-items: flex-start;
@@ -1698,13 +1971,13 @@
     <!-- Auth Screen -->
     <div id="authScreen" class="auth-screen">
         <div class="auth-card">
-            <div class="auth-logo">alfred <span class="auth-version">v1.4.2</span></div>
+            <div class="auth-logo">alfred</div>
             <div class="auth-subtitle">judgement from noise</div>
             <input type="password" id="passcodeInput" class="auth-input" placeholder="enter passcode"
                    onkeypress="if(event.key==='Enter')authenticate()" autofocus />
-            <button class="auth-button" onclick="authenticate()">continue</button>
+            <button class="auth-button" onclick="authenticate()">let's go</button>
             <div id="authError" class="auth-error hidden"></div>
-            <div class="auth-footer">crafted by ms foundry</div>
+            <div class="auth-footer">v1.5.0 · crafted by ms foundry</div>
         </div>
     </div>
 
@@ -1714,8 +1987,19 @@
         <button id="backHomeButton" class="back-home-button hidden" onclick="goBackHome()">Back Home</button>
 
         <div class="header">
-            <h1>alfred <span class="version-tag">v1.4.2</span></h1>
-            <p>judgement from noise</p>
+            <div class="header-content">
+                <div class="header-left">
+                    <h1>alfred <span class="version-tag">v1.5.0</span></h1>
+                    <p>judgement from noise</p>
+                </div>
+                <button id="logoutButton" class="logout-button" onclick="logout()" title="Logout">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                        <polyline points="16 17 21 12 16 7"></polyline>
+                        <line x1="21" y1="12" x2="9" y2="12"></line>
+                    </svg>
+                </button>
+            </div>
         </div>
 
         <!-- Form View (for parameterized actions) -->
@@ -1725,6 +2009,54 @@
 
         <!-- Settings View -->
         <div id="settingsView" class="hidden settings-page">
+            <div class="settings-section">
+                <div class="settings-section-title">Scheduled Emails</div>
+                <div class="settings-item-desc" style="margin-bottom: 16px;">
+                    Configure automated email delivery for your Daily Briefing and Attention Check.
+                </div>
+
+                <div class="settings-toggle-row">
+                    <div class="settings-toggle-label">
+                        <div class="settings-toggle-title">Daily Briefing</div>
+                        <div class="settings-toggle-desc" id="briefingTimeDesc">sent daily at 07:00</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="briefingEnabled" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="settings-item" style="margin-top: 8px;">
+                    <div class="settings-item-label">Briefing Time</div>
+                    <input type="time" id="briefingTime" class="settings-input" value="07:00" />
+                </div>
+
+                <div class="settings-toggle-row" style="margin-top: 12px;">
+                    <div class="settings-toggle-label">
+                        <div class="settings-toggle-title">Attention Check</div>
+                        <div class="settings-toggle-desc" id="attentionTimeDesc">sent daily at 15:00</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="attentionEnabled" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="settings-item" style="margin-top: 8px;">
+                    <div class="settings-item-label">Attention Check Time</div>
+                    <input type="time" id="attentionTime" class="settings-input" value="15:00" />
+                </div>
+
+                <div class="settings-item" style="margin-top: 16px;">
+                    <div class="settings-item-label">Email Address</div>
+                    <div class="settings-item-desc">both scheduled emails will be sent to this address</div>
+                    <input type="email" id="scheduledEmailTo" class="settings-input" placeholder="your@email.com" />
+                </div>
+
+                <button class="settings-button-save" onclick="saveScheduledConfig()">Save Schedule Settings</button>
+                <div id="scheduledConfigStatus" class="hidden"></div>
+            </div>
+
             <div class="settings-section">
                 <div class="settings-section-title">Notion Configuration</div>
                 <div class="settings-item">
@@ -1902,19 +2234,82 @@
     </div>
 
     <script>
-        let passcode = '';
+        let authToken = '';
         let sessionId = generateSessionId();
         let conversationHistory = [];
         let currentModalCallback = null;
+
+        // Storage keys
+        const STORAGE_TOKEN_KEY = 'alfred_auth_token';
+        const STORAGE_EXPIRES_KEY = 'alfred_token_expires';
 
         function generateSessionId() {
             return 'session-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
         }
 
+        // Check for saved session on page load
+        function checkSavedSession() {
+            const savedToken = localStorage.getItem(STORAGE_TOKEN_KEY);
+            const savedExpires = localStorage.getItem(STORAGE_EXPIRES_KEY);
+
+            if (savedToken && savedExpires) {
+                // Check if token is expired
+                const expiresAt = new Date(savedExpires);
+                if (expiresAt > new Date()) {
+                    // Validate token with server
+                    fetch('/api/auth/validate', {
+                        method: 'GET',
+                        headers: { 'Authorization': 'Bearer ' + savedToken }
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.valid) {
+                            authToken = savedToken;
+                            showApp();
+                        } else {
+                            clearSavedSession();
+                            showAuthScreen();
+                        }
+                    })
+                    .catch(() => {
+                        clearSavedSession();
+                        showAuthScreen();
+                    });
+                } else {
+                    clearSavedSession();
+                    showAuthScreen();
+                }
+            } else {
+                showAuthScreen();
+            }
+        }
+
+        function saveSession(token, expiresAt) {
+            localStorage.setItem(STORAGE_TOKEN_KEY, token);
+            localStorage.setItem(STORAGE_EXPIRES_KEY, expiresAt);
+        }
+
+        function clearSavedSession() {
+            localStorage.removeItem(STORAGE_TOKEN_KEY);
+            localStorage.removeItem(STORAGE_EXPIRES_KEY);
+            authToken = '';
+        }
+
+        function showAuthScreen() {
+            document.getElementById('authScreen').classList.remove('hidden');
+            document.getElementById('appContainer').classList.add('hidden');
+        }
+
+        function showApp() {
+            document.getElementById('authScreen').classList.add('hidden');
+            document.getElementById('appContainer').classList.remove('hidden');
+            document.getElementById('queryInput').focus();
+        }
+
         function authenticate() {
             const input = document.getElementById('passcodeInput');
             const error = document.getElementById('authError');
-            passcode = input.value;
+            const passcode = input.value;
 
             if (!passcode) {
                 error.textContent = 'Please enter a passcode';
@@ -1922,22 +2317,61 @@
                 return;
             }
 
-            // Test authentication with a simple health check
-            fetch('/api/health?passcode=' + encodeURIComponent(passcode))
-                .then(response => {
-                    if (response.ok) {
-                        document.getElementById('authScreen').classList.add('hidden');
-                        document.getElementById('appContainer').classList.remove('hidden');
-                        document.getElementById('queryInput').focus();
-                    } else {
-                        error.textContent = 'Invalid passcode';
-                        error.classList.remove('hidden');
-                    }
-                })
-                .catch(err => {
-                    error.textContent = 'Connection error';
+            // Login with passcode to get token
+            fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ passcode: passcode })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.token) {
+                    authToken = data.token;
+                    saveSession(data.token, data.expiresAt);
+                    input.value = ''; // Clear passcode from input
+                    showApp();
+                } else {
+                    error.textContent = data.error || 'Invalid passcode';
                     error.classList.remove('hidden');
-                });
+                }
+            })
+            .catch(err => {
+                error.textContent = 'Connection error';
+                error.classList.remove('hidden');
+            });
+        }
+
+        function logout() {
+            // Call logout endpoint
+            fetch('/api/auth/logout', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + authToken }
+            })
+            .then(() => {
+                clearSavedSession();
+                showAuthScreen();
+            })
+            .catch(() => {
+                clearSavedSession();
+                showAuthScreen();
+            });
+        }
+
+        // Helper function for authenticated API calls
+        async function authFetch(url, options = {}) {
+            const headers = options.headers || {};
+            headers['Authorization'] = 'Bearer ' + authToken;
+
+            const response = await fetch(url, { ...options, headers });
+
+            // If unauthorized, session may have expired - redirect to login
+            if (response.status === 401) {
+                clearSavedSession();
+                showAuthScreen();
+                throw new Error('Session expired. Please log in again.');
+            }
+
+            return response;
         }
 
         function autoResizeTextarea(textarea) {
@@ -1983,7 +2417,7 @@
             document.getElementById('sendButton').disabled = true;
 
             try {
-                const response = await fetch('/api/query?passcode=' + encodeURIComponent(passcode), {
+                const response = await authFetch('/api/query', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ query, sessionId })
@@ -2028,11 +2462,7 @@
             document.getElementById('sendButton').disabled = true;
 
             try {
-                // Add passcode to URL (use & if there are already query params)
-                const separator = endpoint.includes('?') ? '&' : '?';
-                const url = endpoint + separator + 'passcode=' + encodeURIComponent(passcode);
-
-                const response = await fetch(url, {
+                const response = await authFetch(endpoint, {
                     method: 'GET'
                 });
 
@@ -2072,6 +2502,22 @@
             // Re-enable input
             document.getElementById('sendButton').disabled = false;
             document.getElementById('queryInput').focus();
+        }
+
+        // Record user corrections for agent training
+        async function recordCorrection(correction) {
+            try {
+                const response = await authFetch('/api/corrections', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(correction)
+                });
+                if (!response.ok) {
+                    console.warn('Failed to record correction:', await response.text());
+                }
+            } catch (error) {
+                console.warn('Failed to record correction:', error);
+            }
         }
 
         // Store briefing action items for approval
@@ -2256,7 +2702,7 @@
             }
 
             try {
-                const response = await fetch('/api/extract/approve?passcode=' + encodeURIComponent(passcode), {
+                const response = await authFetch('/api/extract/approve', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ items: selectedItems })
@@ -2484,8 +2930,23 @@
                 }
             }
 
+            // Store commitments for Add to Notion functionality
+            if (commitments.length > 0) {
+                pendingCommitmentCheckItems = commitments;
+                html += `
+                    <div style="margin-top: 12px; text-align: center;">
+                        <button onclick="showCommitmentCheckApproval()" class="primary-button" style="padding: 8px 16px; font-size: 13px;">
+                            Add to Notion
+                        </button>
+                    </div>
+                `;
+            }
+
             return html;
         }
+
+        // Store commitment check items for approval
+        let pendingCommitmentCheckItems = [];
 
         function escapeHtml(text) {
             const div = document.createElement('div');
@@ -2674,6 +3135,10 @@
                     <label class="form-label">Timeframe</label>
                     <div class="radio-group">
                         <label class="radio-option">
+                            <input type="radio" name="timeframe" value="1d" />
+                            <span>1 Day</span>
+                        </label>
+                        <label class="radio-option">
                             <input type="radio" name="timeframe" value="3d" />
                             <span>3 Days</span>
                         </label>
@@ -2798,6 +3263,10 @@
                     <label class="form-label">Lookback Period</label>
                     <div class="radio-group">
                         <label class="radio-option">
+                            <input type="radio" name="lookback" value="1" />
+                            <span>1 Day</span>
+                        </label>
+                        <label class="radio-option">
                             <input type="radio" name="lookback" value="3" />
                             <span>3 Days</span>
                         </label>
@@ -2877,7 +3346,7 @@
             `;
 
             try {
-                const response = await fetch(endpoint + '?passcode=' + encodeURIComponent(passcode), {
+                const response = await authFetch(endpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(params)
@@ -2925,50 +3394,103 @@
             }
         }
 
-        // Show approval UI with extracted items
+        // Convert commitment check items to ExtractedItem format and show approval UI
+        function showCommitmentCheckApproval() {
+            if (!pendingCommitmentCheckItems || pendingCommitmentCheckItems.length === 0) {
+                return;
+            }
+
+            // Convert commitments to ExtractedItem format
+            pendingExtractedItems = pendingCommitmentCheckItems.map(c => {
+                // Determine direction
+                const userName = 'Miten Sampat';
+                const isUserCommitter = c.committedBy === userName || c.committedBy === 'You';
+                const direction = isUserCommitter ? 'I Owe' : 'They Owe Me';
+
+                return {
+                    id: c.id || crypto.randomUUID(),
+                    type: 'Commitment',
+                    title: c.title || c.commitmentText || 'Untitled',
+                    description: c.commitmentText || c.description || '',
+                    priority: c.priority || 'Medium',
+                    source: {
+                        platform: c.sourcePlatform || c.platform || 'WhatsApp',
+                        contact: isUserCommitter ? (c.committedTo || 'Unknown') : (c.committedBy || 'Unknown'),
+                        displayName: `${c.sourcePlatform || 'WhatsApp'}: ${c.sourceThread || (isUserCommitter ? c.committedTo : c.committedBy) || 'Unknown'}`
+                    },
+                    dueDate: c.dueDate,
+                    commitmentDirection: direction,
+                    committedBy: c.committedBy,
+                    committedTo: c.committedTo,
+                    originalContext: c.originalContext || c.context || '',
+                    uniqueHash: c.uniqueHash || String(Math.random())
+                };
+            });
+
+            // Show the approval UI
+            showApprovalUI('Add Commitments to Notion');
+        }
+
+        // Show approval UI with extracted items (tweet-card style)
         function showApprovalUI(title) {
             const chatContainer = document.getElementById('chatContainer');
 
-            // Group items by type
-            const commitments = pendingExtractedItems.filter(i => i.type === 'Commitment');
-            const todos = pendingExtractedItems.filter(i => i.type === 'Todo');
-            const followups = pendingExtractedItems.filter(i => i.type === 'Follow-up');
+            // Group items by type and direction
+            const iOweItems = pendingExtractedItems.filter(i =>
+                i.type === 'Commitment' && i.commitmentDirection === 'I Owe'
+            );
+            const theyOweItems = pendingExtractedItems.filter(i =>
+                i.type === 'Commitment' && i.commitmentDirection === 'They Owe Me'
+            );
+            const todoItems = pendingExtractedItems.filter(i => i.type === 'Todo');
+            const followupItems = pendingExtractedItems.filter(i => i.type === 'Follow-up');
 
+            // Build summary
             let summaryParts = [];
-            if (commitments.length > 0) summaryParts.push(`${commitments.length} commitment(s)`);
-            if (todos.length > 0) summaryParts.push(`${todos.length} todo(s)`);
-            if (followups.length > 0) summaryParts.push(`${followups.length} follow-up(s)`);
+            if (iOweItems.length > 0) summaryParts.push(`${iOweItems.length} I owe`);
+            if (theyOweItems.length > 0) summaryParts.push(`${theyOweItems.length} owed to me`);
+            if (todoItems.length > 0) summaryParts.push(`${todoItems.length} todo(s)`);
+            if (followupItems.length > 0) summaryParts.push(`${followupItems.length} follow-up(s)`);
 
             let itemsHtml = '';
-            pendingExtractedItems.forEach((item, index) => {
-                const typeEmoji = item.type === 'Commitment' ? '🤝' : (item.type === 'Todo' ? '✅' : '🔄');
-                const priorityEmoji = getPriorityEmoji(item.priority);
-                const directionHtml = item.commitmentDirection
-                    ? `<div class="approval-item-direction">${item.commitmentDirection === 'I Owe' ? '📤' : '📥'} ${escapeHtml(item.commitmentDirection)}</div>`
-                    : '';
-                const sourceHtml = item.source
-                    ? `<div class="approval-item-source">${escapeHtml(item.source.platform)}: ${escapeHtml(item.source.contact || item.source.threadName || '')}</div>`
-                    : '';
-                const descHtml = item.description
-                    ? `<div class="approval-item-meta">${escapeHtml(item.description.substring(0, 100))}${item.description.length > 100 ? '...' : ''}</div>`
-                    : '';
 
-                itemsHtml += `
-                    <div class="approval-item selected" onclick="toggleApprovalItem(${index})" data-index="${index}">
-                        <input type="checkbox" class="approval-item-checkbox" checked onchange="toggleApprovalItem(${index})" onclick="event.stopPropagation()">
-                        <div class="approval-item-content">
-                            <div class="approval-item-header">
-                                <span class="approval-item-type">${typeEmoji}</span>
-                                <span class="approval-item-priority">${priorityEmoji}</span>
-                                <span class="approval-item-title">${escapeHtml(item.title)}</span>
-                            </div>
-                            ${descHtml}
-                            ${directionHtml}
-                            ${sourceHtml}
-                        </div>
-                    </div>
-                `;
-            });
+            // Render "What I Owe" section
+            if (iOweItems.length > 0) {
+                itemsHtml += `<div class="approval-section-header">What I Owe (${iOweItems.length})</div>`;
+                iOweItems.forEach(item => {
+                    const globalIndex = pendingExtractedItems.indexOf(item);
+                    itemsHtml += renderApprovalCard(item, globalIndex);
+                });
+            }
+
+            // Render "What's Owed to Me" section
+            if (theyOweItems.length > 0) {
+                itemsHtml += `<div class="approval-section-header">What's Owed to Me (${theyOweItems.length})</div>`;
+                theyOweItems.forEach(item => {
+                    const globalIndex = pendingExtractedItems.indexOf(item);
+                    itemsHtml += renderApprovalCard(item, globalIndex);
+                });
+            }
+
+            // Render Todos section
+            if (todoItems.length > 0) {
+                if (iOweItems.length > 0 || theyOweItems.length > 0) {
+                    itemsHtml += `<div class="approval-section-header">Todos (${todoItems.length})</div>`;
+                }
+                todoItems.forEach(item => {
+                    const globalIndex = pendingExtractedItems.indexOf(item);
+                    itemsHtml += renderApprovalCard(item, globalIndex);
+                });
+            }
+
+            // Render Follow-ups section
+            if (followupItems.length > 0) {
+                itemsHtml += `<div class="approval-section-header">Follow-ups (${followupItems.length})</div>`;
+                followupItems.forEach(item => {
+                    const globalIndex = pendingExtractedItems.indexOf(item);
+                    itemsHtml += renderApprovalCard(item, globalIndex);
+                });
+            }
 
             chatContainer.innerHTML = `
                 <div class="message assistant">
@@ -2992,6 +3514,65 @@
             `;
         }
 
+        // Render a single approval card (tweet-style)
+        function renderApprovalCard(item, index) {
+            const isCommitment = item.type === 'Commitment';
+            const isIOwe = item.commitmentDirection === 'I Owe';
+
+            // Determine indicator class based on type/direction
+            let indicatorClass = 'todo';
+            if (isCommitment) {
+                indicatorClass = isIOwe ? 'iowe' : 'theyowe';
+            } else if (item.type === 'Follow-up') {
+                indicatorClass = 'followup';
+            }
+
+            // Build direction display for commitments
+            let directionHtml = '';
+            if (isCommitment) {
+                const counterparty = isIOwe
+                    ? (item.committedTo || 'them')
+                    : (item.committedBy || 'them');
+                const arrow = isIOwe ? '→' : '←';
+                directionHtml = `
+                    <div class="approval-card-direction">
+                        <span class="arrow">${arrow}</span>
+                        <span>${escapeHtml(counterparty)}</span>
+                    </div>
+                `;
+            }
+
+            // Source display
+            const sourceName = item.source
+                ? `${item.source.platform}${item.source.contact ? ' · ' + item.source.contact : (item.source.threadName ? ' · ' + item.source.threadName : '')}`
+                : '';
+
+            // Priority badge (only show non-medium)
+            const priorityHtml = item.priority && item.priority !== 'Medium'
+                ? `<span class="approval-card-priority ${item.priority.toLowerCase()}">${item.priority.toLowerCase()}</span>`
+                : '';
+
+            // Description (truncated)
+            const descHtml = item.description
+                ? `<div class="approval-card-description">${escapeHtml(item.description)}</div>`
+                : '';
+
+            return `
+                <div class="approval-card selected ${indicatorClass}" onclick="toggleApprovalCard(${index})" data-index="${index}">
+                    <input type="checkbox" class="approval-card-checkbox" checked onchange="toggleApprovalCard(${index})" onclick="event.stopPropagation()">
+                    <div class="approval-card-body">
+                        ${directionHtml}
+                        <div class="approval-card-title">${escapeHtml(item.title)}</div>
+                        ${descHtml}
+                        <div class="approval-card-meta">
+                            ${sourceName ? `<span class="approval-card-source">${escapeHtml(sourceName)}</span>` : ''}
+                            ${priorityHtml}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
         // Get priority emoji
         function getPriorityEmoji(priority) {
             switch (priority) {
@@ -3003,24 +3584,84 @@
             }
         }
 
-        // Toggle approval item selection
-        function toggleApprovalItem(index) {
-            const item = document.querySelector(`.approval-item[data-index="${index}"]`);
-            const checkbox = item.querySelector('.approval-item-checkbox');
+        // Toggle approval card selection (tweet-card style)
+        function toggleApprovalCard(index) {
+            const card = document.querySelector(`.approval-card[data-index="${index}"]`);
+            if (!card) return;
+            const checkbox = card.querySelector('.approval-card-checkbox');
 
+            const wasSelected = checkbox.checked;
             checkbox.checked = !checkbox.checked;
-            item.classList.toggle('selected', checkbox.checked);
+            card.classList.toggle('selected', checkbox.checked);
+
+            // Track deselection as a false positive for learning
+            if (wasSelected && !checkbox.checked) {
+                const item = pendingExtractedItems[index];
+                if (item) {
+                    recordCorrection({
+                        type: 'false_positive',
+                        itemType: item.type || 'Unknown',
+                        title: item.title || '',
+                        description: item.description || null,
+                        reason: 'user_deselected',
+                        source: item.source?.displayName || null
+                    });
+                }
+            }
 
             updateSelectedCount();
         }
 
-        // Toggle all approval items
+        // Legacy support for old approval items
+        function toggleApprovalItem(index) {
+            // Try new card first, then fall back to old item
+            const card = document.querySelector(`.approval-card[data-index="${index}"]`);
+            if (card) {
+                toggleApprovalCard(index);
+                return;
+            }
+            const legacyItem = document.querySelector(`.approval-item[data-index="${index}"]`);
+            if (!legacyItem) return;
+            const checkbox = legacyItem.querySelector('.approval-item-checkbox');
+
+            const wasSelected = checkbox.checked;
+            checkbox.checked = !checkbox.checked;
+            legacyItem.classList.toggle('selected', checkbox.checked);
+
+            // Track deselection as a false positive for learning
+            if (wasSelected && !checkbox.checked) {
+                const extractedItem = pendingExtractedItems[index];
+                if (extractedItem) {
+                    recordCorrection({
+                        type: 'false_positive',
+                        itemType: extractedItem.type || 'Unknown',
+                        title: extractedItem.title || '',
+                        description: extractedItem.description || null,
+                        reason: 'user_deselected',
+                        source: extractedItem.source?.displayName || null
+                    });
+                }
+            }
+
+            updateSelectedCount();
+        }
+
+        // Toggle all approval items (supports both card and item styles)
         function toggleAllApprovalItems() {
-            const items = document.querySelectorAll('.approval-item');
+            // Try new cards first
+            let items = document.querySelectorAll('.approval-card');
+            let checkboxClass = '.approval-card-checkbox';
+
+            // Fall back to old items if no cards found
+            if (items.length === 0) {
+                items = document.querySelectorAll('.approval-item');
+                checkboxClass = '.approval-item-checkbox';
+            }
+
             const allSelected = Array.from(items).every(item => item.classList.contains('selected'));
 
             items.forEach((item, index) => {
-                const checkbox = item.querySelector('.approval-item-checkbox');
+                const checkbox = item.querySelector(checkboxClass);
                 checkbox.checked = !allSelected;
                 item.classList.toggle('selected', !allSelected);
             });
@@ -3030,13 +3671,22 @@
 
         // Update selected count display
         function updateSelectedCount() {
-            const selectedCount = document.querySelectorAll('.approval-item.selected').length;
-            document.getElementById('selectedCount').textContent = selectedCount;
+            // Count from both card and item styles
+            const cardCount = document.querySelectorAll('.approval-card.selected').length;
+            const itemCount = document.querySelectorAll('.approval-item.selected').length;
+            const selectedCount = cardCount > 0 ? cardCount : itemCount;
+            const countEl = document.getElementById('selectedCount');
+            if (countEl) countEl.textContent = selectedCount;
         }
 
         // Save approved items to Notion
         async function saveApprovedItems() {
-            const selectedIndices = Array.from(document.querySelectorAll('.approval-item.selected'))
+            // Get indices from both card and item styles
+            let selectedElements = document.querySelectorAll('.approval-card.selected');
+            if (selectedElements.length === 0) {
+                selectedElements = document.querySelectorAll('.approval-item.selected');
+            }
+            const selectedIndices = Array.from(selectedElements)
                 .map(item => parseInt(item.dataset.index));
 
             if (selectedIndices.length === 0) {
@@ -3045,6 +3695,52 @@
             }
 
             const selectedItems = selectedIndices.map(i => pendingExtractedItems[i]);
+
+            // Calculate rejected items (not selected)
+            const allIndices = pendingExtractedItems.map((_, i) => i);
+            const rejectedIndices = allIndices.filter(i => !selectedIndices.includes(i));
+            const rejectedItems = rejectedIndices.map(i => pendingExtractedItems[i]);
+
+            // Record extraction results for contact learning
+            // Group by platform/thread to record per-thread stats
+            const threadStats = {};
+            selectedItems.forEach(item => {
+                if (item.source) {
+                    const key = `${item.source.platform}:${item.source.threadName || item.source.contact || 'unknown'}`;
+                    if (!threadStats[key]) {
+                        threadStats[key] = { platform: item.source.platform, threadId: item.source.threadName || item.source.contact || 'unknown', extracted: 0, rejected: 0 };
+                    }
+                    threadStats[key].extracted++;
+                }
+            });
+            rejectedItems.forEach(item => {
+                if (item.source) {
+                    const key = `${item.source.platform}:${item.source.threadName || item.source.contact || 'unknown'}`;
+                    if (!threadStats[key]) {
+                        threadStats[key] = { platform: item.source.platform, threadId: item.source.threadName || item.source.contact || 'unknown', extracted: 0, rejected: 0 };
+                    }
+                    threadStats[key].rejected++;
+                }
+            });
+
+            // Send extraction stats to contact learning endpoint
+            for (const key of Object.keys(threadStats)) {
+                const stats = threadStats[key];
+                try {
+                    await authFetch('/api/contacts/extraction', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            platform: stats.platform,
+                            threadId: stats.threadId,
+                            itemsExtracted: stats.extracted,
+                            itemsRejected: stats.rejected
+                        })
+                    });
+                } catch (e) {
+                    console.log('Failed to record extraction stats:', e);
+                }
+            }
 
             // Show saving state
             const chatContainer = document.getElementById('chatContainer');
@@ -3058,7 +3754,7 @@
             `;
 
             try {
-                const response = await fetch('/api/extract/approve?passcode=' + encodeURIComponent(passcode), {
+                const response = await authFetch('/api/extract/approve', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ items: selectedItems })
@@ -3146,7 +3842,7 @@
         // Load recent activity from API
         async function loadRecentActivity() {
             try {
-                const response = await fetch('/api/recent-activity?passcode=' + encodeURIComponent(passcode));
+                const response = await authFetch('/api/recent-activity');
                 if (!response.ok) return;
 
                 const data = await response.json();
@@ -3207,9 +3903,9 @@
                     `${key}=${encodeURIComponent(value)}`
                 ).join('&');
 
-                const url = `/api/recent-activity/delete?passcode=${encodeURIComponent(passcode)}&endpoint=${encodeURIComponent(endpoint)}&${queryParts}`;
+                const url = `/api/recent-activity/delete?endpoint=${encodeURIComponent(endpoint)}&${queryParts}`;
 
-                const response = await fetch(url, {
+                const response = await authFetch(url, {
                     method: 'DELETE'
                 });
 
@@ -3241,7 +3937,7 @@
         // Load settings from API
         async function loadSettings() {
             try {
-                const response = await fetch('/api/config/notion?passcode=' + encodeURIComponent(passcode));
+                const response = await authFetch('/api/config/notion');
                 if (!response.ok) return;
 
                 const data = await response.json();
@@ -3255,6 +3951,82 @@
                 }
             } catch (error) {
                 console.error('Failed to load settings:', error);
+            }
+
+            // Also load scheduled config
+            loadScheduledConfig();
+        }
+
+        // Load scheduled email config
+        async function loadScheduledConfig() {
+            try {
+                const response = await authFetch('/api/config/scheduled');
+                if (!response.ok) return;
+
+                const data = await response.json();
+
+                document.getElementById('briefingEnabled').checked = data.briefing_enabled !== false;
+                document.getElementById('attentionEnabled').checked = data.attention_enabled !== false;
+                document.getElementById('briefingTime').value = data.briefing_time || '07:00';
+                document.getElementById('attentionTime').value = data.attention_alert_time || '15:00';
+                document.getElementById('scheduledEmailTo').value = data.email_to || '';
+
+                document.getElementById('briefingTimeDesc').textContent =
+                    'sent daily at ' + (data.briefing_time || '07:00');
+                document.getElementById('attentionTimeDesc').textContent =
+                    'sent daily at ' + (data.attention_alert_time || '15:00');
+            } catch (error) {
+                console.error('Failed to load scheduled config:', error);
+            }
+        }
+
+        // Save scheduled email config
+        async function saveScheduledConfig() {
+            const statusEl = document.getElementById('scheduledConfigStatus');
+
+            const payload = {
+                briefing_enabled: document.getElementById('briefingEnabled').checked,
+                attention_enabled: document.getElementById('attentionEnabled').checked,
+                briefing_time: document.getElementById('briefingTime').value,
+                attention_alert_time: document.getElementById('attentionTime').value,
+                email_to: document.getElementById('scheduledEmailTo').value.trim()
+            };
+
+            const timeRegex = /^\d{2}:\d{2}$/;
+            if (!timeRegex.test(payload.briefing_time) || !timeRegex.test(payload.attention_alert_time)) {
+                statusEl.className = 'settings-error';
+                statusEl.textContent = 'Please enter valid times in HH:MM format';
+                statusEl.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                const response = await authFetch('/api/config/scheduled', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    statusEl.className = 'settings-success';
+                    statusEl.textContent = 'schedule settings saved successfully';
+                    statusEl.classList.remove('hidden');
+
+                    document.getElementById('briefingTimeDesc').textContent =
+                        'sent daily at ' + payload.briefing_time;
+                    document.getElementById('attentionTimeDesc').textContent =
+                        'sent daily at ' + payload.attention_alert_time;
+                } else {
+                    statusEl.className = 'settings-error';
+                    statusEl.textContent = 'Error: ' + (data.error || 'Failed to save');
+                    statusEl.classList.remove('hidden');
+                }
+            } catch (error) {
+                statusEl.className = 'settings-error';
+                statusEl.textContent = 'Failed to connect to server';
+                statusEl.classList.remove('hidden');
             }
         }
 
@@ -3271,7 +4043,7 @@
             }
 
             try {
-                const response = await fetch('/api/config/notion?passcode=' + encodeURIComponent(passcode), {
+                const response = await authFetch('/api/config/notion', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ tasksDatabaseId })
@@ -3316,13 +4088,6 @@
                 return;
             }
 
-            if (current !== passcode) {
-                statusEl.className = 'settings-error';
-                statusEl.textContent = 'Current passcode is incorrect';
-                statusEl.classList.remove('hidden');
-                return;
-            }
-
             if (newPass.length < 8) {
                 statusEl.className = 'settings-error';
                 statusEl.textContent = 'New passcode must be at least 8 characters';
@@ -3331,10 +4096,10 @@
             }
 
             try {
-                const response = await fetch('/api/config/passcode?passcode=' + encodeURIComponent(passcode), {
+                const response = await authFetch('/api/config/passcode', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ newPasscode: newPass })
+                    body: JSON.stringify({ currentPasscode: current, newPasscode: newPass })
                 });
 
                 const data = await response.json();
@@ -3350,10 +4115,10 @@
                     document.getElementById('newPasscode').value = '';
                     document.getElementById('confirmPasscode').value = '';
 
-                    // Wait 2 seconds then redirect to login
+                    // Wait 2 seconds then clear session and redirect to login
                     setTimeout(() => {
-                        // Clear the old passcode and redirect
-                        window.location.href = window.location.pathname;
+                        clearSavedSession();
+                        showAuthScreen();
                     }, 2000);
                 } else {
                     statusEl.className = 'settings-error';
@@ -3376,7 +4141,7 @@
             }
 
             try {
-                const response = await fetch('/api/cache/clear?passcode=' + encodeURIComponent(passcode), {
+                const response = await authFetch('/api/cache/clear', {
                     method: 'POST'
                 });
 
@@ -3436,7 +4201,7 @@
             listEl.innerHTML = '<div class="loading-agents">Loading agents...</div>';
 
             try {
-                const response = await fetch('/api/agents?passcode=' + encodeURIComponent(passcode));
+                const response = await authFetch('/api/agents');
                 if (!response.ok) throw new Error('Failed to load agents');
 
                 const data = await response.json();
@@ -3487,8 +4252,8 @@
             try {
                 // Load memory and skills in parallel
                 const [memoryRes, skillsRes] = await Promise.all([
-                    fetch(`/api/agents/memory?agent=${agentType}&passcode=${encodeURIComponent(passcode)}`),
-                    fetch(`/api/agents/skills?agent=${agentType}&passcode=${encodeURIComponent(passcode)}`)
+                    authFetch(`/api/agents/memory?agent=${agentType}`),
+                    authFetch(`/api/agents/skills?agent=${agentType}`)
                 ]);
 
                 const memoryData = await memoryRes.json();
@@ -3594,7 +4359,7 @@
             }
 
             try {
-                const response = await fetch('/api/agents/teach?passcode=' + encodeURIComponent(passcode), {
+                const response = await authFetch('/api/agents/teach', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -3636,7 +4401,7 @@
             }
 
             try {
-                const response = await fetch('/api/agents/forget?passcode=' + encodeURIComponent(passcode), {
+                const response = await authFetch('/api/agents/forget', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -3658,20 +4423,19 @@
 
         // Auto-authentication and setup on load
         document.addEventListener('DOMContentLoaded', () => {
-            // Check if passcode is in URL query parameters
+            // Check if passcode is in URL query parameters (for quick login links)
             const urlParams = new URLSearchParams(window.location.search);
             const urlPasscode = urlParams.get('passcode');
 
             if (urlPasscode) {
                 // Auto-authenticate with URL passcode
-                passcode = urlPasscode;
                 document.getElementById('passcodeInput').value = urlPasscode;
                 authenticate();
-                // Load recent activity after auth
-                setTimeout(() => loadRecentActivity(), 500);
+                // Clean URL (remove passcode from address bar)
+                window.history.replaceState({}, '', window.location.pathname);
             } else {
-                // Manual entry - focus input
-                document.getElementById('passcodeInput').focus();
+                // Check for saved session
+                checkSavedSession();
             }
 
             // Handle radio option visual feedback

@@ -88,10 +88,25 @@ extension NotionService {
         return databaseId
     }
 
+    /// Error for duplicate task detection
+    enum TaskCreationError: Error {
+        case duplicate(existingId: String)
+    }
+
     /// Create a task in the unified Tasks database
+    /// Returns the page ID if created
+    /// Throws TaskCreationError.duplicate if task already exists
     func createTask(_ task: TaskItem) async throws -> String {
         guard let dbId = tasksDatabaseId else {
             throw NSError(domain: "NotionService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Tasks database ID not set"])
+        }
+
+        // Check for duplicate by hash before creating
+        if let hash = task.uniqueHash, !hash.isEmpty {
+            if let existingId = try await findTaskByHash(hash) {
+                print("⚠️ Duplicate task found, skipping: \(task.title)")
+                throw TaskCreationError.duplicate(existingId: existingId)
+            }
         }
 
         let url = URL(string: "https://api.notion.com/v1/pages")!
@@ -101,35 +116,45 @@ extension NotionService {
         request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        // Build enhanced description for commitments
+        // Build simplified description for commitments using arrow format
         var enhancedDescription = task.description ?? ""
+        var displayTitle = task.title
+
         if task.type == .commitment {
-            var commitmentDetails: [String] = []
+            var parts: [String] = []
 
+            // Arrow format header: "→ John" or "← Sarah"
             if let direction = task.commitmentDirection {
-                commitmentDetails.append("Direction: \(direction.rawValue)")
-            }
-            if let committedBy = task.committedBy {
-                commitmentDetails.append("Committed by: \(committedBy)")
-            }
-            if let committedTo = task.committedTo {
-                commitmentDetails.append("Committed to: \(committedTo)")
-            }
-            if let context = task.originalContext, !context.isEmpty {
-                commitmentDetails.append("\nOriginal context:\n\(context)")
+                let arrow = direction == .iOwe ? "→" : "←"
+                let counterparty = direction == .iOwe ? (task.committedTo ?? "them") : (task.committedBy ?? "them")
+                parts.append("\(arrow) \(counterparty)")
+
+                // Add arrow prefix to title: "→ John: Review proposal"
+                displayTitle = "\(arrow) \(counterparty): \(task.title)"
             }
 
-            if !commitmentDetails.isEmpty {
-                let details = commitmentDetails.joined(separator: "\n")
-                enhancedDescription = enhancedDescription.isEmpty ? details : "\(enhancedDescription)\n\n---\n\(details)"
+            // Add commitment text if different from title
+            if let desc = task.description, !desc.isEmpty, desc != task.title {
+                parts.append("")  // blank line
+                parts.append(desc)
             }
+
+            // Add truncated context if available
+            if let context = task.originalContext, !context.isEmpty {
+                let truncatedContext = context.count > 300 ? String(context.prefix(297)) + "..." : context
+                parts.append("")
+                parts.append("---")
+                parts.append("Context: \(truncatedContext)")
+            }
+
+            enhancedDescription = parts.joined(separator: "\n")
         }
 
         // Build properties for simplified schema
         var properties: [String: Any] = [
             "Title": [
                 "title": [[
-                    "text": ["content": task.title]
+                    "text": ["content": displayTitle]
                 ]]
             ],
             "Status": [

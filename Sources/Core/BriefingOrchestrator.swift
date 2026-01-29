@@ -59,7 +59,7 @@ class BriefingOrchestrator {
         return try await generateBriefing(for: tomorrow, sendNotifications: true)
     }
 
-    func generateBriefing(for date: Date, sendNotifications: Bool = false) async throws -> DailyBriefing {
+    func generateBriefing(for date: Date, sendNotifications: Bool = false, toAddress: String? = nil) async throws -> DailyBriefing {
         print("\n🚀 Generating briefing for \(date.formatted(date: .abbreviated, time: .omitted))...\n")
 
         // 1. Fetch messages from last 24 hours
@@ -175,7 +175,7 @@ class BriefingOrchestrator {
         // 7. Send notifications only if requested
         if sendNotifications {
             print("📬 Sending briefing notifications...")
-            try await notificationService.sendBriefing(briefing)
+            try await notificationService.sendBriefing(briefing, toAddress: toAddress)
             print("✓ Notifications sent successfully\n")
         }
 
@@ -630,27 +630,38 @@ class BriefingOrchestrator {
 
     // MARK: - Attention Defense Alert (3pm)
 
-    func generateAttentionDefenseAlert(sendNotifications: Bool = true) async throws -> AttentionDefenseReport {
+    func generateAttentionDefenseAlert(sendNotifications: Bool = true, toAddress: String? = nil) async throws -> AttentionDefenseReport {
         print("Generating attention defense alert...")
 
-        // 1. Get current action items
         let today = Date()
-        let schedule = try await calendarService.fetchEventsFromAllCalendars(for: today, userSettings: config.user)
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today)!
 
-        // For demo purposes, we'll use placeholder action items
-        // In a real app, these would be persisted and tracked
-        let actionItems = loadStoredActionItems()
+        // 1. Fetch calendar for today and tomorrow
+        let todaySchedule = try await calendarService.fetchEventsFromAllCalendars(for: today, userSettings: config.user)
+        let tomorrowSchedule = try await calendarService.fetchEventsFromAllCalendars(for: tomorrow, userSettings: config.user)
 
-        // 2. Use AI to analyze what can be pushed off
+        // 2. Fetch active tasks from Notion
+        var actionItems: [ActionItem] = []
+        do {
+            let tasks = try await notionService.queryActiveTasks(type: nil)
+            let capped = Array(tasks.prefix(50))
+            actionItems = capped.map { convertTaskItemToActionItem($0) }
+            print("Loaded \(actionItems.count) active tasks from Notion")
+        } catch {
+            print("Warning: Failed to fetch Notion tasks: \(error). Continuing with empty task list.")
+        }
+
+        // 3. Use AI to analyze what can be pushed off
         let report = try await aiService.generateAttentionDefenseReport(
             actionItems: actionItems,
-            schedule: schedule,
+            todaySchedule: todaySchedule,
+            tomorrowSchedule: tomorrowSchedule,
             currentTime: Date()
         )
 
-        // 3. Send alert only if requested
+        // 4. Send alert only if requested
         if sendNotifications {
-            try await notificationService.sendAttentionDefenseReport(report)
+            try await notificationService.sendAttentionDefenseReport(report, toAddress: toAddress)
         }
 
         return report
@@ -949,10 +960,46 @@ class BriefingOrchestrator {
         return items.sorted { $0.priority > $1.priority }
     }
 
-    private func loadStoredActionItems() -> [ActionItem] {
-        // In a real implementation, load from persistent storage
-        // For now, return empty array
-        return []
+    private func convertTaskItemToActionItem(_ task: TaskItem) -> ActionItem {
+        let priority: UrgencyLevel
+        switch task.priority {
+        case .critical: priority = .critical
+        case .high: priority = .high
+        case .medium: priority = .medium
+        case .low: priority = .low
+        case .none: priority = .medium
+        }
+
+        let source: ActionItem.ActionSource
+        switch task.sourcePlatform {
+        case .whatsapp, .imessage, .signal, .email: source = .message
+        case .manual, .none: source = .system
+        }
+
+        let category: ActionItem.ActionCategory
+        switch task.type {
+        case .todo: category = .task
+        case .commitment: category = .respond
+        case .followup: category = .follow_up
+        }
+
+        let description: String
+        if let desc = task.description, !desc.isEmpty {
+            description = desc
+        } else {
+            description = task.title
+        }
+
+        return ActionItem(
+            id: task.notionId.isEmpty ? UUID().uuidString : task.notionId,
+            title: task.title,
+            description: description,
+            source: source,
+            priority: priority,
+            dueDate: task.dueDate,
+            estimatedDuration: nil,
+            category: category
+        )
     }
 
     // MARK: - Notion Integration
@@ -1185,19 +1232,32 @@ class BriefingOrchestrator {
     func saveExtractedItems(_ items: [ExtractedItem]) async throws -> (saved: Int, failed: Int) {
         var savedCount = 0
         var failedCount = 0
+        var duplicateCount = 0
 
         for item in items {
             do {
                 let taskItem = item.toTaskItem()
                 _ = try await notionService.createTask(taskItem)
                 savedCount += 1
+                print("  ✓ Saved: \(item.title)")
+            } catch let error as NotionService.TaskCreationError {
+                switch error {
+                case .duplicate:
+                    duplicateCount += 1
+                    print("  ⏭ Skipped (duplicate): \(item.title)")
+                }
             } catch {
                 print("  ✗ Failed to save: \(item.title) - \(error)")
                 failedCount += 1
             }
         }
 
-        return (savedCount, failedCount)
+        // Report duplicates as part of failed count (they weren't newly saved)
+        if duplicateCount > 0 {
+            print("  ℹ️ \(duplicateCount) duplicate(s) skipped")
+        }
+
+        return (savedCount, failedCount + duplicateCount)
     }
 
     // MARK: - Public Helpers for Attention System
@@ -1278,12 +1338,22 @@ class BriefingOrchestrator {
     private func isSelfThread(_ thread: MessageThread, userFullName: String) -> Bool {
         guard let contactName = thread.contactName else { return false }
 
-        // Normalize the contact name: lowercase and remove "(You)" suffix
-        let normalizedContact = contactName
+        // Strip Unicode control/formatting characters (LTR mark, RTL mark, etc.) then normalize
+        let strippedContact = contactName.unicodeScalars
+            .filter { !($0.properties.isDefaultIgnorableCodePoint || CharacterSet.controlCharacters.contains($0)) }
+            .map { Character($0) }
+            .map { String($0) }
+            .joined()
+        let normalizedContact = strippedContact
             .lowercased()
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "(you)", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // WhatsApp labels self-chat as "You" (often with invisible Unicode chars)
+        if normalizedContact == "you" {
+            return true
+        }
 
         // Parse user's full name into components
         let nameComponents = userFullName
@@ -1291,7 +1361,6 @@ class BriefingOrchestrator {
             .filter { !$0.isEmpty }
 
         guard nameComponents.count >= 2 else {
-            // Fallback: if config name is not properly formatted, just check if it contains the full name
             return normalizedContact.contains(userFullName.lowercased())
         }
 
@@ -1310,7 +1379,6 @@ class BriefingOrchestrator {
             "\(lastName).\(firstName)"       // "sampat.miten"
         ]
 
-        // Check if contact name matches any variation
         for variation in possibleVariations {
             if normalizedContact.contains(variation) {
                 return true
