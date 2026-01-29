@@ -71,15 +71,31 @@ class BriefingOrchestrator {
         let schedule = try await calendarService.fetchEventsFromAllCalendars(for: date, userSettings: config.user)
         print("")
 
-        // 3. Generate meeting briefings for external meetings
+        // 3. Generate meeting briefings for external meetings - PARALLEL for performance
         var meetingBriefings: [MeetingBriefing] = []
         if !schedule.externalMeetings.isEmpty {
-            print("👥 Generating briefings for \(schedule.externalMeetings.count) external meeting(s)...")
-            for (index, event) in schedule.externalMeetings.enumerated() {
-                print("  ↳ Researching attendees for '\(event.title)' (\(index + 1)/\(schedule.externalMeetings.count))...")
-                let attendeeBriefings = try await researchService.researchAttendees(event.externalAttendees)
-                let briefing = try await aiService.generateMeetingBriefing(event, attendees: attendeeBriefings)
-                meetingBriefings.append(briefing)
+            print("👥 Generating briefings for \(schedule.externalMeetings.count) external meeting(s) in parallel...")
+
+            meetingBriefings = await withTaskGroup(of: (Int, MeetingBriefing?).self) { group in
+                for (index, event) in schedule.externalMeetings.enumerated() {
+                    group.addTask {
+                        do {
+                            print("  ↳ Researching '\(event.title)' (\(index + 1)/\(schedule.externalMeetings.count))...")
+                            let attendeeBriefings = try await self.researchService.researchAttendees(event.externalAttendees)
+                            let briefing = try await self.aiService.generateMeetingBriefing(event, attendees: attendeeBriefings)
+                            return (index, briefing)
+                        } catch {
+                            print("  ✗ Failed to generate briefing for '\(event.title)': \(error)")
+                            return (index, nil)
+                        }
+                    }
+                }
+
+                var results: [(Int, MeetingBriefing?)] = []
+                for await result in group {
+                    results.append(result)
+                }
+                return results.sorted { $0.0 < $1.0 }.compactMap { $0.1 }
             }
             print("✓ Meeting briefings complete\n")
         }
@@ -251,22 +267,41 @@ class BriefingOrchestrator {
             notionTasks = await tasksTask
         }
 
-        // Generate meeting briefings for external meetings
+        // Generate meeting briefings for external meetings - PARALLEL for performance
         var meetingBriefings: [MeetingBriefing] = []
         if !schedule.externalMeetings.isEmpty {
-            print("👥 Generating briefings for \(schedule.externalMeetings.count) external meeting(s)...")
-            for (index, event) in schedule.externalMeetings.enumerated() {
-                print("  ↳ Researching attendees for '\(event.title)' (\(index + 1)/\(schedule.externalMeetings.count))...")
-                let attendeeBriefings = try await researchService.researchAttendees(event.externalAttendees)
+            print("👥 Generating briefings for \(schedule.externalMeetings.count) external meeting(s) in parallel...")
 
-                // Include Notion context in meeting briefing
-                let briefing = try await aiService.generateMeetingBriefing(
-                    event,
-                    attendees: attendeeBriefings,
-                    notionNotes: notionNotes,
-                    notionTasks: notionTasks
-                )
-                meetingBriefings.append(briefing)
+            // Process all meetings in parallel using TaskGroup
+            meetingBriefings = await withTaskGroup(of: (Int, MeetingBriefing?).self) { group in
+                for (index, event) in schedule.externalMeetings.enumerated() {
+                    group.addTask {
+                        do {
+                            print("  ↳ Researching '\(event.title)' (\(index + 1)/\(schedule.externalMeetings.count))...")
+                            let attendeeBriefings = try await self.researchService.researchAttendees(event.externalAttendees)
+
+                            let briefing = try await self.aiService.generateMeetingBriefing(
+                                event,
+                                attendees: attendeeBriefings,
+                                notionNotes: notionNotes,
+                                notionTasks: notionTasks
+                            )
+                            return (index, briefing)
+                        } catch {
+                            print("  ✗ Failed to generate briefing for '\(event.title)': \(error)")
+                            return (index, nil)
+                        }
+                    }
+                }
+
+                // Collect results and sort by original index to maintain order
+                var results: [(Int, MeetingBriefing?)] = []
+                for await result in group {
+                    results.append(result)
+                }
+                return results
+                    .sorted { $0.0 < $1.0 }
+                    .compactMap { $0.1 }
             }
             print("✓ Meeting briefings complete\n")
         }

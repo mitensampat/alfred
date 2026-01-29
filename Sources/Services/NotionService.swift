@@ -575,6 +575,7 @@ class NotionService {
     }
 
     /// Query notes database for contextually relevant notes using smart keyword search
+    /// Optimized with parallel API calls for performance
     func queryRelevantNotes(context: String, databaseId: String) async throws -> [NotionNote] {
         // Extract keywords from context for searching
         let keywords = extractSearchKeywords(from: context)
@@ -584,29 +585,62 @@ class NotionService {
             return try await queryRecentNotes(databaseId: databaseId, limit: 10)
         }
 
-        // Use Notion search API to find relevant notes
+        // Search for all keywords in PARALLEL using TaskGroup
+        let keywordsToSearch = Array(keywords.prefix(5))
+        let searchResults = await withTaskGroup(of: [NotionNote].self) { group in
+            for keyword in keywordsToSearch {
+                group.addTask {
+                    do {
+                        return try await self.searchNotesWithKeyword(keyword, databaseId: databaseId)
+                    } catch {
+                        return []
+                    }
+                }
+            }
+
+            var results: [[NotionNote]] = []
+            for await notes in group {
+                results.append(notes)
+            }
+            return results
+        }
+
+        // Merge results, deduplicating by ID
         var allNotes: [NotionNote] = []
         var seenIds = Set<String>()
-
-        // Search for each keyword
-        for keyword in keywords.prefix(5) { // Limit to top 5 keywords
-            let notes = try await searchNotesWithKeyword(keyword, databaseId: databaseId)
+        for notes in searchResults {
             for note in notes where !seenIds.contains(note.id) {
                 seenIds.insert(note.id)
                 allNotes.append(note)
             }
         }
 
-        // Fetch content for top notes (limit to 10 to avoid too many API calls)
-        var notesWithContent: [NotionNote] = []
-        for note in allNotes.prefix(10) {
-            let content = try await fetchNoteContent(pageId: note.id)
-            notesWithContent.append(NotionNote(
-                id: note.id,
-                title: note.title,
-                content: content,
-                lastEdited: note.lastEdited
-            ))
+        // Fetch content for top notes in PARALLEL (limit to 10)
+        let notesToFetch = Array(allNotes.prefix(10))
+        let notesWithContent = await withTaskGroup(of: NotionNote?.self) { group in
+            for note in notesToFetch {
+                group.addTask {
+                    do {
+                        let content = try await self.fetchNoteContent(pageId: note.id)
+                        return NotionNote(
+                            id: note.id,
+                            title: note.title,
+                            content: content,
+                            lastEdited: note.lastEdited
+                        )
+                    } catch {
+                        return nil
+                    }
+                }
+            }
+
+            var results: [NotionNote] = []
+            for await note in group {
+                if let note = note {
+                    results.append(note)
+                }
+            }
+            return results
         }
 
         // Rank notes by relevance to context
