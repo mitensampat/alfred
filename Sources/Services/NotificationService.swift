@@ -209,115 +209,254 @@ class NotificationService {
     // MARK: - Formatting
 
     private func formatBriefing(_ briefing: DailyBriefing) -> (markdown: String, html: String) {
-        var markdown = """
-        # Daily Briefing - \(briefing.date.formatted(date: .long, time: .omitted))
+        // Build both markdown and HTML simultaneously for consistency
+        var markdown = "# Daily Briefing - \(briefing.date.formatted(date: .long, time: .omitted))\n\n"
 
-        ## Messages Summary
-        - **Total Messages**: \(briefing.messagingSummary.stats.totalMessages)
-        - **Unread**: \(briefing.messagingSummary.stats.unreadMessages)
-        - **Need Response**: \(briefing.messagingSummary.stats.threadsNeedingResponse)
-
-        ### Critical Messages
+        // HTML with clean, readable styling (matching web UI)
+        var html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                body {
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+                    line-height: 1.6;
+                    color: #37352f;
+                    max-width: 700px;
+                    margin: 0 auto;
+                    padding: 20px;
+                    background: #ffffff;
+                }
+                h1 { font-size: 24px; font-weight: 600; margin-bottom: 24px; color: #37352f; }
+                h2 { font-size: 16px; font-weight: 600; color: #787774; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 28px; margin-bottom: 12px; border-bottom: 1px solid #e9e9e7; padding-bottom: 8px; }
+                h3 { font-size: 15px; font-weight: 600; color: #37352f; margin-top: 16px; margin-bottom: 8px; }
+                .stat { display: inline-block; margin-right: 24px; margin-bottom: 8px; }
+                .stat-label { color: #787774; font-size: 13px; }
+                .stat-value { font-size: 18px; font-weight: 600; color: #37352f; }
+                .item { background: #f7f6f3; border-radius: 6px; padding: 12px 16px; margin-bottom: 10px; }
+                .item-title { font-weight: 600; color: #37352f; margin-bottom: 4px; }
+                .item-meta { font-size: 13px; color: #787774; }
+                .item-desc { font-size: 14px; color: #37352f; margin-top: 6px; }
+                .priority-high { border-left: 3px solid #eb5757; }
+                .priority-critical { border-left: 3px solid #eb5757; background: #fef2f2; }
+                .priority-medium { border-left: 3px solid #f7b955; }
+                .priority-low { border-left: 3px solid #6fcf97; }
+                .event { padding: 10px 14px; border-left: 3px solid #2383e2; background: #f0f7ff; border-radius: 4px; margin-bottom: 8px; }
+                .event-time { font-size: 13px; color: #2383e2; font-weight: 500; }
+                .event-title { font-weight: 600; color: #37352f; }
+                .event-location { font-size: 13px; color: #787774; margin-top: 2px; }
+                .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-right: 6px; }
+                .tag-external { background: #fef3c7; color: #92400e; }
+                .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e9e9e7; font-size: 12px; color: #9b9a97; text-align: center; }
+            </style>
+        </head>
+        <body>
+            <h1>📅 Daily Briefing for \(briefing.date.formatted(date: .long, time: .omitted))</h1>
         """
 
-        for summary in briefing.messagingSummary.criticalMessages.prefix(5) {
-            markdown += """
+        // Messages Summary
+        markdown += "## Messages Summary\n"
+        markdown += "- Total Messages: \(briefing.messagingSummary.stats.totalMessages)\n"
+        markdown += "- Unread: \(briefing.messagingSummary.stats.unreadMessages)\n"
+        markdown += "- Need Response: \(briefing.messagingSummary.stats.threadsNeedingResponse)\n\n"
 
-            **\(summary.thread.contactName ?? "Unknown")** (\(summary.thread.platform.rawValue))
-            - \(summary.summary)
-            - Urgency: \(summary.urgency.rawValue)
-            """
-        }
-
-        markdown += """
-
-
-        ## Today's Schedule
-        - **Total Meeting Time**: \(Int(briefing.calendarBriefing.schedule.totalMeetingTime / 3600))h \(Int((briefing.calendarBriefing.schedule.totalMeetingTime.truncatingRemainder(dividingBy: 3600)) / 60))m
-        - **Focus Time**: \(Int(briefing.calendarBriefing.focusTime / 3600))h \(Int((briefing.calendarBriefing.focusTime.truncatingRemainder(dividingBy: 3600)) / 60))m
-        - **External Meetings**: \(briefing.calendarBriefing.schedule.externalMeetings.count)
-
+        html += """
+            <h2>💬 Messages Summary</h2>
+            <div style="margin-bottom: 16px;">
+                <span class="stat"><span class="stat-value">\(briefing.messagingSummary.stats.totalMessages)</span><br><span class="stat-label">Total Messages</span></span>
+                <span class="stat"><span class="stat-value">\(briefing.messagingSummary.stats.unreadMessages)</span><br><span class="stat-label">Unread</span></span>
+                <span class="stat"><span class="stat-value">\(briefing.messagingSummary.stats.threadsNeedingResponse)</span><br><span class="stat-label">Need Response</span></span>
+            </div>
         """
 
-        for meeting in briefing.calendarBriefing.meetingBriefings {
-            markdown += """
+        // Critical Messages
+        if !briefing.messagingSummary.criticalMessages.isEmpty {
+            markdown += "### Critical Messages\n"
+            html += "<h3>🔴 Critical Messages</h3>"
 
-            ### \(meeting.event.title)
-            **Time**: \(meeting.event.startTime.formatted(date: .omitted, time: .shortened)) - \(meeting.event.endTime.formatted(date: .omitted, time: .shortened))
-            **Attendees**: \(meeting.attendeeBriefings.map { $0.attendee.name ?? $0.attendee.email }.joined(separator: ", "))
+            for summary in briefing.messagingSummary.criticalMessages.prefix(5) {
+                let contactName = summary.thread.contactName ?? "Unknown"
+                let platform = summary.thread.platform.rawValue
+                markdown += "- \(contactName) (\(platform)): \(summary.summary)\n"
 
-            **Context**: \(meeting.context ?? "No context available")
-
-            **Preparation**:
-            \(meeting.preparation)
-
-            **Key Topics**:
-            \(meeting.suggestedTopics.map { "- \($0)" }.joined(separator: "\n"))
-
-            """
+                html += """
+                    <div class="item priority-critical">
+                        <div class="item-title">\(contactName) <span class="item-meta">(\(platform))</span></div>
+                        <div class="item-desc">\(summary.summary)</div>
+                    </div>
+                """
+            }
+            markdown += "\n"
         }
 
-        markdown += """
+        // Calendar
+        let meetingHours = Int(briefing.calendarBriefing.schedule.totalMeetingTime / 3600)
+        let meetingMins = Int((briefing.calendarBriefing.schedule.totalMeetingTime.truncatingRemainder(dividingBy: 3600)) / 60)
+        let focusHours = Int(briefing.calendarBriefing.focusTime / 3600)
+        let focusMins = Int((briefing.calendarBriefing.focusTime.truncatingRemainder(dividingBy: 3600)) / 60)
 
+        markdown += "## Today's Schedule\n"
+        markdown += "- Total Meeting Time: \(meetingHours)h \(meetingMins)m\n"
+        markdown += "- Focus Time: \(focusHours)h \(focusMins)m\n"
+        markdown += "- External Meetings: \(briefing.calendarBriefing.schedule.externalMeetings.count)\n\n"
 
-        ## Action Items (\(briefing.actionItems.count))
+        html += """
+            <h2>📅 Today's Schedule</h2>
+            <div style="margin-bottom: 16px;">
+                <span class="stat"><span class="stat-value">\(meetingHours)h \(meetingMins)m</span><br><span class="stat-label">Meeting Time</span></span>
+                <span class="stat"><span class="stat-value">\(focusHours)h \(focusMins)m</span><br><span class="stat-label">Focus Time</span></span>
+                <span class="stat"><span class="stat-value">\(briefing.calendarBriefing.schedule.externalMeetings.count)</span><br><span class="stat-label">External Meetings</span></span>
+            </div>
         """
 
-        for item in briefing.actionItems.prefix(10) {
-            let dueStr = item.dueDate?.formatted(date: .omitted, time: .shortened) ?? "No deadline"
-            markdown += """
+        // Events
+        if !briefing.calendarBriefing.schedule.events.isEmpty {
+            markdown += "### Events\n"
+            html += "<h3>Events</h3>"
 
-            - [\(item.priority.rawValue)] **\(item.title)**
-              \(item.description)
-              Due: \(dueStr) | Est: \(item.estimatedDuration.map { "\(Int($0/60))min" } ?? "unknown")
-            """
+            for event in briefing.calendarBriefing.schedule.events {
+                let startTime = event.startTime.formatted(date: .omitted, time: .shortened)
+                let endTime = event.endTime.formatted(date: .omitted, time: .shortened)
+                markdown += "- \(startTime) - \(endTime): \(event.title)\n"
+                if let location = event.location, !location.isEmpty {
+                    markdown += "  Location: \(location)\n"
+                }
+
+                var locationHtml = ""
+                if let location = event.location, !location.isEmpty {
+                    locationHtml = "<div class=\"event-location\">📍 \(location)</div>"
+                }
+                var externalTag = ""
+                if event.hasExternalAttendees {
+                    externalTag = "<span class=\"tag tag-external\">👥 External</span>"
+                }
+
+                html += """
+                    <div class="event">
+                        <div class="event-time">\(startTime) - \(endTime) \(externalTag)</div>
+                        <div class="event-title">\(event.title)</div>
+                        \(locationHtml)
+                    </div>
+                """
+            }
+            markdown += "\n"
         }
 
-        // Convert markdown to HTML (simplified)
-        let html = markdownToHTML(markdown)
+        // Action Items
+        if !briefing.actionItems.isEmpty {
+            markdown += "## Action Items (\(briefing.actionItems.count))\n"
+            html += "<h2>✅ Action Items (\(briefing.actionItems.count))</h2>"
+
+            for item in briefing.actionItems.prefix(10) {
+                let dueStr = item.dueDate?.formatted(date: .abbreviated, time: .shortened) ?? "No deadline"
+                let priorityClass = item.priority == .critical ? "priority-critical" : item.priority == .high ? "priority-high" : item.priority == .medium ? "priority-medium" : "priority-low"
+                let priorityEmoji = item.priority == .critical ? "🔴" : item.priority == .high ? "🟠" : item.priority == .medium ? "🟡" : "🟢"
+
+                markdown += "- [\(item.priority.rawValue)] \(item.title): \(item.description)\n"
+
+                html += """
+                    <div class="item \(priorityClass)">
+                        <div class="item-title">\(priorityEmoji) \(item.title)</div>
+                        <div class="item-desc">\(item.description)</div>
+                        <div class="item-meta">Due: \(dueStr)</div>
+                    </div>
+                """
+            }
+        }
+
+        // Footer
+        html += """
+            <div class="footer">
+                Generated by Alfred v1.5.0 • \(Date().formatted(date: .abbreviated, time: .shortened))
+            </div>
+        </body>
+        </html>
+        """
 
         return (markdown, html)
     }
 
     private func formatAttentionReport(_ report: AttentionDefenseReport) -> (markdown: String, html: String) {
-        var markdown = """
-        # Attention Defense Report - \(report.currentTime.formatted(date: .omitted, time: .shortened))
+        var markdown = "# Attention Defense Report - \(report.currentTime.formatted(date: .omitted, time: .shortened))\n\n"
 
-        ## Must Complete Before EOD (\(report.mustDoToday.count))
+        var html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; line-height: 1.6; color: #37352f; max-width: 700px; margin: 0 auto; padding: 20px; background: #ffffff; }
+                h1 { font-size: 24px; font-weight: 600; margin-bottom: 24px; color: #37352f; }
+                h2 { font-size: 16px; font-weight: 600; color: #787774; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 28px; margin-bottom: 12px; border-bottom: 1px solid #e9e9e7; padding-bottom: 8px; }
+                .item { background: #f7f6f3; border-radius: 6px; padding: 12px 16px; margin-bottom: 10px; }
+                .item-title { font-weight: 600; color: #37352f; margin-bottom: 4px; }
+                .item-meta { font-size: 13px; color: #787774; }
+                .item-desc { font-size: 14px; color: #37352f; margin-top: 6px; }
+                .priority-high { border-left: 3px solid #eb5757; }
+                .priority-medium { border-left: 3px solid #f7b955; }
+                .can-push { border-left: 3px solid #6fcf97; background: #f0fdf4; }
+                .recommendation { padding: 8px 12px; background: #eff6ff; border-radius: 4px; margin-bottom: 6px; color: #1e40af; }
+                .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e9e9e7; font-size: 12px; color: #9b9a97; text-align: center; }
+            </style>
+        </head>
+        <body>
+            <h1>⚡ Attention Defense Report</h1>
+            <p style="color: #787774; margin-top: -16px; margin-bottom: 24px;">Generated at \(report.currentTime.formatted(date: .omitted, time: .shortened))</p>
         """
+
+        // Must Do Today
+        markdown += "## Must Complete Before EOD (\(report.mustDoToday.count))\n"
+        html += "<h2>🔴 Must Complete Before EOD (\(report.mustDoToday.count))</h2>"
 
         for item in report.mustDoToday {
-            markdown += """
+            let estTime = item.estimatedDuration.map { "\(Int($0/60))min" } ?? "unknown"
+            markdown += "- \(item.title): \(item.description) (Priority: \(item.priority.rawValue), Est: \(estTime))\n"
 
-            - **\(item.title)**
-              \(item.description)
-              Priority: \(item.priority.rawValue) | Est: \(item.estimatedDuration.map { "\(Int($0/60))min" } ?? "unknown")
+            let priorityClass = item.priority == .high ? "priority-high" : "priority-medium"
+            html += """
+                <div class="item \(priorityClass)">
+                    <div class="item-title">\(item.title)</div>
+                    <div class="item-desc">\(item.description)</div>
+                    <div class="item-meta">Priority: \(item.priority.rawValue) • Est: \(estTime)</div>
+                </div>
             """
         }
+        markdown += "\n"
 
-        markdown += """
-
-
-        ## Can Push to Tomorrow (\(report.canPushOff.count))
-        """
+        // Can Push
+        markdown += "## Can Push to Tomorrow (\(report.canPushOff.count))\n"
+        html += "<h2>🟢 Can Push to Tomorrow (\(report.canPushOff.count))</h2>"
 
         for suggestion in report.canPushOff {
-            markdown += """
+            markdown += "- \(suggestion.item.title): \(suggestion.reason) (Impact: \(suggestion.impact.rawValue))\n"
 
-            - **\(suggestion.item.title)**
-              Reason: \(suggestion.reason)
-              Impact: \(suggestion.impact.rawValue)
+            html += """
+                <div class="item can-push">
+                    <div class="item-title">\(suggestion.item.title)</div>
+                    <div class="item-desc">\(suggestion.reason)</div>
+                    <div class="item-meta">Impact if delayed: \(suggestion.impact.rawValue)</div>
+                </div>
             """
         }
+        markdown += "\n"
 
-        markdown += """
+        // Recommendations
+        markdown += "## Recommendations\n"
+        html += "<h2>💡 Recommendations</h2>"
 
+        for rec in report.recommendations {
+            markdown += "- \(rec)\n"
+            html += "<div class=\"recommendation\">\(rec)</div>"
+        }
 
-        ## Recommendations
-        \(report.recommendations.map { "- \($0)" }.joined(separator: "\n"))
+        html += """
+            <div class="footer">
+                Generated by Alfred v1.5.0 • \(Date().formatted(date: .abbreviated, time: .shortened))
+            </div>
+        </body>
+        </html>
         """
-
-        let html = markdownToHTML(markdown)
 
         return (markdown, html)
     }
@@ -326,125 +465,142 @@ class NotificationService {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "EEEE, MMMM d, yyyy"
 
-        var markdown = """
-        # Alfred Agent Digest - \(dateFormatter.string(from: digest.date))
+        var markdown = "# Alfred Agent Digest - \(dateFormatter.string(from: digest.date))\n\n"
 
-        ## Summary
-        - **Total Decisions**: \(digest.summary.totalDecisions)
-        - **Executed**: \(digest.summary.decisionsExecuted)
-        - **Pending Review**: \(digest.summary.decisionsPending)
-        - **New Learnings**: \(digest.summary.newLearningsCount)
-        - **Follow-ups Created**: \(digest.summary.followupsCreated)
-        - **Commitments Closed**: \(digest.summary.commitmentsClosed)
-
-        ## Agent Activity
+        var html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; line-height: 1.6; color: #37352f; max-width: 700px; margin: 0 auto; padding: 20px; background: #ffffff; }
+                h1 { font-size: 24px; font-weight: 600; margin-bottom: 24px; color: #37352f; }
+                h2 { font-size: 16px; font-weight: 600; color: #787774; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 28px; margin-bottom: 12px; border-bottom: 1px solid #e9e9e7; padding-bottom: 8px; }
+                .stat-grid { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
+                .stat { flex: 1; min-width: 100px; background: #f7f6f3; border-radius: 6px; padding: 12px; text-align: center; }
+                .stat-value { font-size: 24px; font-weight: 600; color: #37352f; }
+                .stat-label { font-size: 12px; color: #787774; margin-top: 4px; }
+                .agent-card { background: #f7f6f3; border-radius: 8px; padding: 14px; margin-bottom: 10px; }
+                .agent-name { font-weight: 600; color: #37352f; margin-bottom: 8px; }
+                .agent-stats { display: flex; gap: 16px; font-size: 13px; color: #787774; }
+                .agent-insight { font-size: 14px; color: #37352f; margin-top: 8px; padding: 8px; background: #ffffff; border-radius: 4px; }
+                .item { padding: 10px 14px; background: #f7f6f3; border-radius: 6px; margin-bottom: 8px; }
+                .item-title { font-weight: 600; color: #37352f; }
+                .item-meta { font-size: 13px; color: #787774; margin-top: 4px; }
+                .overdue { border-left: 3px solid #eb5757; }
+                .recommendation { padding: 8px 12px; background: #eff6ff; border-radius: 4px; margin-bottom: 6px; color: #1e40af; }
+                .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e9e9e7; font-size: 12px; color: #9b9a97; text-align: center; }
+            </style>
+        </head>
+        <body>
+            <h1>🤖 Alfred Agent Digest</h1>
+            <p style="color: #787774; margin-top: -16px; margin-bottom: 24px;">\(dateFormatter.string(from: digest.date))</p>
         """
+
+        // Summary Stats
+        markdown += "## Summary\n"
+        markdown += "- Total Decisions: \(digest.summary.totalDecisions)\n"
+        markdown += "- Executed: \(digest.summary.decisionsExecuted)\n"
+        markdown += "- Pending Review: \(digest.summary.decisionsPending)\n"
+        markdown += "- New Learnings: \(digest.summary.newLearningsCount)\n\n"
+
+        html += """
+            <h2>📊 Summary</h2>
+            <div class="stat-grid">
+                <div class="stat"><div class="stat-value">\(digest.summary.totalDecisions)</div><div class="stat-label">Decisions</div></div>
+                <div class="stat"><div class="stat-value">\(digest.summary.decisionsExecuted)</div><div class="stat-label">Executed</div></div>
+                <div class="stat"><div class="stat-value">\(digest.summary.decisionsPending)</div><div class="stat-label">Pending</div></div>
+                <div class="stat"><div class="stat-value">\(digest.summary.newLearningsCount)</div><div class="stat-label">Learnings</div></div>
+            </div>
+        """
+
+        // Agent Activity
+        markdown += "## Agent Activity\n"
+        html += "<h2>🧠 Agent Activity</h2>"
 
         for activity in digest.agentActivity {
             let successPct = Int(activity.successRate * 100)
-            markdown += """
+            markdown += "### \(activity.agentType.displayName) Agent\n"
+            markdown += "- Decisions: \(activity.decisionsCount), Success Rate: \(successPct)%\n"
 
-            ### \(activity.agentType.displayName) Agent
-            - **Decisions**: \(activity.decisionsCount)
-            - **Success Rate**: \(successPct)%
-            """
-            if let topAction = activity.topAction {
-                markdown += "\n- **Top Action**: \(topAction)"
-            }
+            var insightHtml = ""
             if let insight = activity.keyInsight {
-                markdown += "\n- **Key Insight**: \(insight)"
+                insightHtml = "<div class=\"agent-insight\">💡 \(insight)</div>"
             }
-        }
 
-        if !digest.newLearnings.isEmpty {
-            markdown += """
-
-
-            ## New Learnings (\(digest.newLearnings.count))
+            html += """
+                <div class="agent-card">
+                    <div class="agent-name">\(activity.agentType.displayName) Agent</div>
+                    <div class="agent-stats">
+                        <span>\(activity.decisionsCount) decisions</span>
+                        <span>\(successPct)% success</span>
+                    </div>
+                    \(insightHtml)
+                </div>
             """
-            for learning in digest.newLearnings {
-                markdown += """
-
-                - **[\(learning.agentType.displayName)]** \(learning.description)
-                """
-            }
         }
+        markdown += "\n"
 
-        if !digest.decisionsRequiringReview.isEmpty {
-            markdown += """
+        // Commitment Status
+        markdown += "## Commitment Status\n"
+        markdown += "- I Owe (Active): \(digest.commitmentStatus.activeIOwe)\n"
+        markdown += "- They Owe Me: \(digest.commitmentStatus.activeTheyOwe)\n"
+        markdown += "- Overdue: \(digest.commitmentStatus.overdueCount)\n\n"
 
-
-            ## Decisions Requiring Review (\(digest.decisionsRequiringReview.count))
-            """
-            for decision in digest.decisionsRequiringReview {
-                markdown += """
-
-                - **[\(decision.agentType.displayName)]** \(decision.action.description)
-                  Reasoning: \(decision.reasoning)
-                """
-            }
-        }
-
-        // Commitment status
-        markdown += """
-
-
-        ## Commitment Status
-        - **I Owe (Active)**: \(digest.commitmentStatus.activeIOwe)
-        - **They Owe Me (Active)**: \(digest.commitmentStatus.activeTheyOwe)
-        - **Completed Today**: \(digest.commitmentStatus.completedToday)
-        - **Overdue**: \(digest.commitmentStatus.overdueCount)
-        - **Due This Week**: \(digest.commitmentStatus.upcomingThisWeek)
+        html += """
+            <h2>✅ Commitment Status</h2>
+            <div class="stat-grid">
+                <div class="stat"><div class="stat-value">\(digest.commitmentStatus.activeIOwe)</div><div class="stat-label">I Owe</div></div>
+                <div class="stat"><div class="stat-value">\(digest.commitmentStatus.activeTheyOwe)</div><div class="stat-label">They Owe Me</div></div>
+                <div class="stat"><div class="stat-value">\(digest.commitmentStatus.overdueCount)</div><div class="stat-label">Overdue</div></div>
+                <div class="stat"><div class="stat-value">\(digest.commitmentStatus.upcomingThisWeek)</div><div class="stat-label">Due This Week</div></div>
+            </div>
         """
 
+        // Upcoming Follow-ups
         if !digest.upcomingFollowups.isEmpty {
-            markdown += """
-
-
-            ## Upcoming Follow-ups (\(digest.upcomingFollowups.count))
-            """
             let timeFormatter = DateFormatter()
             timeFormatter.dateStyle = .short
             timeFormatter.timeStyle = .short
 
+            markdown += "## Upcoming Follow-ups (\(digest.upcomingFollowups.count))\n"
+            html += "<h2>📌 Upcoming Follow-ups (\(digest.upcomingFollowups.count))</h2>"
+
             for followup in digest.upcomingFollowups.prefix(5) {
                 let overdueTag = followup.isOverdue ? " ⚠️ OVERDUE" : ""
-                markdown += """
+                let overdueClass = followup.isOverdue ? "overdue" : ""
+                markdown += "- \(followup.title)\(overdueTag) (Due: \(timeFormatter.string(from: followup.scheduledFor)))\n"
 
-                - **\(followup.title)**\(overdueTag)
-                  Due: \(timeFormatter.string(from: followup.scheduledFor))
-                  Context: \(followup.context.prefix(50))\(followup.context.count > 50 ? "..." : "")
+                html += """
+                    <div class="item \(overdueClass)">
+                        <div class="item-title">\(followup.title)\(overdueTag)</div>
+                        <div class="item-meta">Due: \(timeFormatter.string(from: followup.scheduledFor))</div>
+                    </div>
                 """
             }
+            markdown += "\n"
         }
 
+        // Recommendations
         if !digest.recommendations.isEmpty {
-            markdown += """
+            markdown += "## Recommendations\n"
+            html += "<h2>💡 Recommendations</h2>"
 
-
-            ## Recommendations
-            """
             for rec in digest.recommendations {
-                markdown += "\n- \(rec)"
+                markdown += "- \(rec)\n"
+                html += "<div class=\"recommendation\">\(rec)</div>"
             }
         }
 
-        let html = markdownToHTML(markdown)
+        html += """
+            <div class="footer">
+                Generated by Alfred v1.5.0 • \(Date().formatted(date: .abbreviated, time: .shortened))
+            </div>
+        </body>
+        </html>
+        """
+
         return (markdown, html)
-    }
-
-    private func markdownToHTML(_ markdown: String) -> String {
-        // Simplified markdown to HTML conversion
-        // In production, use a proper markdown library
-        var html = markdown
-            .replacingOccurrences(of: "# ", with: "<h1>")
-            .replacingOccurrences(of: "\n\n", with: "</p><p>")
-            .replacingOccurrences(of: "## ", with: "<h2>")
-            .replacingOccurrences(of: "### ", with: "<h3>")
-            .replacingOccurrences(of: "**", with: "<strong>")
-            .replacingOccurrences(of: "**", with: "</strong>")
-
-        return "<html><body style='font-family: -apple-system, sans-serif;'><p>\(html)</p></body></html>"
     }
 }
 

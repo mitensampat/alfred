@@ -18,10 +18,11 @@ struct AlfredApp {
     static func main() async {
         print("alfred v\(version) starting...")
 
-        // Load configuration
-        guard let config = AppConfig.load(from: "Config/config.json") else {
+        // Load configuration (user's ~/.config/alfred/config.json takes priority)
+        guard let config = AppConfig.load() else {
             print("Error: Failed to load configuration")
-            print("Please copy Config/config.example.json to Config/config.json and fill in your credentials")
+            print("Please create ~/.config/alfred/config.json with your credentials")
+            print("Or copy Config/config.example.json to Config/config.json")
             return
         }
 
@@ -2266,7 +2267,7 @@ struct AlfredApp {
                                  Examples: briefing tomorrow
                                           briefing 2026-01-15
                                           briefing +2  (2 days from now)
-                                 Add --email to send via email
+                                 Add --notify to send via email/Slack
 
           messages [platform] [timeframe]
                                  Get messages summary by platform
@@ -2291,7 +2292,7 @@ struct AlfredApp {
                                           calendar all +3
 
           attention             Generate attention defense report (3pm alert)
-                                 Add --email to send via email
+                                 Add --notify to send via email/Slack
 
           attention init        Create attention preferences file
           attention report [scope] [period]

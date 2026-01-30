@@ -5,6 +5,77 @@ All notable changes to Alfred will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.3] - 2026-01-30
+
+### Added
+- **Tweet-Card Style Approval UI**: Compact, scannable cards for extracted items
+  - Colored left border indicating type (red=I Owe, teal=Owed to Me, gray=Todo, purple=Follow-up)
+  - Grouped sections: "What I Owe", "What's Owed to Me", "Todos", "Follow-ups"
+  - Hidden checkbox appears on hover/selection for cleaner visual
+  - Direction arrows (→/←) with counterparty names for commitments
+  - Truncated descriptions with source metadata tags
+- **Arrow Format in Notion Task Titles**: Commitments now show direction at a glance
+  - Format: `→ John: Review proposal` (I Owe) or `← Sarah: Send budget` (Owed to Me)
+  - Visible in Notion database list view without opening the task
+  - Simplified description with arrow header and truncated context
+- **User Correction Tracking**: Learning from deselections
+  - Tracks false positives when users deselect extracted items
+  - API endpoint `POST /api/corrections` for correction logging
+  - Foundation for AI prompt improvements based on user feedback
+
+### Changed
+- Email notifications now use clean HTML formatting matching web UI
+  - Stat cards with big numbers and labels
+  - Color-coded priority items with left borders
+  - Calendar events with blue left border
+  - External meeting tags
+- CLI help text fixed: `--notify` flag (was incorrectly documented as `--email`)
+
+### Technical
+- New CSS classes: `.approval-card`, `.approval-card-body`, `.approval-card-direction`, `.approval-card-checkbox`, `.approval-section-header`
+- Indicator classes: `.iowe` (red), `.theyowe` (teal), `.todo` (gray), `.followup` (purple)
+- `renderApprovalCard()` helper for tweet-style card rendering
+- `toggleApprovalCard()` with correction tracking on deselection
+- `recordCorrection()` async function for API logging
+
+---
+
+## [1.5.0] - 2026-01-29
+
+### Added
+- **Real-Time Progress Tracking**: SSE (Server-Sent Events) streaming for long-running operations
+  - New streaming endpoints: `/api/stream/briefing`, `/api/stream/messages`, `/api/stream/calendar`
+  - Live progress updates with step-by-step status messages
+  - Progress percentage display during API operations
+- **Horizontal Compact Progress UI**: Notion-inspired loading indicator
+  - Single-line layout: `[spinner] [5 dots] [status text] [percentage]`
+  - Fixed 5-dot progress indicator (gray → blue active → green complete)
+  - Smooth CSS transitions for state changes
+  - Matches user message bubble height for visual consistency
+- **Frontend Streaming Support**
+  - New `streamRequest()` function for SSE handling with fetch API
+  - `updateProgress()` function to manage dot states and status text
+  - `progressStepCounters` tracking per loading instance
+
+### Changed
+- Progress UI redesigned from vertical timeline to horizontal compact single-line
+- Loading message bubbles now match user message bubble sizing (`padding: 12px 16px`)
+- Removed redundant progress bar (dots + percentage sufficient)
+- Consolidated progress elements into single flex row
+
+### Fixed
+- **localStorage key mismatch**: Fixed `alfredSessionToken` vs `alfred_auth_token` inconsistency
+- **Config loading priority**: Passcode no longer reverts unexpectedly
+- **CSS specificity**: Added `!important` to ensure loading state styles override assistant styles
+
+### Technical
+- New CSS classes: `.progress-container`, `.progress-steps-row`, `.progress-step`, `.progress-step-dot`, `.progress-step-line`, `.progress-status-text`, `.progress-status-percent`, `.progress-mini-spinner`
+- State classes: `.active` (blue with glow), `.complete` (green)
+- SSE response parsing with `text/event-stream` content type
+- Step counter management for multi-step progress tracking
+
+---
+
 ## [1.4.2] - 2026-01-27
 
 ### Added
@@ -255,6 +326,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 1.5.3 | 2026-01-30 | Tweet-card approval UI, arrow format in Notion titles, email formatting |
+| 1.5.0 | 2026-01-29 | Real-time SSE progress streaming, horizontal compact progress UI |
 | 1.4.2 | 2026-01-27 | Smart notes retrieval, Due Date fix, config priority |
 | 1.4.1 | 2026-01-27 | Interactive task approval with Y/N/S prompts |
 | 1.4.0 | 2026-01-26 | Proactive insights, unified commitments, agent digest, cross-agent coordination |

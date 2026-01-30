@@ -324,9 +324,12 @@
             border-color: var(--text-tertiary);
         }
 
-        /* Loading State */
-        .message.loading .message-text {
+        /* Loading State - match user message bubble size exactly */
+        .message.assistant.loading .message-text {
             color: var(--text-secondary);
+            padding: 12px 16px !important;
+            line-height: 1.4;
+            font-family: var(--font-body);
         }
 
         .typing-indicator {
@@ -349,6 +352,107 @@
         @keyframes typing {
             0%, 60%, 100% { opacity: 0.3; }
             30% { opacity: 1; }
+        }
+
+        /* Horizontal Compact Progress UI - Single line layout */
+        .progress-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 0;
+        }
+
+        .progress-steps-row {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            flex-shrink: 0;
+        }
+
+        .progress-step {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .progress-step-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--border-color);
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+        }
+
+        .progress-step.active .progress-step-dot {
+            background: var(--accent-color);
+            box-shadow: 0 0 0 2px rgba(35, 131, 226, 0.12);
+        }
+
+        .progress-step.complete .progress-step-dot {
+            background: #10b981;
+        }
+
+        /* Connecting line between dots */
+        .progress-step-line {
+            width: 16px;
+            height: 1.5px;
+            background: var(--border-color);
+            transition: background 0.2s ease;
+        }
+
+        .progress-step-line.complete {
+            background: #10b981;
+        }
+
+        /* Status text - inline in single row */
+        .progress-status-text {
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: 14px;
+            color: var(--text-secondary);
+            font-family: var(--font-body);
+        }
+
+        .progress-status-percent {
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-weight: 500;
+            flex-shrink: 0;
+        }
+
+        /* Mini spinner for status line */
+        .progress-mini-spinner {
+            width: 10px;
+            height: 10px;
+            border: 1.5px solid var(--border-color);
+            border-top-color: var(--accent-color);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            flex-shrink: 0;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Thin progress bar - hidden for compact mode */
+        .progress-bar-container {
+            display: none;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: var(--accent-color);
+            border-radius: 1px;
+            transition: width 0.4s ease-out;
+        }
+
+        /* Hide old elements */
+        .progress-percentage {
+            display: none;
         }
 
         /* Input Area */
@@ -2455,23 +2559,43 @@
             // Add user message showing what was clicked
             addMessage('user', title);
 
-            // Show loading message
-            const loadingId = addLoadingMessage();
+            // Check if this endpoint supports streaming
+            const streamingEndpoint = getStreamingEndpoint(endpoint);
+            const useStreaming = streamingEndpoint !== null;
+
+            console.log('[Alfred] Endpoint:', endpoint);
+            console.log('[Alfred] Streaming endpoint:', streamingEndpoint);
+            console.log('[Alfred] Use streaming:', useStreaming);
+
+            // Show loading message (with progress UI if streaming)
+            const loadingId = addLoadingMessage(useStreaming);
+            console.log('[Alfred] Loading ID:', loadingId, 'useProgress:', useStreaming);
 
             // Disable input
             document.getElementById('sendButton').disabled = true;
 
             try {
-                const response = await authFetch(endpoint, {
-                    method: 'GET'
-                });
+                let data;
 
-                const data = await response.json();
+                if (useStreaming) {
+                    // Use SSE streaming for real-time progress
+                    // Append query params from original endpoint to streaming endpoint
+                    const queryString = endpoint.includes('?') ? '?' + endpoint.split('?')[1] : '';
+                    const fullStreamEndpoint = streamingEndpoint + queryString;
+                    console.log('[Alfred] Calling streaming endpoint:', fullStreamEndpoint);
+                    data = await streamRequest(fullStreamEndpoint, loadingId, null);
+                } else {
+                    // Regular fetch for non-streaming endpoints
+                    const response = await authFetch(endpoint, {
+                        method: 'GET'
+                    });
+                    data = await response.json();
+                }
 
                 // Remove loading message
                 removeMessage(loadingId);
 
-                if (response.ok) {
+                if (data) {
                     // Display the response (pass full data for rich cards like commitments)
                     if (data.response) {
                         addMessage('assistant', data.response, data);
@@ -2491,10 +2615,9 @@
                         const contact = data.contact || 'Briefing';
                         showActionItemsApproval(data.actionItems, source, platform, contact);
                     }
-                } else {
-                    addMessage('assistant', 'Error: ' + (data.error || 'Request failed'));
                 }
             } catch (error) {
+                console.error('API error:', error);
                 removeMessage(loadingId);
                 addMessage('assistant', 'Failed to connect to alfred. Make sure the server is running.');
             }
@@ -2793,33 +2916,244 @@
             return messageDiv.id;
         }
 
-        function addLoadingMessage() {
+        function addLoadingMessage(useProgress = false) {
             const container = document.getElementById('chatContainer');
             const messageDiv = document.createElement('div');
             const id = 'loading-' + Date.now();
             messageDiv.id = id;
             messageDiv.className = 'message assistant loading';
 
-            messageDiv.innerHTML = `
-                <div class="message-avatar">🤖</div>
-                <div class="message-content">
-                    <div class="message-header">
-                        <span class="message-sender">alfred</span>
-                    </div>
-                    <div class="message-text">
-                        <div class="typing-indicator">
-                            <span class="typing-dot"></span>
-                            <span class="typing-dot"></span>
-                            <span class="typing-dot"></span>
+            if (useProgress) {
+                // Progress-capable loading message - single line: [spinner] [dots] [status] [%]
+                messageDiv.innerHTML = `
+                    <div class="message-avatar">🤖</div>
+                    <div class="message-content">
+                        <div class="message-header">
+                            <span class="message-sender">alfred</span>
+                        </div>
+                        <div class="message-text">
+                            <div class="progress-container" id="${id}-progress">
+                                <div class="progress-mini-spinner"></div>
+                                <div class="progress-steps-row" id="${id}-steps">
+                                    <div class="progress-step" data-step="0"><div class="progress-step-dot"></div></div>
+                                    <div class="progress-step-line"></div>
+                                    <div class="progress-step" data-step="1"><div class="progress-step-dot"></div></div>
+                                    <div class="progress-step-line"></div>
+                                    <div class="progress-step" data-step="2"><div class="progress-step-dot"></div></div>
+                                    <div class="progress-step-line"></div>
+                                    <div class="progress-step" data-step="3"><div class="progress-step-dot"></div></div>
+                                    <div class="progress-step-line"></div>
+                                    <div class="progress-step" data-step="4"><div class="progress-step-dot"></div></div>
+                                </div>
+                                <span class="progress-status-text" id="${id}-status-text">Starting...</span>
+                                <span class="progress-status-percent" id="${id}-percent"></span>
+                            </div>
                         </div>
                     </div>
-                </div>
-            `;
+                `;
+            } else {
+                // Simple typing indicator
+                messageDiv.innerHTML = `
+                    <div class="message-avatar">🤖</div>
+                    <div class="message-content">
+                        <div class="message-header">
+                            <span class="message-sender">alfred</span>
+                        </div>
+                        <div class="message-text">
+                            <div class="typing-indicator">
+                                <span class="typing-dot"></span>
+                                <span class="typing-dot"></span>
+                                <span class="typing-dot"></span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
 
             container.appendChild(messageDiv);
             messageDiv.scrollIntoView({ behavior: 'smooth', block: 'end' });
 
             return id;
+        }
+
+        // Update progress in a loading message - horizontal compact style with fixed 5 dots
+        // Track current step index per loading instance
+        const progressStepCounters = {};
+
+        function updateProgress(loadingId, progressData) {
+            const progressContainer = document.getElementById(`${loadingId}-progress`);
+            const stepsRow = document.getElementById(`${loadingId}-steps`);
+            const statusText = document.getElementById(`${loadingId}-status-text`);
+            const statusPercent = document.getElementById(`${loadingId}-percent`);
+
+            if (!stepsRow) return;
+
+            const { step, message, progress } = progressData;
+
+            // Initialize or increment step counter for this loading instance
+            if (!(loadingId in progressStepCounters)) {
+                progressStepCounters[loadingId] = 0;
+            } else {
+                progressStepCounters[loadingId]++;
+            }
+
+            const currentStepIndex = Math.min(progressStepCounters[loadingId], 4); // Max 5 dots (0-4)
+            const steps = stepsRow.querySelectorAll('.progress-step');
+            const lines = stepsRow.querySelectorAll('.progress-step-line');
+
+            // Mark all previous dots and lines as complete
+            for (let i = 0; i < currentStepIndex; i++) {
+                if (steps[i]) {
+                    steps[i].classList.remove('active');
+                    steps[i].classList.add('complete');
+                }
+                if (lines[i]) {
+                    lines[i].classList.add('complete');
+                }
+            }
+
+            // Mark current dot as active
+            if (steps[currentStepIndex]) {
+                steps[currentStepIndex].classList.add('active');
+            }
+
+            // Update status text
+            if (statusText) {
+                statusText.textContent = message;
+            }
+
+            // Update percentage display
+            if (statusPercent && progress !== undefined) {
+                statusPercent.textContent = `${Math.round(progress)}%`;
+            }
+
+            // If complete, mark all as complete and hide spinner
+            if (step === 'complete' || progress === 100) {
+                steps.forEach(s => {
+                    s.classList.remove('active');
+                    s.classList.add('complete');
+                });
+                lines.forEach(l => l.classList.add('complete'));
+
+                if (progressContainer) {
+                    const spinner = progressContainer.querySelector('.progress-mini-spinner');
+                    if (spinner) spinner.style.display = 'none';
+                }
+
+                // Clean up counter
+                delete progressStepCounters[loadingId];
+            }
+        }
+
+        // Stream a request using Server-Sent Events
+        async function streamRequest(endpoint, loadingId, onResult) {
+            console.log('[Alfred SSE] Starting stream request to:', endpoint);
+            console.log('[Alfred SSE] Loading ID:', loadingId);
+
+            return new Promise((resolve, reject) => {
+                const token = localStorage.getItem(STORAGE_TOKEN_KEY);
+                console.log('[Alfred SSE] Token exists:', !!token);
+
+                // Build URL with auth token as query param (SSE can't use headers easily)
+                const url = new URL(endpoint, window.location.origin);
+                console.log('[Alfred SSE] Full URL:', url.toString());
+
+                // Create EventSource with custom fetch for auth
+                // Note: EventSource doesn't support custom headers, so we'll use fetch with streaming
+                const controller = new AbortController();
+
+                fetch(url.toString(), {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'text/event-stream',
+                        'Authorization': `Bearer ${token}`,
+                        'Cache-Control': 'no-cache'
+                    },
+                    signal: controller.signal
+                }).then(response => {
+                    console.log('[Alfred SSE] Response status:', response.status);
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+
+                    function processChunk() {
+                        reader.read().then(({ done, value }) => {
+                            if (done) {
+                                resolve();
+                                return;
+                            }
+
+                            buffer += decoder.decode(value, { stream: true });
+
+                            // Process complete SSE messages
+                            const lines = buffer.split('\n');
+                            buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+                            let currentEvent = null;
+                            let currentData = '';
+
+                            for (const line of lines) {
+                                if (line.startsWith('event:')) {
+                                    currentEvent = line.slice(6).trim();
+                                } else if (line.startsWith('data:')) {
+                                    currentData = line.slice(5).trim();
+                                } else if (line === '' && currentData) {
+                                    // End of message
+                                    try {
+                                        const data = JSON.parse(currentData);
+                                        console.log('[Alfred SSE] Event:', currentEvent, 'Data:', data);
+
+                                        if (currentEvent === 'progress') {
+                                            console.log('[Alfred SSE] Updating progress:', data.step, data.message);
+                                            updateProgress(loadingId, data);
+                                        } else if (currentEvent === 'result') {
+                                            console.log('[Alfred SSE] Got result, resolving');
+                                            if (onResult) onResult(data);
+                                            resolve(data);
+                                        } else if (currentEvent === 'error') {
+                                            console.error('[Alfred SSE] Error from server:', data.error);
+                                            reject(new Error(data.error || 'Unknown error'));
+                                        }
+                                    } catch (e) {
+                                        console.warn('[Alfred SSE] Failed to parse SSE data:', currentData, e);
+                                    }
+                                    currentEvent = null;
+                                    currentData = '';
+                                }
+                            }
+
+                            processChunk();
+                        }).catch(err => {
+                            console.error('[Alfred SSE] Read error:', err);
+                            if (err.name !== 'AbortError') {
+                                reject(err);
+                            }
+                        });
+                    }
+
+                    processChunk();
+                }).catch(err => {
+                    console.error('[Alfred SSE] Fetch error:', err);
+                    reject(err);
+                });
+            });
+        }
+
+        // Check if an endpoint supports streaming
+        function getStreamingEndpoint(endpoint) {
+            const streamingEndpoints = {
+                '/api/briefing': '/api/briefing/stream',
+                '/api/calendar': '/api/calendar/stream',
+                '/api/messages': '/api/messages/stream',
+                '/api/messages/summary': '/api/messages/summary/stream'
+            };
+            // Check exact match or with query params
+            const basePath = endpoint.split('?')[0];
+            return streamingEndpoints[basePath] || null;
         }
 
         function removeMessage(id) {
