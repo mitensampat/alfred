@@ -4608,33 +4608,29 @@
                 `;
 
                 const userRulesContent = sections['User-Taught Rules'] || '';
-                if (userRulesContent && !userRulesContent.includes('_Rules you\'ve explicitly taught me')) {
-                    // Parse rules from the markdown content
-                    const ruleLines = userRulesContent.split('\n').filter(line => line.trim().startsWith('- ['));
-                    if (ruleLines.length > 0) {
-                        html += '<div class="agent-memory-rules">';
-                        ruleLines.forEach(line => {
-                            // Parse format: - [2026-01-26T17:28:08Z] Rule text
-                            const match = line.match(/- \[([^\]]+)\] (.+)/);
-                            if (match) {
-                                const date = match[1];
-                                const ruleText = match[2];
-                                const ruleEscaped = ruleText.replace(/'/g, "\\'").replace(/"/g, "&quot;");
-                                html += `
-                                    <div class="memory-rule">
-                                        <div class="memory-rule-content">
-                                            <div class="memory-rule-text">${escapeHtml(ruleText)}</div>
-                                            <div class="memory-rule-meta">Added: ${escapeHtml(date)}</div>
-                                        </div>
-                                        <button class="memory-rule-delete" onclick="forgetRule('${agentType}', '${ruleEscaped.substring(0, 50)}')">×</button>
+                // Parse rules from the markdown content - look for timestamped entries
+                const ruleLines = userRulesContent.split('\n').filter(line => line.trim().startsWith('- ['));
+                if (ruleLines.length > 0) {
+                    html += '<div class="agent-memory-rules">';
+                    ruleLines.forEach(line => {
+                        // Parse format: - [2026-01-26T17:28:08Z] Rule text
+                        const match = line.match(/- \[([^\]]+)\] (.+)/);
+                        if (match) {
+                            const date = match[1];
+                            const ruleText = match[2];
+                            const ruleEscaped = ruleText.replace(/'/g, "\\'").replace(/"/g, "&quot;");
+                            html += `
+                                <div class="memory-rule">
+                                    <div class="memory-rule-content">
+                                        <div class="memory-rule-text">${escapeHtml(ruleText)}</div>
+                                        <div class="memory-rule-meta">Added: ${escapeHtml(date)}</div>
                                     </div>
-                                `;
-                            }
-                        });
-                        html += '</div>';
-                    } else {
-                        html += '<div class="agent-memory-content agent-memory-empty">No user-taught rules yet. Use the "Teach an Agent" section below to add rules.</div>';
-                    }
+                                    <button class="memory-rule-delete" onclick="forgetRule('${agentType}', '${ruleEscaped.substring(0, 50)}')">×</button>
+                                </div>
+                            `;
+                        }
+                    });
+                    html += '</div>';
                 } else {
                     html += '<div class="agent-memory-content agent-memory-empty">No user-taught rules yet. Use the "Teach an Agent" section below to add rules.</div>';
                 }
@@ -4648,8 +4644,27 @@
                 `;
 
                 const learnedContent = sections['Learned Patterns'] || '';
-                if (learnedContent && !learnedContent.includes('_Patterns learned from your feedback')) {
-                    html += `<div class="agent-memory-content">${escapeHtml(learnedContent)}</div>`;
+                // Parse learned patterns - look for timestamped entries
+                const patternLines = learnedContent.split('\n').filter(line => line.trim().startsWith('- ['));
+                if (patternLines.length > 0) {
+                    html += '<div class="agent-memory-rules">';
+                    patternLines.forEach(line => {
+                        // Parse format: - [2026-01-30T12:10:58Z] [consolidated] Pattern text
+                        const match = line.match(/- \[([^\]]+)\] (.+)/);
+                        if (match) {
+                            const date = match[1];
+                            const patternText = match[2];
+                            html += `
+                                <div class="memory-rule">
+                                    <div class="memory-rule-content">
+                                        <div class="memory-rule-text">${escapeHtml(patternText)}</div>
+                                        <div class="memory-rule-meta">Learned: ${escapeHtml(date)}</div>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    });
+                    html += '</div>';
                 } else {
                     html += '<div class="agent-memory-content agent-memory-empty">No learned patterns yet. The agent will learn from your feedback over time.</div>';
                 }
