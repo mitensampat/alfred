@@ -2227,11 +2227,11 @@
             <div class="settings-section">
                 <div class="settings-section-title">Teach an Agent</div>
                 <div class="settings-item-desc" style="margin-bottom: 16px;">
-                    Add a rule or pattern for an agent to follow.
+                    Add a rule or pattern for an agent to follow. Be specific about when and how the rule applies.
                 </div>
                 <div class="settings-item">
                     <div class="settings-item-label">Agent</div>
-                    <select id="teachAgentSelect" class="form-input">
+                    <select id="teachAgentSelect" class="form-input" style="width: 100%;">
                         <option value="communication">Communication Agent</option>
                         <option value="task">Task Agent</option>
                         <option value="calendar">Calendar Agent</option>
@@ -2240,11 +2240,7 @@
                 </div>
                 <div class="settings-item">
                     <div class="settings-item-label">Rule or Pattern</div>
-                    <textarea id="teachRuleInput" class="form-input" rows="3" placeholder="e.g., Always suggest formal language when emailing executives..."></textarea>
-                </div>
-                <div class="settings-item">
-                    <div class="settings-item-label">Context (optional)</div>
-                    <input type="text" id="teachContextInput" class="settings-input" placeholder="e.g., email drafting, scheduling..." />
+                    <textarea id="teachRuleInput" class="form-input" rows="5" style="width: 100%; min-height: 120px; resize: vertical; font-size: 14px; line-height: 1.5;" placeholder="e.g., Always ensure tasks have a due date. If no date is specified in the context, default to the next business day."></textarea>
                 </div>
                 <button class="settings-button-save" onclick="teachAgent()">Teach Agent</button>
                 <div id="teachStatus" class="hidden"></div>
@@ -4701,7 +4697,6 @@
         async function teachAgent() {
             const agentType = document.getElementById('teachAgentSelect').value;
             const rule = document.getElementById('teachRuleInput').value.trim();
-            const context = document.getElementById('teachContextInput').value.trim();
             const statusEl = document.getElementById('teachStatus');
 
             if (!rule) {
@@ -4717,8 +4712,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         agent: agentType,
-                        rule: rule,
-                        context: context || undefined
+                        rule: rule
                     })
                 });
 
@@ -4729,9 +4723,8 @@
                     statusEl.textContent = `Successfully taught ${agentInfo[agentType]?.name || agentType}!`;
                     statusEl.classList.remove('hidden');
 
-                    // Clear inputs
+                    // Clear input
                     document.getElementById('teachRuleInput').value = '';
-                    document.getElementById('teachContextInput').value = '';
 
                     // Reload agents list
                     loadAgents();
