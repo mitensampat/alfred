@@ -2206,24 +2206,7 @@
 
         <!-- Agents View -->
         <div id="agentsView" class="hidden settings-page">
-            <div class="settings-section">
-                <div class="settings-section-title">Agent Digest</div>
-                <div class="settings-item-desc" style="margin-bottom: 12px;">
-                    Daily summary of what your agents have been doing.
-                </div>
-                <button class="approval-btn approval-btn-primary" style="width: 100%; padding: 10px 16px; font-size: 13px;" onclick="hideAgentsAndRun('/api/agent-digest', 'Agent Digest')">view agent digest</button>
-            </div>
-
-            <div class="settings-section">
-                <div class="settings-section-title">Your AI Agents</div>
-                <div class="settings-item-desc" style="margin-bottom: 16px;">
-                    These agents learn from your usage and can be taught specific rules.
-                </div>
-                <div id="agentsList" class="agents-list">
-                    <div class="loading-agents">Loading agents...</div>
-                </div>
-            </div>
-
+            <!-- 1. Teach an Agent - most actionable, user comes here to DO something -->
             <div class="settings-section">
                 <div class="settings-section-title">Teach an Agent</div>
                 <div class="settings-item-desc" style="margin-bottom: 16px;">
@@ -2244,6 +2227,26 @@
                 </div>
                 <button class="settings-button-save" onclick="teachAgent()">Teach Agent</button>
                 <div id="teachStatus" class="hidden"></div>
+            </div>
+
+            <!-- 2. Your AI Agents - view/manage existing agents and their memory -->
+            <div class="settings-section">
+                <div class="settings-section-title">Your AI Agents</div>
+                <div class="settings-item-desc" style="margin-bottom: 16px;">
+                    These agents learn from your usage and can be taught specific rules.
+                </div>
+                <div id="agentsList" class="agents-list">
+                    <div class="loading-agents">Loading agents...</div>
+                </div>
+            </div>
+
+            <!-- 3. Agent Digest - summary/overview, least urgent -->
+            <div class="settings-section">
+                <div class="settings-section-title">Agent Digest</div>
+                <div class="settings-item-desc" style="margin-bottom: 12px;">
+                    Daily summary of what your agents have been doing.
+                </div>
+                <button class="approval-btn approval-btn-primary" style="width: 100%; padding: 10px 16px; font-size: 13px;" onclick="hideAgentsAndRun('/api/agent-digest', 'Agent Digest')">view agent digest</button>
             </div>
         </div>
 
