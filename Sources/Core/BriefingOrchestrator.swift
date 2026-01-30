@@ -1647,15 +1647,16 @@ class BriefingOrchestrator {
         return String(markdown[range])
     }
 
-    /// Parse recent learnings from a memory section
+    /// Parse recent learnings from a memory section (only timestamped entries)
     private func parseRecentLearnings(_ section: String, agentType: AgentType, since: Date) -> [AgentLearning] {
         var learnings: [AgentLearning] = []
         let lines = section.components(separatedBy: "\n").filter { $0.hasPrefix("- ") }
 
         let dateFormatter = ISO8601DateFormatter()
 
-        for line in lines.prefix(5) {
-            // Try to extract date from line (format: "- [date] learning text")
+        for line in lines {
+            // Only count entries with timestamps (format: "- [2026-01-30T...] learning text")
+            // Lines without timestamps are pre-existing patterns, not new learnings
             if let bracketStart = line.firstIndex(of: "["),
                let bracketEnd = line.firstIndex(of: "]"),
                bracketStart < bracketEnd {
@@ -1669,18 +1670,8 @@ class BriefingOrchestrator {
                         confidence: 0.7
                     ))
                 }
-            } else {
-                // No date, assume it's recent
-                let text = String(line.dropFirst(2)).trimmingCharacters(in: .whitespaces)
-                if !text.isEmpty {
-                    learnings.append(AgentLearning(
-                        agentType: agentType,
-                        description: text,
-                        learnedAt: Date(),
-                        confidence: 0.6
-                    ))
-                }
             }
+            // Lines without timestamps are NOT counted as new learnings
         }
 
         return learnings
@@ -1721,14 +1712,18 @@ class BriefingOrchestrator {
         let pendingReview = todaysDecisions.filter { $0.requiresApproval &&
             decisionLog.getExecutionResult(for: $0.id) == nil }
 
-        // 2. Gather new learnings from today
+        // 2. Gather new learnings from today (only from "Learned Patterns" section)
         let today = Calendar.current.startOfDay(for: Date())
         var newLearnings: [AgentLearning] = []
         for agentType in [AgentType.communication, .task, .calendar, .followup] {
-            let learnings = parseRecentLearnings(memoryService.getMemory(for: agentType).content,
-                                                  agentType: agentType,
-                                                  since: today)
-            newLearnings.append(contentsOf: learnings)
+            let memory = memoryService.getMemory(for: agentType)
+            // Only parse the "Learned Patterns" section, not the entire memory
+            if let learnedSection = memory.sections["Learned Patterns"] {
+                let learnings = parseRecentLearnings(learnedSection,
+                                                      agentType: agentType,
+                                                      since: today)
+                newLearnings.append(contentsOf: learnings)
+            }
         }
 
         // 3. Build agent activity summaries
