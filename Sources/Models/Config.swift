@@ -14,25 +14,30 @@ struct AppConfig: Codable {
     let api: APIConfig?
     let scheduled: ScheduledConfig?
 
-    static func load(from path: String = "Config/config.json") -> AppConfig? {
+    static func load(from path: String? = nil) -> AppConfig? {
         // Try multiple config locations in order of preference
-        let configPaths = [
-            // 1. Explicit path if provided
-            path,
-            // 2. User config directory (standard location)
+        // User's config directory takes highest priority (where they edit settings)
+        var configPaths = [
+            // 1. User config directory (standard location - highest priority)
             (NSString(string: "~/.config/alfred/config.json").expandingTildeInPath),
-            // 3. Old location for backwards compatibility
+            // 2. Old location for backwards compatibility
             (NSString(string: "~/.config/exec-assistant/config.json").expandingTildeInPath),
-            // 4. Original project location
+            // 3. Original project location (fallback)
             (NSString(string: "~/Documents/Claude apps/Alfred/Config/config.json").expandingTildeInPath),
-            // 5. Current directory
+            // 4. Current directory (fallback for development)
             "Config/config.json"
         ]
+
+        // If explicit path provided, check it first
+        if let explicitPath = path {
+            configPaths.insert(explicitPath, at: 0)
+        }
 
         for configPath in configPaths {
             let expandedPath = (configPath as NSString).expandingTildeInPath
             if let data = try? Data(contentsOf: URL(fileURLWithPath: expandedPath)),
                let config = try? JSONDecoder().decode(AppConfig.self, from: data) {
+                print("📁 Loaded config from: \(expandedPath)")
                 return config
             }
         }

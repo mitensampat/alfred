@@ -5,6 +5,34 @@ All notable changes to Alfred will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.4] - 2026-01-31
+
+### Added
+- **Hot-Reload System**: Edit web UI, prompts, and config without server restart
+  - Web UI served from `~/.config/alfred/web/` - edit and refresh browser
+  - AI prompts externalized to `~/.config/alfred/prompts/` - changes apply on next API call
+  - New endpoints: `GET /api/hot-reload/status`, `POST /api/reload-config`
+  - Auto-copies default files on first run
+- **HotReloadManager**: Central manager for hot-reloadable resources
+  - Handles web file serving, prompt loading, and config reloading
+  - Variable substitution in externalized prompts (e.g., `{{USER_NAME}}`, `{{COUNTERPARTY_NAME}}`)
+
+### Fixed
+- **Commitment counterparty names**: Now shows contact names (e.g., "Kunal Shah") instead of raw WhatsApp IDs
+  - Added `threadName` to `CommitmentExtractionRequest` struct
+  - Updated AI prompt to use human-readable names for `committedBy`/`committedTo` fields
+- **Correction tracker date parsing**: Fixed ISO8601 date decoding for stored corrections
+
+### Changed
+- Web files now served from disk (hot-reloadable) instead of embedded in binary
+- Prompts can be customized without recompiling
+
+### Technical
+- New file: `Sources/Core/HotReloadManager.swift`
+- Default prompt files: `commitment-extraction.prompt`, `todo-extraction.prompt`, `message-analysis.prompt`
+
+---
+
 ## [1.5.3] - 2026-01-30
 
 ### Added

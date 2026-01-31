@@ -308,6 +308,13 @@ class HTTPServer {
         case ("GET", "/api/contacts"):
             return handleGetContacts(request)
 
+        // Hot-reload endpoints
+        case ("POST", "/api/reload-config"):
+            return handleReloadConfig()
+
+        case ("GET", "/api/hot-reload/status"):
+            return handleHotReloadStatus()
+
         default:
             return HTTPResponse(
                 statusCode: 404,
@@ -319,23 +326,13 @@ class HTTPServer {
     // MARK: - API Handlers
 
     private func handleWebUIv2() -> HTTPResponse {
-        // Try to load from Resources directory
-        let resourcePath = Bundle.main.resourcePath ?? ""
-        let htmlPath = (resourcePath as NSString).appendingPathComponent("index-v2.html")
-
-        // Fallback to project directory
-        let projectPath = (NSString(string: "~/Documents/Claude apps/Alfred/Sources/GUI/Resources/index-v2.html").expandingTildeInPath)
-
-        let paths = [htmlPath, projectPath]
-
-        for path in paths {
-            if let html = try? String(contentsOfFile: path, encoding: .utf8) {
-                return HTTPResponse(
-                    statusCode: 200,
-                    headers: ["Content-Type": "text/html; charset=utf-8"],
-                    htmlBody: html
-                )
-            }
+        // Use HotReloadManager for hot-reloadable web files
+        if let html = HotReloadManager.shared.getWebFile("index-v2.html") {
+            return HTTPResponse(
+                statusCode: 200,
+                headers: ["Content-Type": "text/html; charset=utf-8"],
+                htmlBody: html
+            )
         }
 
         // Fallback to v1
@@ -343,23 +340,13 @@ class HTTPServer {
     }
 
     private func handleNotionUI() -> HTTPResponse {
-        // Try to load from Resources directory
-        let resourcePath = Bundle.main.resourcePath ?? ""
-        let htmlPath = (resourcePath as NSString).appendingPathComponent("index-notion.html")
-
-        // Fallback to project directory
-        let projectPath = (NSString(string: "~/Documents/Claude apps/Alfred/Sources/GUI/Resources/index-notion.html").expandingTildeInPath)
-
-        let paths = [htmlPath, projectPath]
-
-        for path in paths {
-            if let html = try? String(contentsOfFile: path, encoding: .utf8) {
-                return HTTPResponse(
-                    statusCode: 200,
-                    headers: ["Content-Type": "text/html; charset=utf-8"],
-                    htmlBody: html
-                )
-            }
+        // Use HotReloadManager for hot-reloadable web files
+        if let html = HotReloadManager.shared.getWebFile("index-notion.html") {
+            return HTTPResponse(
+                statusCode: 200,
+                headers: ["Content-Type": "text/html; charset=utf-8"],
+                htmlBody: html
+            )
         }
 
         // Fallback to original UI
@@ -367,23 +354,13 @@ class HTTPServer {
     }
 
     private func handleWebUI() -> HTTPResponse {
-        // Try to load from Resources directory
-        let resourcePath = Bundle.main.resourcePath ?? ""
-        let htmlPath = (resourcePath as NSString).appendingPathComponent("index.html")
-
-        // Fallback to project directory
-        let projectPath = (NSString(string: "~/Documents/Claude apps/Alfred/Sources/GUI/Resources/index.html").expandingTildeInPath)
-
-        let paths = [htmlPath, projectPath]
-
-        for path in paths {
-            if let html = try? String(contentsOfFile: path, encoding: .utf8) {
-                return HTTPResponse(
-                    statusCode: 200,
-                    headers: ["Content-Type": "text/html; charset=utf-8"],
-                    htmlBody: html
-                )
-            }
+        // Use HotReloadManager for hot-reloadable web files
+        if let html = HotReloadManager.shared.getWebFile("index.html") {
+            return HTTPResponse(
+                statusCode: 200,
+                headers: ["Content-Type": "text/html; charset=utf-8"],
+                htmlBody: html
+            )
         }
 
         // Fallback: simple inline HTML
@@ -1080,6 +1057,51 @@ class HTTPServer {
                     "observeThreads": stats.observeThreads,
                     "minimalThreads": stats.minimalThreads,
                     "activeThreads": stats.activeThreads
+                ]
+            ]
+        )
+    }
+
+    // MARK: - Hot Reload Handlers
+
+    private func handleReloadConfig() -> HTTPResponse {
+        if let config = HotReloadManager.shared.reloadConfig() {
+            return HTTPResponse(
+                statusCode: 200,
+                body: [
+                    "success": true,
+                    "message": "Configuration reloaded successfully",
+                    "timestamp": ISO8601DateFormatter().string(from: Date())
+                ]
+            )
+        } else {
+            return HTTPResponse(
+                statusCode: 500,
+                body: [
+                    "success": false,
+                    "error": "Failed to reload configuration"
+                ]
+            )
+        }
+    }
+
+    private func handleHotReloadStatus() -> HTTPResponse {
+        let status = HotReloadManager.shared.getStatus()
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "hotReload": [
+                    "enabled": true,
+                    "webDir": status["webDir"] as Any,
+                    "promptsDir": status["promptsDir"] as Any,
+                    "webFiles": status["webFiles"] as Any,
+                    "promptFiles": status["promptFiles"] as Any,
+                    "configPath": status["configPath"] as Any
+                ],
+                "instructions": [
+                    "webUI": "Edit files in ~/.config/alfred/web/ and refresh browser",
+                    "prompts": "Edit files in ~/.config/alfred/prompts/ - changes apply on next API call",
+                    "config": "Edit ~/.config/alfred/config.json and call POST /api/reload-config"
                 ]
             ]
         )

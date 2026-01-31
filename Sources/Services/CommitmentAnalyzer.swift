@@ -55,7 +55,8 @@ class CommitmentAnalyzer {
             userInfo: CommitmentExtractionRequest.UserInfo(
                 name: userInfo.name,
                 email: userInfo.email
-            )
+            ),
+            threadName: threadName  // Pass thread name so AI knows the counterparty
         )
 
         // Call Claude API with platform/thread context for historical learning
@@ -175,8 +176,10 @@ class CommitmentAnalyzer {
     }
 
     private func buildExtractionPrompt(_ request: CommitmentExtractionRequest, platform: String, threadId: String) -> String {
+        // Use threadName for the counterparty instead of raw sender IDs
+        let counterpartyName = request.threadName
         let messagesText = request.messages.map { message in
-            let sender = message.isFromUser ? request.userInfo.name : message.sender
+            let sender = message.isFromUser ? request.userInfo.name : counterpartyName
             let timestamp = ISO8601DateFormatter().string(from: message.timestamp)
             return "[\(timestamp)] \(sender): \(message.content)"
         }.joined(separator: "\n")
@@ -287,6 +290,10 @@ class CommitmentAnalyzer {
 
         prompt += """
 
+        ## COUNTERPARTY
+        The other person/group in this conversation is: \(counterpartyName)
+        Use "\(counterpartyName)" (not raw IDs) for committedBy/committedTo fields.
+
         Conversation:
         \(messagesText)
 
@@ -298,7 +305,7 @@ class CommitmentAnalyzer {
               "title": "Send Q4 metrics deck",
               "commitmentText": "I'll send you the Q4 metrics by EOW",
               "committedBy": "\(request.userInfo.name)",
-              "committedTo": "John Smith",
+              "committedTo": "\(counterpartyName)",
               "dueDate": "2026-01-24T23:59:59Z",
               "priority": "high",
               "context": "Discussion about quarterly review",

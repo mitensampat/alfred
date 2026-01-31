@@ -190,6 +190,29 @@ class HTTPServer {
                 return
             }
 
+            // Check if client wants streaming (SSE) response
+            let wantsStreaming = request.headers["accept"]?.contains("text/event-stream") == true
+
+            // Handle streaming endpoints specially
+            if wantsStreaming {
+                switch (request.method, request.path) {
+                case ("GET", "/api/briefing/stream"):
+                    await handleStreamingBriefing(request, client: client)
+                    return
+                case ("GET", "/api/calendar/stream"):
+                    await handleStreamingCalendar(request, client: client)
+                    return
+                case ("GET", "/api/messages/stream"):
+                    await handleStreamingMessages(request, client: client)
+                    return
+                case ("GET", "/api/messages/summary/stream"):
+                    await handleStreamingMessagesSummary(request, client: client)
+                    return
+                default:
+                    break
+                }
+            }
+
             // Route request
             let response = await route(request)
             try await client.send(response)
@@ -429,6 +452,13 @@ class HTTPServer {
         case ("GET", "/api/contacts"):
             return handleGetContacts(request)
 
+        // Hot-reload endpoints
+        case ("POST", "/api/reload-config"):
+            return handleReloadConfig()
+
+        case ("GET", "/api/hot-reload/status"):
+            return handleHotReloadStatus()
+
         default:
             return HTTPResponse(
                 statusCode: 404,
@@ -440,23 +470,13 @@ class HTTPServer {
     // MARK: - API Handlers
 
     private func handleWebUIv2() -> HTTPResponse {
-        // Try to load from Resources directory
-        let resourcePath = Bundle.main.resourcePath ?? ""
-        let htmlPath = (resourcePath as NSString).appendingPathComponent("index-v2.html")
-
-        // Fallback to project directory
-        let projectPath = (NSString(string: "~/Documents/Claude apps/Alfred/Sources/GUI/Resources/index-v2.html").expandingTildeInPath)
-
-        let paths = [htmlPath, projectPath]
-
-        for path in paths {
-            if let html = try? String(contentsOfFile: path, encoding: .utf8) {
-                return HTTPResponse(
-                    statusCode: 200,
-                    headers: ["Content-Type": "text/html; charset=utf-8"],
-                    htmlBody: html
-                )
-            }
+        // Use HotReloadManager for hot-reloadable web files
+        if let html = HotReloadManager.shared.getWebFile("index-v2.html") {
+            return HTTPResponse(
+                statusCode: 200,
+                headers: ["Content-Type": "text/html; charset=utf-8"],
+                htmlBody: html
+            )
         }
 
         // Fallback to v1
@@ -464,23 +484,13 @@ class HTTPServer {
     }
 
     private func handleNotionUI() -> HTTPResponse {
-        // Try to load from Resources directory
-        let resourcePath = Bundle.main.resourcePath ?? ""
-        let htmlPath = (resourcePath as NSString).appendingPathComponent("index-notion.html")
-
-        // Fallback to project directory
-        let projectPath = (NSString(string: "~/Documents/Claude apps/Alfred/Sources/GUI/Resources/index-notion.html").expandingTildeInPath)
-
-        let paths = [htmlPath, projectPath]
-
-        for path in paths {
-            if let html = try? String(contentsOfFile: path, encoding: .utf8) {
-                return HTTPResponse(
-                    statusCode: 200,
-                    headers: ["Content-Type": "text/html; charset=utf-8"],
-                    htmlBody: html
-                )
-            }
+        // Use HotReloadManager for hot-reloadable web files
+        if let html = HotReloadManager.shared.getWebFile("index-notion.html") {
+            return HTTPResponse(
+                statusCode: 200,
+                headers: ["Content-Type": "text/html; charset=utf-8"],
+                htmlBody: html
+            )
         }
 
         // Fallback to original UI
@@ -488,23 +498,13 @@ class HTTPServer {
     }
 
     private func handleWebUI() -> HTTPResponse {
-        // Try to load from Resources directory
-        let resourcePath = Bundle.main.resourcePath ?? ""
-        let htmlPath = (resourcePath as NSString).appendingPathComponent("index.html")
-
-        // Fallback to project directory
-        let projectPath = (NSString(string: "~/Documents/Claude apps/Alfred/Sources/GUI/Resources/index.html").expandingTildeInPath)
-
-        let paths = [htmlPath, projectPath]
-
-        for path in paths {
-            if let html = try? String(contentsOfFile: path, encoding: .utf8) {
-                return HTTPResponse(
-                    statusCode: 200,
-                    headers: ["Content-Type": "text/html; charset=utf-8"],
-                    htmlBody: html
-                )
-            }
+        // Use HotReloadManager for hot-reloadable web files
+        if let html = HotReloadManager.shared.getWebFile("index.html") {
+            return HTTPResponse(
+                statusCode: 200,
+                headers: ["Content-Type": "text/html; charset=utf-8"],
+                htmlBody: html
+            )
         }
 
         // Fallback: simple inline HTML
@@ -2288,6 +2288,347 @@ The Commitment Check feature requires a properly configured Notion database.
         ]
     }
 
+    // MARK: - Streaming Handlers (SSE)
+
+    /// Stream daily briefing generation with progress updates
+    private func handleStreamingBriefing(_ request: HTTPRequest, client: ClientSocket) async {
+        client.beginSSE()
+
+        let date = parseDate(from: request.queryParams["date"])
+
+        // Send progress stages to keep user informed
+        client.sendSSEJSON(event: "progress", json: [
+            "step": "starting",
+            "message": "Starting daily briefing generation...",
+            "icon": "🚀",
+            "progress": 0
+        ])
+
+        client.sendSSEJSON(event: "progress", json: [
+            "step": "messages",
+            "message": "Scanning your messages...",
+            "icon": "💬",
+            "progress": 15
+        ])
+
+        client.sendSSEJSON(event: "progress", json: [
+            "step": "calendar",
+            "message": "Loading your calendar...",
+            "icon": "📅",
+            "progress": 30
+        ])
+
+        client.sendSSEJSON(event: "progress", json: [
+            "step": "notion",
+            "message": "Checking Notion for context...",
+            "icon": "📓",
+            "progress": 50
+        ])
+
+        client.sendSSEJSON(event: "progress", json: [
+            "step": "analysis",
+            "message": "AI is analyzing your day...",
+            "icon": "🤖",
+            "progress": 70
+        ])
+
+        do {
+            // Generate the full briefing (this does all the actual work)
+            let briefing = try await alfredService.generateDailyBriefing(for: date)
+
+            client.sendSSEJSON(event: "progress", json: [
+                "step": "complete",
+                "message": "Briefing ready!",
+                "icon": "✅",
+                "progress": 100
+            ])
+
+            // Send the final result
+            let formattedResponse = formatBriefingForAPI(briefing)
+            client.sendSSEJSON(event: "result", json: [
+                "response": formattedResponse,
+                "date": Self.iso8601Formatter.string(from: briefing.date),
+                "generatedAt": Self.iso8601Formatter.string(from: briefing.generatedAt),
+                "stats": [
+                    "meetings": briefing.calendarBriefing.schedule.events.count,
+                    "messages": briefing.messagingSummary.stats.totalMessages,
+                    "focusTimeSeconds": briefing.calendarBriefing.focusTime
+                ]
+            ])
+
+        } catch {
+            client.sendSSEJSON(event: "error", json: [
+                "error": error.localizedDescription,
+                "step": "failed"
+            ])
+        }
+
+        client.endSSE()
+    }
+
+    /// Stream calendar briefing generation with progress updates
+    private func handleStreamingCalendar(_ request: HTTPRequest, client: ClientSocket) async {
+        client.beginSSE()
+
+        let date = parseDate(from: request.queryParams["date"])
+        let calendar = request.queryParams["calendar"] ?? "all"
+
+        let calendarLabel = calendar == "all" ? "all calendars" : "\(calendar) calendar"
+
+        client.sendSSEJSON(event: "progress", json: [
+            "step": "starting",
+            "message": "Loading \(calendarLabel)...",
+            "icon": "📅",
+            "progress": 0
+        ])
+
+        client.sendSSEJSON(event: "progress", json: [
+            "step": "fetching",
+            "message": "Connecting to Google Calendar...",
+            "icon": "🔗",
+            "progress": 25
+        ])
+
+        client.sendSSEJSON(event: "progress", json: [
+            "step": "analyzing",
+            "message": "Analyzing meetings...",
+            "icon": "🔍",
+            "progress": 50
+        ])
+
+        do {
+            let briefing = try await alfredService.fetchCalendarBriefing(for: date, calendar: calendar)
+
+            client.sendSSEJSON(event: "progress", json: [
+                "step": "complete",
+                "message": "Found \(briefing.schedule.events.count) events",
+                "icon": "✅",
+                "progress": 100
+            ])
+
+            // Send full result
+            var formattedResponse = "📅 **Calendar"
+            if calendar == "personal" {
+                formattedResponse += " (Personal)**"
+            } else if calendar == "work" {
+                formattedResponse += " (Work)**"
+            } else {
+                formattedResponse += " (All)**"
+            }
+            formattedResponse += " for \(briefing.schedule.date.formatted(date: .long, time: .omitted))\n\n"
+
+            if briefing.schedule.events.isEmpty {
+                formattedResponse += "No events scheduled for this day. Enjoy your free time! 🎉"
+            } else {
+                formattedResponse += "**\(briefing.schedule.events.count) Events:**\n"
+                for event in briefing.schedule.events.sorted(by: { $0.startTime < $1.startTime }) {
+                    let timeStr = event.startTime.formatted(date: .omitted, time: .shortened)
+                    formattedResponse += "• \(timeStr) - \(event.title)\n"
+                }
+            }
+
+            client.sendSSEJSON(event: "result", json: [
+                "response": formattedResponse,
+                "date": Self.iso8601Formatter.string(from: briefing.schedule.date),
+                "eventCount": briefing.schedule.events.count,
+                "focusTime": briefing.focusTime
+            ])
+
+        } catch {
+            client.sendSSEJSON(event: "error", json: [
+                "error": error.localizedDescription
+            ])
+        }
+
+        client.endSSE()
+    }
+
+    /// Stream messages summary with progress updates
+    private func handleStreamingMessages(_ request: HTTPRequest, client: ClientSocket) async {
+        client.beginSSE()
+
+        let platform = request.queryParams["platform"] ?? "all"
+        let timeframe = request.queryParams["timeframe"] ?? "24h"
+
+        // Send progress stages
+        client.sendSSEJSON(event: "progress", json: [
+            "step": "starting",
+            "message": "Scanning messages...",
+            "icon": "💬",
+            "progress": 0
+        ])
+
+        if platform == "whatsapp" || platform == "all" {
+            client.sendSSEJSON(event: "progress", json: [
+                "step": "whatsapp",
+                "message": "Reading WhatsApp messages...",
+                "icon": "📱",
+                "progress": 20
+            ])
+        }
+
+        if platform == "imessage" || platform == "all" {
+            client.sendSSEJSON(event: "progress", json: [
+                "step": "imessage",
+                "message": "Reading iMessage...",
+                "icon": "💬",
+                "progress": 40
+            ])
+        }
+
+        client.sendSSEJSON(event: "progress", json: [
+            "step": "analyzing",
+            "message": "AI is analyzing conversations...",
+            "icon": "🤖",
+            "progress": 70
+        ])
+
+        do {
+            let summaries = try await alfredService.fetchMessagesSummary(platform: platform, timeframe: timeframe)
+
+            client.sendSSEJSON(event: "progress", json: [
+                "step": "complete",
+                "message": "Found \(summaries.count) conversation(s)",
+                "icon": "✅",
+                "progress": 100
+            ])
+
+            // Build response
+            var formattedResponse = "💬 **Messages Summary** (\(timeframe))\n\n"
+            if summaries.isEmpty {
+                formattedResponse += "No messages found for this period."
+            } else {
+                formattedResponse += "**\(summaries.count) Conversations:**\n"
+                for summary in summaries.prefix(10) {
+                    let msgCount = summary.thread.messages.count
+                    formattedResponse += "• **\(summary.thread.contactName ?? "Unknown")**: \(msgCount) messages\n"
+                }
+            }
+
+            client.sendSSEJSON(event: "result", json: [
+                "response": formattedResponse,
+                "summaries": summaries.map { serializeMessageSummary($0) },
+                "count": summaries.count
+            ])
+
+        } catch {
+            client.sendSSEJSON(event: "error", json: [
+                "error": error.localizedDescription
+            ])
+        }
+
+        client.endSSE()
+    }
+
+    /// Stream contact-specific message summary with progress updates
+    private func handleStreamingMessagesSummary(_ request: HTTPRequest, client: ClientSocket) async {
+        client.beginSSE()
+
+        guard let contact = request.queryParams["contact"] else {
+            client.sendSSEJSON(event: "error", json: ["error": "Missing 'contact' parameter"])
+            client.endSSE()
+            return
+        }
+
+        let platform = request.queryParams["platform"] ?? "whatsapp"
+        let timeframe = request.queryParams["timeframe"] ?? "7d"
+
+        // Send progress stages
+        client.sendSSEJSON(event: "progress", json: [
+            "step": "starting",
+            "message": "Finding messages from \(contact)...",
+            "icon": "🔍",
+            "progress": 0
+        ])
+
+        client.sendSSEJSON(event: "progress", json: [
+            "step": "reading",
+            "message": "Reading \(platform) messages...",
+            "icon": platform == "whatsapp" ? "📱" : "💬",
+            "progress": 25
+        ])
+
+        client.sendSSEJSON(event: "progress", json: [
+            "step": "analyzing",
+            "message": "AI is analyzing the conversation...",
+            "icon": "🤖",
+            "progress": 50
+        ])
+
+        do {
+            let summary = try await alfredService.getMessagesSummaryForContact(
+                contact: contact,
+                platform: platform,
+                timeframe: timeframe
+            )
+
+            client.sendSSEJSON(event: "progress", json: [
+                "step": "formatting",
+                "message": "Preparing summary...",
+                "icon": "📝",
+                "progress": 85
+            ])
+
+            client.sendSSEJSON(event: "progress", json: [
+                "step": "complete",
+                "message": "Analysis complete!",
+                "icon": "✅",
+                "progress": 100
+            ])
+
+            // Format response (matching non-streaming handler)
+            var formattedResponse = "💬 **Messages Summary**\n"
+            formattedResponse += "Contact: \(contact)\n"
+            formattedResponse += "Platform: \(platform)\n"
+            formattedResponse += "Period: Last \(timeframe)\n\n"
+
+            formattedResponse += "**Summary:**\n\(summary.summary)\n\n"
+
+            if !summary.keyPoints.isEmpty {
+                formattedResponse += "**Key Points:**\n"
+                for point in summary.keyPoints {
+                    formattedResponse += "• \(point)\n"
+                }
+                formattedResponse += "\n"
+            }
+
+            if summary.needsResponse {
+                formattedResponse += "⚠️ This conversation may need a response\n"
+            }
+
+            // Build response body matching non-streaming handler
+            let responseBody: [String: Any] = [
+                "response": formattedResponse,
+                "contact": contact,
+                "platform": platform,
+                "timeframe": timeframe,
+                "summary": summary.summary,
+                "keyPoints": summary.keyPoints,
+                "needsResponse": summary.needsResponse,
+                "messageCount": summary.messageCount,
+                "actionItems": summary.actionItems.map { item in
+                    [
+                        "id": UUID().uuidString,
+                        "title": item.item,
+                        "priority": item.priority,
+                        "deadline": item.deadline as Any,
+                        "source": "message",
+                        "category": "task"
+                    ] as [String: Any]
+                }
+            ]
+
+            client.sendSSEJSON(event: "result", json: responseBody)
+
+        } catch {
+            client.sendSSEJSON(event: "error", json: [
+                "error": error.localizedDescription
+            ])
+        }
+
+        client.endSSE()
+    }
+
     private func parseCommitmentType(_ typeString: String) -> Commitment.CommitmentType? {
         switch typeString.lowercased() {
         case "i_owe", "iowe":
@@ -2543,6 +2884,52 @@ class ClientSocket {
 
     func close() {
         Darwin.close(socket)
+    }
+
+    /// Send SSE headers to begin a streaming response
+    func beginSSE() {
+        let headers = """
+        HTTP/1.1 200 OK\r
+        Content-Type: text/event-stream\r
+        Cache-Control: no-cache\r
+        Connection: keep-alive\r
+        Access-Control-Allow-Origin: *\r
+        \r
+
+        """
+        _ = headers.withCString { ptr in
+            Darwin.send(socket, ptr, strlen(ptr), 0)
+        }
+    }
+
+    /// Send an SSE event with optional event type
+    func sendSSE(event: String? = nil, data: String) {
+        var message = ""
+        if let event = event {
+            message += "event: \(event)\n"
+        }
+        // Handle multi-line data by prefixing each line with "data: "
+        for line in data.components(separatedBy: "\n") {
+            message += "data: \(line)\n"
+        }
+        message += "\n"
+
+        _ = message.withCString { ptr in
+            Darwin.send(socket, ptr, strlen(ptr), 0)
+        }
+    }
+
+    /// Send a JSON object as SSE data
+    func sendSSEJSON(event: String? = nil, json: [String: Any]) {
+        if let jsonData = try? JSONSerialization.data(withJSONObject: json),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            sendSSE(event: event, data: jsonString)
+        }
+    }
+
+    /// Send SSE completion and close
+    func endSSE() {
+        sendSSE(event: "done", data: "{}")
     }
 
     private func statusText(_ code: Int) -> String {
@@ -2879,6 +3266,51 @@ extension HTTPServer {
                     "observeThreads": stats.observeThreads,
                     "minimalThreads": stats.minimalThreads,
                     "activeThreads": stats.activeThreads
+                ]
+            ]
+        )
+    }
+
+    // MARK: - Hot Reload Handlers
+
+    private func handleReloadConfig() -> HTTPResponse {
+        if HotReloadManager.shared.reloadConfig() != nil {
+            return HTTPResponse(
+                statusCode: 200,
+                body: [
+                    "success": true,
+                    "message": "Configuration reloaded successfully",
+                    "timestamp": Self.iso8601Formatter.string(from: Date())
+                ]
+            )
+        } else {
+            return HTTPResponse(
+                statusCode: 500,
+                body: [
+                    "success": false,
+                    "error": "Failed to reload configuration"
+                ]
+            )
+        }
+    }
+
+    private func handleHotReloadStatus() -> HTTPResponse {
+        let status = HotReloadManager.shared.getStatus()
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "hotReload": [
+                    "enabled": true,
+                    "webDir": status["webDir"] as Any,
+                    "promptsDir": status["promptsDir"] as Any,
+                    "webFiles": status["webFiles"] as Any,
+                    "promptFiles": status["promptFiles"] as Any,
+                    "configPath": status["configPath"] as Any
+                ],
+                "instructions": [
+                    "webUI": "Edit files in ~/.config/alfred/web/ and refresh browser",
+                    "prompts": "Edit files in ~/.config/alfred/prompts/ - changes apply on next API call",
+                    "config": "Edit ~/.config/alfred/config.json and call POST /api/reload-config"
                 ]
             ]
         )

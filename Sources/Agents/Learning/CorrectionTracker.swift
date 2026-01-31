@@ -174,7 +174,9 @@ class CorrectionTracker {
 
         do {
             let data = try Data(contentsOf: correctionsFile)
-            store = try JSONDecoder().decode(CorrectionStore.self, from: data)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            store = try decoder.decode(CorrectionStore.self, from: data)
             print("✓ Loaded \(store.corrections.count) corrections from memory")
         } catch {
             print("⚠️ Failed to load corrections: \(error)")
