@@ -1016,6 +1016,67 @@
             font-size: 14px;
         }
 
+        /* Favorites */
+        .favorites-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .favorite-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            transition: all 0.15s;
+        }
+
+        .favorite-item:hover {
+            border-color: var(--accent-color);
+            background: var(--bg-tertiary);
+        }
+
+        .favorite-info {
+            flex: 1;
+        }
+
+        .favorite-name {
+            font-family: var(--font-serif);
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 2px;
+        }
+
+        .favorite-meta {
+            font-size: 12px;
+            color: var(--text-tertiary);
+        }
+
+        .favorite-remove {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            color: var(--text-tertiary);
+            cursor: pointer;
+            font-size: 18px;
+            transition: all 0.15s;
+        }
+
+        .favorite-remove:hover {
+            background: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+        }
+
         /* Toggle Switch */
         .settings-toggle-row {
             display: flex;
@@ -1155,6 +1216,128 @@
             text-align: center;
             padding: 24px;
             color: var(--text-tertiary);
+        }
+
+        /* Work Patterns Stats */
+        .work-patterns-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+
+        .pattern-stat-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 16px;
+            text-align: center;
+        }
+
+        .pattern-stat-value {
+            font-family: var(--font-serif);
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .pattern-stat-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .pattern-stat-trend {
+            font-size: 11px;
+            margin-top: 4px;
+        }
+
+        .pattern-stat-trend.positive { color: #10b981; }
+        .pattern-stat-trend.negative { color: #ef4444; }
+        .pattern-stat-trend.neutral { color: var(--text-tertiary); }
+
+        /* Collaborator Stats */
+        .collaborator-stats {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .collaborator-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .collaborator-name {
+            font-family: var(--font-serif);
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .collaborator-stats-row {
+            display: flex;
+            gap: 16px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .collaborator-stat {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        /* Alfred Memory */
+        .alfred-memory {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .alfred-memory-item {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .alfred-memory-text {
+            flex: 1;
+            font-size: 14px;
+            color: var(--text-primary);
+            line-height: 1.5;
+        }
+
+        .alfred-memory-meta {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            margin-top: 4px;
+        }
+
+        .alfred-memory-delete {
+            background: none;
+            border: none;
+            color: var(--text-tertiary);
+            cursor: pointer;
+            font-size: 18px;
+            line-height: 1;
+            padding: 4px;
+            opacity: 0.5;
+            transition: opacity 0.15s;
+        }
+
+        .alfred-memory-delete:hover {
+            opacity: 1;
+            color: var(--text-danger);
         }
 
         /* Agent Detail View */
@@ -2204,49 +2387,114 @@
             </div>
         </div>
 
-        <!-- Agents View -->
-        <div id="agentsView" class="hidden settings-page">
-            <!-- 1. Teach an Agent - most actionable, user comes here to DO something -->
+        <!-- Favorites View -->
+        <div id="favoritesView" class="hidden settings-page">
             <div class="settings-section">
-                <div class="settings-section-title">Teach an Agent</div>
+                <div class="settings-section-title">⭐ Favorite Contacts</div>
                 <div class="settings-item-desc" style="margin-bottom: 16px;">
-                    Add a rule or pattern for an agent to follow. Be specific about when and how the rule applies.
+                    Priority contacts get highlighted in briefings, commitments, and messages.
                 </div>
-                <div class="settings-item">
-                    <div class="settings-item-label">Agent</div>
-                    <select id="teachAgentSelect" class="form-input" style="width: 100%;">
-                        <option value="communication">Communication Agent</option>
-                        <option value="task">Task Agent</option>
-                        <option value="calendar">Calendar Agent</option>
-                        <option value="followup">Follow-up Agent</option>
-                    </select>
+
+                <div id="favoriteContactsList" class="favorites-list">
+                    <div class="loading-agents">Loading favorites...</div>
+                </div>
+
+                <div class="favorites-add-form" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color);">
+                    <div class="settings-item">
+                        <div class="settings-item-label">Add Contact</div>
+                        <input type="text" id="newContactName" class="settings-input" placeholder="Contact name..." style="margin-bottom: 8px;" />
+                        <input type="text" id="newContactAliases" class="settings-input" placeholder="Aliases (comma-separated, optional)..." style="margin-bottom: 8px;" />
+                        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                            <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-secondary);">
+                                <input type="checkbox" id="contactWhatsapp" checked> WhatsApp
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-secondary);">
+                                <input type="checkbox" id="contactIMessage" checked> iMessage
+                            </label>
+                            <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-secondary);">
+                                <input type="checkbox" id="contactEmail"> Email
+                            </label>
+                        </div>
+                    </div>
+                    <button class="settings-button-save" onclick="addFavoriteContact()">Add Contact</button>
+                    <div id="addContactStatus" class="hidden"></div>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <div class="settings-section-title">👥 Favorite Groups</div>
+                <div class="settings-item-desc" style="margin-bottom: 16px;">
+                    Priority groups get highlighted in briefings and message summaries.
+                </div>
+
+                <div id="favoriteGroupsList" class="favorites-list">
+                    <div class="loading-agents">Loading favorites...</div>
+                </div>
+
+                <div class="favorites-add-form" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color);">
+                    <div class="settings-item">
+                        <div class="settings-item-label">Add Group</div>
+                        <input type="text" id="newGroupName" class="settings-input" placeholder="Group name..." style="margin-bottom: 8px;" />
+                        <input type="text" id="newGroupAliases" class="settings-input" placeholder="Aliases (comma-separated, optional)..." style="margin-bottom: 8px;" />
+                        <select id="groupPlatform" class="settings-input" style="margin-bottom: 8px;">
+                            <option value="whatsapp">WhatsApp</option>
+                            <option value="imessage">iMessage</option>
+                        </select>
+                    </div>
+                    <button class="settings-button-save" onclick="addFavoriteGroup()">Add Group</button>
+                    <div id="addGroupStatus" class="hidden"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Agents View (now Work Patterns) -->
+        <div id="agentsView" class="hidden settings-page">
+            <!-- 1. Work Patterns - task completion insights -->
+            <div class="settings-section">
+                <div class="settings-section-title">📊 Work Patterns</div>
+                <div class="settings-item-desc" style="margin-bottom: 16px;">
+                    How you handle tasks and commitments over time.
+                </div>
+                <div id="workPatternsStats" class="work-patterns-stats">
+                    <div class="loading-agents">Loading work patterns...</div>
+                </div>
+                <button id="scanWorkPatternsBtn" class="approval-btn approval-btn-secondary" style="width: 100%; padding: 10px 16px; font-size: 13px; margin-top: 12px;" onclick="refreshWorkPatterns()">🔄 Scan for Changes</button>
+            </div>
+
+            <!-- 2. Collaborator Insights -->
+            <div class="settings-section">
+                <div class="settings-section-title">👥 Collaborator Insights</div>
+                <div class="settings-item-desc" style="margin-bottom: 16px;">
+                    Task patterns by person you work with.
+                </div>
+                <div id="collaboratorStats" class="collaborator-stats">
+                    <div class="loading-agents">Loading...</div>
+                </div>
+            </div>
+
+            <!-- 3. Teach Alfred - simplified single memory -->
+            <div class="settings-section">
+                <div class="settings-section-title">🧠 Teach Alfred</div>
+                <div class="settings-item-desc" style="margin-bottom: 16px;">
+                    Add rules or patterns for Alfred to follow when extracting commitments and tasks.
                 </div>
                 <div class="settings-item">
                     <div class="settings-item-label">Rule or Pattern</div>
-                    <textarea id="teachRuleInput" class="form-input" rows="5" style="width: 100%; min-height: 120px; resize: vertical; font-size: 14px; line-height: 1.5;" placeholder="e.g., Always ensure tasks have a due date. If no date is specified in the context, default to the next business day."></textarea>
+                    <textarea id="teachRuleInput" class="form-input" rows="5" style="width: 100%; min-height: 120px; resize: vertical; font-size: 14px; line-height: 1.5;" placeholder="e.g., Tasks from my manager should always be high priority. Ignore casual 'I'll try to...' language - only extract firm commitments."></textarea>
                 </div>
-                <button class="settings-button-save" onclick="teachAgent()">Teach Agent</button>
+                <button class="settings-button-save" onclick="teachAlfred()">Teach Alfred</button>
                 <div id="teachStatus" class="hidden"></div>
             </div>
 
-            <!-- 2. Your AI Agents - view/manage existing agents and their memory -->
+            <!-- 4. Alfred's Memory -->
             <div class="settings-section">
-                <div class="settings-section-title">Your AI Agents</div>
+                <div class="settings-section-title">📝 Alfred's Memory</div>
                 <div class="settings-item-desc" style="margin-bottom: 16px;">
-                    These agents learn from your usage and can be taught specific rules.
+                    What Alfred has learned about your preferences.
                 </div>
-                <div id="agentsList" class="agents-list">
-                    <div class="loading-agents">Loading agents...</div>
+                <div id="alfredMemory" class="alfred-memory">
+                    <div class="loading-agents">Loading memory...</div>
                 </div>
-            </div>
-
-            <!-- 3. Agent Digest - summary/overview, least urgent -->
-            <div class="settings-section">
-                <div class="settings-section-title">Agent Digest</div>
-                <div class="settings-item-desc" style="margin-bottom: 12px;">
-                    Daily summary of what your agents have been doing.
-                </div>
-                <button class="approval-btn approval-btn-primary" style="width: 100%; padding: 10px 16px; font-size: 13px;" onclick="hideAgentsAndRun('/api/agent-digest', 'Agent Digest')">view agent digest</button>
             </div>
         </div>
 
@@ -2298,9 +2546,14 @@
                     <div class="quick-prompt-desc">what needs focus right now</div>
                 </div>
                 <div class="quick-prompt" onclick="showAgents()">
-                    <div class="quick-prompt-icon">🧠</div>
-                    <div class="quick-prompt-title">Agents</div>
-                    <div class="quick-prompt-desc">digest, rules & memory</div>
+                    <div class="quick-prompt-icon">📊</div>
+                    <div class="quick-prompt-title">Work Patterns</div>
+                    <div class="quick-prompt-desc">insights, stats & memory</div>
+                </div>
+                <div class="quick-prompt" onclick="showFavorites()">
+                    <div class="quick-prompt-icon">⭐</div>
+                    <div class="quick-prompt-title">Favorites</div>
+                    <div class="quick-prompt-desc">priority contacts & groups</div>
                 </div>
                 <div class="quick-prompt" onclick="showSettings()">
                     <div class="quick-prompt-icon">⚙️</div>
@@ -2882,6 +3135,9 @@
             const name = sender === 'user' ? 'You' : 'alfred';
             const time = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 
+            // Use markdown rendering for assistant messages, escape for user messages
+            const renderedText = sender === 'assistant' ? renderMarkdown(text) : escapeHtml(text);
+
             let html = `
                 <div class="message-avatar">${avatar}</div>
                 <div class="message-content">
@@ -2889,7 +3145,7 @@
                         <span class="message-sender">${name}</span>
                         <span class="message-time">${time}</span>
                     </div>
-                    <div class="message-text">${escapeHtml(text)}</div>
+                    <div class="message-text">${renderedText}</div>
             `;
 
             // Add data card if present
@@ -3110,9 +3366,13 @@
                                             console.log('[Alfred SSE] Updating progress:', data.step, data.message);
                                             updateProgress(loadingId, data);
                                         } else if (currentEvent === 'result') {
-                                            console.log('[Alfred SSE] Got result, resolving');
+                                            console.log('[Alfred SSE] Got result, resolving with data');
                                             if (onResult) onResult(data);
                                             resolve(data);
+                                            return; // Stop processing after result
+                                        } else if (currentEvent === 'done') {
+                                            console.log('[Alfred SSE] Done event received');
+                                            // Ignore done event - result already resolved
                                         } else if (currentEvent === 'error') {
                                             console.error('[Alfred SSE] Error from server:', data.error);
                                             reject(new Error(data.error || 'Unknown error'));
@@ -3146,7 +3406,7 @@
         function getStreamingEndpoint(endpoint) {
             const streamingEndpoints = {
                 '/api/briefing': '/api/briefing/stream',
-                '/api/calendar': '/api/calendar/stream',
+                // '/api/calendar': '/api/calendar/stream',  // Disabled - use regular endpoint for full meeting insights
                 '/api/messages': '/api/messages/stream',
                 '/api/messages/summary': '/api/messages/summary/stream'
             };
@@ -3285,6 +3545,44 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        // Simple markdown renderer for assistant messages
+        function renderMarkdown(text) {
+            if (!text) return '';
+
+            // First escape HTML to prevent XSS
+            let html = escapeHtml(text);
+
+            // Convert markdown to HTML
+            // Headers
+            html = html.replace(/^\*\*([^*]+)\*\*$/gm, '<strong>$1</strong>');
+
+            // Bold text (not at line start)
+            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+            // Italic text
+            html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+            // Horizontal rules
+            html = html.replace(/^---$/gm, '<hr style="border: none; border-top: 1px solid var(--border-color); margin: 16px 0;">');
+
+            // Bullet points (handle both • and -)
+            html = html.replace(/^• (.+)$/gm, '<div style="padding-left: 16px;">• $1</div>');
+            html = html.replace(/^- (.+)$/gm, '<div style="padding-left: 16px;">• $1</div>');
+
+            // Indented bullet points (two spaces)
+            html = html.replace(/^  • (.+)$/gm, '<div style="padding-left: 32px; color: var(--text-secondary);">◦ $1</div>');
+            html = html.replace(/^  - (.+)$/gm, '<div style="padding-left: 32px; color: var(--text-secondary);">◦ $1</div>');
+
+            // Convert newlines to breaks (but not multiple in a row)
+            html = html.replace(/\n\n+/g, '</p><p style="margin: 12px 0;">');
+            html = html.replace(/\n/g, '<br>');
+
+            // Wrap in paragraph
+            html = '<p style="margin: 0;">' + html + '</p>';
+
+            return html;
         }
 
         // Form page helper functions
@@ -4149,11 +4447,12 @@
             // Clear chat container
             document.getElementById('chatContainer').innerHTML = '';
 
-            // Hide form view, settings, and agents views
+            // Hide form view, settings, agents, and favorites views
             document.getElementById('formView').classList.add('hidden');
             document.getElementById('settingsView').classList.add('hidden');
             document.getElementById('agentsView').classList.add('hidden');
             document.getElementById('agentDetailView').classList.add('hidden');
+            document.getElementById('favoritesView').classList.add('hidden');
 
             // Show quick prompts
             document.getElementById('quickPromptsSection').classList.remove('hidden');
@@ -4262,6 +4561,7 @@
             document.getElementById('recentActivitySection').classList.add('hidden');
             document.getElementById('chatContainer').innerHTML = '';
             document.getElementById('formView').classList.add('hidden');
+            document.getElementById('favoritesView').classList.add('hidden');
             document.getElementById('backHomeButton').classList.remove('hidden');
 
             // Show settings view
@@ -4269,6 +4569,229 @@
 
             // Load current config
             loadSettings();
+        }
+
+        // ============================================
+        // FAVORITES
+        // ============================================
+
+        function showFavorites() {
+            // Hide everything else
+            document.getElementById('quickPromptsSection').classList.add('hidden');
+            document.getElementById('recentActivitySection').classList.add('hidden');
+            document.getElementById('chatContainer').innerHTML = '';
+            document.getElementById('formView').classList.add('hidden');
+            document.getElementById('settingsView').classList.add('hidden');
+            document.getElementById('agentsView').classList.add('hidden');
+            document.getElementById('backHomeButton').classList.remove('hidden');
+
+            // Show favorites view
+            document.getElementById('favoritesView').classList.remove('hidden');
+
+            // Load favorites
+            loadFavorites();
+        }
+
+        async function loadFavorites() {
+            try {
+                const response = await authFetch('/api/favorites');
+                if (!response.ok) throw new Error('Failed to load favorites');
+
+                const data = await response.json();
+                renderFavoriteContacts(data.contacts || []);
+                renderFavoriteGroups(data.groups || []);
+            } catch (error) {
+                console.error('Failed to load favorites:', error);
+                document.getElementById('favoriteContactsList').innerHTML =
+                    '<div class="settings-item-desc">Failed to load favorites</div>';
+                document.getElementById('favoriteGroupsList').innerHTML =
+                    '<div class="settings-item-desc">Failed to load favorites</div>';
+            }
+        }
+
+        function renderFavoriteContacts(contacts) {
+            const listEl = document.getElementById('favoriteContactsList');
+
+            if (contacts.length === 0) {
+                listEl.innerHTML = '<div class="settings-item-desc" style="text-align: center; padding: 20px;">No favorite contacts yet. Add your most important contacts below.</div>';
+                return;
+            }
+
+            let html = '';
+            contacts.forEach(contact => {
+                const platforms = contact.platforms.join(', ');
+                const aliases = contact.aliases.length > 0 ? ` (${contact.aliases.join(', ')})` : '';
+                html += `
+                    <div class="favorite-item">
+                        <div class="favorite-info">
+                            <div class="favorite-name">${escapeHtml(contact.name)}${escapeHtml(aliases)}</div>
+                            <div class="favorite-meta">${escapeHtml(platforms)}</div>
+                        </div>
+                        <button class="favorite-remove" onclick="removeFavoriteContact('${escapeHtml(contact.name)}')" title="Remove">×</button>
+                    </div>
+                `;
+            });
+
+            listEl.innerHTML = html;
+        }
+
+        function renderFavoriteGroups(groups) {
+            const listEl = document.getElementById('favoriteGroupsList');
+
+            if (groups.length === 0) {
+                listEl.innerHTML = '<div class="settings-item-desc" style="text-align: center; padding: 20px;">No favorite groups yet. Add your important groups below.</div>';
+                return;
+            }
+
+            let html = '';
+            groups.forEach(group => {
+                const aliases = group.aliases.length > 0 ? ` (${group.aliases.join(', ')})` : '';
+                html += `
+                    <div class="favorite-item">
+                        <div class="favorite-info">
+                            <div class="favorite-name">${escapeHtml(group.name)}${escapeHtml(aliases)}</div>
+                            <div class="favorite-meta">${escapeHtml(group.platform)}</div>
+                        </div>
+                        <button class="favorite-remove" onclick="removeFavoriteGroup('${escapeHtml(group.name)}')" title="Remove">×</button>
+                    </div>
+                `;
+            });
+
+            listEl.innerHTML = html;
+        }
+
+        async function addFavoriteContact() {
+            const name = document.getElementById('newContactName').value.trim();
+            const aliasesStr = document.getElementById('newContactAliases').value.trim();
+            const statusEl = document.getElementById('addContactStatus');
+
+            if (!name) {
+                statusEl.className = 'settings-error';
+                statusEl.textContent = 'Please enter a contact name';
+                statusEl.classList.remove('hidden');
+                return;
+            }
+
+            const platforms = [];
+            if (document.getElementById('contactWhatsapp').checked) platforms.push('whatsapp');
+            if (document.getElementById('contactIMessage').checked) platforms.push('imessage');
+            if (document.getElementById('contactEmail').checked) platforms.push('email');
+
+            const aliases = aliasesStr ? aliasesStr.split(',').map(a => a.trim()).filter(a => a) : [];
+
+            try {
+                const response = await authFetch('/api/favorites/contacts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, aliases, platforms })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    statusEl.className = 'settings-success';
+                    statusEl.textContent = `Added ${name} to favorites`;
+                    statusEl.classList.remove('hidden');
+
+                    // Clear form
+                    document.getElementById('newContactName').value = '';
+                    document.getElementById('newContactAliases').value = '';
+
+                    // Reload list
+                    loadFavorites();
+
+                    setTimeout(() => statusEl.classList.add('hidden'), 3000);
+                } else {
+                    statusEl.className = 'settings-error';
+                    statusEl.textContent = data.error || 'Failed to add contact';
+                    statusEl.classList.remove('hidden');
+                }
+            } catch (error) {
+                statusEl.className = 'settings-error';
+                statusEl.textContent = 'Failed to add contact';
+                statusEl.classList.remove('hidden');
+            }
+        }
+
+        async function removeFavoriteContact(name) {
+            if (!confirm(`Remove ${name} from favorites?`)) return;
+
+            try {
+                const response = await authFetch(`/api/favorites/contacts?name=${encodeURIComponent(name)}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    loadFavorites();
+                }
+            } catch (error) {
+                console.error('Failed to remove contact:', error);
+            }
+        }
+
+        async function addFavoriteGroup() {
+            const name = document.getElementById('newGroupName').value.trim();
+            const aliasesStr = document.getElementById('newGroupAliases').value.trim();
+            const platform = document.getElementById('groupPlatform').value;
+            const statusEl = document.getElementById('addGroupStatus');
+
+            if (!name) {
+                statusEl.className = 'settings-error';
+                statusEl.textContent = 'Please enter a group name';
+                statusEl.classList.remove('hidden');
+                return;
+            }
+
+            const aliases = aliasesStr ? aliasesStr.split(',').map(a => a.trim()).filter(a => a) : [];
+
+            try {
+                const response = await authFetch('/api/favorites/groups', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, aliases, platform })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    statusEl.className = 'settings-success';
+                    statusEl.textContent = `Added ${name} to favorite groups`;
+                    statusEl.classList.remove('hidden');
+
+                    // Clear form
+                    document.getElementById('newGroupName').value = '';
+                    document.getElementById('newGroupAliases').value = '';
+
+                    // Reload list
+                    loadFavorites();
+
+                    setTimeout(() => statusEl.classList.add('hidden'), 3000);
+                } else {
+                    statusEl.className = 'settings-error';
+                    statusEl.textContent = data.error || 'Failed to add group';
+                    statusEl.classList.remove('hidden');
+                }
+            } catch (error) {
+                statusEl.className = 'settings-error';
+                statusEl.textContent = 'Failed to add group';
+                statusEl.classList.remove('hidden');
+            }
+        }
+
+        async function removeFavoriteGroup(name) {
+            if (!confirm(`Remove ${name} from favorite groups?`)) return;
+
+            try {
+                const response = await authFetch(`/api/favorites/groups?name=${encodeURIComponent(name)}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    loadFavorites();
+                }
+            } catch (error) {
+                console.error('Failed to remove group:', error);
+            }
         }
 
         // Load settings from API
@@ -4500,15 +5023,7 @@
             }
         }
 
-        // Agent icons and descriptions
-        const agentInfo = {
-            communication: { icon: '💬', name: 'Communication Agent', desc: 'Generates personalized message drafts and responses' },
-            task: { icon: '✅', name: 'Task Agent', desc: 'Identifies action items and deadlines from conversations' },
-            calendar: { icon: '📅', name: 'Calendar Agent', desc: 'Suggests meeting scheduling and time management' },
-            followup: { icon: '🔔', name: 'Follow-up Agent', desc: 'Tracks conversations needing follow-up' }
-        };
-
-        // Show agents page
+        // Show agents/work patterns page
         function showAgents() {
             // Hide everything else
             document.getElementById('quickPromptsSection').classList.add('hidden');
@@ -4522,55 +5037,243 @@
             // Show agents view
             document.getElementById('agentsView').classList.remove('hidden');
 
-            // Load agents data
-            loadAgents();
+            // Load work patterns data
+            loadWorkPatterns();
+            loadCollaboratorStats();
+            loadAlfredMemory();
         }
 
-        // Hide agents view and run a direct API call
-        function hideAgentsAndRun(endpoint, title) {
-            document.getElementById('agentsView').classList.add('hidden');
-            callDirectAPI(endpoint, title);
-        }
-
-        // Load agents list
-        async function loadAgents() {
-            const listEl = document.getElementById('agentsList');
-            listEl.innerHTML = '<div class="loading-agents">Loading agents...</div>';
+        // Load work patterns stats
+        async function loadWorkPatterns() {
+            const statsEl = document.getElementById('workPatternsStats');
+            statsEl.innerHTML = '<div class="loading-agents">Loading work patterns...</div>';
 
             try {
-                const response = await authFetch('/api/agents');
-                if (!response.ok) throw new Error('Failed to load agents');
+                const response = await authFetch('/api/task-lifecycle/stats');
+                if (!response.ok) throw new Error('Failed to load stats');
 
                 const data = await response.json();
+                const stats = data.stats || data;  // Handle both wrapped and direct response
 
-                if (!data.agents || data.agents.length === 0) {
-                    listEl.innerHTML = '<div class="loading-agents">No agents found</div>';
+                const completionRate = stats.completionRate || 0;  // Already percentage from API
+                const overdueRate = stats.overdueRate || 0;  // Already percentage from API
+                const avgDaysToComplete = stats.avgDaysToComplete ? stats.avgDaysToComplete.toFixed(1) : '-';
+
+                // Format last scan time
+                let lastScanText = 'Never scanned';
+                if (stats.lastScanTime) {
+                    const scanDate = new Date(stats.lastScanTime);
+                    const now = new Date();
+                    const diffMs = now - scanDate;
+                    const diffMins = Math.floor(diffMs / 60000);
+                    const diffHours = Math.floor(diffMs / 3600000);
+                    const diffDays = Math.floor(diffMs / 86400000);
+
+                    if (diffMins < 1) lastScanText = 'Just now';
+                    else if (diffMins < 60) lastScanText = `${diffMins} min ago`;
+                    else if (diffHours < 24) lastScanText = `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+                    else lastScanText = `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+                }
+
+                statsEl.innerHTML = `
+                    <div class="pattern-stat-card">
+                        <div class="pattern-stat-value">${stats.totalTasks || 0}</div>
+                        <div class="pattern-stat-label">Total Tasks Tracked</div>
+                    </div>
+                    <div class="pattern-stat-card">
+                        <div class="pattern-stat-value">${completionRate}%</div>
+                        <div class="pattern-stat-label">Completion Rate</div>
+                        <div class="pattern-stat-trend ${completionRate >= 70 ? 'positive' : completionRate >= 50 ? 'neutral' : 'negative'}">
+                            ${completionRate >= 70 ? '✓ Great!' : completionRate >= 50 ? '→ Good' : '↓ Needs focus'}
+                        </div>
+                    </div>
+                    <div class="pattern-stat-card">
+                        <div class="pattern-stat-value">${overdueRate}%</div>
+                        <div class="pattern-stat-label">Overdue Rate</div>
+                        <div class="pattern-stat-trend ${overdueRate <= 10 ? 'positive' : overdueRate <= 25 ? 'neutral' : 'negative'}">
+                            ${overdueRate <= 10 ? '✓ On track' : overdueRate <= 25 ? '→ Watch closely' : '↓ Getting behind'}
+                        </div>
+                    </div>
+                    <div class="pattern-stat-card">
+                        <div class="pattern-stat-value">${avgDaysToComplete}</div>
+                        <div class="pattern-stat-label">Avg Days to Complete</div>
+                    </div>
+                    <div style="grid-column: span 2; text-align: center; padding: 8px 0 0 0; color: var(--text-tertiary); font-size: 12px;">
+                        Last scanned: ${lastScanText}
+                    </div>
+                `;
+            } catch (error) {
+                statsEl.innerHTML = `
+                    <div class="pattern-stat-card" style="grid-column: span 2; text-align: center; padding: 24px;">
+                        <div style="color: var(--text-tertiary); font-size: 14px;">
+                            No task data yet. Scan your Notion tasks to start tracking patterns.
+                        </div>
+                    </div>
+                `;
+                console.error('Failed to load work patterns:', error);
+            }
+        }
+
+        // Load collaborator stats
+        async function loadCollaboratorStats() {
+            const statsEl = document.getElementById('collaboratorStats');
+            statsEl.innerHTML = '<div class="loading-agents">Loading...</div>';
+
+            try {
+                const response = await authFetch('/api/task-lifecycle/counterparties');
+                if (!response.ok) throw new Error('Failed to load collaborator stats');
+
+                const data = await response.json();
+                const stats = data.stats || [];
+
+                if (stats.length === 0) {
+                    statsEl.innerHTML = '<div class="loading-agents" style="color: var(--text-tertiary);">No collaborator data yet. Task patterns will appear as you work.</div>';
                     return;
                 }
 
                 let html = '';
-                data.agents.forEach(agent => {
-                    const info = agentInfo[agent.type] || { icon: '🤖', name: agent.type, desc: '' };
-                    const memory = agent.memory || {};
+                stats.slice(0, 5).forEach(collab => {
+                    const completionRate = collab.completionRate ? Math.round(collab.completionRate * 100) : 0;
                     html += `
-                        <div class="agent-card" onclick="showAgentDetail('${agent.type}')">
-                            <div class="agent-card-header">
-                                <span class="agent-card-icon">${info.icon}</span>
-                                <span class="agent-card-name">${info.name}</span>
-                            </div>
-                            <div class="agent-card-desc">${info.desc}</div>
-                            <div class="agent-card-stats">
-                                <span class="agent-card-stat">📝 ${memory.taughtRulesCount || 0} rules</span>
-                                <span class="agent-card-stat">🧠 ${memory.learnedPatternsCount || 0} learned patterns</span>
+                        <div class="collaborator-card">
+                            <div class="collaborator-name">${escapeHtml(collab.counterparty)}</div>
+                            <div class="collaborator-stats-row">
+                                <div class="collaborator-stat">📋 ${collab.totalTasks} tasks</div>
+                                <div class="collaborator-stat">✅ ${completionRate}% done</div>
+                                <div class="collaborator-stat">⏰ ${collab.overdueCount} overdue</div>
                             </div>
                         </div>
                     `;
                 });
 
-                listEl.innerHTML = html;
+                statsEl.innerHTML = html;
             } catch (error) {
-                listEl.innerHTML = '<div class="loading-agents">Failed to load agents. Make sure the server is running.</div>';
-                console.error('Failed to load agents:', error);
+                statsEl.innerHTML = '<div class="loading-agents" style="color: var(--text-tertiary);">Could not load collaborator data.</div>';
+                console.error('Failed to load collaborator stats:', error);
+            }
+        }
+
+        // Refresh work patterns (trigger scan)
+        async function refreshWorkPatterns() {
+            const scanBtn = document.getElementById('scanWorkPatternsBtn');
+            const statsEl = document.getElementById('workPatternsStats');
+
+            // Disable button and show inline progress in the button
+            scanBtn.disabled = true;
+            const originalBtnText = scanBtn.innerHTML;
+
+            // Progress stages for the button
+            const stages = [
+                { text: '⏳ Connecting to Notion...', progress: 20 },
+                { text: '📋 Fetching tasks...', progress: 40 },
+                { text: '🔍 Analyzing changes...', progress: 60 },
+                { text: '📊 Computing patterns...', progress: 80 }
+            ];
+
+            let currentStage = 0;
+
+            // Update button with progress
+            const updateButtonProgress = (stage) => {
+                const stageInfo = stages[Math.min(stage, stages.length - 1)];
+                scanBtn.innerHTML = `
+                    <span style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                        <span class="progress-mini-spinner"></span>
+                        <span>${stageInfo.text}</span>
+                    </span>
+                `;
+                scanBtn.style.background = `linear-gradient(to right, var(--accent-color) ${stageInfo.progress}%, var(--bg-tertiary) ${stageInfo.progress}%)`;
+            };
+
+            updateButtonProgress(0);
+
+            // Simulate progress steps (actual API is single call)
+            const progressInterval = setInterval(() => {
+                currentStage++;
+                if (currentStage < stages.length) {
+                    updateButtonProgress(currentStage);
+                }
+            }, 600);
+
+            try {
+                const response = await authFetch('/api/task-lifecycle/scan', { method: 'POST' });
+                clearInterval(progressInterval);
+
+                if (!response.ok) throw new Error('Scan failed');
+
+                const data = await response.json();
+                const result = data.result || data || {};
+
+                // Show final result in button
+                const tasksScanned = result.tasksScanned || 0;
+                const newTasks = result.newTasks || 0;
+                const changesDetected = result.changesDetected || 0;
+
+                scanBtn.innerHTML = `✅ Done: ${tasksScanned} tasks, ${newTasks} new, ${changesDetected} changes`;
+                scanBtn.style.background = 'var(--accent-color)';
+                scanBtn.style.color = 'white';
+
+                // Reset button after delay and reload stats
+                setTimeout(() => {
+                    scanBtn.innerHTML = originalBtnText;
+                    scanBtn.style.background = '';
+                    scanBtn.style.color = '';
+                    scanBtn.disabled = false;
+                    loadWorkPatterns();
+                    loadCollaboratorStats();
+                }, 3000);
+
+            } catch (error) {
+                clearInterval(progressInterval);
+                scanBtn.innerHTML = `❌ Scan failed`;
+                scanBtn.style.background = 'var(--text-danger)';
+                scanBtn.style.color = 'white';
+                console.error('Failed to scan:', error);
+
+                // Reset button after delay
+                setTimeout(() => {
+                    scanBtn.innerHTML = originalBtnText;
+                    scanBtn.style.background = '';
+                    scanBtn.style.color = '';
+                    scanBtn.disabled = false;
+                }, 3000);
+            }
+        }
+
+        // Load Alfred's memory (learnings)
+        async function loadAlfredMemory() {
+            const memoryEl = document.getElementById('alfredMemory');
+            memoryEl.innerHTML = '<div class="loading-agents">Loading memory...</div>';
+
+            try {
+                const response = await authFetch('/api/learnings');
+                if (!response.ok) throw new Error('Failed to load learnings');
+
+                const data = await response.json();
+                const learnings = data.learnings || [];
+
+                if (learnings.length === 0) {
+                    memoryEl.innerHTML = '<div class="loading-agents" style="color: var(--text-tertiary);">No learnings yet. Teach Alfred rules below to get started.</div>';
+                    return;
+                }
+
+                let html = '';
+                learnings.forEach((learning, index) => {
+                    const escapedRule = learning.rule.replace(/'/g, "\\'").replace(/"/g, "&quot;");
+                    html += `
+                        <div class="alfred-memory-item">
+                            <div>
+                                <div class="alfred-memory-text">${escapeHtml(learning.rule)}</div>
+                                <div class="alfred-memory-meta">${learning.category || 'General'} · ${learning.timestamp || 'Recently'}</div>
+                            </div>
+                            <button class="alfred-memory-delete" onclick="forgetLearning('${escapedRule.substring(0, 50)}')">×</button>
+                        </div>
+                    `;
+                });
+
+                memoryEl.innerHTML = html;
+            } catch (error) {
+                memoryEl.innerHTML = '<div class="loading-agents" style="color: var(--text-tertiary);">Could not load memory.</div>';
+                console.error('Failed to load Alfred memory:', error);
             }
         }
 
@@ -4697,8 +5400,8 @@
         }
 
         // Teach an agent
-        async function teachAgent() {
-            const agentType = document.getElementById('teachAgentSelect').value;
+        // Teach Alfred (simplified - single memory)
+        async function teachAlfred() {
             const rule = document.getElementById('teachRuleInput').value.trim();
             const statusEl = document.getElementById('teachStatus');
 
@@ -4710,30 +5413,32 @@
             }
 
             try {
-                const response = await authFetch('/api/agents/teach', {
+                const response = await authFetch('/api/teach', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        agent: agentType,
-                        rule: rule
-                    })
+                    body: JSON.stringify({ rule: rule })
                 });
 
                 const data = await response.json();
 
                 if (response.ok) {
                     statusEl.className = 'settings-success';
-                    statusEl.textContent = `Successfully taught ${agentInfo[agentType]?.name || agentType}!`;
+                    statusEl.textContent = '✓ Alfred learned this rule!';
                     statusEl.classList.remove('hidden');
 
                     // Clear input
                     document.getElementById('teachRuleInput').value = '';
 
-                    // Reload agents list
-                    loadAgents();
+                    // Reload memory
+                    loadAlfredMemory();
+
+                    // Hide status after 3 seconds
+                    setTimeout(() => {
+                        statusEl.classList.add('hidden');
+                    }, 3000);
                 } else {
                     statusEl.className = 'settings-error';
-                    statusEl.textContent = 'Error: ' + (data.error || 'Failed to teach agent');
+                    statusEl.textContent = 'Error: ' + (data.error || 'Failed to teach Alfred');
                     statusEl.classList.remove('hidden');
                 }
             } catch (error) {
@@ -4743,9 +5448,9 @@
             }
         }
 
-        // Forget a rule
-        async function forgetRule(agentType, rulePattern) {
-            if (!confirm('Are you sure you want to remove this rule?')) {
+        // Forget a learning
+        async function forgetLearning(rulePattern) {
+            if (!confirm('Are you sure you want to remove this rule from Alfred\'s memory?')) {
                 return;
             }
 
@@ -4754,14 +5459,14 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        agent: agentType,
+                        agent: 'task',
                         pattern: rulePattern
                     })
                 });
 
                 if (response.ok) {
-                    // Reload agent detail
-                    showAgentDetail(agentType);
+                    // Reload memory
+                    loadAlfredMemory();
                 } else {
                     alert('Failed to remove rule');
                 }

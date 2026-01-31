@@ -8,6 +8,10 @@ class AgentMemoryService {
 
     private let baseDirectory: String
     private let fileManager = FileManager.default
+    private let fileLock = NSLock()  // Thread safety for file operations
+
+    /// Callback for when a new learning is recorded (for notifications)
+    var onLearningRecorded: ((AgentType, String, String) -> Void)?
 
     init() {
         // Use ~/.alfred/agents/ as the base directory
@@ -37,6 +41,9 @@ class AgentMemoryService {
 
     /// Get the memory content for an agent
     func getMemory(for agentType: AgentType) -> AgentMemory {
+        fileLock.lock()
+        defer { fileLock.unlock() }
+
         let path = memoryPath(for: agentType)
 
         guard let content = try? String(contentsOfFile: path, encoding: .utf8) else {
@@ -49,6 +56,9 @@ class AgentMemoryService {
 
     /// Get the skills content for an agent
     func getSkills(for agentType: AgentType) -> AgentSkills {
+        fileLock.lock()
+        defer { fileLock.unlock() }
+
         let path = skillsPath(for: agentType)
 
         guard let content = try? String(contentsOfFile: path, encoding: .utf8) else {
@@ -60,7 +70,10 @@ class AgentMemoryService {
 
     /// Add a user-taught rule to an agent's memory
     func teach(agentType: AgentType, rule: String, category: String? = nil) throws {
-        var memory = getMemory(for: agentType)
+        fileLock.lock()
+        defer { fileLock.unlock() }
+
+        var memory = getMemoryUnlocked(for: agentType)
 
         let timestamp = ISO8601DateFormatter().string(from: Date())
         let categoryLabel = category ?? "General"
@@ -105,14 +118,22 @@ class AgentMemoryService {
         }
 
         // Save updated memory
-        try saveMemory(memory)
+        try saveMemoryUnlocked(memory)
 
         print("✓ Taught \(agentType.rawValue) agent: \"\(rule)\"")
+
+        // Trigger notification callback (outside of lock)
+        DispatchQueue.main.async { [weak self] in
+            self?.onLearningRecorded?(agentType, rule, "user-taught")
+        }
     }
 
     /// Record a learning from implicit feedback (edit, approval, rejection)
-    func recordLearning(agentType: AgentType, learning: String, source: LearningSource) throws {
-        var memory = getMemory(for: agentType)
+    func recordLearning(agentType: AgentType, learning: String, source: LearningSource, notify: Bool = true) throws {
+        fileLock.lock()
+        defer { fileLock.unlock() }
+
+        var memory = getMemoryUnlocked(for: agentType)
 
         let timestamp = ISO8601DateFormatter().string(from: Date())
         let sourceLabel = source.rawValue
@@ -127,12 +148,22 @@ class AgentMemoryService {
             memory.sections["Learned Patterns"] = learningEntry
         }
 
-        try saveMemory(memory)
+        try saveMemoryUnlocked(memory)
+
+        // Trigger notification callback for significant learnings (outside of lock)
+        if notify && (source == .draftApproval || source == .consolidation) {
+            DispatchQueue.main.async { [weak self] in
+                self?.onLearningRecorded?(agentType, learning, source.rawValue)
+            }
+        }
     }
 
     /// Remove a specific learning or rule from memory
     func forget(agentType: AgentType, pattern: String) throws -> Bool {
-        var memory = getMemory(for: agentType)
+        fileLock.lock()
+        defer { fileLock.unlock() }
+
+        var memory = getMemoryUnlocked(for: agentType)
         var found = false
 
         // Search all sections for the pattern
@@ -152,7 +183,7 @@ class AgentMemoryService {
         }
 
         if found {
-            try saveMemory(memory)
+            try saveMemoryUnlocked(memory)
             print("✓ Removed pattern containing \"\(pattern)\" from \(agentType.rawValue) memory")
         }
 
@@ -161,7 +192,10 @@ class AgentMemoryService {
 
     /// Get a summary of what the agent knows (for display)
     func getMemorySummary(for agentType: AgentType) -> MemorySummary {
-        let memory = getMemory(for: agentType)
+        fileLock.lock()
+        defer { fileLock.unlock() }
+
+        let memory = getMemoryUnlocked(for: agentType)
 
         var taughtRulesCount = 0
         var learnedPatternsCount = 0
@@ -193,9 +227,115 @@ class AgentMemoryService {
         )
     }
 
+    /// Get recent learnings for display in the daily briefing
+    /// Returns learnings from the last 24 hours across all agents
+    func getRecentLearnings(since: Date = Calendar.current.date(byAdding: .day, value: -1, to: Date())!) -> [RecentLearning] {
+        fileLock.lock()
+        defer { fileLock.unlock() }
+
+        var recentLearnings: [RecentLearning] = []
+        let dateFormatter = ISO8601DateFormatter()
+
+        for agentType in AgentType.allCases {
+            let memory = getMemoryUnlocked(for: agentType)
+
+            // Check Learned Patterns section
+            if let patterns = memory.sections["Learned Patterns"] {
+                let lines = patterns.components(separatedBy: "\n").filter { $0.starts(with: "- [") }
+                for line in lines {
+                    // Parse timestamp from format: "- [2024-01-15T10:30:00Z] [source] learning text"
+                    if let timestampEndIndex = line.range(of: "]")?.lowerBound,
+                       line.count > 3 {
+                        let timestampStr = String(line[line.index(line.startIndex, offsetBy: 3)..<timestampEndIndex])
+                        if let timestamp = dateFormatter.date(from: timestampStr),
+                           timestamp >= since {
+                            // Extract source and learning text
+                            let afterTimestamp = String(line[line.index(after: timestampEndIndex)...])
+                            var source: String = "implicit"
+                            var learningText: String = afterTimestamp.trimmingCharacters(in: .whitespaces)
+
+                            // Try to parse source
+                            if learningText.starts(with: "[") {
+                                if let sourceEndIndex = learningText.range(of: "]")?.upperBound {
+                                    source = String(learningText[learningText.index(after: learningText.startIndex)..<learningText.index(before: sourceEndIndex)])
+                                    learningText = String(learningText[sourceEndIndex...]).trimmingCharacters(in: .whitespaces)
+                                }
+                            }
+
+                            recentLearnings.append(RecentLearning(
+                                agentType: agentType,
+                                learning: learningText,
+                                source: source,
+                                timestamp: timestamp
+                            ))
+                        }
+                    }
+                }
+            }
+
+            // Check User-Taught Rules section for recent additions
+            if let rules = memory.sections["User-Taught Rules"] {
+                let lines = rules.components(separatedBy: "\n").filter { $0.starts(with: "- [") }
+                for line in lines {
+                    if let timestampEndIndex = line.range(of: "]")?.lowerBound,
+                       line.count > 3 {
+                        let timestampStr = String(line[line.index(line.startIndex, offsetBy: 3)..<timestampEndIndex])
+                        if let timestamp = dateFormatter.date(from: timestampStr),
+                           timestamp >= since {
+                            let learningText = String(line[line.index(after: timestampEndIndex)...]).trimmingCharacters(in: .whitespaces)
+                            recentLearnings.append(RecentLearning(
+                                agentType: agentType,
+                                learning: learningText,
+                                source: "user-taught",
+                                timestamp: timestamp
+                            ))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Sort by timestamp, newest first
+        return recentLearnings.sorted { $0.timestamp > $1.timestamp }
+    }
+
+    /// Get total count of learnings today (for notification badge)
+    func getTodayLearningCount() -> Int {
+        let today = Calendar.current.startOfDay(for: Date())
+        return getRecentLearnings(since: today).count
+    }
+
+    /// Format recent learnings for display in briefing
+    func formatRecentLearningsForBriefing() -> String? {
+        let learnings = getRecentLearnings()
+        guard !learnings.isEmpty else { return nil }
+
+        var output = "### 🧠 What Alfred Learned\n\n"
+
+        // Group by agent type
+        let grouped = Dictionary(grouping: learnings) { $0.agentType }
+
+        for (agentType, agentLearnings) in grouped.sorted(by: { $0.key.displayName < $1.key.displayName }) {
+            output += "**\(agentType.displayName):**\n"
+            for learning in agentLearnings.prefix(3) {
+                let sourceEmoji = learning.source == "user-taught" ? "📚" : "💡"
+                output += "- \(sourceEmoji) \(learning.learning)\n"
+            }
+            if agentLearnings.count > 3 {
+                output += "- _...and \(agentLearnings.count - 3) more_\n"
+            }
+            output += "\n"
+        }
+
+        return output
+    }
+
     /// Get memory content formatted for inclusion in LLM prompts
     func getMemoryForPrompt(agentType: AgentType, context: PromptContext? = nil) -> String {
-        let memory = getMemory(for: agentType)
+        fileLock.lock()
+        defer { fileLock.unlock() }
+
+        let memory = getMemoryUnlocked(for: agentType)
         var promptContent = ""
 
         // Always include User-Taught Rules (highest priority)
@@ -290,6 +430,45 @@ class AgentMemoryService {
     }
 
     private func saveMemory(_ memory: AgentMemory) throws {
+        let path = memoryPath(for: memory.agentType)
+
+        // Reconstruct markdown from sections
+        var content = "# \(memory.agentType.displayName) Memory\n\n"
+        content += "_What I've learned about your preferences and patterns._\n\n"
+
+        // Order sections logically
+        let sectionOrder = ["User-Taught Rules", "Your Style", "Contact-Specific Patterns", "Phrases You Use", "Phrases You Never Use", "Learned Patterns", "Learned Corrections"]
+
+        for sectionName in sectionOrder {
+            if let sectionContent = memory.sections[sectionName], !sectionContent.isEmpty {
+                content += "## \(sectionName)\n\n\(sectionContent)\n\n"
+            }
+        }
+
+        // Add any sections not in the standard order
+        for (sectionName, sectionContent) in memory.sections {
+            if !sectionOrder.contains(sectionName) && !sectionContent.isEmpty {
+                content += "## \(sectionName)\n\n\(sectionContent)\n\n"
+            }
+        }
+
+        try content.write(toFile: path, atomically: true, encoding: .utf8)
+    }
+
+    /// Internal unlocked version - must only be called when fileLock is already held
+    private func getMemoryUnlocked(for agentType: AgentType) -> AgentMemory {
+        let path = memoryPath(for: agentType)
+
+        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else {
+            // Return empty memory if file doesn't exist
+            return AgentMemory(agentType: agentType, content: "", sections: [:])
+        }
+
+        return parseMemory(content: content, agentType: agentType)
+    }
+
+    /// Internal unlocked version - must only be called when fileLock is already held
+    private func saveMemoryUnlocked(_ memory: AgentMemory) throws {
         let path = memoryPath(for: memory.agentType)
 
         // Reconstruct markdown from sections
@@ -731,6 +910,30 @@ enum LearningSource: String {
     case draftRejection = "rejection"
     case implicitPattern = "pattern"
     case consolidation = "consolidated"
+}
+
+/// Represents a recent learning for display in briefings
+struct RecentLearning {
+    let agentType: AgentType
+    let learning: String
+    let source: String
+    let timestamp: Date
+
+    var formattedTimestamp: String {
+        let formatter = RelativeDateTimeFormatter()
+        return formatter.localizedString(for: timestamp, relativeTo: Date())
+    }
+
+    var sourceEmoji: String {
+        switch source {
+        case "user-taught": return "📚"
+        case "approval": return "✅"
+        case "rejection": return "❌"
+        case "edit": return "✏️"
+        case "consolidated": return "🔄"
+        default: return "💡"
+        }
+    }
 }
 
 // MARK: - Learning Consolidation

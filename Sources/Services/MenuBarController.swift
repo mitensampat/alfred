@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import UserNotifications
 
 /// Menu bar controller for Alfred - shows server status and provides quick controls
 class MenuBarController: NSObject, NSMenuDelegate {
@@ -9,10 +10,15 @@ class MenuBarController: NSObject, NSMenuDelegate {
     private var serverPort: Int = 8080
     private var config: AppConfig?
     private var alfredService: AlfredService?
+    private var orchestrator: BriefingOrchestrator?
+    private var schedulerTimer: Timer?
+    private var lastBriefingRun: String = ""
+    private var lastAttentionRun: String = ""
 
-    init(config: AppConfig, alfredService: AlfredService) {
+    init(config: AppConfig, alfredService: AlfredService, orchestrator: BriefingOrchestrator? = nil) {
         self.config = config
         self.alfredService = alfredService
+        self.orchestrator = orchestrator
         self.serverPort = config.api?.port ?? 8080
         super.init()
     }
@@ -20,6 +26,19 @@ class MenuBarController: NSObject, NSMenuDelegate {
     func setup() {
         setupMenuBar()
         startServer()
+        startScheduler()
+        setupLearningNotifications()
+    }
+
+    // MARK: - Learning Notifications
+
+    private func setupLearningNotifications() {
+        // Subscribe to agent learning events
+        AgentMemoryService.shared.onLearningRecorded = { [weak self] agentType, learning, source in
+            let title = source == "user-taught" ? "Alfred Learned a Rule" : "Alfred Learned Something"
+            let body = "\(agentType.displayName): \(learning.prefix(100))\(learning.count > 100 ? "..." : "")"
+            self?.showNotification(title: title, body: body)
+        }
     }
 
     // MARK: - Menu Bar Setup
@@ -220,6 +239,139 @@ class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc func quitApp() {
         stopServer()
+        stopScheduler()
         NSApplication.shared.terminate(nil)
+    }
+
+    // MARK: - Scheduler
+
+    private func startScheduler() {
+        guard let config = config else { return }
+
+        // Log scheduler start
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        let logPath = "\(homeDir)/.alfred/scheduler.log"
+        logToFile("Scheduler started", path: logPath)
+        logToFile("Morning briefing time: \(config.app.briefingTime)", path: logPath)
+        logToFile("Attention check time: \(config.app.attentionAlertTime)", path: logPath)
+
+        if let scheduled = config.scheduled {
+            logToFile("Email to: \(scheduled.emailTo)", path: logPath)
+            logToFile("Briefing enabled: \(scheduled.briefingEnabled)", path: logPath)
+            logToFile("Attention enabled: \(scheduled.attentionEnabled)", path: logPath)
+        }
+
+        print("📅 Scheduler started")
+        print("   Briefing: \(config.app.briefingTime)")
+        print("   Attention: \(config.app.attentionAlertTime)")
+
+        // Check every 60 seconds
+        schedulerTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task {
+                await self?.checkAndRunScheduledTasks()
+            }
+        }
+
+        // Also run immediately to catch any missed tasks
+        Task {
+            await checkAndRunScheduledTasks()
+        }
+    }
+
+    private func stopScheduler() {
+        schedulerTimer?.invalidate()
+        schedulerTimer = nil
+    }
+
+    private func checkAndRunScheduledTasks() async {
+        // Re-read config for hot-reload
+        let config = AppConfig.load() ?? self.config
+        guard let config = config else { return }
+
+        let scheduled = config.scheduled
+        let now = Date()
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        let currentTime = formatter.string(from: now)
+
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        let logPath = "\(homeDir)/.alfred/scheduler.log"
+
+        let emailTo = scheduled?.emailTo.isEmpty == false ? scheduled?.emailTo : nil
+
+        // Morning Briefing
+        let briefingEnabled = scheduled?.briefingEnabled ?? true
+        if briefingEnabled && currentTime == config.app.briefingTime && lastBriefingRun != currentTime {
+            lastBriefingRun = currentTime
+            logToFile("Running morning briefing at \(currentTime)", path: logPath)
+
+            if let orchestrator = orchestrator {
+                do {
+                    let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
+                    _ = try await orchestrator.generateBriefing(for: tomorrow, sendNotifications: true, toAddress: emailTo)
+                    logToFile("Morning briefing sent successfully", path: logPath)
+                    showNotification(title: "Morning Briefing Sent", body: "Check your email for tomorrow's briefing")
+                } catch {
+                    logToFile("Error generating briefing: \(error)", path: logPath)
+                }
+            } else {
+                logToFile("Orchestrator not available for briefing", path: logPath)
+            }
+        }
+
+        // Attention Check
+        let attentionEnabled = scheduled?.attentionEnabled ?? true
+        if attentionEnabled && currentTime == config.app.attentionAlertTime && lastAttentionRun != currentTime {
+            lastAttentionRun = currentTime
+            logToFile("Running attention check at \(currentTime)", path: logPath)
+
+            if let orchestrator = orchestrator {
+                do {
+                    _ = try await orchestrator.generateAttentionDefenseAlert(sendNotifications: true, toAddress: emailTo)
+                    logToFile("Attention check sent successfully", path: logPath)
+                    showNotification(title: "Attention Check Sent", body: "Check your email for the attention report")
+                } catch {
+                    logToFile("Error generating attention check: \(error)", path: logPath)
+                }
+            } else {
+                logToFile("Orchestrator not available for attention check", path: logPath)
+            }
+        }
+    }
+
+    private func logToFile(_ message: String, path: String) {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let logMessage = "[\(timestamp)] \(message)\n"
+
+        if FileManager.default.fileExists(atPath: path) {
+            if let handle = FileHandle(forWritingAtPath: path) {
+                handle.seekToEndOfFile()
+                if let data = logMessage.data(using: .utf8) {
+                    handle.write(data)
+                }
+                handle.closeFile()
+            }
+        } else {
+            try? logMessage.write(toFile: path, atomically: true, encoding: .utf8)
+        }
+    }
+
+    private func showNotification(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil  // Deliver immediately
+        )
+
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("Failed to show notification: \(error)")
+            }
+        }
     }
 }

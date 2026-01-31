@@ -166,6 +166,8 @@ struct AlfredApp {
                 await runMenuBar(config, orchestrator)
             case "install":
                 runInstall()
+            case "install-app":
+                runInstallApp()
             default:
                 printUsage()
             }
@@ -2409,10 +2411,11 @@ struct AlfredApp {
           alfred drafts                      # Review suggested responses
           # (Send messages manually based on drafts)
 
-        Server:
+        Server & Installation:
           server                        Run HTTP API server (headless)
           menubar                       Run as menu bar app with 🎩 icon
-          install                       Install to ~/.local/bin and restart menubar
+          install                       Install CLI to ~/.local/bin
+          install-app                   Install Alfred.app to /Applications (recommended)
 
         Configuration:
           Edit ~/.config/alfred/config.json with your credentials
@@ -2498,7 +2501,8 @@ struct AlfredApp {
 
             // Create and setup menu bar controller on main thread
             // Store in a static var to prevent deallocation
-            AlfredApp.menuBarController = MenuBarController(config: config, alfredService: alfredService)
+            // Pass orchestrator for scheduled tasks (briefing, attention check emails)
+            AlfredApp.menuBarController = MenuBarController(config: config, alfredService: alfredService, orchestrator: orchestrator)
             AlfredApp.menuBarController?.setup()
         }
 
@@ -2594,6 +2598,223 @@ struct AlfredApp {
         print("")
         print("   Alfred will auto-start on login.")
         print("   Run 'alfred install' again after rebuilding to update.")
+        print("")
+    }
+
+    static func runInstallApp() {
+        print("")
+        print("🎩 Installing Alfred.app")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print("")
+
+        let fileManager = FileManager.default
+        let homeDir = fileManager.homeDirectoryForCurrentUser.path
+
+        // Paths
+        let appBundlePath = "/Applications/Alfred.app"
+        let launchAgentPath = "\(homeDir)/Library/LaunchAgents/com.msfoundry.alfred.plist"
+        let launchAgentsDir = "\(homeDir)/Library/LaunchAgents"
+
+        // Get the source directory (where we're running from)
+        let currentExePath = CommandLine.arguments[0]
+        var sourceDir: String
+        if currentExePath.hasPrefix("/") {
+            sourceDir = (currentExePath as NSString).deletingLastPathComponent
+        } else {
+            sourceDir = fileManager.currentDirectoryPath + "/" + (currentExePath as NSString).deletingLastPathComponent
+        }
+
+        // Find the Alfred.app in the source directory (go up to project root)
+        var projectRoot = sourceDir
+        // If we're in .build/debug, go up
+        if projectRoot.contains(".build") {
+            while !fileManager.fileExists(atPath: projectRoot + "/Alfred.app") && projectRoot != "/" {
+                projectRoot = (projectRoot as NSString).deletingLastPathComponent
+            }
+        }
+
+        let sourceAppPath = projectRoot + "/Alfred.app"
+
+        // Check if source app bundle exists
+        guard fileManager.fileExists(atPath: sourceAppPath) else {
+            print("❌ Alfred.app not found at \(sourceAppPath)")
+            print("   Make sure you're running from the project directory")
+            print("")
+            return
+        }
+
+        // Step 1: Stop any existing Alfred
+        print("⏹  Stopping existing Alfred...")
+        let stopTask = Process()
+        stopTask.launchPath = "/usr/bin/pkill"
+        stopTask.arguments = ["-9", "-f", "Alfred.app"]
+        try? stopTask.run()
+        stopTask.waitUntilExit()
+
+        // Also stop via launchctl if running as agent
+        let unloadTask = Process()
+        unloadTask.launchPath = "/bin/launchctl"
+        unloadTask.arguments = ["unload", launchAgentPath]
+        try? unloadTask.run()
+        unloadTask.waitUntilExit()
+
+        sleep(1)
+
+        // Step 2: Build release binary
+        print("🔨 Building release binary...")
+        let buildTask = Process()
+        buildTask.launchPath = "/usr/bin/swift"
+        buildTask.arguments = ["build", "-c", "release"]
+        buildTask.currentDirectoryURL = URL(fileURLWithPath: projectRoot)
+
+        let buildPipe = Pipe()
+        buildTask.standardOutput = buildPipe
+        buildTask.standardError = buildPipe
+
+        do {
+            try buildTask.run()
+            buildTask.waitUntilExit()
+
+            if buildTask.terminationStatus != 0 {
+                let output = String(data: buildPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                print("❌ Build failed:")
+                print(output)
+                return
+            }
+            print("✅ Build successful")
+        } catch {
+            print("❌ Failed to run build: \(error)")
+            return
+        }
+
+        // Step 3: Copy binary to app bundle
+        print("📦 Updating app bundle...")
+        let releaseBinaryPath = projectRoot + "/.build/release/alfred"
+        let appBinaryPath = sourceAppPath + "/Contents/MacOS/Alfred"
+
+        do {
+            // Create MacOS directory if needed
+            let macOSDir = sourceAppPath + "/Contents/MacOS"
+            if !fileManager.fileExists(atPath: macOSDir) {
+                try fileManager.createDirectory(atPath: macOSDir, withIntermediateDirectories: true)
+            }
+
+            // Remove old binary and copy new one
+            if fileManager.fileExists(atPath: appBinaryPath) {
+                try fileManager.removeItem(atPath: appBinaryPath)
+            }
+            try fileManager.copyItem(atPath: releaseBinaryPath, toPath: appBinaryPath)
+
+            // Make executable
+            try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: appBinaryPath)
+            print("✅ Binary copied to app bundle")
+        } catch {
+            print("❌ Failed to copy binary: \(error)")
+            return
+        }
+
+        // Step 4: Remove existing app from /Applications
+        print("📦 Installing to /Applications...")
+        if fileManager.fileExists(atPath: appBundlePath) {
+            do {
+                try fileManager.removeItem(atPath: appBundlePath)
+            } catch {
+                print("❌ Failed to remove existing app (try running with sudo or remove manually): \(error)")
+                return
+            }
+        }
+
+        // Step 5: Copy app bundle to /Applications
+        do {
+            try fileManager.copyItem(atPath: sourceAppPath, toPath: appBundlePath)
+            print("✅ Installed to \(appBundlePath)")
+        } catch {
+            print("❌ Failed to install app: \(error)")
+            print("   Try: sudo cp -R \"\(sourceAppPath)\" /Applications/")
+            return
+        }
+
+        // Step 6: Create LaunchAgent for auto-start
+        print("🚀 Setting up auto-start...")
+        if !fileManager.fileExists(atPath: launchAgentsDir) {
+            try? fileManager.createDirectory(atPath: launchAgentsDir, withIntermediateDirectories: true)
+        }
+
+        let launchAgentContent = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>Label</key>
+            <string>com.msfoundry.alfred</string>
+
+            <key>ProgramArguments</key>
+            <array>
+                <string>/Applications/Alfred.app/Contents/MacOS/Alfred</string>
+                <string>menubar</string>
+            </array>
+
+            <key>RunAtLoad</key>
+            <true/>
+
+            <key>KeepAlive</key>
+            <dict>
+                <key>Crashed</key>
+                <true/>
+            </dict>
+
+            <key>StandardOutPath</key>
+            <string>\(homeDir)/.alfred/alfred.log</string>
+
+            <key>StandardErrorPath</key>
+            <string>\(homeDir)/.alfred/alfred.log</string>
+
+            <key>EnvironmentVariables</key>
+            <dict>
+                <key>PATH</key>
+                <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+            </dict>
+        </dict>
+        </plist>
+        """
+
+        do {
+            try launchAgentContent.write(toFile: launchAgentPath, atomically: true, encoding: .utf8)
+            print("✅ Launch agent created")
+        } catch {
+            print("⚠️  Failed to create launch agent: \(error)")
+        }
+
+        // Step 7: Load the launch agent
+        let loadTask = Process()
+        loadTask.launchPath = "/bin/launchctl"
+        loadTask.arguments = ["load", launchAgentPath]
+        try? loadTask.run()
+        loadTask.waitUntilExit()
+
+        // Step 8: Launch the app
+        print("▶️  Starting Alfred.app...")
+        sleep(1)
+
+        let openTask = Process()
+        openTask.launchPath = "/usr/bin/open"
+        openTask.arguments = [appBundlePath]
+        try? openTask.run()
+        openTask.waitUntilExit()
+
+        print("")
+        print("╔═══════════════════════════════════════════════════════════════╗")
+        print("║  ✅ Alfred.app installed successfully!                        ║")
+        print("╠═══════════════════════════════════════════════════════════════╣")
+        print("║                                                               ║")
+        print("║  📍 Location:     /Applications/Alfred.app                    ║")
+        print("║  🎩 Menu Bar:     Look for the hat icon                       ║")
+        print("║  🔄 Auto-Start:   Enabled (runs on login)                     ║")
+        print("║                                                               ║")
+        print("║  To update after changes:                                     ║")
+        print("║    alfred install-app                                         ║")
+        print("║                                                               ║")
+        print("╚═══════════════════════════════════════════════════════════════╝")
         print("")
     }
 

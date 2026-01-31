@@ -73,6 +73,46 @@ class AlfredService: ObservableObject {
         return try await orchestrator.generateBriefing(for: date, sendNotifications: false)
     }
 
+    /// Progress callback type for streaming briefing generation
+    typealias BriefingProgressCallback = (_ step: String, _ message: String, _ progress: Int) -> Void
+
+    /// Generate briefing with progress callbacks for streaming UI
+    func generateDailyBriefingWithProgress(
+        for date: Date = Date(),
+        onProgress: @escaping BriefingProgressCallback
+    ) async throws -> DailyBriefing {
+        guard let orchestrator = orchestrator else {
+            throw ServiceError.notInitialized
+        }
+
+        // Step 1: Messages - pre-check that we can access messages
+        onProgress("messages", "Scanning your messages...", 10)
+        let messageSummaries = try await orchestrator.getMessagesSummary(platform: "all", timeframe: "24h")
+        let threadCount = messageSummaries.count
+        onProgress("messages", "Found \(threadCount) conversations...", 20)
+
+        // Step 2: Calendar - pre-check that we can access calendar
+        onProgress("calendar", "Loading your calendar...", 30)
+        let calendarBriefing = try await orchestrator.getCalendarBriefing(for: date, calendar: "all")
+        let eventCount = calendarBriefing.schedule.events.count
+        onProgress("calendar", "Found \(eventCount) events...", 40)
+
+        // Step 3: Notion
+        onProgress("notion", "Checking Notion for context...", 50)
+
+        // Step 4: Analysis - this is where the heavy AI work happens
+        onProgress("analysis", "AI is analyzing your day...", 60)
+
+        // Step 5: Generate full briefing (this compiles everything and does final analysis)
+        // The orchestrator will re-fetch some data but it should be fast due to caching
+        let briefing = try await orchestrator.generateBriefing(for: date, sendNotifications: false)
+
+        // Step 6: Complete
+        onProgress("complete", "Briefing ready!", 100)
+
+        return briefing
+    }
+
     // MARK: - Attention Check
 
     func generateAttentionCheck() async throws -> AttentionDefenseReport {

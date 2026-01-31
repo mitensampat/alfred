@@ -8,9 +8,16 @@ class QueryCacheService {
     private let cacheDuration: TimeInterval = 3600 // 1 hour default
 
     init() {
-        // Store cache in user's temp directory
-        let tempDir = FileManager.default.temporaryDirectory
-        dbPath = tempDir.appendingPathComponent("alfred_cache.db").path
+        // Store cache in persistent ~/.alfred directory (survives reboots)
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        let alfredDir = homeDir.appendingPathComponent(".alfred")
+
+        // Create directory if needed
+        if !FileManager.default.fileExists(atPath: alfredDir.path) {
+            try? FileManager.default.createDirectory(at: alfredDir, withIntermediateDirectories: true)
+        }
+
+        dbPath = alfredDir.appendingPathComponent("cache.db").path
 
         openDatabase()
         createTable()

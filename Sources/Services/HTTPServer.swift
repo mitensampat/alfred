@@ -46,8 +46,9 @@ class HTTPServer {
     private let sessionLock = NSLock()
     private let sessionDuration: TimeInterval = 24 * 60 * 60 // 24 hours
     private var lastSessionCleanup: Date = Date()
+    private let sessionsFilePath: String
 
-    struct Session {
+    struct Session: Codable {
         let token: String
         let createdAt: Date
         let expiresAt: Date
@@ -58,6 +59,51 @@ class HTTPServer {
         self.passcode = passcode
         self.alfredService = alfredService
         self.cache = QueryCacheService()
+
+        // Setup sessions file path
+        let alfredDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".alfred")
+        try? FileManager.default.createDirectory(at: alfredDir, withIntermediateDirectories: true)
+        self.sessionsFilePath = alfredDir.appendingPathComponent("sessions.json").path
+
+        // Load persisted sessions
+        loadSessions()
+    }
+
+    // MARK: - Session Persistence
+
+    private func loadSessions() {
+        sessionLock.lock()
+        defer { sessionLock.unlock() }
+
+        guard FileManager.default.fileExists(atPath: sessionsFilePath),
+              let data = FileManager.default.contents(atPath: sessionsFilePath) else {
+            return
+        }
+
+        do {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let sessions = try decoder.decode([String: Session].self, from: data)
+
+            // Only load non-expired sessions
+            let now = Date()
+            activeSessions = sessions.filter { $0.value.expiresAt > now }
+            print("✓ Loaded \(activeSessions.count) valid sessions from disk")
+        } catch {
+            print("⚠️ Failed to load sessions: \(error)")
+        }
+    }
+
+    private func saveSessions() {
+        // Called within sessionLock, so don't lock again
+        do {
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(activeSessions)
+            try data.write(to: URL(fileURLWithPath: sessionsFilePath))
+        } catch {
+            print("⚠️ Failed to save sessions: \(error)")
+        }
     }
 
     // MARK: - Memory Cache Helpers
@@ -96,6 +142,9 @@ class HTTPServer {
             lastSessionCleanup = now
             activeSessions = activeSessions.filter { $0.value.expiresAt > now }
         }
+
+        // Persist sessions to disk
+        saveSessions()
         sessionLock.unlock()
 
         return session
@@ -115,6 +164,7 @@ class HTTPServer {
     private func invalidateSession(token: String) {
         sessionLock.lock()
         activeSessions.removeValue(forKey: token)
+        saveSessions()
         sessionLock.unlock()
     }
 
@@ -123,6 +173,9 @@ class HTTPServer {
         self.listener = listener
 
         print("🌐 HTTP API server started on port \(port)")
+
+        // Start scheduled task lifecycle scanning (every hour)
+        startScheduledTaskScanning()
 
         Task {
             while true {
@@ -134,6 +187,30 @@ class HTTPServer {
                 } catch {
                     print("❌ Error accepting connection: \(error)")
                 }
+            }
+        }
+    }
+
+    private func startScheduledTaskScanning() {
+        // Run task lifecycle scan every hour
+        Task {
+            // Initial delay of 5 minutes after server start
+            try? await Task.sleep(nanoseconds: 5 * 60 * 1_000_000_000)
+
+            while true {
+                do {
+                    print("⏰ Running scheduled task lifecycle scan...")
+                    if let orchestrator = await MainActor.run(body: { alfredService.orchestrator }) {
+                        let notionService = orchestrator.notionServicePublic
+                        let result = try await TaskLifecycleTracker.shared.scan(notionService: notionService)
+                        print("✓ Scheduled scan complete: \(result.tasksScanned) tasks, \(result.changesDetected) changes")
+                    }
+                } catch {
+                    print("⚠️ Scheduled task scan failed: \(error)")
+                }
+
+                // Sleep for 1 hour
+                try? await Task.sleep(nanoseconds: 60 * 60 * 1_000_000_000)
             }
         }
     }
@@ -394,6 +471,22 @@ class HTTPServer {
         case ("POST", "/api/cache/clear"):
             return handleClearCache()
 
+        // Favorites endpoints
+        case ("GET", "/api/favorites"):
+            return handleGetFavorites()
+
+        case ("POST", "/api/favorites/contacts"):
+            return handleAddFavoriteContact(request)
+
+        case ("DELETE", "/api/favorites/contacts"):
+            return handleRemoveFavoriteContact(request)
+
+        case ("POST", "/api/favorites/groups"):
+            return handleAddFavoriteGroup(request)
+
+        case ("DELETE", "/api/favorites/groups"):
+            return handleRemoveFavoriteGroup(request)
+
         case ("POST", "/api/query"):
             return await handleNaturalLanguageQuery(request)
 
@@ -458,6 +551,26 @@ class HTTPServer {
 
         case ("GET", "/api/hot-reload/status"):
             return handleHotReloadStatus()
+
+        // Task lifecycle tracking
+        case ("POST", "/api/task-lifecycle/scan"):
+            return await handleTaskLifecycleScan()
+
+        case ("GET", "/api/task-lifecycle/stats"):
+            return handleTaskLifecycleStats()
+
+        case ("GET", "/api/task-lifecycle/changes"):
+            return handleTaskLifecycleChanges(request)
+
+        case ("GET", "/api/task-lifecycle/counterparties"):
+            return handleTaskLifecycleCounterparties()
+
+        // Simplified teach endpoint (single Alfred memory)
+        case ("POST", "/api/teach"):
+            return handleTeachAlfred(request)
+
+        case ("GET", "/api/learnings"):
+            return handleGetLearnings()
 
         default:
             return HTTPResponse(
@@ -1527,6 +1640,125 @@ The Commitment Check feature requires a properly configured Notion database.
         }
     }
 
+    // MARK: - Favorites Handlers
+
+    private func handleGetFavorites() -> HTTPResponse {
+        let favorites = FavoritesService.shared.getFavorites()
+
+        let contactsArray = favorites.contacts.map { contact -> [String: Any] in
+            [
+                "name": contact.name,
+                "aliases": contact.aliases,
+                "platforms": contact.platforms,
+                "notes": contact.notes ?? "",
+                "addedAt": ISO8601DateFormatter().string(from: contact.addedAt)
+            ]
+        }
+
+        let groupsArray = favorites.groups.map { group -> [String: Any] in
+            [
+                "name": group.name,
+                "aliases": group.aliases,
+                "platform": group.platform,
+                "notes": group.notes ?? "",
+                "addedAt": ISO8601DateFormatter().string(from: group.addedAt)
+            ]
+        }
+
+        return HTTPResponse(statusCode: 200, body: [
+            "contacts": contactsArray,
+            "groups": groupsArray
+        ])
+    }
+
+    private func handleAddFavoriteContact(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let name = json["name"] as? String, !name.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Name is required"])
+        }
+
+        let aliases = json["aliases"] as? [String] ?? []
+        let platforms = json["platforms"] as? [String] ?? ["whatsapp", "imessage"]
+        let notes = json["notes"] as? String
+
+        let contact = FavoriteContact(name: name, aliases: aliases, platforms: platforms, notes: notes)
+
+        do {
+            try FavoritesService.shared.addContact(contact)
+            return HTTPResponse(statusCode: 200, body: [
+                "success": true,
+                "message": "Added \(name) to favorites"
+            ])
+        } catch FavoritesError.duplicateEntry {
+            return HTTPResponse(statusCode: 400, body: ["error": "\(name) is already a favorite"])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to add favorite: \(error.localizedDescription)"])
+        }
+    }
+
+    private func handleRemoveFavoriteContact(_ request: HTTPRequest) -> HTTPResponse {
+        let name = request.queryParams["name"] ?? ""
+
+        guard !name.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Name is required"])
+        }
+
+        do {
+            try FavoritesService.shared.removeContact(name: name)
+            return HTTPResponse(statusCode: 200, body: [
+                "success": true,
+                "message": "Removed \(name) from favorites"
+            ])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to remove favorite: \(error.localizedDescription)"])
+        }
+    }
+
+    private func handleAddFavoriteGroup(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let name = json["name"] as? String, !name.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Name is required"])
+        }
+
+        let aliases = json["aliases"] as? [String] ?? []
+        let platform = json["platform"] as? String ?? "whatsapp"
+        let notes = json["notes"] as? String
+
+        let group = FavoriteGroup(name: name, aliases: aliases, platform: platform, notes: notes)
+
+        do {
+            try FavoritesService.shared.addGroup(group)
+            return HTTPResponse(statusCode: 200, body: [
+                "success": true,
+                "message": "Added \(name) to favorite groups"
+            ])
+        } catch FavoritesError.duplicateEntry {
+            return HTTPResponse(statusCode: 400, body: ["error": "\(name) is already a favorite group"])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to add favorite group: \(error.localizedDescription)"])
+        }
+    }
+
+    private func handleRemoveFavoriteGroup(_ request: HTTPRequest) -> HTTPResponse {
+        let name = request.queryParams["name"] ?? ""
+
+        guard !name.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Name is required"])
+        }
+
+        do {
+            try FavoritesService.shared.removeGroup(name: name)
+            return HTTPResponse(statusCode: 200, body: [
+                "success": true,
+                "message": "Removed \(name) from favorite groups"
+            ])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to remove favorite group: \(error.localizedDescription)"])
+        }
+    }
+
     // MARK: - Agent Handlers
 
     private func handleGetAgents() -> HTTPResponse {
@@ -2296,7 +2528,7 @@ The Commitment Check feature requires a properly configured Notion database.
 
         let date = parseDate(from: request.queryParams["date"])
 
-        // Send progress stages to keep user informed
+        // Send initial progress
         client.sendSSEJSON(event: "progress", json: [
             "step": "starting",
             "message": "Starting daily briefing generation...",
@@ -2304,44 +2536,26 @@ The Commitment Check feature requires a properly configured Notion database.
             "progress": 0
         ])
 
-        client.sendSSEJSON(event: "progress", json: [
-            "step": "messages",
-            "message": "Scanning your messages...",
-            "icon": "💬",
-            "progress": 15
-        ])
-
-        client.sendSSEJSON(event: "progress", json: [
-            "step": "calendar",
-            "message": "Loading your calendar...",
-            "icon": "📅",
-            "progress": 30
-        ])
-
-        client.sendSSEJSON(event: "progress", json: [
-            "step": "notion",
-            "message": "Checking Notion for context...",
-            "icon": "📓",
-            "progress": 50
-        ])
-
-        client.sendSSEJSON(event: "progress", json: [
-            "step": "analysis",
-            "message": "AI is analyzing your day...",
-            "icon": "🤖",
-            "progress": 70
-        ])
-
         do {
-            // Generate the full briefing (this does all the actual work)
-            let briefing = try await alfredService.generateDailyBriefing(for: date)
+            // Generate the briefing with real progress callbacks
+            let briefing = try await alfredService.generateDailyBriefingWithProgress(for: date) { step, message, progress in
+                let icon: String
+                switch step {
+                case "messages": icon = "💬"
+                case "calendar": icon = "📅"
+                case "notion": icon = "📓"
+                case "analysis": icon = "🤖"
+                case "complete": icon = "✅"
+                default: icon = "⏳"
+                }
 
-            client.sendSSEJSON(event: "progress", json: [
-                "step": "complete",
-                "message": "Briefing ready!",
-                "icon": "✅",
-                "progress": 100
-            ])
+                client.sendSSEJSON(event: "progress", json: [
+                    "step": step,
+                    "message": message,
+                    "icon": icon,
+                    "progress": progress
+                ])
+            }
 
             // Send the final result
             let formattedResponse = formatBriefingForAPI(briefing)
@@ -2406,7 +2620,7 @@ The Commitment Check feature requires a properly configured Notion database.
                 "progress": 100
             ])
 
-            // Send full result
+            // Send full result using the same formatter as non-streaming endpoint
             var formattedResponse = "📅 **Calendar"
             if calendar == "personal" {
                 formattedResponse += " (Personal)**"
@@ -2417,15 +2631,8 @@ The Commitment Check feature requires a properly configured Notion database.
             }
             formattedResponse += " for \(briefing.schedule.date.formatted(date: .long, time: .omitted))\n\n"
 
-            if briefing.schedule.events.isEmpty {
-                formattedResponse += "No events scheduled for this day. Enjoy your free time! 🎉"
-            } else {
-                formattedResponse += "**\(briefing.schedule.events.count) Events:**\n"
-                for event in briefing.schedule.events.sorted(by: { $0.startTime < $1.startTime }) {
-                    let timeStr = event.startTime.formatted(date: .omitted, time: .shortened)
-                    formattedResponse += "• \(timeStr) - \(event.title)\n"
-                }
-            }
+            // Use the full formatCalendarForAPI to include meeting insights
+            formattedResponse += formatCalendarForAPI(briefing)
 
             client.sendSSEJSON(event: "result", json: [
                 "response": formattedResponse,
@@ -3012,24 +3219,58 @@ extension HTTPServer {
         output += "• External Meetings: \(briefing.schedule.externalMeetings.count)\n\n"
 
         if !briefing.schedule.events.isEmpty {
-            output += "**EVENTS:**\n"
+            output += "**\(briefing.schedule.events.count) Events:**\n"
             for event in briefing.schedule.events {
                 let startTime = event.startTime.formatted(date: .omitted, time: .shortened)
-                let endTime = event.endTime.formatted(date: .omitted, time: .shortened)
-                output += "• \(startTime) - \(endTime): \(event.title)\n"
-                if let location = event.location, !location.isEmpty {
-                    output += "  📍 \(location)\n"
-                }
-                if event.hasExternalAttendees {
-                    output += "  👥 \(event.attendees.count) attendees (external meeting)\n"
-                }
+                output += "• \(startTime) - \(event.title)\n"
             }
         } else {
             output += "No events scheduled.\n"
         }
 
+        // Include meeting briefings with context (this is the important part!)
+        if !briefing.meetingBriefings.isEmpty {
+            output += "\n---\n\n**📋 Meeting Insights:**\n\n"
+            for meeting in briefing.meetingBriefings {
+                output += "**\(meeting.event.title)**\n"
+
+                if let context = meeting.context, !context.isEmpty {
+                    output += "\(context)\n"
+                }
+
+                if !meeting.preparation.isEmpty {
+                    output += "\n*Preparation:* \(meeting.preparation)\n"
+                }
+
+                if !meeting.attendeeBriefings.isEmpty {
+                    output += "\n*Key Attendees:*\n"
+                    for attendeeBriefing in meeting.attendeeBriefings.prefix(3) {
+                        let name = attendeeBriefing.attendee.name ?? attendeeBriefing.attendee.email
+                        output += "  • \(name)"
+                        let domain = attendeeBriefing.attendee.email.components(separatedBy: "@").last ?? ""
+                        if !domain.isEmpty && !domain.contains("gmail") && !domain.contains("yahoo") {
+                            output += " (\(domain))"
+                        }
+                        output += "\n"
+                        if !attendeeBriefing.bio.isEmpty {
+                            output += "    \(attendeeBriefing.bio)\n"
+                        }
+                    }
+                }
+
+                if !meeting.suggestedTopics.isEmpty {
+                    output += "\n*Suggested Topics:*\n"
+                    for topic in meeting.suggestedTopics {
+                        output += "  • \(topic)\n"
+                    }
+                }
+
+                output += "\n"
+            }
+        }
+
         if !briefing.recommendations.isEmpty {
-            output += "\n**RECOMMENDATIONS:**\n"
+            output += "**💡 Recommendations:**\n"
             for rec in briefing.recommendations {
                 output += "• \(rec)\n"
             }
@@ -3311,6 +3552,194 @@ extension HTTPServer {
                     "webUI": "Edit files in ~/.config/alfred/web/ and refresh browser",
                     "prompts": "Edit files in ~/.config/alfred/prompts/ - changes apply on next API call",
                     "config": "Edit ~/.config/alfred/config.json and call POST /api/reload-config"
+                ]
+            ]
+        )
+    }
+
+    // MARK: - Task Lifecycle Handlers
+
+    private func handleTaskLifecycleScan() async -> HTTPResponse {
+        do {
+            // Get NotionService from AlfredService orchestrator
+            guard let orchestrator = await MainActor.run(body: { alfredService.orchestrator }) else {
+                return HTTPResponse(
+                    statusCode: 500,
+                    body: ["error": "Alfred not initialized"]
+                )
+            }
+
+            let notionService = orchestrator.notionServicePublic
+            let result = try await TaskLifecycleTracker.shared.scan(notionService: notionService)
+
+            return HTTPResponse(
+                statusCode: 200,
+                body: [
+                    "success": true,
+                    "tasksScanned": result.tasksScanned,
+                    "newTasks": result.newTasks,
+                    "changesDetected": result.changesDetected,
+                    "changes": result.changes.map { change in
+                        [
+                            "title": change.title,
+                            "oldStatus": change.oldStatus,
+                            "newStatus": change.newStatus,
+                            "taskType": change.taskType,
+                            "counterparty": change.counterparty as Any
+                        ]
+                    }
+                ]
+            )
+        } catch {
+            return HTTPResponse(
+                statusCode: 500,
+                body: ["error": error.localizedDescription]
+            )
+        }
+    }
+
+    private func handleTaskLifecycleStats() -> HTTPResponse {
+        let stats = TaskLifecycleTracker.shared.getStats()
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "totalTasks": stats.totalTasks,
+                "totalChanges": stats.totalChanges,
+                "totalCompleted": stats.totalCompleted,
+                "completionRate": Int(stats.completionRate * 100),
+                "overdueRate": Int(stats.overdueRate * 100),
+                "lastScanTime": stats.lastScanTime.map { Self.iso8601Formatter.string(from: $0) } as Any
+            ]
+        )
+    }
+
+    private func handleTaskLifecycleChanges(_ request: HTTPRequest) -> HTTPResponse {
+        let limit = Int(request.queryParams["limit"] ?? "20") ?? 20
+        let changes = TaskLifecycleTracker.shared.getRecentChanges(limit: limit)
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "changes": changes.map { change in
+                    [
+                        "notionId": change.notionId,
+                        "title": change.title,
+                        "oldStatus": change.oldStatus,
+                        "newStatus": change.newStatus,
+                        "taskType": change.taskType,
+                        "priority": change.priority as Any,
+                        "counterparty": change.counterparty as Any,
+                        "wasOverdue": change.wasOverdue
+                    ]
+                },
+                "count": changes.count
+            ]
+        )
+    }
+
+    private func handleTaskLifecycleCounterparties() -> HTTPResponse {
+        let stats = TaskLifecycleTracker.shared.getStatsByCounterparty()
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "counterparties": stats.map { stat in
+                    [
+                        "name": stat.name,
+                        "totalTasks": stat.totalTasks,
+                        "completedTasks": stat.completedTasks,
+                        "completionRate": Int(stat.completionRate * 100),
+                        "overdueRate": Int(stat.overdueRate * 100)
+                    ]
+                },
+                "count": stats.count
+            ]
+        )
+    }
+
+    // MARK: - Simplified Learning Handlers
+
+    private func handleTeachAlfred(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let rule = json["rule"] as? String else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Missing 'rule' in request body"]
+            )
+        }
+
+        // Store in a single Alfred memory file using the teach method
+        let memoryService = AgentMemoryService.shared
+        do {
+            // Use task agent as the default for user-taught rules
+            try memoryService.teach(agentType: .task, rule: rule)
+
+            return HTTPResponse(
+                statusCode: 200,
+                body: [
+                    "success": true,
+                    "message": "Rule learned: \(rule)"
+                ]
+            )
+        } catch {
+            return HTTPResponse(
+                statusCode: 500,
+                body: ["error": "Failed to save rule: \(error.localizedDescription)"]
+            )
+        }
+    }
+
+    private func handleGetLearnings() -> HTTPResponse {
+        let memoryService = AgentMemoryService.shared
+
+        // Collect all user-taught rules from all agents into a unified list
+        var learnings: [[String: Any]] = []
+
+        for agentType in [AgentType.communication, .task, .calendar, .followup] {
+            let memory = memoryService.getMemory(for: agentType)
+
+            if let rules = memory.sections["User-Taught Rules"] {
+                let lines = rules.split(separator: "\n").map(String.init)
+                for line in lines where line.hasPrefix("- ") {
+                    // Parse format: - [2026-01-26T17:28:08Z] Rule text
+                    if let match = line.range(of: #"- \[([^\]]+)\] (.+)"#, options: .regularExpression) {
+                        let content = String(line[match])
+                        let parts = content.dropFirst(3) // Remove "- ["
+                        if let bracketEnd = parts.firstIndex(of: "]") {
+                            let timestamp = String(parts[..<bracketEnd])
+                            let ruleText = String(parts[parts.index(after: bracketEnd)...]).trimmingCharacters(in: .whitespaces)
+                            learnings.append([
+                                "rule": ruleText,
+                                "timestamp": timestamp,
+                                "category": agentType.displayName
+                            ])
+                        }
+                    } else {
+                        // Simple rule without timestamp
+                        let ruleText = String(line.dropFirst(2)) // Remove "- "
+                        learnings.append([
+                            "rule": ruleText,
+                            "timestamp": "",
+                            "category": agentType.displayName
+                        ])
+                    }
+                }
+            }
+        }
+
+        // Get correction stats
+        let correctionStats = CorrectionTracker.shared.getStats()
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "learnings": learnings,
+                "corrections": [
+                    "total": correctionStats.totalCorrections,
+                    "falsePositives": correctionStats.falsePositives,
+                    "edits": correctionStats.edits
                 ]
             ]
         )
