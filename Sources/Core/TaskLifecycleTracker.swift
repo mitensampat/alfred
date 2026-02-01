@@ -123,19 +123,61 @@ class TaskLifecycleTracker {
 
     // MARK: - Scanning
 
+    // Background scan state
+    private var isScanning = false
+    private var scanProgress: ScanProgress?
+    private let scanLock = NSLock()  // Thread safety for scan state
+
+    struct ScanProgress {
+        var phase: String
+        var tasksProcessed: Int
+        var totalEstimated: Int?
+        var pagesLoaded: Int
+    }
+
+    /// Pre-initialize scan state before spawning background task
+    /// This allows the HTTP handler to return immediately with progress visible
+    func startScan() {
+        scanLock.lock()
+        defer { scanLock.unlock() }
+
+        isScanning = true
+        scanProgress = ScanProgress(phase: "Connecting to Notion...", tasksProcessed: 0, totalEstimated: nil, pagesLoaded: 0)
+    }
+
     /// Scan Notion for task changes
     /// Returns number of changes detected
     func scan(notionService: NotionService) async throws -> ScanResult {
+        scanLock.lock()
+        // If startScan() was already called, we're ready to go
+        // If not called, set up the state now
+        if !isScanning {
+            isScanning = true
+            scanProgress = ScanProgress(phase: "Connecting to Notion...", tasksProcessed: 0, totalEstimated: nil, pagesLoaded: 0)
+        }
+        scanLock.unlock()
+
+        defer {
+            scanLock.lock()
+            isScanning = false
+            scanProgress = nil
+            scanLock.unlock()
+        }
+
         print("🔍 Scanning Notion for task changes...")
 
-        // Query all tasks (including done/cancelled)
-        let tasks = try await queryAllTasks(notionService: notionService)
+        // Query all tasks with pagination (including done/cancelled)
+        scanProgress?.phase = "Fetching tasks..."
+        let tasks = try await queryAllTasksPaginated(notionService: notionService)
 
         var changesDetected = 0
         var newTasks = 0
         var statusChanges: [StatusChange] = []
 
-        for task in tasks {
+        scanProgress?.phase = "Analyzing changes..."
+        scanProgress?.totalEstimated = tasks.count
+
+        for (index, task) in tasks.enumerated() {
             let notionId = task.notionId
             guard !notionId.isEmpty else { continue }
 
@@ -169,6 +211,11 @@ class TaskLifecycleTracker {
             // Update snapshot
             updateSnapshot(task)
             lastKnownStates[notionId] = currentStatus
+
+            // Update progress every 10 tasks
+            if index % 10 == 0 {
+                scanProgress?.tasksProcessed = index
+            }
         }
 
         // Record scan
@@ -176,6 +223,7 @@ class TaskLifecycleTracker {
         lastScanTime = Date()
 
         // Recompute stats if we had changes, new tasks, or no stats exist yet
+        scanProgress?.phase = "Computing patterns..."
         let hasStats = hasExistingStats()
         if changesDetected > 0 || newTasks > 0 || !hasStats {
             recomputeStats()
@@ -186,7 +234,8 @@ class TaskLifecycleTracker {
             tasksScanned: tasks.count,
             newTasks: newTasks,
             changesDetected: changesDetected,
-            changes: statusChanges
+            changes: statusChanges,
+            fromCache: false
         )
 
         print("✓ Scan complete: \(tasks.count) tasks, \(changesDetected) changes")
@@ -194,8 +243,131 @@ class TaskLifecycleTracker {
         return result
     }
 
-    /// Query ALL tasks from Notion (including completed/cancelled)
-    private func queryAllTasks(notionService: NotionService) async throws -> [TaskItem] {
+    /// Get current scan progress (for UI updates)
+    func getScanProgress() -> ScanProgress? {
+        scanLock.lock()
+        defer { scanLock.unlock() }
+        return scanProgress
+    }
+
+    /// Check if a scan is currently running
+    func isScanInProgress() -> Bool {
+        scanLock.lock()
+        defer { scanLock.unlock() }
+        return isScanning
+    }
+
+    /// Query ALL tasks from Notion with pagination (including completed/cancelled)
+    private func queryAllTasksPaginated(notionService: NotionService) async throws -> [TaskItem] {
+        guard let dbId = notionService.tasksDatabaseId else {
+            throw NSError(domain: "TaskLifecycleTracker", code: 1,
+                         userInfo: [NSLocalizedDescriptionKey: "Tasks database ID not set"])
+        }
+
+        var allTasks: [TaskItem] = []
+        var startCursor: String? = nil
+        var hasMore = true
+        var pageCount = 0
+        let maxPages = 10  // Safety limit: 10 pages × 100 tasks = 1000 tasks max
+
+        while hasMore && pageCount < maxPages {
+            // Update progress BEFORE making the request
+            scanProgress?.phase = pageCount == 0 ? "Fetching page 1..." : "Fetching page \(pageCount + 1)..."
+
+            let url = URL(string: "https://api.notion.com/v1/databases/\(dbId)/query")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(notionService.apiKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = 20  // 20 second timeout per request (reduced from 30)
+
+            // Query tasks, sorted by last edited
+            var body: [String: Any] = [
+                "sorts": [
+                    ["timestamp": "last_edited_time", "direction": "descending"]
+                ],
+                "page_size": 100
+            ]
+
+            // Add cursor for pagination
+            if let cursor = startCursor {
+                body["start_cursor"] = cursor
+            }
+
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+            // Use a task with timeout for the network request
+            let (data, response): (Data, URLResponse)
+            do {
+                (data, response) = try await URLSession.shared.data(for: request)
+            } catch {
+                print("  ⚠️ Page \(pageCount + 1) failed: \(error.localizedDescription)")
+                // If first page fails, throw. Otherwise, return what we have
+                if pageCount == 0 {
+                    throw error
+                }
+                break
+            }
+
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200...299).contains(httpResponse.statusCode) else {
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                print("  ⚠️ Notion returned status \(statusCode)")
+                if pageCount == 0 {
+                    throw NSError(domain: "TaskLifecycleTracker", code: 2,
+                                 userInfo: [NSLocalizedDescriptionKey: "Notion returned status \(statusCode)"])
+                }
+                break
+            }
+
+            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+
+            // Parse results
+            if let results = json?["results"] as? [[String: Any]] {
+                let tasks = results.compactMap { parseTask($0) }
+                allTasks.append(contentsOf: tasks)
+            }
+
+            // Check for more pages
+            hasMore = (json?["has_more"] as? Bool) ?? false
+            startCursor = json?["next_cursor"] as? String
+
+            pageCount += 1
+            scanProgress?.pagesLoaded = pageCount
+            scanProgress?.phase = "Loaded \(allTasks.count) tasks..."
+
+            print("  📄 Page \(pageCount): fetched \(allTasks.count) tasks total")
+
+            // Small delay between pages to avoid rate limiting
+            if hasMore {
+                try await Task.sleep(nanoseconds: 100_000_000)  // 100ms
+            }
+        }
+
+        if hasMore {
+            print("  ⚠️ Reached page limit (\(maxPages) pages), some tasks may not be included")
+        }
+
+        return allTasks
+    }
+
+    /// Quick scan - only fetch recently modified tasks (for incremental updates)
+    func quickScan(notionService: NotionService, since: Date? = nil) async throws -> ScanResult {
+        guard !isScanning else {
+            return ScanResult(tasksScanned: 0, newTasks: 0, changesDetected: 0, changes: [], fromCache: true)
+        }
+
+        isScanning = true
+        scanProgress = ScanProgress(phase: "Quick scan...", tasksProcessed: 0, totalEstimated: nil, pagesLoaded: 0)
+        defer {
+            isScanning = false
+            scanProgress = nil
+        }
+
+        // Use last scan time or 24 hours ago
+        let sinceDate = since ?? lastScanTime ?? Date().addingTimeInterval(-86400)
+
         guard let dbId = notionService.tasksDatabaseId else {
             throw NSError(domain: "TaskLifecycleTracker", code: 1,
                          userInfo: [NSLocalizedDescriptionKey: "Tasks database ID not set"])
@@ -207,9 +379,16 @@ class TaskLifecycleTracker {
         request.setValue("Bearer \(notionService.apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 15  // Shorter timeout for quick scan
 
-        // Query all tasks, sorted by last edited
+        let formatter = ISO8601DateFormatter()
         let body: [String: Any] = [
+            "filter": [
+                "timestamp": "last_edited_time",
+                "last_edited_time": [
+                    "after": formatter.string(from: sinceDate)
+                ]
+            ],
             "sorts": [
                 ["timestamp": "last_edited_time", "direction": "descending"]
             ],
@@ -228,10 +407,56 @@ class TaskLifecycleTracker {
 
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         guard let results = json?["results"] as? [[String: Any]] else {
-            return []
+            return ScanResult(tasksScanned: 0, newTasks: 0, changesDetected: 0, changes: [], fromCache: false)
         }
 
-        return results.compactMap { parseTask($0) }
+        let tasks = results.compactMap { parseTask($0) }
+
+        var changesDetected = 0
+        var newTasks = 0
+        var statusChanges: [StatusChange] = []
+
+        for task in tasks {
+            let notionId = task.notionId
+            guard !notionId.isEmpty else { continue }
+
+            let currentStatus = task.status.rawValue
+
+            if let lastStatus = lastKnownStates[notionId] {
+                if lastStatus != currentStatus {
+                    let change = StatusChange(
+                        notionId: notionId,
+                        title: task.title,
+                        oldStatus: lastStatus,
+                        newStatus: currentStatus,
+                        taskType: task.type.rawValue,
+                        priority: task.priority?.rawValue,
+                        counterparty: task.committedTo ?? task.committedBy,
+                        wasOverdue: task.isOverdue
+                    )
+                    recordStatusChange(change)
+                    statusChanges.append(change)
+                    changesDetected += 1
+                }
+            } else {
+                newTasks += 1
+            }
+
+            updateSnapshot(task)
+            lastKnownStates[notionId] = currentStatus
+        }
+
+        lastScanTime = Date()
+
+        print("✓ Quick scan: \(tasks.count) recently modified, \(changesDetected) changes")
+
+        return ScanResult(
+            tasksScanned: tasks.count,
+            newTasks: newTasks,
+            changesDetected: changesDetected,
+            changes: statusChanges,
+            fromCache: false
+        )
     }
 
     /// Parse task from Notion API response
@@ -755,6 +980,7 @@ struct ScanResult {
     let newTasks: Int
     let changesDetected: Int
     let changes: [StatusChange]
+    let fromCache: Bool  // True if scan was skipped (already in progress)
 }
 
 struct StatusChange {

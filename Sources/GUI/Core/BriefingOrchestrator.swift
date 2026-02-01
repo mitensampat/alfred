@@ -344,38 +344,77 @@ class BriefingOrchestrator {
     // MARK: - Attention Defense Alert (3pm)
 
     func generateAttentionDefenseAlert(sendEmail: Bool = true, toAddress: String? = nil) async throws -> AttentionDefenseReport {
+        // Delegate to the version with progress callbacks, ignoring progress
+        return try await generateAttentionDefenseAlertWithProgress(
+            sendEmail: sendEmail,
+            toAddress: toAddress,
+            onProgress: { _, _, _ in }
+        )
+    }
+
+    /// Streaming version with progress callbacks
+    /// Progress callback: (step: String, message: String, progress: Int) -> Void
+    func generateAttentionDefenseAlertWithProgress(
+        sendEmail: Bool = true,
+        toAddress: String? = nil,
+        onProgress: @escaping (String, String, Int) -> Void
+    ) async throws -> AttentionDefenseReport {
         print("Generating attention defense alert...")
+
+        // Helper to send progress and give browser time to render
+        func sendProgress(_ step: String, _ message: String, _ progress: Int) async {
+            onProgress(step, message, progress)
+            // Small delay to let browser render the progress update
+            try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+        }
 
         let today = Date()
         let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today)!
 
-        // 1. Fetch calendar for today and tomorrow
+        // Step 1: Fetch calendar for today
+        await sendProgress("calendar_today", "📅 Loading today's calendar...", 10)
         let todaySchedule = try await calendarService.fetchEventsFromAllCalendars(for: today, userSettings: config.user)
-        let tomorrowSchedule = try await calendarService.fetchEventsFromAllCalendars(for: tomorrow, userSettings: config.user)
+        print("✓ Loaded \(todaySchedule.events.count) events for today")
 
-        // 2. Fetch active tasks from Notion
+        // Step 2: Fetch calendar for tomorrow
+        await sendProgress("calendar_tomorrow", "📅 Loading tomorrow's calendar...", 20)
+        let tomorrowSchedule = try await calendarService.fetchEventsFromAllCalendars(for: tomorrow, userSettings: config.user)
+        print("✓ Loaded \(tomorrowSchedule.events.count) events for tomorrow")
+
+        // Step 3: Fetch active tasks from Notion (limit to 25 for attention check to keep AI response manageable)
+        await sendProgress("tasks", "📓 Fetching tasks from Notion...", 35)
         var actionItems: [ActionItem] = []
         do {
             let tasks = try await notionService.queryActiveTasks(type: nil)
-            let capped = Array(tasks.prefix(50))
+            let capped = Array(tasks.prefix(25)) // Reduced from 50 to prevent AI response truncation
             actionItems = capped.map { convertTaskItemToActionItem($0) }
-            print("Loaded \(actionItems.count) active tasks from Notion")
+            print("✓ Loaded \(actionItems.count) active tasks from Notion")
         } catch {
             print("Warning: Failed to fetch Notion tasks: \(error). Continuing with empty task list.")
         }
 
-        // 3. Use AI to analyze what can be pushed off
+        // Step 4: Check favorites
+        await sendProgress("favorites", "⭐ Checking priority contacts...", 50)
+        let favorites = FavoritesService.shared.getFavorites()
+        print("✓ Loaded \(favorites.contacts.count) favorite contacts, \(favorites.groups.count) groups")
+
+        // Step 5: AI analysis (the longest step)
+        await sendProgress("analyzing", "🤖 AI analyzing priorities...", 60)
         let report = try await aiService.generateAttentionDefenseReport(
             actionItems: actionItems,
             todaySchedule: todaySchedule,
             tomorrowSchedule: tomorrowSchedule,
             currentTime: Date()
         )
+        print("✓ AI analysis complete")
 
-        // 4. Send alert only if requested
+        // Step 6: Send notifications if requested
         if sendEmail {
+            await sendProgress("notifications", "📧 Sending notifications...", 90)
             try await notificationService.sendAttentionDefenseReport(report, toAddress: toAddress)
         }
+
+        onProgress("complete", "✅ Analysis complete!", 100)
 
         return report
     }
@@ -635,6 +674,18 @@ class BriefingOrchestrator {
             description = task.title
         }
 
+        // Determine counterparty from commitment fields or source thread
+        let counterparty: String?
+        if let committedTo = task.committedTo, !committedTo.isEmpty {
+            counterparty = committedTo
+        } else if let committedBy = task.committedBy, !committedBy.isEmpty {
+            counterparty = committedBy
+        } else if let sourceThread = task.sourceThread, !sourceThread.isEmpty {
+            counterparty = sourceThread
+        } else {
+            counterparty = nil
+        }
+
         return ActionItem(
             id: task.notionId.isEmpty ? UUID().uuidString : task.notionId,
             title: task.title,
@@ -643,7 +694,8 @@ class BriefingOrchestrator {
             priority: priority,
             dueDate: task.dueDate,
             estimatedDuration: nil,
-            category: category
+            category: category,
+            counterparty: counterparty
         )
     }
 

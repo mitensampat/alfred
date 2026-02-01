@@ -109,11 +109,16 @@ class FavoritesService {
         filePath = "\(homeDir)/.alfred/favorites.json"
 
         // Load existing favorites or create empty
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601  // Match the encoding strategy used in save()
+
         if let data = try? Data(contentsOf: URL(fileURLWithPath: filePath)),
-           let loaded = try? JSONDecoder().decode(Favorites.self, from: data) {
+           let loaded = try? decoder.decode(Favorites.self, from: data) {
             favorites = loaded
+            print("✓ Loaded \(favorites.contacts.count) favorite contacts and \(favorites.groups.count) favorite groups")
         } else {
             favorites = Favorites()
+            print("ℹ Starting with empty favorites (no existing file or parse error)")
         }
     }
 

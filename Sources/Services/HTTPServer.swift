@@ -285,6 +285,9 @@ class HTTPServer {
                 case ("GET", "/api/messages/summary/stream"):
                     await handleStreamingMessagesSummary(request, client: client)
                     return
+                case ("GET", "/api/attention-check/stream"):
+                    await handleStreamingAttentionCheck(request, client: client)
+                    return
                 default:
                     break
                 }
@@ -556,6 +559,9 @@ class HTTPServer {
         case ("POST", "/api/task-lifecycle/scan"):
             return await handleTaskLifecycleScan()
 
+        case ("GET", "/api/task-lifecycle/progress"):
+            return handleTaskLifecycleScanProgress()
+
         case ("GET", "/api/task-lifecycle/stats"):
             return handleTaskLifecycleStats()
 
@@ -756,66 +762,82 @@ class HTTPServer {
     }
 
     private func handleGetDailyBriefing(_ request: HTTPRequest) async -> HTTPResponse {
-        do {
-            // Parse date parameter (default to today)
-            let date = parseDate(from: request.queryParams["date"])
+        // Parse date parameter (default to today)
+        let date = parseDate(from: request.queryParams["date"])
+        let dateString = Self.simpleDateFormatter.string(from: date)
+        let cacheParams = ["date": dateString]
 
+        // Check cache first (4 hour TTL for briefings - they're expensive to generate)
+        if let cached = cache.getCached(endpoint: "/api/briefing", params: cacheParams) {
+            if let data = cached.data(using: .utf8),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                print("⚡ Returning cached briefing for \(dateString)")
+                return HTTPResponse(statusCode: 200, body: json)
+            }
+        }
+
+        do {
             // Generate full daily briefing
             let briefing = try await alfredService.generateDailyBriefing(for: date)
 
             // Format as text response
             let formattedResponse = formatBriefingForAPI(briefing)
 
-            return HTTPResponse(
-                statusCode: 200,
-                body: [
-                    "response": formattedResponse,
-                    "date": Self.iso8601Formatter.string(from: briefing.date),
-                    "generatedAt": Self.iso8601Formatter.string(from: briefing.generatedAt),
-                    "stats": [
-                        "meetings": briefing.calendarBriefing.schedule.events.count,
-                        "messages": briefing.messagingSummary.stats.totalMessages,
-                        "focusTimeSeconds": briefing.calendarBriefing.focusTime
-                    ],
-                    "actionItems": briefing.actionItems.map { item in
+            let responseBody: [String: Any] = [
+                "response": formattedResponse,
+                "date": Self.iso8601Formatter.string(from: briefing.date),
+                "generatedAt": Self.iso8601Formatter.string(from: briefing.generatedAt),
+                "stats": [
+                    "meetings": briefing.calendarBriefing.schedule.events.count,
+                    "messages": briefing.messagingSummary.stats.totalMessages,
+                    "focusTimeSeconds": briefing.calendarBriefing.focusTime
+                ],
+                "actionItems": briefing.actionItems.map { item in
+                    [
+                        "id": item.id,
+                        "title": item.title,
+                        "description": item.description,
+                        "source": item.source.rawValue,
+                        "priority": item.priority.rawValue,
+                        "dueDate": item.dueDate.map { Self.iso8601Formatter.string(from: $0) } as Any,
+                        "category": item.category.rawValue
+                    ]
+                },
+                "calendar": [
+                    "events": briefing.calendarBriefing.schedule.events.map { event in
                         [
-                            "id": item.id,
-                            "title": item.title,
-                            "description": item.description,
-                            "source": item.source.rawValue,
-                            "priority": item.priority.rawValue,
-                            "dueDate": item.dueDate.map { Self.iso8601Formatter.string(from: $0) } as Any,
-                            "category": item.category.rawValue
+                            "id": event.id,
+                            "title": event.title,
+                            "start": Self.iso8601Formatter.string(from: event.startTime),
+                            "end": Self.iso8601Formatter.string(from: event.endTime),
+                            "location": event.location as Any,
+                            "isAllDay": event.isAllDay,
+                            "hasExternalAttendees": event.hasExternalAttendees
                         ]
                     },
-                    "calendar": [
-                        "events": briefing.calendarBriefing.schedule.events.map { event in
-                            [
-                                "id": event.id,
-                                "title": event.title,
-                                "start": Self.iso8601Formatter.string(from: event.startTime),
-                                "end": Self.iso8601Formatter.string(from: event.endTime),
-                                "location": event.location as Any,
-                                "isAllDay": event.isAllDay,
-                                "hasExternalAttendees": event.hasExternalAttendees
-                            ]
-                        },
-                        "totalMeetingTime": briefing.calendarBriefing.schedule.totalMeetingTime,
-                        "focusTime": briefing.calendarBriefing.focusTime,
-                        "recommendations": briefing.calendarBriefing.recommendations
-                    ],
-                    "messages": [
-                        "keyInteractions": briefing.messagingSummary.keyInteractions.map { serializeMessageSummary($0) },
-                        "needsResponse": briefing.messagingSummary.needsResponse.map { serializeMessageSummary($0) },
-                        "criticalMessages": briefing.messagingSummary.criticalMessages.map { serializeMessageSummary($0) },
-                        "stats": [
-                            "totalMessages": briefing.messagingSummary.stats.totalMessages,
-                            "unreadMessages": briefing.messagingSummary.stats.unreadMessages,
-                            "threadsNeedingResponse": briefing.messagingSummary.stats.threadsNeedingResponse
-                        ]
+                    "totalMeetingTime": briefing.calendarBriefing.schedule.totalMeetingTime,
+                    "focusTime": briefing.calendarBriefing.focusTime,
+                    "recommendations": briefing.calendarBriefing.recommendations
+                ],
+                "messages": [
+                    "keyInteractions": briefing.messagingSummary.keyInteractions.map { serializeMessageSummary($0) },
+                    "needsResponse": briefing.messagingSummary.needsResponse.map { serializeMessageSummary($0) },
+                    "criticalMessages": briefing.messagingSummary.criticalMessages.map { serializeMessageSummary($0) },
+                    "stats": [
+                        "totalMessages": briefing.messagingSummary.stats.totalMessages,
+                        "unreadMessages": briefing.messagingSummary.stats.unreadMessages,
+                        "threadsNeedingResponse": briefing.messagingSummary.stats.threadsNeedingResponse
                     ]
                 ]
-            )
+            ]
+
+            // Cache for 4 hours (briefings are expensive but should be reasonably fresh)
+            if let jsonData = try? JSONSerialization.data(withJSONObject: responseBody),
+               let jsonString = String(data: jsonData, encoding: .utf8) {
+                cache.cache(endpoint: "/api/briefing", params: cacheParams, response: jsonString, ttl: 14400)
+            }
+
+            return HTTPResponse(statusCode: 200, body: responseBody)
         } catch {
             return HTTPResponse(
                 statusCode: 500,
@@ -932,82 +954,71 @@ class HTTPServer {
     }
 
     private func handleGetAttentionCheck() async -> HTTPResponse {
+        // Check cache first (4 hour TTL for attention check)
+        if let cached = cache.getCached(endpoint: "/api/attention-check", params: [:]) {
+            if let data = cached.data(using: .utf8),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                print("⚡ Returning cached attention check")
+                return HTTPResponse(statusCode: 200, body: json)
+            }
+        }
+
         do {
             let report = try await alfredService.generateAttentionCheck()
 
-            // Format as text response
-            var formattedResponse = "🎯 **Attention Check** - \(report.currentTime.formatted(date: .omitted, time: .shortened))\n\n"
+            // Get favorites for highlighting
+            let favorites = FavoritesService.shared.getFavorites()
 
-            if !report.mustDoToday.isEmpty {
-                formattedResponse += "**MUST DO TODAY:**\n"
-                for item in report.mustDoToday {
-                    let priorityEmoji = item.priority == .high ? "🔴" : item.priority == .medium ? "🟡" : "🟢"
-                    formattedResponse += "\(priorityEmoji) \(item.title)\n"
-                }
-                formattedResponse += "\n"
-            }
+            // Calculate time remaining for response body
+            let calendar = Calendar.current
+            let endOfDay = calendar.date(bySettingHour: 18, minute: 0, second: 0, of: report.currentTime)!
+            let timeRemaining = max(0, endOfDay.timeIntervalSince(report.currentTime))
 
-            if !report.upcomingDeadlines.isEmpty {
-                formattedResponse += "**UPCOMING DEADLINES:**\n"
-                for item in report.upcomingDeadlines {
-                    if let dueDate = item.dueDate {
-                        formattedResponse += "• \(item.title) - Due \(dueDate.formatted(date: .abbreviated, time: .omitted))\n"
-                    } else {
-                        formattedResponse += "• \(item.title)\n"
-                    }
-                }
-                formattedResponse += "\n"
-            }
+            // Use shared formatting helper
+            let formattedResponse = formatAttentionCheckReport(report, favorites: favorites)
 
-            if !report.canPushOff.isEmpty {
-                formattedResponse += "**CAN BE POSTPONED:**\n"
-                for suggestion in report.canPushOff {
-                    formattedResponse += "• \(suggestion.item.title)\n"
-                    formattedResponse += "  Reason: \(suggestion.reason)\n"
-                }
-            }
-
-            if report.mustDoToday.isEmpty && report.upcomingDeadlines.isEmpty {
-                formattedResponse += "✨ You're all caught up! No urgent items requiring immediate attention.\n"
-            }
-
-            return HTTPResponse(
-                statusCode: 200,
-                body: [
-                    "response": formattedResponse,
-                    "currentTime": Self.iso8601Formatter.string(from: report.currentTime),
-                    "mustDoToday": report.mustDoToday.map { item in
-                        [
-                            "id": item.id,
-                            "title": item.title,
-                            "description": item.description,
-                            "priority": item.priority.rawValue,
-                            "dueDate": item.dueDate.map { Self.iso8601Formatter.string(from: $0) } as Any
-                        ]
-                    },
-                    "canPushOff": report.canPushOff.map { suggestion in
-                        [
-                            "item": [
-                                "id": suggestion.item.id,
-                                "title": suggestion.item.title,
-                                "description": suggestion.item.description
-                            ],
-                            "reason": suggestion.reason,
-                            "suggestedNewDate": Self.iso8601Formatter.string(from: suggestion.suggestedNewDate),
-                            "impact": suggestion.impact.rawValue
-                        ]
-                    },
-                    "upcomingDeadlines": report.upcomingDeadlines.map { item in
-                        [
-                            "id": item.id,
-                            "title": item.title,
-                            "dueDate": item.dueDate.map { Self.iso8601Formatter.string(from: $0) } as Any
-                        ]
-                    },
-                    "timeAvailable": report.timeAvailable,
-                    "recommendations": report.recommendations
+            let responseBody: [String: Any] = [
+                "response": formattedResponse,
+                "currentTime": Self.iso8601Formatter.string(from: report.currentTime),
+                "timeRemaining": timeRemaining,
+                "mustDoToday": report.mustDoToday.map { item in
+                    [
+                        "id": item.id,
+                        "title": item.title,
+                        "description": item.description,
+                        "priority": item.priority.rawValue,
+                        "dueDate": item.dueDate.map { Self.iso8601Formatter.string(from: $0) } as Any,
+                        "counterparty": item.counterparty as Any,
+                        "isFavorite": item.counterparty.map { favorites.isFavorite($0) } ?? false
+                    ] as [String: Any]
+                },
+                "canPushOff": report.canPushOff.map { suggestion in
+                    [
+                        "item": [
+                            "id": suggestion.item.id,
+                            "title": suggestion.item.title,
+                            "description": suggestion.item.description
+                        ],
+                        "reason": suggestion.reason,
+                        "suggestedNewDate": Self.iso8601Formatter.string(from: suggestion.suggestedNewDate),
+                        "impact": suggestion.impact.rawValue
+                    ] as [String: Any]
+                },
+                "recommendations": report.recommendations,
+                "stats": [
+                    "mustDoCount": report.mustDoToday.count,
+                    "canPushCount": report.canPushOff.count,
+                    "totalTasks": report.mustDoToday.count + report.canPushOff.count
                 ]
-            )
+            ]
+
+            // Cache for 4 hours
+            if let jsonData = try? JSONSerialization.data(withJSONObject: responseBody),
+               let jsonString = String(data: jsonData, encoding: .utf8) {
+                cache.cache(endpoint: "/api/attention-check", params: [:], response: jsonString, ttl: 14400)
+            }
+
+            return HTTPResponse(statusCode: 200, body: responseBody)
         } catch {
             return HTTPResponse(
                 statusCode: 500,
@@ -2836,6 +2847,120 @@ The Commitment Check feature requires a properly configured Notion database.
         client.endSSE()
     }
 
+    /// Stream attention check with progress updates
+    private func handleStreamingAttentionCheck(_ request: HTTPRequest, client: ClientSocket) async {
+        client.beginSSE()
+
+        // Send initial progress
+        client.sendSSEJSON(event: "progress", json: [
+            "step": "starting",
+            "message": "Starting attention check...",
+            "icon": "🎯",
+            "progress": 0
+        ])
+
+        do {
+            // Use the streaming version with real progress callbacks
+            let report = try await alfredService.generateAttentionCheckWithProgress { step, message, progress in
+                // Map step names to icons
+                let icon: String
+                switch step {
+                case "calendar_today", "calendar_tomorrow":
+                    icon = "📅"
+                case "tasks":
+                    icon = "📓"
+                case "favorites":
+                    icon = "⭐"
+                case "analyzing":
+                    icon = "🤖"
+                case "notifications":
+                    icon = "📧"
+                case "complete":
+                    icon = "✅"
+                default:
+                    icon = "⏳"
+                }
+
+                client.sendSSEJSON(event: "progress", json: [
+                    "step": step,
+                    "message": message,
+                    "icon": icon,
+                    "progress": progress
+                ])
+            }
+
+            client.sendSSEJSON(event: "progress", json: [
+                "step": "formatting",
+                "message": "Preparing recommendations...",
+                "icon": "📝",
+                "progress": 85
+            ])
+
+            // Get favorites for highlighting
+            let favorites = FavoritesService.shared.getFavorites()
+
+            // Calculate time remaining for response
+            let calendar = Calendar.current
+            let endOfDay = calendar.date(bySettingHour: 18, minute: 0, second: 0, of: report.currentTime)!
+            let timeRemaining = max(0, endOfDay.timeIntervalSince(report.currentTime))
+
+            // Use shared formatting helper (Notion-inspired layout)
+            let formattedResponse = formatAttentionCheckReport(report, favorites: favorites)
+
+            client.sendSSEJSON(event: "progress", json: [
+                "step": "complete",
+                "message": "Analysis complete!",
+                "icon": "✅",
+                "progress": 100
+            ])
+
+            // Send full result
+            let responseBody: [String: Any] = [
+                "response": formattedResponse,
+                "currentTime": Self.iso8601Formatter.string(from: report.currentTime),
+                "timeRemaining": timeRemaining,
+                "mustDoToday": report.mustDoToday.map { item in
+                    [
+                        "id": item.id,
+                        "title": item.title,
+                        "description": item.description,
+                        "priority": item.priority.rawValue,
+                        "dueDate": item.dueDate.map { Self.iso8601Formatter.string(from: $0) } as Any,
+                        "counterparty": item.counterparty as Any,
+                        "isFavorite": item.counterparty.map { favorites.isFavorite($0) } ?? false
+                    ] as [String: Any]
+                },
+                "canPushOff": report.canPushOff.map { suggestion in
+                    [
+                        "item": [
+                            "id": suggestion.item.id,
+                            "title": suggestion.item.title,
+                            "description": suggestion.item.description
+                        ],
+                        "reason": suggestion.reason,
+                        "suggestedNewDate": Self.iso8601Formatter.string(from: suggestion.suggestedNewDate),
+                        "impact": suggestion.impact.rawValue
+                    ] as [String: Any]
+                },
+                "recommendations": report.recommendations,
+                "stats": [
+                    "mustDoCount": report.mustDoToday.count,
+                    "canPushCount": report.canPushOff.count,
+                    "totalTasks": report.mustDoToday.count + report.canPushOff.count
+                ]
+            ]
+
+            client.sendSSEJSON(event: "result", json: responseBody)
+
+        } catch {
+            client.sendSSEJSON(event: "error", json: [
+                "error": error.localizedDescription
+            ])
+        }
+
+        client.endSSE()
+    }
+
     private func parseCommitmentType(_ typeString: String) -> Commitment.CommitmentType? {
         switch typeString.lowercased() {
         case "i_owe", "iowe":
@@ -3153,6 +3278,134 @@ class ClientSocket {
 
 // MARK: - Formatting Helpers for API Responses
 extension HTTPServer {
+
+    /// Format Attention Check report in Notion-inspired clean layout
+    private func formatAttentionCheckReport(_ report: AttentionDefenseReport, favorites: Favorites) -> String {
+        var output = ""
+
+        // Header
+        output += "🎯 **Attention Check** — \(report.currentTime.formatted(date: .abbreviated, time: .shortened))\n\n"
+
+        // Time remaining
+        let calendar = Calendar.current
+        let endOfDay = calendar.date(bySettingHour: 18, minute: 0, second: 0, of: report.currentTime)!
+        let timeRemaining = max(0, endOfDay.timeIntervalSince(report.currentTime))
+        let hoursRemaining = Int(timeRemaining / 3600)
+        let minutesRemaining = Int((timeRemaining.truncatingRemainder(dividingBy: 3600)) / 60)
+        output += "⏱️ **\(hoursRemaining)h \(minutesRemaining)m** remaining in your workday\n"
+
+        // ═══════════════════════════════════════════════════════════════════
+        // MUST DO TODAY - Card layout
+        // ═══════════════════════════════════════════════════════════════════
+        if !report.mustDoToday.isEmpty {
+            output += "\n\n---\n\n"
+            output += "## 🔴 Must Do Today\n"
+
+            for (index, item) in report.mustDoToday.enumerated() {
+                let isFavorite = item.counterparty.map { favorites.isFavorite($0) } ?? false
+
+                output += "\n"
+
+                // Title line
+                output += "### \(item.title)"
+                if isFavorite { output += " ⭐" }
+                output += "\n\n"
+
+                // Properties as inline tags
+                var tags: [String] = []
+
+                // Priority
+                let priorityTag = item.priority == .critical ? "`🔴 Critical`" : item.priority == .high ? "`🟠 High`" : item.priority == .medium ? "`🟡 Medium`" : "`🟢 Low`"
+                tags.append(priorityTag)
+
+                // Due date
+                if let dueDate = item.dueDate {
+                    let isOverdue = dueDate < report.currentTime
+                    let dueDateStr = dueDate.formatted(date: .abbreviated, time: .omitted)
+                    if isOverdue {
+                        tags.append("`⚠️ Overdue: \(dueDateStr)`")
+                    } else {
+                        tags.append("`📅 \(dueDateStr)`")
+                    }
+                }
+
+                // Counterparty
+                if let counterparty = item.counterparty, !counterparty.isEmpty {
+                    tags.append("`👤 \(counterparty)`")
+                }
+
+                output += tags.joined(separator: "  ") + "\n"
+
+                // Light separator between cards (not after last)
+                if index < report.mustDoToday.count - 1 {
+                    output += "\n"
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // CAN PUSH - Compact list
+        // ═══════════════════════════════════════════════════════════════════
+        if !report.canPushOff.isEmpty {
+            output += "\n\n---\n\n"
+            output += "## 🟢 Can Push to Tomorrow\n"
+
+            for (index, suggestion) in report.canPushOff.enumerated() {
+                let item = suggestion.item
+                let isFavorite = item.counterparty.map { favorites.isFavorite($0) } ?? false
+
+                output += "\n"
+
+                // Title
+                output += "**\(item.title)**"
+                if isFavorite { output += " ⭐" }
+                output += "\n"
+
+                // Reason in italics
+                output += "_\(suggestion.reason)_"
+
+                // Impact indicator
+                if suggestion.impact == .high {
+                    output += "  `⚡ High impact`"
+                } else if suggestion.impact == .medium {
+                    output += "  `⚡ Medium`"
+                }
+                output += "\n"
+
+                if index < report.canPushOff.count - 1 {
+                    output += "\n"
+                }
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // RECOMMENDATIONS - Callout style
+        // ═══════════════════════════════════════════════════════════════════
+        if !report.recommendations.isEmpty {
+            output += "\n\n---\n\n"
+            output += "## 💡 Recommendations\n\n"
+
+            for (index, rec) in report.recommendations.enumerated() {
+                output += "**\(index + 1).** \(rec)\n\n"
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // EMPTY STATE
+        // ═══════════════════════════════════════════════════════════════════
+        if report.mustDoToday.isEmpty && report.canPushOff.isEmpty {
+            output += "\n\n---\n\n"
+            output += "## ✨ All Clear\n\n"
+            output += "No urgent tasks requiring immediate attention.\n\n"
+            output += "**Consider using this time for:**\n"
+            output += "- Deep work on important projects\n"
+            output += "- Planning for next week\n"
+            output += "- Catching up on reading or learning\n"
+        }
+
+        return output
+    }
+
     private func formatBriefingForAPI(_ briefing: DailyBriefing) -> String {
         var output = ""
 
@@ -3559,41 +3812,96 @@ extension HTTPServer {
 
     // MARK: - Task Lifecycle Handlers
 
+    // Store last scan result for retrieval
+    private static var lastScanResult: ScanResult?
+    private static var lastScanError: String?
+
     private func handleTaskLifecycleScan() async -> HTTPResponse {
-        do {
-            // Get NotionService from AlfredService orchestrator
-            guard let orchestrator = await MainActor.run(body: { alfredService.orchestrator }) else {
+        // Check if scan is already in progress
+        if TaskLifecycleTracker.shared.isScanInProgress() {
+            if let progress = TaskLifecycleTracker.shared.getScanProgress() {
                 return HTTPResponse(
-                    statusCode: 500,
-                    body: ["error": "Alfred not initialized"]
+                    statusCode: 202,  // Accepted - scan in progress
+                    body: [
+                        "inProgress": true,
+                        "phase": progress.phase,
+                        "tasksProcessed": progress.tasksProcessed,
+                        "pagesLoaded": progress.pagesLoaded
+                    ]
                 )
             }
+        }
 
-            let notionService = orchestrator.notionServicePublic
-            let result = try await TaskLifecycleTracker.shared.scan(notionService: notionService)
+        // Get NotionService from AlfredService orchestrator
+        // Note: AlfredService is NOT @MainActor, so we can access it directly
+        guard let orchestrator = alfredService.orchestrator else {
+            return HTTPResponse(
+                statusCode: 500,
+                body: ["error": "Alfred not initialized"]
+            )
+        }
 
+        let notionService = orchestrator.notionServicePublic
+
+        // Mark scan as starting BEFORE spawning background task
+        // This ensures progress polling shows something immediately
+        TaskLifecycleTracker.shared.startScan()
+
+        // Start scan in background task and return immediately
+        Task.detached {
+            do {
+                let result = try await TaskLifecycleTracker.shared.scan(notionService: notionService)
+                Self.lastScanResult = result
+                Self.lastScanError = nil
+                print("✓ Background scan complete: \(result.tasksScanned) tasks")
+            } catch {
+                Self.lastScanError = error.localizedDescription
+                Self.lastScanResult = nil
+                print("✗ Background scan failed: \(error.localizedDescription)")
+            }
+        }
+
+        // Return 202 Accepted immediately - client should poll /progress
+        return HTTPResponse(
+            statusCode: 202,
+            body: [
+                "inProgress": true,
+                "phase": "Starting scan...",
+                "message": "Scan started in background. Poll /api/task-lifecycle/progress for updates."
+            ]
+        )
+    }
+
+    private func handleTaskLifecycleScanProgress() -> HTTPResponse {
+        if let progress = TaskLifecycleTracker.shared.getScanProgress() {
             return HTTPResponse(
                 statusCode: 200,
                 body: [
-                    "success": true,
-                    "tasksScanned": result.tasksScanned,
-                    "newTasks": result.newTasks,
-                    "changesDetected": result.changesDetected,
-                    "changes": result.changes.map { change in
-                        [
-                            "title": change.title,
-                            "oldStatus": change.oldStatus,
-                            "newStatus": change.newStatus,
-                            "taskType": change.taskType,
-                            "counterparty": change.counterparty as Any
-                        ]
-                    }
+                    "inProgress": true,
+                    "phase": progress.phase,
+                    "tasksProcessed": progress.tasksProcessed,
+                    "totalEstimated": progress.totalEstimated as Any,
+                    "pagesLoaded": progress.pagesLoaded
                 ]
             )
-        } catch {
+        } else {
+            // Scan not in progress - return last result if available
+            var responseBody: [String: Any] = ["inProgress": false]
+
+            if let result = Self.lastScanResult {
+                responseBody["completed"] = true
+                responseBody["tasksScanned"] = result.tasksScanned
+                responseBody["newTasks"] = result.newTasks
+                responseBody["changesDetected"] = result.changesDetected
+            }
+
+            if let error = Self.lastScanError {
+                responseBody["error"] = error
+            }
+
             return HTTPResponse(
-                statusCode: 500,
-                body: ["error": error.localizedDescription]
+                statusCode: 200,
+                body: responseBody
             )
         }
     }

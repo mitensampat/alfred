@@ -65,35 +65,9 @@ class MenuBarController: NSObject, NSMenuDelegate {
     private func updateStatusIcon(running: Bool) {
         guard let button = statusItem?.button else { return }
 
-        // Create a hat icon using NSImage drawing
-        let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
-            // Black hat
-            NSColor.black.setFill()
-
-            // Draw a simple bowler/top hat shape
-            // Hat brim (wide part at bottom)
-            let brimRect = NSRect(x: 1, y: 3, width: 16, height: 3)
-            let brim = NSBezierPath(roundedRect: brimRect, xRadius: 1.5, yRadius: 1.5)
-            brim.fill()
-
-            // Hat crown (top part)
-            let crownRect = NSRect(x: 4, y: 5, width: 10, height: 9)
-            let crown = NSBezierPath(roundedRect: crownRect, xRadius: 2, yRadius: 2)
-            crown.fill()
-
-            // Golden sash/band
-            let goldColor = running
-                ? NSColor(red: 1.0, green: 0.84, blue: 0.0, alpha: 1.0)  // Bright gold when running
-                : NSColor(red: 0.72, green: 0.53, blue: 0.04, alpha: 1.0)  // Darker gold when stopped
-            goldColor.setFill()
-            let bandRect = NSRect(x: 4, y: 6, width: 10, height: 2)
-            NSBezierPath(rect: bandRect).fill()
-
-            return true
-        }
-
-        image.isTemplate = false  // Use actual colors, not template
-        button.image = image
+        // Use simple text title - more reliable than custom drawing
+        button.title = running ? "🎩" : "🎩"
+        button.image = nil
     }
 
     private func updateMenu() {

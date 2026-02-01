@@ -2660,6 +2660,8 @@
             document.getElementById('authScreen').classList.add('hidden');
             document.getElementById('appContainer').classList.remove('hidden');
             document.getElementById('queryInput').focus();
+            // Load recent activity on app initialization
+            loadRecentActivity();
         }
 
         function authenticate() {
@@ -3408,7 +3410,8 @@
                 '/api/briefing': '/api/briefing/stream',
                 // '/api/calendar': '/api/calendar/stream',  // Disabled - use regular endpoint for full meeting insights
                 '/api/messages': '/api/messages/stream',
-                '/api/messages/summary': '/api/messages/summary/stream'
+                '/api/messages/summary': '/api/messages/summary/stream',
+                '/api/attention-check': '/api/attention-check/stream'
             };
             // Check exact match or with query params
             const basePath = endpoint.split('?')[0];
@@ -5162,41 +5165,94 @@
             scanBtn.disabled = true;
             const originalBtnText = scanBtn.innerHTML;
 
-            // Progress stages for the button
-            const stages = [
-                { text: '⏳ Connecting to Notion...', progress: 20 },
-                { text: '📋 Fetching tasks...', progress: 40 },
-                { text: '🔍 Analyzing changes...', progress: 60 },
-                { text: '📊 Computing patterns...', progress: 80 }
-            ];
+            // Update button with server-provided progress
+            const updateButtonWithProgress = (phase, pagesLoaded, tasksProcessed) => {
+                let progressPercent = 20;
+                let emoji = '⏳';
 
-            let currentStage = 0;
+                if (phase.includes('Fetching')) {
+                    progressPercent = 20 + Math.min(pagesLoaded * 8, 40);  // 20-60%
+                    emoji = '📋';
+                } else if (phase.includes('Analyzing')) {
+                    progressPercent = 60 + Math.min(tasksProcessed / 10, 20);  // 60-80%
+                    emoji = '🔍';
+                } else if (phase.includes('Computing')) {
+                    progressPercent = 85;
+                    emoji = '📊';
+                }
 
-            // Update button with progress
-            const updateButtonProgress = (stage) => {
-                const stageInfo = stages[Math.min(stage, stages.length - 1)];
                 scanBtn.innerHTML = `
                     <span style="display: flex; align-items: center; justify-content: center; gap: 8px;">
                         <span class="progress-mini-spinner"></span>
-                        <span>${stageInfo.text}</span>
+                        <span>${emoji} ${phase}</span>
                     </span>
                 `;
-                scanBtn.style.background = `linear-gradient(to right, var(--accent-color) ${stageInfo.progress}%, var(--bg-tertiary) ${stageInfo.progress}%)`;
+                scanBtn.style.background = `linear-gradient(to right, var(--accent-color) ${progressPercent}%, var(--bg-tertiary) ${progressPercent}%)`;
             };
 
-            updateButtonProgress(0);
+            updateButtonWithProgress('Connecting to Notion...', 0, 0);
 
-            // Simulate progress steps (actual API is single call)
-            const progressInterval = setInterval(() => {
-                currentStage++;
-                if (currentStage < stages.length) {
-                    updateButtonProgress(currentStage);
+            // Poll for progress while scan is running
+            let pollInterval = null;
+            const pollProgress = async () => {
+                try {
+                    const progressResponse = await authFetch('/api/task-lifecycle/progress');
+                    if (progressResponse.ok) {
+                        const progressData = await progressResponse.json();
+                        const progress = progressData.result || progressData;
+                        if (progress.inProgress) {
+                            updateButtonWithProgress(
+                                progress.phase || 'Scanning...',
+                                progress.pagesLoaded || 0,
+                                progress.tasksProcessed || 0
+                            );
+                        }
+                    }
+                } catch (e) {
+                    // Ignore polling errors
                 }
-            }, 600);
+            };
 
             try {
+                // Start the scan (this will return immediately if already in progress)
                 const response = await authFetch('/api/task-lifecycle/scan', { method: 'POST' });
-                clearInterval(progressInterval);
+
+                // Check if scan is in progress (202 status)
+                if (response.status === 202) {
+                    // Scan already in progress, poll until complete
+                    pollInterval = setInterval(pollProgress, 500);
+
+                    // Wait for scan to complete by polling
+                    let attempts = 0;
+                    const maxAttempts = 120;  // 60 seconds max wait
+                    while (attempts < maxAttempts) {
+                        await new Promise(r => setTimeout(r, 500));
+                        const checkResponse = await authFetch('/api/task-lifecycle/progress');
+                        const checkData = await checkResponse.json();
+                        const progress = checkData.result || checkData;
+                        if (!progress.inProgress) break;
+                        attempts++;
+                    }
+
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+
+                    // Get final stats
+                    loadWorkPatterns();
+                    loadCollaboratorStats();
+
+                    scanBtn.innerHTML = `✅ Scan complete`;
+                    scanBtn.style.background = 'var(--accent-color)';
+                    scanBtn.style.color = 'white';
+
+                    setTimeout(() => {
+                        scanBtn.innerHTML = originalBtnText;
+                        scanBtn.style.background = '';
+                        scanBtn.style.color = '';
+                        scanBtn.disabled = false;
+                    }, 2000);
+                    return;
+                }
 
                 if (!response.ok) throw new Error('Scan failed');
 
@@ -5223,7 +5279,7 @@
                 }, 3000);
 
             } catch (error) {
-                clearInterval(progressInterval);
+                if (pollInterval) clearInterval(pollInterval);
                 scanBtn.innerHTML = `❌ Scan failed`;
                 scanBtn.style.background = 'var(--text-danger)';
                 scanBtn.style.color = 'white';

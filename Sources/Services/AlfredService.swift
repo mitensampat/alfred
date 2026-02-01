@@ -122,6 +122,20 @@ class AlfredService: ObservableObject {
         return try await orchestrator.generateAttentionDefenseAlert(sendNotifications: false)
     }
 
+    /// Streaming version of attention check with progress callbacks
+    /// Progress callback: (step: String, message: String, progress: Int) -> Void
+    func generateAttentionCheckWithProgress(
+        onProgress: @escaping (String, String, Int) -> Void
+    ) async throws -> AttentionDefenseReport {
+        guard let orchestrator = orchestrator else {
+            throw ServiceError.notInitialized
+        }
+        return try await orchestrator.generateAttentionDefenseAlertWithProgress(
+            sendNotifications: false,
+            onProgress: onProgress
+        )
+    }
+
     // MARK: - Notion Todos
 
     func scanWhatsAppForTodos() async throws -> [TodoItem] {

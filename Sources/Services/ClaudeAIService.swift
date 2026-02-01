@@ -423,10 +423,12 @@ class ClaudeAIService {
 
         IMPORTANT: Use the exact task IDs from the brackets (e.g. [abc123]) in mustDoToday and canPushOff.taskId fields.
         Every task should appear in either mustDoToday or canPushOff — don't skip any.
-        Keep recommendations actionable and specific.
+        Keep recommendations actionable and specific (max 3 recommendations).
+        Keep reasons brief (under 15 words each).
         """
 
-        let response = try await sendRequest(prompt: prompt)
+        // Use higher max_tokens for attention check since response includes all tasks
+        let response = try await sendRequest(prompt: prompt, maxTokens: 8192)
         let analysis = try parseAttentionDefenseAnalysis(response, actionItems: actionItems)
 
         return analysis
@@ -446,6 +448,7 @@ class ClaudeAIService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.timeoutInterval = 120 // 2 minutes for AI calls (default 60s is too short)
 
         let body: [String: Any] = [
             "model": useModel ?? model,

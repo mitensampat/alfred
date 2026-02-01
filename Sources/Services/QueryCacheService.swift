@@ -5,7 +5,7 @@ import SQLite3
 class QueryCacheService {
     private var db: OpaquePointer?
     private let dbPath: String
-    private let cacheDuration: TimeInterval = 3600 // 1 hour default
+    private let cacheDuration: TimeInterval = 86400 // 24 hours default
 
     init() {
         // Store cache in persistent ~/.alfred directory (survives reboots)

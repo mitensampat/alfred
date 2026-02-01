@@ -106,6 +106,7 @@ struct ActionItem: Codable, Identifiable {
     let dueDate: Date?
     let estimatedDuration: TimeInterval?
     let category: ActionCategory
+    let counterparty: String?  // Who this task is related to (for commitments, messages)
 
     enum ActionSource: String, Codable {
         case message
@@ -120,6 +121,19 @@ struct ActionItem: Codable, Identifiable {
         case follow_up
         case decision
         case task
+    }
+
+    // Convenience init with default counterparty = nil for backward compatibility
+    init(id: String, title: String, description: String, source: ActionSource, priority: UrgencyLevel, dueDate: Date?, estimatedDuration: TimeInterval?, category: ActionCategory, counterparty: String? = nil) {
+        self.id = id
+        self.title = title
+        self.description = description
+        self.source = source
+        self.priority = priority
+        self.dueDate = dueDate
+        self.estimatedDuration = estimatedDuration
+        self.category = category
+        self.counterparty = counterparty
     }
 }
 
