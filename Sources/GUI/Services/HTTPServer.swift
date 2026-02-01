@@ -127,6 +127,13 @@ class HTTPServer {
                 return
             }
 
+            // Allow FTUE setup endpoints without authentication (needed before setup is complete)
+            if request.path.hasPrefix("/api/setup/") {
+                let response = await route(request)
+                try await client.send(response)
+                return
+            }
+
             // Authenticate API requests
             guard authenticate(request) else {
                 try await client.send(HTTPResponse(
@@ -314,6 +321,25 @@ class HTTPServer {
 
         case ("GET", "/api/hot-reload/status"):
             return handleHotReloadStatus()
+
+        // FTUE Setup endpoints
+        case ("GET", "/api/setup/status"):
+            return handleGetSetupStatus()
+
+        case ("POST", "/api/setup/step"):
+            return await handleSaveSetupStep(request)
+
+        case ("POST", "/api/setup/test-api-key"):
+            return await handleTestApiKey(request)
+
+        case ("POST", "/api/setup/test-notion"):
+            return await handleTestNotion(request)
+
+        case ("GET", "/api/setup/notion-databases"):
+            return await handleGetNotionDatabases()
+
+        case ("POST", "/api/setup/complete"):
+            return handleCompleteSetup()
 
         default:
             return HTTPResponse(
@@ -1105,6 +1131,185 @@ class HTTPServer {
                 ]
             ]
         )
+    }
+
+    // MARK: - FTUE Setup Handlers
+
+    private func handleGetSetupStatus() -> HTTPResponse {
+        let status = SetupStatusService.shared.getStatus()
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "isComplete": status.isComplete,
+                "completedSteps": status.completedSteps,
+                "missingRequirements": status.missingRequirements,
+                "currentStep": status.currentStep
+            ]
+        )
+    }
+
+    private func handleSaveSetupStep(_ request: HTTPRequest) async -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let step = json["step"] as? String else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing step in request"])
+        }
+
+        let data = json["data"] as? [String: Any] ?? [:]
+
+        do {
+            try SetupStatusService.shared.saveStepToConfig(step: step, data: data)
+            SetupStatusService.shared.markStepComplete(step)
+
+            return HTTPResponse(statusCode: 200, body: ["success": true, "step": step])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to save step: \(error.localizedDescription)"])
+        }
+    }
+
+    private func handleTestApiKey(_ request: HTTPRequest) async -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let apiKey = json["apiKey"] as? String else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing apiKey in request"])
+        }
+
+        // Test Claude API key by making a simple request
+        let url = URL(string: "https://api.anthropic.com/v1/messages")!
+        var testRequest = URLRequest(url: url)
+        testRequest.httpMethod = "POST"
+        testRequest.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        testRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        testRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let testBody: [String: Any] = [
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 10,
+            "messages": [["role": "user", "content": "Say hi"]]
+        ]
+
+        testRequest.httpBody = try? JSONSerialization.data(withJSONObject: testBody)
+        testRequest.timeoutInterval = 15
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: testRequest)
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 {
+                    return HTTPResponse(statusCode: 200, body: ["valid": true, "message": "API key is valid"])
+                } else if httpResponse.statusCode == 401 {
+                    return HTTPResponse(statusCode: 200, body: ["valid": false, "error": "Invalid API key"])
+                } else {
+                    return HTTPResponse(statusCode: 200, body: ["valid": false, "error": "API returned status \(httpResponse.statusCode)"])
+                }
+            }
+        } catch {
+            return HTTPResponse(statusCode: 200, body: ["valid": false, "error": "Connection failed: \(error.localizedDescription)"])
+        }
+
+        return HTTPResponse(statusCode: 200, body: ["valid": false, "error": "Unknown error"])
+    }
+
+    private func handleTestNotion(_ request: HTTPRequest) async -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let apiKey = json["apiKey"] as? String else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing apiKey in request"])
+        }
+
+        // Test Notion API connection
+        let url = URL(string: "https://api.notion.com/v1/users/me")!
+        var testRequest = URLRequest(url: url)
+        testRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        testRequest.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        testRequest.timeoutInterval = 15
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: testRequest)
+            if let httpResponse = response as? HTTPURLResponse {
+                if httpResponse.statusCode == 200 {
+                    let userData = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                    let userName = userData?["name"] as? String ?? "Connected"
+                    return HTTPResponse(statusCode: 200, body: ["valid": true, "user": userName])
+                } else if httpResponse.statusCode == 401 {
+                    return HTTPResponse(statusCode: 200, body: ["valid": false, "error": "Invalid Notion token"])
+                } else {
+                    return HTTPResponse(statusCode: 200, body: ["valid": false, "error": "Notion returned status \(httpResponse.statusCode)"])
+                }
+            }
+        } catch {
+            return HTTPResponse(statusCode: 200, body: ["valid": false, "error": "Connection failed: \(error.localizedDescription)"])
+        }
+
+        return HTTPResponse(statusCode: 200, body: ["valid": false, "error": "Unknown error"])
+    }
+
+    private func handleGetNotionDatabases() async -> HTTPResponse {
+        // Load config to get Notion API key
+        guard let config = AppConfig.load(),
+              !config.notion.apiKey.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Notion API key not configured"])
+        }
+
+        // Search for databases the integration has access to
+        let url = URL(string: "https://api.notion.com/v1/search")!
+        var searchRequest = URLRequest(url: url)
+        searchRequest.httpMethod = "POST"
+        searchRequest.setValue("Bearer \(config.notion.apiKey)", forHTTPHeaderField: "Authorization")
+        searchRequest.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        searchRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let searchBody: [String: Any] = [
+            "filter": ["property": "object", "value": "database"],
+            "page_size": 100
+        ]
+        searchRequest.httpBody = try? JSONSerialization.data(withJSONObject: searchBody)
+        searchRequest.timeoutInterval = 30
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: searchRequest)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let results = json["results"] as? [[String: Any]] {
+
+                    let databases = results.compactMap { db -> [String: Any]? in
+                        guard let id = db["id"] as? String else { return nil }
+
+                        // Extract title from title property
+                        var title = "Untitled"
+                        if let titleArray = db["title"] as? [[String: Any]],
+                           let firstTitle = titleArray.first,
+                           let plainText = firstTitle["plain_text"] as? String {
+                            title = plainText
+                        }
+
+                        // Extract icon
+                        var icon = ""
+                        if let iconObj = db["icon"] as? [String: Any] {
+                            if let emoji = iconObj["emoji"] as? String {
+                                icon = emoji
+                            }
+                        }
+
+                        return [
+                            "id": id,
+                            "title": title,
+                            "icon": icon
+                        ]
+                    }
+
+                    return HTTPResponse(statusCode: 200, body: ["databases": databases])
+                }
+            }
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to fetch databases: \(error.localizedDescription)"])
+        }
+
+        return HTTPResponse(statusCode: 500, body: ["error": "Failed to parse Notion response"])
+    }
+
+    private func handleCompleteSetup() -> HTTPResponse {
+        SetupStatusService.shared.completeSetup()
+        return HTTPResponse(statusCode: 200, body: ["success": true, "message": "Setup completed"])
     }
 }
 

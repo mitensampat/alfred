@@ -16,7 +16,7 @@ class NotificationService {
         if config.email.enabled {
             print("  → Sending email notification...")
             try await sendEmail(
-                subject: "Daily Briefing - \(briefing.date.formatted(date: .abbreviated, time: .omitted))",
+                subject: "Alfred: Daily Briefing - \(briefing.date.formatted(date: .abbreviated, time: .omitted))",
                 body: formatted.html,
                 toAddress: toAddress
             )
@@ -45,10 +45,11 @@ class NotificationService {
 
     func sendAttentionDefenseReport(_ report: AttentionDefenseReport, toAddress: String? = nil) async throws {
         let formatted = formatAttentionReport(report)
+        let dateStr = report.currentTime.formatted(date: .abbreviated, time: .omitted)
 
         if config.email.enabled {
             try await sendEmail(
-                subject: "Attention Defense - End of Day Planning",
+                subject: "Alfred: Attention Defense - \(dateStr)",
                 body: formatted.html,
                 toAddress: toAddress
             )

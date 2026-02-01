@@ -34,27 +34,35 @@ class QueryCacheService {
     }
 
     private func createTable() {
-        let createTableQuery = """
-        CREATE TABLE IF NOT EXISTS query_cache (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            cache_key TEXT UNIQUE NOT NULL,
-            endpoint TEXT NOT NULL,
-            params TEXT,
-            response TEXT NOT NULL,
-            created_at REAL NOT NULL,
-            expires_at REAL NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_cache_key ON query_cache(cache_key);
-        CREATE INDEX IF NOT EXISTS idx_expires_at ON query_cache(expires_at);
-        """
+        // Execute each statement separately (sqlite3_prepare_v2 only handles one statement)
+        let statements = [
+            """
+            CREATE TABLE IF NOT EXISTS query_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cache_key TEXT UNIQUE NOT NULL,
+                endpoint TEXT NOT NULL,
+                params TEXT,
+                response TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                expires_at REAL NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_cache_key ON query_cache(cache_key)",
+            "CREATE INDEX IF NOT EXISTS idx_expires_at ON query_cache(expires_at)"
+        ]
 
-        var statement: OpaquePointer?
-        if sqlite3_prepare_v2(db, createTableQuery, -1, &statement, nil) == SQLITE_OK {
-            if sqlite3_step(statement) != SQLITE_DONE {
-                print("⚠️  Failed to create cache table")
+        for sql in statements {
+            var statement: OpaquePointer?
+            if sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK {
+                if sqlite3_step(statement) != SQLITE_DONE {
+                    print("⚠️  Failed to execute: \(sql.prefix(50))...")
+                }
+            } else {
+                print("⚠️  Failed to prepare: \(sql.prefix(50))...")
             }
+            sqlite3_finalize(statement)
         }
-        sqlite3_finalize(statement)
+        print("✅ Cache database initialized")
     }
 
     /// Generate cache key from endpoint and parameters
