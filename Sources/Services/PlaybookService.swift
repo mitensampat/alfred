@@ -344,27 +344,93 @@ class PlaybookService {
     private func syncRulesToNotion() async throws {
         guard let pageId = subPageIds["rules"] else { return }
 
-        var allRules: [(String, AgentType, Date?)] = [] // (rule, agent, timestamp)
+        // Step 1: Get rules from Notion (to preserve edits made there)
+        var notionRules: [(String, AgentType)] = []
+        let blocks = try await getPageBlocks(pageId: pageId)
+        var currentAgent: AgentType?
 
+        for block in blocks {
+            guard let type = block["type"] as? String else { continue }
+
+            if type == "heading_3" {
+                if let heading3 = block["heading_3"] as? [String: Any],
+                   let richText = heading3["rich_text"] as? [[String: Any]],
+                   let firstText = richText.first,
+                   let textContent = firstText["plain_text"] as? String {
+                    currentAgent = AgentType.allCases.first { $0.displayName.lowercased() == textContent.lowercased() }
+                }
+            } else if type == "bulleted_list_item", let agent = currentAgent {
+                if let bulletItem = block["bulleted_list_item"] as? [String: Any],
+                   let richText = bulletItem["rich_text"] as? [[String: Any]],
+                   let firstText = richText.first,
+                   let textContent = firstText["plain_text"] as? String {
+                    // Clean up the rule (remove date suffix if present)
+                    let rule = textContent.replacingOccurrences(of: #"\s*\([^)]+\)$"#, with: "", options: .regularExpression)
+                    notionRules.append((rule, agent))
+                }
+            }
+        }
+
+        // Step 2: Get rules from local memory
+        var localRules: [(String, AgentType, Date?)] = []
         for agentType in AgentType.allCases {
             let memory = memoryService.getMemory(for: agentType)
             if let rulesSection = memory.sections["User-Taught Rules"] {
                 let rules = parseRulesFromSection(rulesSection, agentType: agentType)
-                allRules.append(contentsOf: rules)
+                localRules.append(contentsOf: rules)
             }
         }
 
-        // Sort by timestamp (newest first)
-        allRules.sort { ($0.2 ?? .distantPast) > ($1.2 ?? .distantPast) }
+        // Step 3: Merge - union of Notion rules and local rules (deduped)
+        // Use a set to track unique rules by normalized text
+        var seenRules = Set<String>()
+        var mergedRules: [(String, AgentType, Date?)] = []
 
-        // Build content blocks
+        // Helper to normalize rule text for comparison
+        func normalizeRule(_ rule: String) -> String {
+            return rule.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        // First add all Notion rules (they take priority - user may have edited them)
+        for (rule, agent) in notionRules {
+            let normalized = normalizeRule(rule)
+            if !seenRules.contains(normalized) {
+                seenRules.insert(normalized)
+                mergedRules.append((rule, agent, nil)) // No timestamp for Notion rules
+            }
+        }
+
+        // Then add local rules that aren't already in Notion
+        for (rule, agent, timestamp) in localRules {
+            let normalized = normalizeRule(rule)
+            if !seenRules.contains(normalized) {
+                seenRules.insert(normalized)
+                mergedRules.append((rule, agent, timestamp))
+            }
+        }
+
+        // Step 4: Also sync Notion rules back to local memory
+        for (rule, agent) in notionRules {
+            let memory = memoryService.getMemory(for: agent)
+            let existingRules = memory.sections["User-Taught Rules"] ?? ""
+            let normalized = normalizeRule(rule)
+
+            // Check if rule exists locally (normalized comparison)
+            let localNormalized = existingRules.lowercased()
+            if !localNormalized.contains(normalized) {
+                try? memoryService.teach(agentType: agent, rule: rule, category: "From Notion")
+                print("  ➕ Synced rule from Notion to local: \(rule)")
+            }
+        }
+
+        // Step 5: Build content blocks from merged rules
         var children: [[String: Any]] = []
 
-        if allRules.isEmpty {
+        if mergedRules.isEmpty {
             children.append(createParagraphBlock("No rules taught yet. Teach Alfred something by saying \"Remember that...\" or \"Always...\""))
         } else {
             // Group by agent
-            let grouped = Dictionary(grouping: allRules, by: { $0.1 })
+            let grouped = Dictionary(grouping: mergedRules, by: { $0.1 })
 
             for agentType in AgentType.allCases {
                 guard let rules = grouped[agentType], !rules.isEmpty else { continue }
