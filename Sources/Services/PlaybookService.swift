@@ -329,11 +329,14 @@ class PlaybookService {
         // Ensure playbook exists
         _ = try await ensurePlaybookExists()
 
-        // Sync each section
-        try await syncRulesToNotion()
-        try await syncPatternsToNotion()
-        try await syncPeopleToNotion()
-        try await syncGroupsToNotion()
+        // Sync all sections IN PARALLEL for speed
+        async let rulesSync: () = syncRulesToNotion()
+        async let patternsSync: () = syncPatternsToNotion()
+        async let peopleSync: () = syncPeopleToNotion()
+        async let groupsSync: () = syncGroupsToNotion()
+
+        // Wait for all to complete
+        _ = try await (rulesSync, patternsSync, peopleSync, groupsSync)
 
         lastSyncTimestamp = Date()
         saveCache()
@@ -694,11 +697,16 @@ class PlaybookService {
     }
 
     private func updatePageContent(pageId: String, children: [[String: Any]]) async throws {
-        // First, delete existing content
+        // First, delete existing content IN PARALLEL
         let existingBlocks = try await getPageBlocks(pageId: pageId)
-        for block in existingBlocks {
-            if let blockId = block["id"] as? String {
-                try await deleteBlock(blockId: blockId)
+        let blockIds = existingBlocks.compactMap { $0["id"] as? String }
+
+        // Delete blocks in parallel (max 10 concurrent to avoid rate limits)
+        await withTaskGroup(of: Void.self) { group in
+            for blockId in blockIds {
+                group.addTask {
+                    try? await self.deleteBlock(blockId: blockId)
+                }
             }
         }
 

@@ -289,7 +289,16 @@ class NotificationService {
             .replacingOccurrences(of: "**", with: "<strong>")
             .replacingOccurrences(of: "**", with: "</strong>")
 
-        return "<html><body style='font-family: -apple-system, sans-serif;'><p>\(html)</p></body></html>"
+        return """
+        <html>
+        <head>
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
+        </head>
+        <body style="font-family: 'Inter', -apple-system, sans-serif;">
+            <p>\(html)</p>
+        </body>
+        </html>
+        """
     }
 }
 
