@@ -4,22 +4,16 @@ class ClaudeAIService {
     private let apiKey: String
     private let model: String
     private let messageModel: String
-    private let baseURL = "https://api.anthropic.com/v1/messages"
+    private let baseURL: String
 
     init(config: AIConfig) {
         self.apiKey = config.anthropicApiKey
         self.model = config.model
         self.messageModel = config.effectiveMessageModel
-        NSLog("🤖 ClaudeAIService initialized with model: \(model), messageModel: \(messageModel)")
-
-        // Write to file for debugging
-        let logMsg = "ClaudeAIService initialized - model: \(model), messageModel: \(messageModel)\n"
-        if let logData = logMsg.data(using: .utf8) {
-            try? logData.write(to: URL(fileURLWithPath: "/tmp/alfred_init.log"), options: .atomic)
-        }
+        self.baseURL = config.effectiveBaseUrl
     }
 
-    func analyzeMessages(_ threads: [MessageThread]) async throws -> [MessageSummary] {
+    func analyzeMessages(_ threads: [MessageThread], favoriteNames: [String] = []) async throws -> [MessageSummary] {
         print("  ⚡ Using \(messageModel) for fast message analysis")
         var summaries: [MessageSummary] = []
 
@@ -33,7 +27,7 @@ class ClaudeAIService {
             let batchSummaries = try await withThrowingTaskGroup(of: MessageSummary.self) { group in
                 for thread in batch {
                     group.addTask {
-                        try await self.analyzeThread(thread, useModel: self.messageModel)
+                        try await self.analyzeThread(thread, useModel: self.messageModel, favoriteNames: favoriteNames)
                     }
                 }
 
@@ -137,6 +131,7 @@ class ClaudeAIService {
 
         prompt += """
 
+
         Provide:
         1. A comprehensive summary (3-5 sentences) - be clear about who said what
         2. Action items for MITEN (the user marked as "You") - ONLY if they participated and were asked to do something
@@ -176,7 +171,7 @@ class ClaudeAIService {
         )
     }
 
-    private func analyzeThread(_ thread: MessageThread, useModel: String? = nil) async throws -> MessageSummary {
+    private func analyzeThread(_ thread: MessageThread, useModel: String? = nil, favoriteNames: [String] = []) async throws -> MessageSummary {
         let recentMessages = Array(thread.messages.prefix(20))
         let messagesText = recentMessages.map { msg in
             "[\(msg.timestamp.formatted())] \(msg.direction == .incoming ? thread.contactName ?? "Unknown" : "You"): \(msg.content)"
@@ -205,6 +200,12 @@ class ClaudeAIService {
             threadId: thread.contactIdentifier
         )
 
+        // Check if this thread is from a priority contact/group
+        let threadName = thread.contactName ?? ""
+        let isFavorite = favoriteNames.contains { favName in
+            threadName.localizedCaseInsensitiveContains(favName) || favName.localizedCaseInsensitiveContains(threadName)
+        }
+
         let participationContext: String
         if userMessageCount == 0 {
             participationContext = """
@@ -226,6 +227,11 @@ class ClaudeAIService {
             """
         }
 
+        let priorityContext = isFavorite ? """
+
+        PRIORITY CONTACT: This is a priority contact/group for the user. Weight urgency assessment accordingly - messages from priority contacts warrant faster response times and higher attention.
+        """ : ""
+
         var prompt = """
         Analyze this message thread and provide:
         1. A concise summary (2-3 sentences max)
@@ -234,7 +240,7 @@ class ClaudeAIService {
         4. Sentiment (positive/neutral/negative/urgent)
         5. Whether it needs a response and suggested response if applicable
 
-        \(participationContext)
+        \(participationContext)\(priorityContext)
         """
 
         // Add historical context if available
@@ -345,7 +351,8 @@ class ClaudeAIService {
         actionItems: [ActionItem],
         todaySchedule: DailySchedule,
         tomorrowSchedule: DailySchedule,
-        currentTime: Date
+        currentTime: Date,
+        favoriteNames: [String] = []
     ) async throws -> AttentionDefenseReport {
         let calendar = Calendar.current
         let endOfDay = calendar.date(bySettingHour: 18, minute: 0, second: 0, of: currentTime)!
@@ -379,13 +386,20 @@ class ClaudeAIService {
             return "- \(event.startTime.formatted(.dateTime.hour().minute()))-\(event.endTime.formatted(.dateTime.hour().minute())): \(event.title) (\(Int(event.duration/60))min)\(extFlag)"
         }.joined(separator: "\n")
 
-        // Action items with rich context
+        // Action items with rich context - mark items from priority contacts
         let itemsText = actionItems.isEmpty ? "No open tasks found." : actionItems.map { item in
             var line = "- [\(item.id)] [\(item.priority.rawValue.uppercased())] \(item.title)"
             if item.description != item.title {
                 line += ": \(item.description)"
             }
             line += " (Category: \(item.category.rawValue), Source: \(item.source.rawValue))"
+            // Check if this item is from a priority contact
+            let isPriority = favoriteNames.contains { favName in
+                item.title.localizedCaseInsensitiveContains(favName) || item.description.localizedCaseInsensitiveContains(favName)
+            }
+            if isPriority {
+                line += " [PRIORITY CONTACT]"
+            }
             if let dueDate = item.dueDate {
                 let dueDateStr = dateFormatter.string(from: dueDate)
                 let isOverdue = dueDate < currentTime
@@ -394,9 +408,18 @@ class ClaudeAIService {
             return line
         }.joined(separator: "\n")
 
+        // Priority contacts context
+        let priorityContext = favoriteNames.isEmpty ? "" : """
+
+        === PRIORITY CONTACTS ===
+        The following are priority contacts/groups. Tasks involving them should be weighted higher in urgency:
+        \(favoriteNames.joined(separator: ", "))
+        """
+
         let prompt = """
         You are the executive assistant for a busy professional. It's currently \(currentTime.formatted()) on \(todayStr).
         Workday ends at 18:00. Time remaining today: \(Int(timeRemaining/3600))h \(Int((timeRemaining.truncatingRemainder(dividingBy: 3600))/60))m
+        \(priorityContext)
 
         === TODAY'S REMAINING MEETINGS ===
         \(todayMeetingsText)
@@ -411,7 +434,7 @@ class ClaudeAIService {
 
         === YOUR ANALYSIS ===
         Consider:
-        1. What MUST be done today? (overdue items, critical priority, time-sensitive responses, items due today)
+        1. What MUST be done today? (overdue items, critical priority, time-sensitive responses, items due today, items from priority contacts)
         2. What can safely be pushed to tomorrow or later? Give clear reasoning for each.
         3. Does tomorrow's schedule allow space for pushed items, or is it already packed?
         4. Are there any preparation tasks needed for tomorrow's meetings?
@@ -441,9 +464,9 @@ class ClaudeAIService {
 
     // MARK: - Private Helpers
 
-    /// Generate text from a prompt (public method for agents and intent recognition)
+    /// Generate text from a prompt (public method for agents)
     func generateText(prompt: String, maxTokens: Int = 4096, useModel: String? = nil) async throws -> String {
-        return try await sendRequest(prompt: prompt, useModel: useModel)
+        return try await sendRequest(prompt: prompt, maxTokens: maxTokens, useModel: useModel)
     }
 
     private func sendRequest(prompt: String, maxTokens: Int = 4096, useModel: String? = nil) async throws -> String {
@@ -468,42 +491,25 @@ class ClaudeAIService {
         let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            NSLog("❌ ERROR: Invalid HTTP response")
+            print("ERROR: Invalid HTTP response")
             throw AIError.requestFailed
         }
 
         if httpResponse.statusCode != 200 {
-            let errorMsg = "HTTP \(httpResponse.statusCode)"
-            let errorBody = String(data: data, encoding: .utf8) ?? "No body"
-            let logMsg = "❌ ERROR: \(errorMsg)\n❌ Response: \(errorBody)"
-            NSLog("%@", logMsg)
-
-            // Also write to file for debugging
-            if let logData = logMsg.data(using: .utf8) {
-                let logPath = "/tmp/alfred_error.log"
-                if FileManager.default.fileExists(atPath: logPath) {
-                    if let handle = FileHandle(forWritingAtPath: logPath) {
-                        handle.seekToEndOfFile()
-                        handle.write(logData)
-                        handle.write("\n\n".data(using: .utf8)!)
-                        handle.closeFile()
-                    }
-                } else {
-                    try? logData.write(to: URL(fileURLWithPath: logPath))
-                }
+            print("ERROR: HTTP \(httpResponse.statusCode)")
+            if let errorBody = String(data: data, encoding: .utf8) {
+                print("Response body:", errorBody)
             }
-
-            // Provide user-friendly error messages
-            if httpResponse.statusCode == 529 {
-                throw AIError.overloaded
-            } else if httpResponse.statusCode == 429 {
-                throw AIError.rateLimited
-            } else {
-                throw AIError.requestFailed
-            }
+            throw AIError.requestFailed
         }
 
         let apiResponse = try JSONDecoder().decode(ClaudeResponse.self, from: data)
+
+        // Log if response was cut off
+        if let stopReason = apiResponse.stopReason, stopReason == "max_tokens" {
+            print("⚠️  WARNING: Response hit max_tokens limit and was truncated")
+        }
+
         return apiResponse.content.first?.text ?? ""
     }
 
@@ -678,6 +684,12 @@ class ClaudeAIService {
 
 private struct ClaudeResponse: Codable {
     let content: [Content]
+    let stopReason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case content
+        case stopReason = "stop_reason"
+    }
 
     struct Content: Codable {
         let text: String
@@ -788,8 +800,6 @@ enum AIError: Error, LocalizedError {
     case requestFailed
     case parsingFailed
     case invalidResponse
-    case overloaded
-    case rateLimited
 
     var errorDescription: String? {
         switch self {
@@ -797,10 +807,6 @@ enum AIError: Error, LocalizedError {
             return "AI API request failed"
         case .parsingFailed:
             return "Failed to parse AI response"
-        case .overloaded:
-            return "AI service is currently overloaded. Please try again in a moment."
-        case .rateLimited:
-            return "Rate limit exceeded. Please wait a moment before trying again."
         case .invalidResponse:
             return "Invalid response from AI"
         }

@@ -6,16 +6,17 @@ class BriefingOrchestrator {
     private let imessageReader: iMessageReader
     private let whatsappReader: WhatsAppReader
     private let signalReader: SignalReader
+    private let gmailReader: GmailReader?
     private let calendarService: MultiCalendarService
     private let aiService: ClaudeAIService
     private let researchService: ResearchService
     private let notificationService: NotificationService
     private let notionService: NotionService
-    private let commitmentAnalyzer: CommitmentAnalyzer
+    private var agentManager: AgentManager?
 
-    // Public access to NotionService for GUI features
+    // Public accessors for commitments feature
+    let commitmentAnalyzer: CommitmentAnalyzer
     var notionServicePublic: NotionService { notionService }
-    var commitmentAnalyzerPublic: CommitmentAnalyzer { commitmentAnalyzer }
 
     init(config: AppConfig) {
         self.config = config
@@ -23,11 +24,14 @@ class BriefingOrchestrator {
         self.imessageReader = iMessageReader(dbPath: config.messaging.imessage.dbPath)
         self.whatsappReader = WhatsAppReader(dbPath: config.messaging.whatsapp.dbPath)
         self.signalReader = SignalReader(dbPath: config.messaging.signal.dbPath)
+        self.gmailReader = config.messaging.email.map { GmailReader(config: $0) }
         self.calendarService = MultiCalendarService(configs: config.calendar.google)
         self.aiService = ClaudeAIService(config: config.ai)
         self.researchService = ResearchService(config: config, aiService: aiService)
         self.notificationService = NotificationService(config: config.notifications)
         self.notionService = NotionService(config: config.notion)
+
+        // Initialize commitment analyzer
         self.commitmentAnalyzer = CommitmentAnalyzer(
             anthropicApiKey: config.ai.anthropicApiKey,
             model: config.ai.model,
@@ -36,16 +40,26 @@ class BriefingOrchestrator {
                 email: config.user.email
             )
         )
+
+        // Initialize agent manager if agents are enabled
+        if let agentsConfig = config.agents, agentsConfig.enabled {
+            do {
+                self.agentManager = try AgentManager(config: agentsConfig.toAgentConfig(), appConfig: config)
+            } catch {
+                print("⚠️  Failed to initialize agent manager: \(error)")
+                self.agentManager = nil
+            }
+        }
     }
 
     // MARK: - Morning Briefing
 
     func generateMorningBriefing() async throws -> DailyBriefing {
         let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
-        return try await generateBriefing(for: tomorrow, sendEmail: true)
+        return try await generateBriefing(for: tomorrow, sendNotifications: true)
     }
 
-    func generateBriefing(for date: Date, sendEmail: Bool = false, toAddress: String? = nil) async throws -> DailyBriefing {
+    func generateBriefing(for date: Date, sendNotifications: Bool = false, toAddress: String? = nil) async throws -> DailyBriefing {
         print("\n🚀 Generating briefing for \(date.formatted(date: .abbreviated, time: .omitted))...\n")
 
         // 1. Fetch messages from last 24 hours
@@ -57,15 +71,31 @@ class BriefingOrchestrator {
         let schedule = try await calendarService.fetchEventsFromAllCalendars(for: date, userSettings: config.user)
         print("")
 
-        // 3. Generate meeting briefings for external meetings
+        // 3. Generate meeting briefings for external meetings - PARALLEL for performance
         var meetingBriefings: [MeetingBriefing] = []
         if !schedule.externalMeetings.isEmpty {
-            print("👥 Generating briefings for \(schedule.externalMeetings.count) external meeting(s)...")
-            for (index, event) in schedule.externalMeetings.enumerated() {
-                print("  ↳ Researching attendees for '\(event.title)' (\(index + 1)/\(schedule.externalMeetings.count))...")
-                let attendeeBriefings = try await researchService.researchAttendees(event.externalAttendees)
-                let briefing = try await aiService.generateMeetingBriefing(event, attendees: attendeeBriefings)
-                meetingBriefings.append(briefing)
+            print("👥 Generating briefings for \(schedule.externalMeetings.count) external meeting(s) in parallel...")
+
+            meetingBriefings = await withTaskGroup(of: (Int, MeetingBriefing?).self) { group in
+                for (index, event) in schedule.externalMeetings.enumerated() {
+                    group.addTask {
+                        do {
+                            print("  ↳ Researching '\(event.title)' (\(index + 1)/\(schedule.externalMeetings.count))...")
+                            let attendeeBriefings = try await self.researchService.researchAttendees(event.externalAttendees)
+                            let briefing = try await self.aiService.generateMeetingBriefing(event, attendees: attendeeBriefings)
+                            return (index, briefing)
+                        } catch {
+                            print("  ✗ Failed to generate briefing for '\(event.title)': \(error)")
+                            return (index, nil)
+                        }
+                    }
+                }
+
+                var results: [(Int, MeetingBriefing?)] = []
+                for await result in group {
+                    results.append(result)
+                }
+                return results.sorted { $0.0 < $1.0 }.compactMap { $0.1 }
             }
             print("✓ Meeting briefings complete\n")
         }
@@ -77,38 +107,90 @@ class BriefingOrchestrator {
             recommendations: generateScheduleRecommendations(schedule)
         )
 
-        // 4. Query Notion for context (if configured)
+        // 4. Query Notion for context (if configured) - PARALLEL for performance
         var notionNotes: [NotionNote] = []
         var notionTasks: [NotionTask] = []
 
         if let briefingSources = config.notion.briefingSources {
-            // Query notes database
-            if let notesDatabaseId = briefingSources.notesDatabaseId, notesDatabaseId != "YOUR_NOTES_DATABASE_ID" {
+            let notesDatabaseId = briefingSources.notesDatabaseId
+            let tasksDbId = config.notion.tasksDatabaseId ?? briefingSources.tasksDatabaseId
+
+            // Run both queries in parallel using async let
+            async let notesTask: [NotionNote] = {
+                guard let dbId = notesDatabaseId, dbId != "YOUR_NOTES_DATABASE_ID" else {
+                    return []
+                }
                 print("📓 Querying Notion notes for context...")
                 do {
-                    let context = generateBriefingContext(messagingSummary: messagingSummary, schedule: schedule)
-                    notionNotes = try await notionService.queryRelevantNotes(context: context, databaseId: notesDatabaseId)
-                    print("✓ Found \(notionNotes.count) relevant note(s)\n")
+                    let context = self.generateBriefingContext(messagingSummary: messagingSummary, schedule: schedule)
+                    let notes = try await self.notionService.queryRelevantNotes(context: context, databaseId: dbId)
+                    print("✓ Found \(notes.count) relevant note(s)\n")
+                    return notes
                 } catch {
                     print("⚠️  Failed to query notes: \(error)\n")
+                    return []
                 }
-            }
+            }()
 
-            // Query tasks database - check top-level first, then briefing_sources
-            let tasksDbId = config.notion.tasksDatabaseId ?? briefingSources.tasksDatabaseId
-            if let tasksDatabaseId = tasksDbId, tasksDatabaseId != "YOUR_TASKS_DATABASE_ID" {
+            async let tasksTask: [NotionTask] = {
+                guard let dbId = tasksDbId, dbId != "YOUR_TASKS_DATABASE_ID" else {
+                    return []
+                }
                 print("✅ Querying Notion for active tasks...")
                 do {
-                    notionTasks = try await notionService.queryActiveTasks(databaseId: tasksDatabaseId)
-                    print("✓ Found \(notionTasks.count) active task(s)\n")
+                    let tasks = try await self.notionService.queryActiveTasks(databaseId: dbId)
+                    print("✓ Found \(tasks.count) active task(s)\n")
+                    return tasks
                 } catch {
                     print("⚠️  Failed to query tasks: \(error)\n")
+                    return []
                 }
-            }
+            }()
+
+            // Wait for both to complete (parallel execution)
+            notionNotes = await notesTask
+            notionTasks = await tasksTask
         }
 
         // 5. Extract action items
         let actionItems = extractActionItems(from: messagingSummary, and: calendarBriefing, notionTasks: notionTasks)
+
+        // 6. Let agents evaluate the context and make decisions
+        var agentDecisions: [AgentDecision]? = nil
+        if let agentManager = agentManager {
+            print("🤖 Agents evaluating context...")
+            let context = AgentContext(
+                briefing: nil,  // Will be set after creation
+                messagingSummary: messagingSummary,
+                calendarBriefing: calendarBriefing,
+                notionContext: NotionContext(notes: notionNotes, tasks: notionTasks)
+            )
+
+            do {
+                let allDecisions = try await agentManager.evaluateContext(context)
+                // Filter for decisions that require approval (others were auto-executed)
+                agentDecisions = allDecisions.filter { $0.requiresApproval }
+                print("✓ Agents generated \(allDecisions.count) decision(s) (\(allDecisions.filter { !$0.requiresApproval }.count) auto-executed, \(agentDecisions?.count ?? 0) pending approval)\n")
+            } catch {
+                print("⚠️  Agent evaluation failed: \(error)\n")
+            }
+        }
+
+        // 7. Gather agent insights (proactive notices, recent learnings, commitment reminders)
+        var agentInsights: AgentInsights? = nil
+        if agentManager != nil {
+            print("🧠 Gathering agent insights...")
+            agentInsights = try await gatherAgentInsights(
+                messagingSummary: messagingSummary,
+                calendarBriefing: calendarBriefing,
+                notionTasks: notionTasks
+            )
+            if let insights = agentInsights, !insights.isEmpty {
+                print("✓ Agent insights: \(insights.recentLearnings.count) learnings, \(insights.proactiveNotices.count) notices, \(insights.commitmentReminders.count) reminders\n")
+            } else {
+                print("ℹ️  No significant agent insights\n")
+            }
+        }
 
         let briefing = DailyBriefing(
             date: date,
@@ -116,14 +198,16 @@ class BriefingOrchestrator {
             calendarBriefing: calendarBriefing,
             actionItems: actionItems,
             notionContext: NotionContext(notes: notionNotes, tasks: notionTasks),
+            agentDecisions: agentDecisions,
+            agentInsights: agentInsights,
             generatedAt: Date()
         )
 
-        // 5. Send notifications only if requested
-        if sendEmail {
-            print("📧 Sending briefing via email...")
+        // 7. Send notifications only if requested
+        if sendNotifications {
+            print("📬 Sending briefing notifications...")
             try await notificationService.sendBriefing(briefing, toAddress: toAddress)
-            print("✓ Email sent successfully\n")
+            print("✓ Notifications sent successfully\n")
         }
 
         return briefing
@@ -138,52 +222,86 @@ class BriefingOrchestrator {
         let schedule = try await calendarService.fetchEvents(for: date, userSettings: config.user, calendarFilter: calendar)
         print("")
 
-        // Query Notion for context (if configured)
+        // Query Notion for context (if configured) - PARALLEL for performance
         var notionNotes: [NotionNote] = []
         var notionTasks: [NotionTask] = []
 
         if let briefingSources = config.notion.briefingSources {
-            // Query notes database
-            if let notesDatabaseId = briefingSources.notesDatabaseId, notesDatabaseId != "YOUR_NOTES_DATABASE_ID" {
+            let notesDatabaseId = briefingSources.notesDatabaseId
+            let tasksDbId = config.notion.tasksDatabaseId ?? briefingSources.tasksDatabaseId
+
+            // Run both queries in parallel using async let
+            async let notesTask: [NotionNote] = {
+                guard let dbId = notesDatabaseId, dbId != "YOUR_NOTES_DATABASE_ID" else {
+                    return []
+                }
                 print("📓 Querying Notion notes for context...")
                 do {
-                    let context = generateCalendarContext(schedule: schedule)
-                    notionNotes = try await notionService.queryRelevantNotes(context: context, databaseId: notesDatabaseId)
-                    print("✓ Found \(notionNotes.count) relevant note(s)\n")
+                    let context = self.generateCalendarContext(schedule: schedule)
+                    let notes = try await self.notionService.queryRelevantNotes(context: context, databaseId: dbId)
+                    print("✓ Found \(notes.count) relevant note(s)\n")
+                    return notes
                 } catch {
                     print("⚠️  Failed to query notes: \(error)\n")
+                    return []
                 }
-            }
+            }()
 
-            // Query tasks database - check top-level first, then briefing_sources
-            let tasksDbId = config.notion.tasksDatabaseId ?? briefingSources.tasksDatabaseId
-            if let tasksDatabaseId = tasksDbId, tasksDatabaseId != "YOUR_TASKS_DATABASE_ID" {
+            async let tasksTask: [NotionTask] = {
+                guard let dbId = tasksDbId, dbId != "YOUR_TASKS_DATABASE_ID" else {
+                    return []
+                }
                 print("✅ Querying Notion for active tasks...")
                 do {
-                    notionTasks = try await notionService.queryActiveTasks(databaseId: tasksDatabaseId)
-                    print("✓ Found \(notionTasks.count) active task(s)\n")
+                    let tasks = try await self.notionService.queryActiveTasks(databaseId: dbId)
+                    print("✓ Found \(tasks.count) active task(s)\n")
+                    return tasks
                 } catch {
                     print("⚠️  Failed to query tasks: \(error)\n")
+                    return []
                 }
-            }
+            }()
+
+            // Wait for both to complete (parallel execution)
+            notionNotes = await notesTask
+            notionTasks = await tasksTask
         }
 
-        // Generate meeting briefings for external meetings
+        // Generate meeting briefings for external meetings - PARALLEL for performance
         var meetingBriefings: [MeetingBriefing] = []
         if !schedule.externalMeetings.isEmpty {
-            print("👥 Generating briefings for \(schedule.externalMeetings.count) external meeting(s)...")
-            for (index, event) in schedule.externalMeetings.enumerated() {
-                print("  ↳ Researching attendees for '\(event.title)' (\(index + 1)/\(schedule.externalMeetings.count))...")
-                let attendeeBriefings = try await researchService.researchAttendees(event.externalAttendees)
+            print("👥 Generating briefings for \(schedule.externalMeetings.count) external meeting(s) in parallel...")
 
-                // Include Notion context in meeting briefing
-                let briefing = try await aiService.generateMeetingBriefing(
-                    event,
-                    attendees: attendeeBriefings,
-                    notionNotes: notionNotes,
-                    notionTasks: notionTasks
-                )
-                meetingBriefings.append(briefing)
+            // Process all meetings in parallel using TaskGroup
+            meetingBriefings = await withTaskGroup(of: (Int, MeetingBriefing?).self) { group in
+                for (index, event) in schedule.externalMeetings.enumerated() {
+                    group.addTask {
+                        do {
+                            print("  ↳ Researching '\(event.title)' (\(index + 1)/\(schedule.externalMeetings.count))...")
+                            let attendeeBriefings = try await self.researchService.researchAttendees(event.externalAttendees)
+
+                            let briefing = try await self.aiService.generateMeetingBriefing(
+                                event,
+                                attendees: attendeeBriefings,
+                                notionNotes: notionNotes,
+                                notionTasks: notionTasks
+                            )
+                            return (index, briefing)
+                        } catch {
+                            print("  ✗ Failed to generate briefing for '\(event.title)': \(error)")
+                            return (index, nil)
+                        }
+                    }
+                }
+
+                // Collect results and sort by original index to maintain order
+                var results: [(Int, MeetingBriefing?)] = []
+                for await result in group {
+                    results.append(result)
+                }
+                return results
+                    .sorted { $0.0 < $1.0 }
+                    .compactMap { $0.1 }
             }
             print("✓ Meeting briefings complete\n")
         }
@@ -291,10 +409,57 @@ class BriefingOrchestrator {
         }
 
         print("🤖 Analyzing messages with AI...")
-        let summaries = try await aiService.analyzeMessages(allThreads)
+        let favorites = FavoritesService.shared.getFavorites()
+        let summaries = try await aiService.analyzeMessages(allThreads, favoriteNames: favorites.allNames)
         print("✓ Analysis complete\n")
 
         return summaries
+    }
+
+    func generateDraftsForMessages(_ summaries: [MessageSummary]) async throws -> Int {
+        guard let agentManager = agentManager else {
+            print("⚠️  Agents not enabled - skipping draft creation\n")
+            return 0
+        }
+
+        print("🤖 Agents analyzing messages for draft responses...")
+
+        // Filter messages needing response (by checking thread.needsResponse)
+        let needsResponse = summaries.filter { $0.thread.needsResponse }
+
+        // Create messaging stats
+        let stats = MessagingSummary.MessagingStats(
+            totalMessages: summaries.reduce(0) { $0 + $1.thread.messages.count },
+            unreadMessages: summaries.reduce(0) { $0 + $1.thread.unreadCount },
+            threadsNeedingResponse: needsResponse.count,
+            byPlatform: Dictionary(grouping: summaries, by: { $0.thread.platform }).mapValues { $0.count }
+        )
+
+        // Create a minimal context for the communication agent
+        let context = AgentContext(
+            messagingSummary: MessagingSummary(
+                keyInteractions: needsResponse,
+                needsResponse: needsResponse,
+                criticalMessages: summaries.filter { $0.urgency == .critical },
+                stats: stats
+            )
+        )
+
+        do {
+            let decisions = try await agentManager.evaluateContext(context)
+            let draftDecisions = decisions.filter { if case .draftResponse = $0.action { return true }; return false }
+
+            if draftDecisions.isEmpty {
+                print("ℹ️  No draft responses needed\n")
+            } else {
+                print("✓ Created \(draftDecisions.count) draft response(s)\n")
+            }
+
+            return draftDecisions.count
+        } catch {
+            print("⚠️  Failed to generate drafts: \(error)\n")
+            return 0
+        }
     }
 
     func getFocusedWhatsAppThread(contactName: String, timeframe: String) async throws -> FocusedThreadAnalysis {
@@ -329,6 +494,194 @@ class BriefingOrchestrator {
         return analysis
     }
 
+    func generateDraftForThread(_ analysis: FocusedThreadAnalysis) async throws -> Int {
+        guard let agentManager = agentManager else {
+            print("⚠️  Agents not enabled - skipping draft creation\n")
+            return 0
+        }
+
+        print("🤖 Agents analyzing thread for draft response...")
+
+        // Parse urgency from action items
+        let urgency: UrgencyLevel
+        if analysis.actionItems.contains(where: { $0.priority.lowercased() == "critical" }) {
+            urgency = .critical
+        } else if analysis.actionItems.contains(where: { $0.priority.lowercased() == "high" }) {
+            urgency = .high
+        } else if !analysis.actionItems.isEmpty {
+            urgency = .medium
+        } else {
+            urgency = .low
+        }
+
+        // Create a message summary from the thread analysis
+        let summary = MessageSummary(
+            thread: analysis.thread,
+            summary: analysis.summary,
+            urgency: urgency,
+            suggestedResponse: nil,
+            actionItems: analysis.actionItems.map { $0.item },
+            sentiment: "neutral"  // FocusedThreadAnalysis doesn't have sentiment
+        )
+
+        // Create messaging stats
+        let stats = MessagingSummary.MessagingStats(
+            totalMessages: analysis.thread.messages.count,
+            unreadMessages: analysis.thread.unreadCount,
+            threadsNeedingResponse: 1,
+            byPlatform: [analysis.thread.platform: 1]
+        )
+
+        // Create context with single thread
+        let context = AgentContext(
+            messagingSummary: MessagingSummary(
+                keyInteractions: [summary],
+                needsResponse: [summary],
+                criticalMessages: urgency == .critical ? [summary] : [],
+                stats: stats
+            )
+        )
+
+        do {
+            let decisions = try await agentManager.evaluateContext(context)
+            let draftDecisions = decisions.filter { if case .draftResponse = $0.action { return true }; return false }
+
+            if draftDecisions.isEmpty {
+                print("ℹ️  No draft response needed\n")
+            } else {
+                print("✓ Created draft response\n")
+            }
+
+            return draftDecisions.count
+        } catch {
+            print("⚠️  Failed to generate draft: \(error)\n")
+            return 0
+        }
+    }
+
+    // MARK: - Recommended Actions from Analysis
+
+    /// Extract critical action items from focused thread analysis
+    func extractRecommendedActions(from analysis: FocusedThreadAnalysis) -> [RecommendedAction] {
+        // Only extract critical/high priority items
+        return analysis.actionItems.filter { item in
+            item.priority.lowercased() == "high" || item.priority.lowercased() == "critical"
+        }.map { item in
+            let priority: ActionPriority = item.priority.lowercased() == "critical" ? .critical : .high
+            let dueDate = parseDueDate(from: item.deadline)
+
+            return RecommendedAction(
+                title: item.item,
+                description: "From thread with \(analysis.thread.contactName ?? "Unknown")",
+                priority: priority,
+                source: .focusedAnalysis(contact: analysis.thread.contactName ?? "Unknown"),
+                dueDate: dueDate,
+                context: "Action identified from message analysis"
+            )
+        }
+    }
+
+    /// Extract critical action items from message summaries
+    func extractRecommendedActions(from summaries: [MessageSummary]) -> [RecommendedAction] {
+        var actions: [RecommendedAction] = []
+
+        for summary in summaries {
+            // Only extract from critical/high urgency messages
+            guard summary.urgency == .critical || summary.urgency == .high else { continue }
+
+            // Only take first 2 most critical action items per thread
+            for actionItem in summary.actionItems.prefix(2) {
+                let priority: ActionPriority = summary.urgency == .critical ? .critical : .high
+
+                actions.append(RecommendedAction(
+                    title: actionItem,
+                    description: summary.summary,
+                    priority: priority,
+                    source: .messageThread(contact: summary.thread.contactName ?? "Unknown", platform: summary.thread.platform),
+                    dueDate: nil,
+                    context: "From \(summary.thread.platform.rawValue) conversation"
+                ))
+            }
+        }
+
+        return actions
+    }
+
+    /// Add recommended actions to Notion
+    func addRecommendedActionsToNotion(_ actions: [RecommendedAction]) async throws -> [String] {
+        var createdIds: [String] = []
+
+        for action in actions {
+            do {
+                let description = action.description + "\n\nSource: " + action.source.displayName
+
+                // Generate hash for duplicate detection
+                let hash = Self.generateTaskHash(
+                    title: action.title,
+                    description: description,
+                    platform: "Alfred",
+                    threadId: "recommended-actions"
+                )
+
+                // Check if task already exists by hash
+                if let _ = try await notionService.findTaskByHash(hash) {
+                    print("  ⚠️  Skipping duplicate: \(action.title)")
+                    continue
+                }
+
+                // Create TaskItem from recommended action
+                let taskItem = TaskItem(
+                    notionId: "",
+                    title: action.title,
+                    type: .todo,
+                    status: .notStarted,
+                    description: description,
+                    dueDate: action.dueDate,
+                    priority: action.priority == .critical ? .critical : (action.priority == .high ? .high : .medium),
+                    assignee: config.user.name,
+                    commitmentDirection: nil,
+                    committedBy: nil,
+                    committedTo: nil,
+                    originalContext: nil,
+                    sourcePlatform: nil,
+                    sourceThread: action.source.displayName,
+                    sourceThreadId: nil,
+                    tags: nil,
+                    followUpDate: nil,
+                    uniqueHash: hash,
+                    notes: nil,
+                    createdDate: Date(),
+                    lastUpdated: Date()
+                )
+
+                let pageId = try await notionService.createTask(taskItem)
+                createdIds.append(pageId)
+                print("  ✓ Added: \(action.title)")
+            } catch {
+                print("  ✗ Failed to add '\(action.title)': \(error)")
+            }
+        }
+
+        return createdIds
+    }
+
+    private func parseDueDate(from deadline: String?) -> Date? {
+        guard let deadline = deadline?.lowercased() else { return nil }
+
+        let calendar = Calendar.current
+        let now = Date()
+
+        if deadline.contains("today") {
+            return calendar.date(bySettingHour: 23, minute: 59, second: 0, of: now)
+        } else if deadline.contains("tomorrow") {
+            return calendar.date(byAdding: .day, value: 1, to: now)
+        } else if deadline.contains("week") {
+            return calendar.date(byAdding: .day, value: 7, to: now)
+        }
+
+        return nil
+    }
+
     private func parseTimeframe(_ timeframe: String) -> Int {
         let value = Int(timeframe.dropLast()) ?? 24
         let unit = timeframe.last?.lowercased()
@@ -343,10 +696,10 @@ class BriefingOrchestrator {
 
     // MARK: - Attention Defense Alert (3pm)
 
-    func generateAttentionDefenseAlert(sendEmail: Bool = true, toAddress: String? = nil) async throws -> AttentionDefenseReport {
+    func generateAttentionDefenseAlert(sendNotifications: Bool = true, toAddress: String? = nil) async throws -> AttentionDefenseReport {
         // Delegate to the version with progress callbacks, ignoring progress
         return try await generateAttentionDefenseAlertWithProgress(
-            sendEmail: sendEmail,
+            sendNotifications: sendNotifications,
             toAddress: toAddress,
             onProgress: { _, _, _ in }
         )
@@ -355,7 +708,7 @@ class BriefingOrchestrator {
     /// Streaming version with progress callbacks
     /// Progress callback: (step: String, message: String, progress: Int) -> Void
     func generateAttentionDefenseAlertWithProgress(
-        sendEmail: Bool = true,
+        sendNotifications: Bool = true,
         toAddress: String? = nil,
         onProgress: @escaping (String, String, Int) -> Void
     ) async throws -> AttentionDefenseReport {
@@ -398,18 +751,19 @@ class BriefingOrchestrator {
         let favorites = FavoritesService.shared.getFavorites()
         print("✓ Loaded \(favorites.contacts.count) favorite contacts, \(favorites.groups.count) groups")
 
-        // Step 5: AI analysis (the longest step)
+        // Step 5: AI analysis (the longest step) - pass favorites for priority weighting
         await sendProgress("analyzing", "🤖 AI analyzing priorities...", 60)
         let report = try await aiService.generateAttentionDefenseReport(
             actionItems: actionItems,
             todaySchedule: todaySchedule,
             tomorrowSchedule: tomorrowSchedule,
-            currentTime: Date()
+            currentTime: Date(),
+            favoriteNames: favorites.allNames
         )
         print("✓ AI analysis complete")
 
         // Step 6: Send notifications if requested
-        if sendEmail {
+        if sendNotifications {
             await sendProgress("notifications", "📧 Sending notifications...", 90)
             try await notificationService.sendAttentionDefenseReport(report, toAddress: toAddress)
         }
@@ -423,15 +777,17 @@ class BriefingOrchestrator {
 
     private func fetchAndAnalyzeMessages() async throws -> MessagingSummary {
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+        let twoDaysAgo = Calendar.current.date(byAdding: .hour, value: -48, to: Date())!
 
-        var allThreads: [MessageThread] = []
+        var messagingThreads: [MessageThread] = []
+        var emailThreads: [MessageThread] = []
 
-        // Fetch from all enabled platforms
+        // Fetch from all enabled messaging platforms
         if config.messaging.imessage.enabled {
             do {
                 try imessageReader.connect()
                 let threads = try imessageReader.fetchThreads(since: yesterday)
-                allThreads.append(contentsOf: threads)
+                messagingThreads.append(contentsOf: threads)
                 imessageReader.disconnect()
             } catch {
                 print("Warning: Failed to fetch iMessages: \(error)")
@@ -442,7 +798,7 @@ class BriefingOrchestrator {
             do {
                 try whatsappReader.connect()
                 let threads = try whatsappReader.fetchThreads(since: yesterday)
-                allThreads.append(contentsOf: threads)
+                messagingThreads.append(contentsOf: threads)
                 whatsappReader.disconnect()
             } catch {
                 print("Warning: Failed to fetch WhatsApp messages: \(error)")
@@ -453,19 +809,39 @@ class BriefingOrchestrator {
             do {
                 try signalReader.connect()
                 let threads = try signalReader.fetchThreads(since: yesterday)
-                allThreads.append(contentsOf: threads)
+                messagingThreads.append(contentsOf: threads)
                 signalReader.disconnect()
             } catch {
                 print("Warning: Failed to fetch Signal messages: \(error)")
             }
         }
 
-        // Smart filtering: prioritize threads for analysis
-        let filteredThreads = prioritizeThreads(allThreads, maxCount: config.ai.effectiveMaxThreads)
-        print("  📊 Filtered to top \(filteredThreads.count) threads for analysis (from \(allThreads.count) total)")
+        // Fetch from email (48 hour lookback) - only if user wants email analysis in briefing
+        if let gmailReader = gmailReader,
+           let emailConfig = config.messaging.email,
+           emailConfig.enabled && emailConfig.shouldAnalyze {
+            do {
+                let threads = try await gmailReader.fetchThreads(since: twoDaysAgo)
+                emailThreads.append(contentsOf: threads)
+            } catch {
+                print("Warning: Failed to fetch emails: \(error)")
+            }
+        }
 
-        // Analyze threads with AI
-        let summaries = try await aiService.analyzeMessages(filteredThreads)
+        // Smart filtering: separate quotas for messaging vs email
+        let filteredMessagingThreads = prioritizeThreads(messagingThreads, maxCount: config.ai.effectiveMaxThreads)
+        let filteredEmailThreads = prioritizeEmailThreads(emailThreads, maxCount: config.ai.effectiveMaxEmailThreads)
+
+        print("  📊 Filtered to top \(filteredMessagingThreads.count) messaging threads (from \(messagingThreads.count) total)")
+        print("  📧 Filtered to top \(filteredEmailThreads.count) email threads (from \(emailThreads.count) total)")
+
+        // Combine for analysis
+        let allFilteredThreads = filteredMessagingThreads + filteredEmailThreads
+        let allThreads = messagingThreads + emailThreads
+
+        // Analyze threads with AI (include favorites for priority weighting)
+        let favorites = FavoritesService.shared.getFavorites()
+        let summaries = try await aiService.analyzeMessages(allFilteredThreads, favoriteNames: favorites.allNames)
 
         // Categorize summaries
         let keyInteractions = summaries.filter { $0.urgency >= .medium }.prefix(10)
@@ -512,6 +888,53 @@ class BriefingOrchestrator {
             // Factor 5: Penalize very old threads
             if hoursSinceLastMessage > 24 {
                 score *= 0.5 // Cut score in half for messages over 24h old
+            }
+
+            return (thread: thread, score: score)
+        }
+
+        // Sort by score and take top N
+        return scoredThreads
+            .sorted { $0.score > $1.score }
+            .prefix(maxCount)
+            .map { $0.thread }
+    }
+
+    private func prioritizeEmailThreads(_ threads: [MessageThread], maxCount: Int) -> [MessageThread] {
+        // Keywords that indicate critical emails (HR, resignations, departures)
+        let criticalKeywords = [
+            "resignation", "last working day", "exit", "leaving", "farewell",
+            "offboarding", "transition", "notice period", "final day",
+            "last day", "departed", "resignation letter", "stepping down"
+        ]
+
+        // Score threads based on multiple factors
+        let scoredThreads = threads.map { thread -> (thread: MessageThread, score: Double) in
+            var score: Double = 0
+
+            // Factor 1: Recency (most recent message)
+            let hoursSinceLastMessage = Date().timeIntervalSince(thread.lastMessageDate) / 3600
+            score += max(0, 100 - hoursSinceLastMessage) // Up to 100 points for very recent
+
+            // Factor 2: Message volume in thread
+            score += Double(min(thread.messages.count, 3)) * 10 // Up to 30 points
+
+            // Factor 3: Check for critical keywords (MASSIVE boost)
+            let allContent = thread.messages.map { $0.content.lowercased() }.joined(separator: " ")
+            let hasSubject = thread.contactName?.lowercased() ?? ""
+            let searchableText = allContent + " " + hasSubject
+
+            for keyword in criticalKeywords {
+                if searchableText.contains(keyword) {
+                    score += 10000 // Guaranteed to be at top
+                    break
+                }
+            }
+
+            // Factor 4: Not from bots or automated services
+            let sender = thread.contactName?.lowercased() ?? ""
+            if sender.contains("noreply") || sender.contains("[bot]") || sender.contains("notification") {
+                score *= 0.1 // Heavily penalize automated emails
             }
 
             return (thread: thread, score: score)
@@ -681,6 +1104,7 @@ class BriefingOrchestrator {
         } else if let committedBy = task.committedBy, !committedBy.isEmpty {
             counterparty = committedBy
         } else if let sourceThread = task.sourceThread, !sourceThread.isEmpty {
+            // Use source thread (chat/contact name) as counterparty
             counterparty = sourceThread
         } else {
             counterparty = nil
@@ -737,8 +1161,10 @@ class BriefingOrchestrator {
 
         // Fetch existing todos from Notion for duplication check
         print("  ↳ Checking existing todos in Notion...")
-        let existingTitles = (try? await notionService.searchExistingTodos(title: "")) ?? []
-        print("  ✓ Found \(existingTitles.count) existing todo(s)\n")
+        let existingTitlesArray = (try? await notionService.searchExistingTodos(title: "")) ?? []
+        // Convert to Set for O(1) lookup instead of O(n)
+        let existingTitlesSet = Set(existingTitlesArray.map { $0.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) })
+        print("  ✓ Found \(existingTitlesSet.count) existing todo(s)\n")
 
         // Extract todos from outgoing messages
         var createdTodos: [TodoItem] = []
@@ -758,11 +1184,9 @@ class BriefingOrchestrator {
                     print("    ✓ Detected todo: \(todo.title)")
                     allFoundTodos.append(todo)
 
-                    // Check for duplicates
-                    let isDuplicate = existingTitles.contains { existingTitle in
-                        existingTitle.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) ==
-                        todo.title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-                    }
+                    // Check for duplicates using O(1) Set lookup
+                    let normalizedTitle = todo.title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                    let isDuplicate = existingTitlesSet.contains(normalizedTitle)
 
                     if isDuplicate {
                         print("    ⚠️  Skipping duplicate todo\n")
@@ -824,129 +1248,164 @@ class BriefingOrchestrator {
         return url
     }
 
-    // MARK: - Recommended Actions from Analysis
+    // MARK: - Interactive Todo Extraction (without auto-save)
 
-    /// Extract critical action items from focused thread analysis
-    func extractRecommendedActions(from analysis: FocusedThreadAnalysis) -> [RecommendedAction] {
-        // Only extract critical/high priority items
-        return analysis.actionItems.filter { item in
-            item.priority.lowercased() == "high" || item.priority.lowercased() == "critical"
-        }.map { item in
-            let priority: ActionPriority = item.priority.lowercased() == "critical" ? .critical : .high
-            let dueDate = parseDueDate(from: item.deadline)
+    /// Extracts todos from WhatsApp messages without automatically saving them
+    /// Returns ExtractedItems for interactive review
+    func extractWhatsAppTodosForReview(lookbackDays: Int = 7) async throws -> [ExtractedItem] {
+        print("\n📝 Extracting todos from WhatsApp messages...\n")
 
-            return RecommendedAction(
-                title: item.item,
-                description: "From thread with \(analysis.thread.contactName ?? "Unknown")",
-                priority: priority,
-                source: .focusedAnalysis(contact: analysis.thread.contactName ?? "Unknown"),
-                dueDate: dueDate,
-                context: "Action identified from message analysis"
-            )
-        }
-    }
+        let since = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date())!
+        print("  ↳ Scanning last \(lookbackDays) days...\n")
 
-    /// Extract critical action items from message summaries
-    func extractRecommendedActions(from summaries: [MessageSummary]) -> [RecommendedAction] {
-        var actions: [RecommendedAction] = []
-
-        for summary in summaries {
-            // Only extract from critical/high urgency messages
-            guard summary.urgency == .critical || summary.urgency == .high else { continue }
-
-            // Only take first 2 most critical action items per thread
-            for actionItem in summary.actionItems.prefix(2) {
-                let priority: ActionPriority = summary.urgency == .critical ? .critical : .high
-
-                actions.append(RecommendedAction(
-                    title: actionItem,
-                    description: summary.summary,
-                    priority: priority,
-                    source: .messageThread(contact: summary.thread.contactName ?? "Unknown", platform: summary.thread.platform),
-                    dueDate: nil,
-                    context: "From \(summary.thread.platform.rawValue) conversation"
-                ))
-            }
+        guard config.messaging.whatsapp.enabled else {
+            print("  ⚠️  WhatsApp is not enabled in config")
+            return []
         }
 
-        return actions
-    }
+        print("  ↳ Reading WhatsApp database...")
+        try whatsappReader.connect()
+        let threads = try whatsappReader.fetchThreads(since: since)
+        whatsappReader.disconnect()
 
-    /// Add recommended actions to Notion
-    func addRecommendedActionsToNotion(_ actions: [RecommendedAction]) async throws -> [String] {
-        var createdIds: [String] = []
+        // Filter for messages to yourself
+        let selfThreads = threads.filter { thread in
+            isSelfThread(thread, userFullName: config.user.name)
+        }
 
-        for action in actions {
-            do {
-                let description = action.description + "\n\nSource: " + action.source.displayName
+        print("  ✓ Found \(selfThreads.count) thread(s) with yourself\n")
 
-                // Create unique hash for deduplication
-                let combined = "\(action.title)|\(description)"
-                let hash = SHA256.hash(data: Data(combined.utf8))
-                    .compactMap { String(format: "%02x", $0) }
-                    .joined()
+        if selfThreads.isEmpty {
+            return []
+        }
 
-                // Check if task already exists by hash
-                if let _ = try await notionService.findTaskByHash(hash) {
-                    print("  ⚠️  Skipping duplicate: \(action.title)")
-                    continue
+        // Fetch existing todos for duplicate check
+        print("  ↳ Checking existing todos in Notion...")
+        let existingTitlesArray = (try? await notionService.searchExistingTodos(title: "")) ?? []
+        // Convert to Set for O(1) lookup instead of O(n)
+        let existingTitlesSet = Set(existingTitlesArray.map { $0.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) })
+
+        var extractedItems: [ExtractedItem] = []
+        var processedCount = 0
+
+        for thread in selfThreads {
+            let outgoingMessages = thread.messages.filter { $0.direction == .outgoing }
+
+            for message in outgoingMessages {
+                processedCount += 1
+                print("  ↳ Analyzing message \(processedCount)...")
+
+                if let todo = try await aiService.extractTodoFromMessage(message) {
+                    // Generate hash for duplicate check
+                    let hash = Self.generateTaskHash(
+                        title: todo.title,
+                        description: todo.description ?? "",
+                        platform: "WhatsApp",
+                        threadId: thread.contactIdentifier
+                    )
+
+                    // Check for duplicates by title using O(1) Set lookup
+                    let normalizedTitle = todo.title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                    let isDuplicateByTitle = existingTitlesSet.contains(normalizedTitle)
+
+                    // Check by hash if not already a duplicate
+                    var isDuplicateByHash = false
+                    if !isDuplicateByTitle {
+                        if let _ = try? await notionService.findTaskByHash(hash) {
+                            isDuplicateByHash = true
+                        }
+                    }
+
+                    if isDuplicateByTitle || isDuplicateByHash {
+                        print("    ⊘ Already exists: \(todo.title)")
+                        continue
+                    }
+
+                    print("    ✓ Found todo: \(todo.title)")
+
+                    // Convert to ExtractedItem
+                    let item = ExtractedItem(
+                        type: .todo,
+                        title: todo.title,
+                        description: todo.description,
+                        priority: .medium,
+                        source: ExtractedItem.ItemSource(
+                            platform: .whatsapp,
+                            contact: config.user.name,
+                            threadName: thread.contactName,
+                            threadId: thread.contactIdentifier
+                        ),
+                        dueDate: todo.dueDate,
+                        uniqueHash: hash
+                    )
+                    extractedItems.append(item)
+                } else {
+                    print("    • Not a todo")
                 }
-
-                // Create TaskItem from recommended action
-                let taskItem = TaskItem(
-                    notionId: "",
-                    title: action.title,
-                    type: .todo,
-                    status: .notStarted,
-                    description: description,
-                    dueDate: action.dueDate,
-                    priority: action.priority == .critical ? .critical : (action.priority == .high ? .high : .medium),
-                    assignee: config.user.name,
-                    commitmentDirection: nil,
-                    committedBy: nil,
-                    committedTo: nil,
-                    originalContext: nil,
-                    sourcePlatform: nil,
-                    sourceThread: action.source.displayName,
-                    sourceThreadId: nil,
-                    tags: nil,
-                    followUpDate: nil,
-                    uniqueHash: hash,
-                    notes: nil,
-                    createdDate: Date(),
-                    lastUpdated: Date()
-                )
-
-                let pageId = try await notionService.createTask(taskItem)
-                createdIds.append(pageId)
-                print("  ✓ Added: \(action.title)")
-            } catch {
-                print("  ✗ Failed to add '\(action.title)': \(error)")
             }
         }
 
-        return createdIds
+        print("\n✓ Found \(extractedItems.count) new todo(s) for review\n")
+        return extractedItems
     }
 
-    private func parseDueDate(from deadline: String?) -> Date? {
-        guard let deadline = deadline?.lowercased() else { return nil }
+    /// Save extracted items to Notion Tasks database
+    func saveExtractedItems(_ items: [ExtractedItem]) async throws -> (saved: Int, failed: Int) {
+        var savedCount = 0
+        var failedCount = 0
+        var duplicateCount = 0
 
-        let calendar = Calendar.current
-        let now = Date()
-
-        if deadline.contains("today") {
-            return calendar.date(bySettingHour: 23, minute: 59, second: 0, of: now)
-        } else if deadline.contains("tomorrow") {
-            return calendar.date(byAdding: .day, value: 1, to: now)
-        } else if deadline.contains("week") {
-            return calendar.date(byAdding: .day, value: 7, to: now)
+        for item in items {
+            do {
+                let taskItem = item.toTaskItem()
+                _ = try await notionService.createTask(taskItem)
+                savedCount += 1
+                print("  ✓ Saved: \(item.title)")
+            } catch let error as NotionService.TaskCreationError {
+                switch error {
+                case .duplicate:
+                    duplicateCount += 1
+                    print("  ⏭ Skipped (duplicate): \(item.title)")
+                }
+            } catch {
+                print("  ✗ Failed to save: \(item.title) - \(error)")
+                failedCount += 1
+            }
         }
 
-        return nil
+        // Report duplicates as part of failed count (they weren't newly saved)
+        if duplicateCount > 0 {
+            print("  ℹ️ \(duplicateCount) duplicate(s) skipped")
+        }
+
+        return (savedCount, failedCount + duplicateCount)
     }
 
-    // MARK: - Message Fetching for Commitments
+    // MARK: - Public Helpers for Attention System
 
+    /// Fetch calendar events for a date range (public accessor)
+    func fetchCalendarEvents(from start: Date, to end: Date) async throws -> [CalendarEvent] {
+        // Fetch events day by day and combine
+        var allEvents: [CalendarEvent] = []
+        var currentDate = start
+
+        while currentDate <= end {
+            let schedule = try await calendarService.fetchEventsFromAllCalendars(for: currentDate, userSettings: config.user)
+            allEvents.append(contentsOf: schedule.events)
+            currentDate = Calendar.current.date(byAdding: .day, value: 1, to: currentDate) ?? end
+        }
+
+        return allEvents
+    }
+
+    /// Access the agent manager (public accessor)
+    var publicAgentManager: AgentManager? {
+        return agentManager
+    }
+
+    // MARK: - Commitments Support
+
+    /// Fetch messages for a specific contact from all platforms
     func fetchMessagesForContact(_ contactName: String, since: Date) async throws -> [(message: Message, platform: MessagePlatform, threadName: String, threadId: String)] {
         var allMessages: [(Message, MessagePlatform, String, String)] = []
 
@@ -958,13 +1417,12 @@ class BriefingOrchestrator {
                 imessageReader.disconnect()
 
                 let matchingThreads = threads.filter { thread in
-                    (thread.contactName ?? thread.contactIdentifier).localizedCaseInsensitiveContains(contactName)
+                    thread.threadName.localizedCaseInsensitiveContains(contactName)
                 }
 
                 for thread in matchingThreads {
                     for message in thread.messages {
-                        let threadName = thread.contactName ?? thread.contactIdentifier
-                        allMessages.append((message, .imessage, threadName, thread.contactIdentifier))
+                        allMessages.append((message, .imessage, thread.threadName, thread.threadId))
                     }
                 }
             } catch {
@@ -980,39 +1438,16 @@ class BriefingOrchestrator {
                 whatsappReader.disconnect()
 
                 let matchingThreads = threads.filter { thread in
-                    (thread.contactName ?? thread.contactIdentifier).localizedCaseInsensitiveContains(contactName)
+                    thread.threadName.localizedCaseInsensitiveContains(contactName)
                 }
 
                 for thread in matchingThreads {
                     for message in thread.messages {
-                        let threadName = thread.contactName ?? thread.contactIdentifier
-                        allMessages.append((message, .whatsapp, threadName, thread.contactIdentifier))
+                        allMessages.append((message, .whatsapp, thread.threadName, thread.threadId))
                     }
                 }
             } catch {
                 print("  ✗ Failed to fetch WhatsApp messages: \(error)")
-            }
-        }
-
-        // Signal
-        if config.messaging.signal.enabled {
-            do {
-                try signalReader.connect()
-                let threads = try signalReader.fetchThreads(since: since)
-                signalReader.disconnect()
-
-                let matchingThreads = threads.filter { thread in
-                    (thread.contactName ?? thread.contactIdentifier).localizedCaseInsensitiveContains(contactName)
-                }
-
-                for thread in matchingThreads {
-                    for message in thread.messages {
-                        let threadName = thread.contactName ?? thread.contactIdentifier
-                        allMessages.append((message, .signal, threadName, thread.contactIdentifier))
-                    }
-                }
-            } catch {
-                print("  ✗ Failed to fetch Signal messages: \(error)")
             }
         }
 
@@ -1080,5 +1515,405 @@ class BriefingOrchestrator {
         let data = Data(combined.utf8)
         let hash = SHA256.hash(data: data)
         return hash.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    // MARK: - Agent Insights
+
+    /// Gather proactive insights from all agents for the briefing
+    private func gatherAgentInsights(
+        messagingSummary: MessagingSummary,
+        calendarBriefing: CalendarBriefing,
+        notionTasks: [NotionTask]
+    ) async throws -> AgentInsights {
+        let memoryService = AgentMemoryService.shared
+
+        // 1. Gather recent learnings from all agents (last 24 hours)
+        var recentLearnings: [AgentLearning] = []
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+
+        let allAgentTypes: [AgentType] = [.communication, .task, .calendar, .followup]
+        for agentType in allAgentTypes {
+            let memory = memoryService.getMemory(for: agentType)
+
+            // Parse recent learnings from memory
+            if let learnedSection = extractSection(from: memory.content, named: "Learned Patterns") {
+                let learnings = parseRecentLearnings(learnedSection, agentType: agentType, since: yesterday)
+                recentLearnings.append(contentsOf: learnings)
+            }
+        }
+
+        // 2. Generate proactive notices based on context
+        var proactiveNotices: [ProactiveNotice] = []
+
+        // Communication agent notices
+        if messagingSummary.stats.threadsNeedingResponse > 5 {
+            proactiveNotices.append(ProactiveNotice(
+                agentType: .communication,
+                title: "High message backlog",
+                message: "You have \(messagingSummary.stats.threadsNeedingResponse) threads awaiting response. Consider batch-responding to clear your inbox.",
+                priority: .medium,
+                suggestedAction: "Review messages summary and prioritize responses",
+                relatedContext: nil
+            ))
+        }
+
+        // Check for VIP contacts needing response
+        let vipPatterns = extractVIPPatterns(from: memoryService.getMemory(for: .communication).content)
+        for summary in messagingSummary.needsResponse {
+            if let contactName = summary.thread.contactName,
+               vipPatterns.contains(where: { contactName.lowercased().contains($0.lowercased()) }) {
+                proactiveNotices.append(ProactiveNotice(
+                    agentType: .communication,
+                    title: "VIP contact waiting",
+                    message: "\(contactName) is in your VIP list and has an unanswered message.",
+                    priority: .high,
+                    suggestedAction: "Prioritize responding to \(contactName)",
+                    relatedContext: summary.summary
+                ))
+            }
+        }
+
+        // Calendar agent notices
+        let meetingHours = calendarBriefing.schedule.totalMeetingTime / 3600
+        if meetingHours > 6 {
+            proactiveNotices.append(ProactiveNotice(
+                agentType: .calendar,
+                title: "Heavy meeting day",
+                message: "You have \(Int(meetingHours)) hours of meetings. Based on your patterns, this impacts your deep work capacity.",
+                priority: .medium,
+                suggestedAction: "Block time for essential tasks between meetings",
+                relatedContext: nil
+            ))
+        }
+
+        // Task agent notices
+        let overdueTasks = notionTasks.filter { task in
+            if let dueDate = task.dueDate, dueDate < Date() {
+                return task.status.lowercased() != "done" && task.status.lowercased() != "completed"
+            }
+            return false
+        }
+        if !overdueTasks.isEmpty {
+            proactiveNotices.append(ProactiveNotice(
+                agentType: .task,
+                title: "\(overdueTasks.count) overdue task(s)",
+                message: "Tasks need attention: \(overdueTasks.prefix(3).map { $0.title }.joined(separator: ", "))\(overdueTasks.count > 3 ? "..." : "")",
+                priority: .high,
+                suggestedAction: "Review and reschedule or complete overdue tasks",
+                relatedContext: nil
+            ))
+        }
+
+        // 3. Check for commitment reminders (from unified Tasks database)
+        var commitmentReminders: [CommitmentReminder] = []
+
+        if config.commitments?.enabled == true, notionService.tasksDatabaseId != nil {
+            do {
+                // Query overdue commitments from unified Tasks database
+                let overdueCommitments = try await notionService.queryOverdueCommitmentsFromTasks()
+
+                for commitment in overdueCommitments.prefix(5) {
+                    let daysOverdue: Int?
+                    if let dueDate = commitment.dueDate {
+                        daysOverdue = Calendar.current.dateComponents([.day], from: dueDate, to: Date()).day
+                    } else {
+                        daysOverdue = nil
+                    }
+
+                    commitmentReminders.append(CommitmentReminder(
+                        commitment: commitment.title,
+                        committedTo: commitment.committedTo,
+                        dueDate: commitment.dueDate,
+                        daysOverdue: daysOverdue,
+                        source: commitment.sourcePlatform.rawValue,
+                        suggestedAction: commitment.type == .iOwe ? "Complete and deliver" : "Follow up with \(commitment.committedBy)"
+                    ))
+                }
+
+                // Also check for upcoming commitments (due within 24 hours)
+                let upcomingCommitments = try await notionService.queryUpcomingCommitmentsFromTasks(withinHours: 24)
+                for commitment in upcomingCommitments.prefix(3) {
+                    commitmentReminders.append(CommitmentReminder(
+                        commitment: commitment.title,
+                        committedTo: commitment.committedTo,
+                        dueDate: commitment.dueDate,
+                        daysOverdue: nil,
+                        source: commitment.sourcePlatform.rawValue,
+                        suggestedAction: "Due soon - prioritize today"
+                    ))
+                }
+            } catch {
+                // Silently ignore commitment query errors
+            }
+        }
+
+        // 4. Cross-agent suggestions
+        var crossAgentSuggestions: [CrossAgentSuggestion] = []
+
+        // Communication + Calendar: External meeting with pending response
+        for briefing in calendarBriefing.meetingBriefings {
+            for attendee in briefing.event.externalAttendees {
+                let attendeeName = attendee.name ?? attendee.email.components(separatedBy: "@").first ?? attendee.email
+                if messagingSummary.needsResponse.contains(where: {
+                    $0.thread.contactName?.lowercased().contains(attendeeName.lowercased()) ?? false
+                }) {
+                    crossAgentSuggestions.append(CrossAgentSuggestion(
+                        title: "Reply before meeting",
+                        description: "You have a pending message from \(attendeeName) and a meeting with them today. Consider responding before the meeting.",
+                        involvedAgents: [.communication, .calendar],
+                        confidence: 0.85
+                    ))
+                }
+            }
+        }
+
+        // Task + Followup: Completed tasks that might need follow-up
+        let completedTasks = notionTasks.filter {
+            $0.status.lowercased() == "done" || $0.status.lowercased() == "completed"
+        }
+        let communicationTasks = completedTasks.filter { task in
+            let keywords = ["send", "share", "deliver", "email", "message", "notify"]
+            return keywords.contains { task.title.lowercased().contains($0) }
+        }
+        if !communicationTasks.isEmpty {
+            crossAgentSuggestions.append(CrossAgentSuggestion(
+                title: "Follow up on deliverables",
+                description: "You completed \(communicationTasks.count) task(s) involving communication. Consider following up to confirm receipt.",
+                involvedAgents: [.task, .followup],
+                confidence: 0.7
+            ))
+        }
+
+        return AgentInsights(
+            recentLearnings: recentLearnings,
+            proactiveNotices: proactiveNotices,
+            commitmentReminders: commitmentReminders,
+            crossAgentSuggestions: crossAgentSuggestions
+        )
+    }
+
+    /// Extract a section from markdown memory content
+    private func extractSection(from markdown: String, named sectionName: String) -> String? {
+        let pattern = "## \(sectionName)\n([\\s\\S]*?)(?=\n## |$)"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []),
+              let match = regex.firstMatch(in: markdown, options: [], range: NSRange(markdown.startIndex..., in: markdown)),
+              let range = Range(match.range(at: 1), in: markdown) else {
+            return nil
+        }
+        return String(markdown[range])
+    }
+
+    /// Parse recent learnings from a memory section (only timestamped entries)
+    private func parseRecentLearnings(_ section: String, agentType: AgentType, since: Date) -> [AgentLearning] {
+        var learnings: [AgentLearning] = []
+        let lines = section.components(separatedBy: "\n").filter { $0.hasPrefix("- ") }
+
+        let dateFormatter = ISO8601DateFormatter()
+
+        for line in lines {
+            // Only count entries with timestamps (format: "- [2026-01-30T...] learning text")
+            // Lines without timestamps are pre-existing patterns, not new learnings
+            if let bracketStart = line.firstIndex(of: "["),
+               let bracketEnd = line.firstIndex(of: "]"),
+               bracketStart < bracketEnd {
+                let dateStr = String(line[line.index(after: bracketStart)..<bracketEnd])
+                if let learnedDate = dateFormatter.date(from: dateStr), learnedDate >= since {
+                    let text = String(line[line.index(after: bracketEnd)...]).trimmingCharacters(in: .whitespaces)
+                    learnings.append(AgentLearning(
+                        agentType: agentType,
+                        description: text,
+                        learnedAt: learnedDate,
+                        confidence: 0.7
+                    ))
+                }
+            }
+            // Lines without timestamps are NOT counted as new learnings
+        }
+
+        return learnings
+    }
+
+    /// Extract VIP contact patterns from communication agent memory
+    private func extractVIPPatterns(from memory: String) -> [String] {
+        var vips: [String] = []
+
+        // Look for VIP mentions in rules or patterns
+        let lines = memory.components(separatedBy: "\n")
+        for line in lines {
+            let lowercased = line.lowercased()
+            if lowercased.contains("vip") || lowercased.contains("priority") || lowercased.contains("important contact") {
+                // Extract name from the line
+                let words = line.components(separatedBy: CharacterSet.alphanumerics.inverted)
+                    .filter { $0.count > 2 && $0.first?.isUppercase == true }
+                vips.append(contentsOf: words)
+            }
+        }
+
+        return vips
+    }
+
+    // MARK: - Agent Digest Generation
+
+    /// Generate a daily agent digest for end-of-day email
+    func generateAgentDigest() async throws -> AgentDigest {
+        let memoryService = AgentMemoryService.shared
+        let decisionLog = DecisionLog.shared
+
+        // 1. Get today's decisions from the decision log
+        let todaysDecisions = try decisionLog.getDecisionsForToday()
+        let executedCount = todaysDecisions.filter {
+            if case .success = decisionLog.getExecutionResult(for: $0.id) { return true }
+            return false
+        }.count
+        let pendingReview = todaysDecisions.filter { $0.requiresApproval &&
+            decisionLog.getExecutionResult(for: $0.id) == nil }
+
+        // 2. Gather new learnings from today (only from "Learned Patterns" section)
+        let today = Calendar.current.startOfDay(for: Date())
+        var newLearnings: [AgentLearning] = []
+        for agentType in [AgentType.communication, .task, .calendar, .followup] {
+            let memory = memoryService.getMemory(for: agentType)
+            // Only parse the "Learned Patterns" section, not the entire memory
+            if let learnedSection = memory.sections["Learned Patterns"] {
+                let learnings = parseRecentLearnings(learnedSection,
+                                                      agentType: agentType,
+                                                      since: today)
+                newLearnings.append(contentsOf: learnings)
+            }
+        }
+
+        // 3. Build agent activity summaries
+        var agentActivity: [AgentActivitySummary] = []
+        for agentType in [AgentType.communication, .task, .calendar, .followup] {
+            let agentDecisions = todaysDecisions.filter { $0.agentType == agentType }
+            let successCount = agentDecisions.filter {
+                if case .success = decisionLog.getExecutionResult(for: $0.id) { return true }
+                return false
+            }.count
+            let successRate = agentDecisions.isEmpty ? 0.0 : Double(successCount) / Double(agentDecisions.count)
+
+            // Find most common action type
+            var actionCounts: [String: Int] = [:]
+            for decision in agentDecisions {
+                let actionKey = decision.action.description.components(separatedBy: ":").first ?? "Unknown"
+                actionCounts[actionKey, default: 0] += 1
+            }
+            let topAction = actionCounts.max(by: { $0.value < $1.value })?.key
+
+            // Get key insight from memory
+            let memory = memoryService.getMemory(for: agentType)
+            let keyInsight = extractSection(from: memory.content, named: "Active Rules")?
+                .components(separatedBy: "\n")
+                .first { $0.hasPrefix("- ") }?
+                .dropFirst(2)
+                .prefix(60)
+                .description
+
+            agentActivity.append(AgentActivitySummary(
+                agentType: agentType,
+                decisionsCount: agentDecisions.count,
+                successRate: successRate,
+                topAction: topAction,
+                keyInsight: keyInsight.map { String($0) }
+            ))
+        }
+
+        // 4. Get follow-ups due soon
+        var upcomingFollowups: [FollowupDigestItem] = []
+        if notionService.tasksDatabaseId != nil {
+            let followups = try await notionService.queryActiveTasks(type: .followup)
+            let now = Date()
+            let threeDaysFromNow = Calendar.current.date(byAdding: .day, value: 3, to: now)!
+
+            upcomingFollowups = followups
+                .filter { ($0.dueDate ?? .distantFuture) <= threeDaysFromNow }
+                .map { task in
+                    FollowupDigestItem(
+                        title: task.title,
+                        scheduledFor: task.dueDate ?? now,
+                        context: task.originalContext ?? task.description ?? "",
+                        priority: UrgencyLevel(rawValue: task.priority?.rawValue.lowercased() ?? "medium") ?? .medium,
+                        isOverdue: task.isOverdue
+                    )
+                }
+                .sorted { $0.scheduledFor < $1.scheduledFor }
+        }
+
+        // 5. Get commitment status
+        var commitmentStatus = CommitmentStatusSummary(
+            activeIOwe: 0,
+            activeTheyOwe: 0,
+            completedToday: 0,
+            overdueCount: 0,
+            upcomingThisWeek: 0
+        )
+
+        if notionService.tasksDatabaseId != nil {
+            let commitments = try await notionService.queryActiveTasks(type: .commitment)
+
+            let now = Date()
+            let weekFromNow = Calendar.current.date(byAdding: .day, value: 7, to: now)!
+
+            commitmentStatus = CommitmentStatusSummary(
+                activeIOwe: commitments.filter { $0.commitmentDirection == .iOwe }.count,
+                activeTheyOwe: commitments.filter { $0.commitmentDirection == .theyOweMe }.count,
+                completedToday: 0, // Would need to query completed items
+                overdueCount: commitments.filter { $0.isOverdue }.count,
+                upcomingThisWeek: commitments.filter {
+                    guard let due = $0.dueDate else { return false }
+                    return due >= now && due <= weekFromNow
+                }.count
+            )
+        }
+
+        // 6. Generate recommendations
+        var recommendations: [String] = []
+
+        if commitmentStatus.overdueCount > 0 {
+            recommendations.append("You have \(commitmentStatus.overdueCount) overdue commitments that need attention")
+        }
+
+        if !upcomingFollowups.isEmpty {
+            let overdueFollowups = upcomingFollowups.filter { $0.isOverdue }.count
+            if overdueFollowups > 0 {
+                recommendations.append("\(overdueFollowups) follow-ups are overdue - consider addressing them tomorrow")
+            }
+        }
+
+        let lowSuccessAgents = agentActivity.filter { $0.successRate < 0.5 && $0.decisionsCount > 0 }
+        for agent in lowSuccessAgents {
+            recommendations.append("Consider reviewing \(agent.agentType.displayName) agent rules - success rate was \(Int(agent.successRate * 100))%")
+        }
+
+        if newLearnings.count > 5 {
+            recommendations.append("Agents learned \(newLearnings.count) new patterns today - review in 'alfred agents memory'")
+        }
+
+        // Build summary
+        let followupsCreated = todaysDecisions.filter {
+            if case .createFollowup = $0.action { return true }
+            return false
+        }.count
+
+        let summary = DigestSummary(
+            totalDecisions: todaysDecisions.count,
+            decisionsExecuted: executedCount,
+            decisionsPending: pendingReview.count,
+            newLearningsCount: newLearnings.count,
+            followupsCreated: followupsCreated,
+            commitmentsClosed: commitmentStatus.completedToday
+        )
+
+        return AgentDigest(
+            date: Date(),
+            summary: summary,
+            agentActivity: agentActivity,
+            newLearnings: newLearnings,
+            decisionsRequiringReview: pendingReview,
+            upcomingFollowups: upcomingFollowups,
+            commitmentStatus: commitmentStatus,
+            recommendations: recommendations,
+            generatedAt: Date()
+        )
     }
 }

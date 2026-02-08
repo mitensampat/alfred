@@ -12,7 +12,7 @@ Task {
 RunLoop.main.run()
 
 struct AlfredApp {
-    static let version = "1.5.0"
+    static let version = "1.6.3.1"
     static var menuBarController: MenuBarController?  // Keep reference to prevent deallocation
 
     static func main() async {
@@ -172,7 +172,9 @@ struct AlfredApp {
                 printUsage()
             }
         } else {
-            printUsage()
+            // No arguments - default to menubar mode when launched from GUI (e.g., Finder)
+            // This makes double-clicking Alfred.app work correctly
+            await runMenuBar(config, orchestrator)
         }
     }
 
@@ -2494,6 +2496,16 @@ struct AlfredApp {
         let alfredService = AlfredService()
         await alfredService.initialize(config: config, orchestrator: orchestrator)
 
+        // Load Playbook from Notion (if configured)
+        // This runs in background and rate-limits itself
+        Task {
+            do {
+                try await PlaybookService.shared.loadFromNotion()
+            } catch {
+                print("⚠️ Could not load Playbook from Notion: \(error.localizedDescription)")
+            }
+        }
+
         // Setup NSApplication for menu bar (must be on main thread)
         await MainActor.run {
             let app = NSApplication.shared
@@ -2734,6 +2746,30 @@ struct AlfredApp {
             return
         }
 
+        // Step 5.5: Re-sign with stable identifier (preserves Full Disk Access permissions)
+        print("🔏 Signing app with stable identifier...")
+        let codesignTask = Process()
+        codesignTask.launchPath = "/usr/bin/codesign"
+        codesignTask.arguments = ["--force", "--sign", "-", "--identifier", "com.msfoundry.alfred", appBundlePath]
+
+        let codesignPipe = Pipe()
+        codesignTask.standardOutput = codesignPipe
+        codesignTask.standardError = codesignPipe
+
+        do {
+            try codesignTask.run()
+            codesignTask.waitUntilExit()
+
+            if codesignTask.terminationStatus == 0 {
+                print("✅ App signed with identifier: com.msfoundry.alfred")
+            } else {
+                let output = String(data: codesignPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                print("⚠️  Codesign warning: \(output)")
+            }
+        } catch {
+            print("⚠️  Could not sign app: \(error) (continuing anyway)")
+        }
+
         // Step 6: Create LaunchAgent for auto-start
         print("🚀 Setting up auto-start...")
         if !fileManager.fileExists(atPath: launchAgentsDir) {
@@ -2855,9 +2891,62 @@ class Scheduler {
     private let orchestrator: BriefingOrchestrator
     private var timer: Timer?
 
+    // Track last run dates to prevent double-runs and catch missed schedules
+    private var lastBriefingDate: String?
+    private var lastAttentionDate: String?
+    private let stateFilePath: URL
+
+    // Date formatters
+    private let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
+    private let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    private let timestampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return f
+    }()
+
     init(config: AppConfig, orchestrator: BriefingOrchestrator) {
         self.initialConfig = config
         self.orchestrator = orchestrator
+
+        // State file tracks last run times
+        let configDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/alfred")
+        self.stateFilePath = configDir.appendingPathComponent("scheduler_state.json")
+
+        // Load previous state
+        loadState()
+    }
+
+    private func log(_ message: String) {
+        let timestamp = timestampFormatter.string(from: Date())
+        print("[\(timestamp)] \(message)")
+    }
+
+    private func loadState() {
+        guard let data = try? Data(contentsOf: stateFilePath),
+              let state = try? JSONDecoder().decode(SchedulerState.self, from: data) else {
+            return
+        }
+        lastBriefingDate = state.lastBriefingDate
+        lastAttentionDate = state.lastAttentionDate
+        log("Loaded scheduler state: briefing=\(state.lastBriefingDate ?? "never"), attention=\(state.lastAttentionDate ?? "never")")
+    }
+
+    private func saveState() {
+        let state = SchedulerState(lastBriefingDate: lastBriefingDate, lastAttentionDate: lastAttentionDate)
+        if let data = try? JSONEncoder().encode(state) {
+            try? data.write(to: stateFilePath)
+        }
     }
 
     /// Re-reads config from disk for hot-reload. Falls back to initial config.
@@ -2867,13 +2956,16 @@ class Scheduler {
 
     func start() async {
         let config = currentConfig()
-        print("Scheduler started")
-        print("Morning briefing scheduled for: \(config.app.briefingTime)")
-        print("Attention defense scheduled for: \(config.app.attentionAlertTime)")
+        log("📅 Scheduler started")
+        log("   Briefing: \(config.app.briefingTime)")
+        log("   Attention: \(config.app.attentionAlertTime)")
         if let scheduled = config.scheduled {
-            print("Email delivery to: \(scheduled.emailTo)")
-            print("Briefing enabled: \(scheduled.briefingEnabled), Attention enabled: \(scheduled.attentionEnabled)")
+            log("   Email to: \(scheduled.emailTo)")
+            log("   Briefing enabled: \(scheduled.briefingEnabled), Attention enabled: \(scheduled.attentionEnabled)")
         }
+
+        // Check immediately on startup for any missed tasks
+        await checkForMissedTasks()
 
         // Check every minute if it's time to run tasks
         let timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
@@ -2887,42 +2979,211 @@ class Scheduler {
         RunLoop.main.run()
     }
 
+    /// Check if we missed any scheduled tasks (e.g., app was down at scheduled time)
+    private func checkForMissedTasks() async {
+        let config = currentConfig()
+        let scheduled = config.scheduled
+        let now = Date()
+        let today = dateFormatter.string(from: now)
+        let currentTime = timeFormatter.string(from: now)
+
+        log("Checking for missed tasks on startup...")
+
+        let emailTo = scheduled?.emailTo.isEmpty == false ? scheduled?.emailTo : nil
+
+        // Check if briefing was missed today
+        let briefingEnabled = scheduled?.briefingEnabled ?? true
+        if briefingEnabled && lastBriefingDate != today {
+            // Parse scheduled time
+            if let scheduledTime = parseTime(config.app.briefingTime),
+               let currentTimeDate = parseTime(currentTime) {
+                // If current time is after scheduled time but within 3 hour window, run it now
+                let timeDiff = currentTimeDate.timeIntervalSince(scheduledTime)
+                if timeDiff > 0 && timeDiff < 3 * 3600 {
+                    log("⚠️ Briefing was scheduled for \(config.app.briefingTime) but missed. Running now...")
+                    await runBriefing(emailTo: emailTo, today: today)
+                } else if timeDiff > 0 {
+                    log("ℹ️ Briefing time passed more than 3 hours ago, skipping catch-up")
+                } else {
+                    log("ℹ️ Briefing scheduled for \(config.app.briefingTime), will run at that time")
+                }
+            }
+        }
+
+        // Check if attention alert was missed today
+        let attentionEnabled = scheduled?.attentionEnabled ?? true
+        if attentionEnabled && lastAttentionDate != today {
+            if let scheduledTime = parseTime(config.app.attentionAlertTime),
+               let currentTimeDate = parseTime(currentTime) {
+                let timeDiff = currentTimeDate.timeIntervalSince(scheduledTime)
+                if timeDiff > 0 && timeDiff < 3 * 3600 {
+                    log("⚠️ Attention alert was scheduled for \(config.app.attentionAlertTime) but missed. Running now...")
+                    await runAttentionAlert(emailTo: emailTo, today: today)
+                } else if timeDiff > 0 {
+                    log("ℹ️ Attention time passed more than 3 hours ago, skipping catch-up")
+                } else {
+                    log("ℹ️ Attention alert scheduled for \(config.app.attentionAlertTime), will run at that time")
+                }
+            }
+        }
+    }
+
+    private func parseTime(_ timeStr: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.date(from: timeStr)
+    }
+
     private func checkAndRunTasks() async {
         let config = currentConfig()
         let scheduled = config.scheduled
 
         let now = Date()
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        let currentTime = formatter.string(from: now)
+        let today = dateFormatter.string(from: now)
+        let currentTime = timeFormatter.string(from: now)
 
         let emailTo = scheduled?.emailTo.isEmpty == false ? scheduled?.emailTo : nil
 
-        // Briefing: runs at configured time, only if enabled
+        // Briefing: runs at configured time, only if enabled AND not already run today
         let briefingEnabled = scheduled?.briefingEnabled ?? true
-        if briefingEnabled && currentTime == config.app.briefingTime {
-            print("\n\(Date()) - Running morning briefing...")
-            do {
-                let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
-                _ = try await orchestrator.generateBriefing(for: tomorrow, sendNotifications: true, toAddress: emailTo)
-                print("Morning briefing sent successfully")
-            } catch {
-                print("Error generating briefing: \(error)")
-            }
+        if briefingEnabled && currentTime == config.app.briefingTime && lastBriefingDate != today {
+            await runBriefing(emailTo: emailTo, today: today)
         }
 
-        // Attention check: runs at configured time, only if enabled
+        // Attention check: runs at configured time, only if enabled AND not already run today
         let attentionEnabled = scheduled?.attentionEnabled ?? true
-        if attentionEnabled && currentTime == config.app.attentionAlertTime {
-            print("\n\(Date()) - Running attention defense alert...")
-            do {
-                _ = try await orchestrator.generateAttentionDefenseAlert(sendNotifications: true, toAddress: emailTo)
-                print("Attention defense alert sent successfully")
-            } catch {
-                print("Error generating alert: \(error)")
-            }
+        if attentionEnabled && currentTime == config.app.attentionAlertTime && lastAttentionDate != today {
+            await runAttentionAlert(emailTo: emailTo, today: today)
+        }
+
+        // Commitment reminders: check at briefing time and 3 PM
+        let reminderTimes = [config.app.briefingTime, "15:00"]
+        if reminderTimes.contains(currentTime) {
+            await checkCommitmentReminders(config: config)
         }
     }
+
+    private func runBriefing(emailTo: String?, today: String) async {
+        log("🚀 Running morning briefing...")
+        do {
+            let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
+            _ = try await orchestrator.generateBriefing(for: tomorrow, sendNotifications: true, toAddress: emailTo)
+            lastBriefingDate = today
+            saveState()
+            log("✅ Morning briefing sent successfully")
+        } catch {
+            log("❌ Error generating briefing: \(error)")
+        }
+    }
+
+    private func runAttentionAlert(emailTo: String?, today: String) async {
+        log("🚀 Running attention defense alert...")
+        do {
+            _ = try await orchestrator.generateAttentionDefenseAlert(sendNotifications: true, toAddress: emailTo)
+            lastAttentionDate = today
+            saveState()
+            log("✅ Attention defense alert sent successfully")
+        } catch {
+            log("❌ Error generating alert: \(error)")
+        }
+    }
+
+    /// Check for commitments that are due soon or overdue and send reminders
+    private func checkCommitmentReminders(config: AppConfig) async {
+        guard config.commitments?.enabled == true else {
+            return
+        }
+
+        log("Checking commitment reminders...")
+
+        do {
+            // Fetch all active commitments from Notion
+            let notionService = NotionService(config: config.notion)
+
+            // Use the tasks database ID from config or the default notion database
+            let dbId = config.notion.tasksDatabaseId ?? config.notion.databaseId
+            notionService.setTasksDatabaseId(dbId)
+
+            let tasks = try await notionService.queryActiveTasks(type: .commitment)
+
+            // Filter for due soon (within 24 hours) or overdue
+            let now = Date()
+            let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now)!
+
+            var dueSoonCount = 0
+            var overdueCount = 0
+            var dueSoonTitles: [String] = []
+            var overdueTitles: [String] = []
+
+            for task in tasks {
+                guard let dueDate = task.dueDate else { continue }
+
+                if dueDate < now {
+                    // Overdue
+                    overdueCount += 1
+                    overdueTitles.append(task.title)
+                } else if dueDate <= tomorrow {
+                    // Due within 24 hours
+                    dueSoonCount += 1
+                    dueSoonTitles.append(task.title)
+                }
+            }
+
+            // Send push notification if there are reminders
+            if overdueCount > 0 || dueSoonCount > 0 {
+                var message = ""
+                if overdueCount > 0 {
+                    message += "⚠️ \(overdueCount) overdue"
+                    if overdueCount <= 2 {
+                        message += ": \(overdueTitles.prefix(2).joined(separator: ", "))"
+                    }
+                }
+                if dueSoonCount > 0 {
+                    if !message.isEmpty { message += " | " }
+                    message += "📅 \(dueSoonCount) due soon"
+                    if dueSoonCount <= 2 {
+                        message += ": \(dueSoonTitles.prefix(2).joined(separator: ", "))"
+                    }
+                }
+
+                await sendCommitmentReminderNotification(
+                    title: "Commitment Reminder",
+                    body: message
+                )
+                log("✅ Sent commitment reminder: \(message)")
+            } else {
+                log("ℹ️ No commitment reminders needed")
+            }
+        } catch {
+            log("❌ Error checking commitment reminders: \(error)")
+        }
+    }
+
+    /// Send a push notification for commitment reminders
+    private func sendCommitmentReminderNotification(title: String, body: String) async {
+        // Use terminal-notifier if available, otherwise just log
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = [
+            "-e",
+            "display notification \"\(body.replacingOccurrences(of: "\"", with: "\\\""))\" with title \"\(title.replacingOccurrences(of: "\"", with: "\\\""))\""
+        ]
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            print("✅ Sent notification: \(title)")
+        } catch {
+            print("Failed to send notification: \(error)")
+            print("Commitment reminder: \(title) - \(body)")
+        }
+    }
+}
+
+/// Persisted state for the scheduler to track last run times
+struct SchedulerState: Codable {
+    var lastBriefingDate: String?
+    var lastAttentionDate: String?
 }
 
 // MARK: - Commitments Commands

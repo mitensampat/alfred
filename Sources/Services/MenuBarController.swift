@@ -15,6 +15,12 @@ class MenuBarController: NSObject, NSMenuDelegate {
     private var lastBriefingRun: String = ""
     private var lastAttentionRun: String = ""
 
+    // Persistent storage for last run dates (to support catch-up after app restart)
+    private var schedulerStatePath: String {
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        return "\(homeDir)/.alfred/scheduler_state.json"
+    }
+
     init(config: AppConfig, alfredService: AlfredService, orchestrator: BriefingOrchestrator? = nil) {
         self.config = config
         self.alfredService = alfredService
@@ -28,6 +34,58 @@ class MenuBarController: NSObject, NSMenuDelegate {
         startServer()
         startScheduler()
         setupLearningNotifications()
+
+        // Check permissions on startup and alert if missing
+        checkPermissionsOnStartup()
+    }
+
+    // MARK: - Permissions Check
+
+    private func checkPermissionsOnStartup() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+            self?.performPermissionsCheck()
+        }
+    }
+
+    private func performPermissionsCheck() {
+        var missingPermissions: [String] = []
+
+        // Check Full Disk Access by trying to read iMessage database
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        let imessageDBPath = "\(homeDir)/Library/Messages/chat.db"
+        if !FileManager.default.isReadableFile(atPath: imessageDBPath) {
+            missingPermissions.append("Full Disk Access (for iMessage)")
+        }
+
+        // Check Contacts access (for name resolution)
+        // Note: CNContactStore requires actual access attempt which might prompt
+        // So we'll just check if we've logged any permission issues
+
+        // Check WhatsApp database access
+        let whatsappPaths = [
+            "\(homeDir)/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite",
+            "\(homeDir)/Library/Group Containers/group.net.whatsapp.family.shared/ChatStorage.sqlite"
+        ]
+        let hasWhatsAppAccess = whatsappPaths.contains { FileManager.default.isReadableFile(atPath: $0) }
+        if !hasWhatsAppAccess {
+            // Not a critical error - user might not have WhatsApp
+        }
+
+        if !missingPermissions.isEmpty {
+            let title = "⚠️ Alfred Needs Permissions"
+            let body = "Missing: \(missingPermissions.joined(separator: ", ")). Grant in System Settings → Privacy & Security"
+            showNotification(title: title, body: body)
+
+            // Log to scheduler log
+            let logPath = "\(homeDir)/.alfred/scheduler.log"
+            logToFile("PERMISSION WARNING: \(missingPermissions.joined(separator: ", "))", path: logPath)
+
+            print("⚠️ PERMISSION WARNING: \(missingPermissions.joined(separator: ", "))")
+            print("   Go to System Settings → Privacy & Security → Full Disk Access")
+            print("   Add Alfred.app to the list and enable it")
+        } else {
+            print("✅ Permissions check passed")
+        }
     }
 
     // MARK: - Learning Notifications
@@ -132,6 +190,17 @@ class MenuBarController: NSObject, NSMenuDelegate {
         let quitItem = NSMenuItem(title: "Quit Alfred", action: #selector(quitApp), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Version
+        let versionItem = NSMenuItem(title: "v\(AlfredApp.version)", action: nil, keyEquivalent: "")
+        versionItem.isEnabled = false
+        versionItem.attributedTitle = NSAttributedString(
+            string: "v\(AlfredApp.version)",
+            attributes: [.foregroundColor: NSColor.secondaryLabelColor, .font: NSFont.systemFont(ofSize: 11)]
+        )
+        menu.addItem(versionItem)
     }
 
     // MARK: - Server Management
@@ -257,6 +326,33 @@ class MenuBarController: NSObject, NSMenuDelegate {
         schedulerTimer = nil
     }
 
+    // MARK: - Scheduler State Persistence
+
+    private struct SchedulerState: Codable {
+        var lastBriefingDate: String?  // Format: "yyyy-MM-dd"
+        var lastAttentionDate: String?  // Format: "yyyy-MM-dd"
+    }
+
+    private func loadSchedulerState() -> SchedulerState {
+        guard let data = FileManager.default.contents(atPath: schedulerStatePath),
+              let state = try? JSONDecoder().decode(SchedulerState.self, from: data) else {
+            return SchedulerState()
+        }
+        return state
+    }
+
+    private func saveSchedulerState(_ state: SchedulerState) {
+        if let data = try? JSONEncoder().encode(state) {
+            try? data.write(to: URL(fileURLWithPath: schedulerStatePath))
+        }
+    }
+
+    private func todayDateString() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Date())
+    }
+
     private func checkAndRunScheduledTasks() async {
         // Re-read config for hot-reload
         let config = AppConfig.load() ?? self.config
@@ -267,26 +363,57 @@ class MenuBarController: NSObject, NSMenuDelegate {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
         let currentTime = formatter.string(from: now)
+        let todayDate = todayDateString()
 
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
         let logPath = "\(homeDir)/.alfred/scheduler.log"
 
         let emailTo = scheduled?.emailTo.isEmpty == false ? scheduled?.emailTo : nil
 
+        // Load persistent state to track which days we've run tasks
+        var state = loadSchedulerState()
+
         // Morning Briefing
         let briefingEnabled = scheduled?.briefingEnabled ?? true
-        if briefingEnabled && currentTime == config.app.briefingTime && lastBriefingRun != currentTime {
+        let briefingTime = config.app.briefingTime  // e.g. "08:15"
+
+        // Check if we should run briefing:
+        // 1. At the exact scheduled time, OR
+        // 2. If we missed today's briefing (current time is after scheduled time, but we haven't run today)
+        let shouldRunBriefing: Bool = {
+            guard briefingEnabled && state.lastBriefingDate != todayDate else { return false }
+
+            // At the exact scheduled time
+            if currentTime == briefingTime && lastBriefingRun != currentTime {
+                return true
+            }
+
+            // Catch-up: We're past the scheduled time but haven't run today
+            if currentTime > briefingTime {
+                logToFile("Catch-up: Missed briefing time (\(briefingTime)), running now at \(currentTime)", path: logPath)
+                return true
+            }
+
+            return false
+        }()
+
+        if shouldRunBriefing {
             lastBriefingRun = currentTime
+            state.lastBriefingDate = todayDate
+            saveSchedulerState(state)
             logToFile("Running morning briefing at \(currentTime)", path: logPath)
 
             if let orchestrator = orchestrator {
                 do {
-                    let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
-                    _ = try await orchestrator.generateBriefing(for: tomorrow, sendNotifications: true, toAddress: emailTo)
+                    let today = Date()
+                    _ = try await orchestrator.generateBriefing(for: today, sendNotifications: true, toAddress: emailTo)
                     logToFile("Morning briefing sent successfully", path: logPath)
-                    showNotification(title: "Morning Briefing Sent", body: "Check your email for tomorrow's briefing")
+                    showNotification(title: "Morning Briefing Sent", body: "Check your email for today's briefing")
                 } catch {
                     logToFile("Error generating briefing: \(error)", path: logPath)
+                    // Reset state so we can retry
+                    state.lastBriefingDate = nil
+                    saveSchedulerState(state)
                 }
             } else {
                 logToFile("Orchestrator not available for briefing", path: logPath)
@@ -295,8 +422,30 @@ class MenuBarController: NSObject, NSMenuDelegate {
 
         // Attention Check
         let attentionEnabled = scheduled?.attentionEnabled ?? true
-        if attentionEnabled && currentTime == config.app.attentionAlertTime && lastAttentionRun != currentTime {
+        let attentionTime = config.app.attentionAlertTime  // e.g. "15:00"
+
+        // Check if we should run attention check (same logic as briefing)
+        let shouldRunAttention: Bool = {
+            guard attentionEnabled && state.lastAttentionDate != todayDate else { return false }
+
+            // At the exact scheduled time
+            if currentTime == attentionTime && lastAttentionRun != currentTime {
+                return true
+            }
+
+            // Catch-up: We're past the scheduled time but haven't run today
+            if currentTime > attentionTime {
+                logToFile("Catch-up: Missed attention time (\(attentionTime)), running now at \(currentTime)", path: logPath)
+                return true
+            }
+
+            return false
+        }()
+
+        if shouldRunAttention {
             lastAttentionRun = currentTime
+            state.lastAttentionDate = todayDate
+            saveSchedulerState(state)
             logToFile("Running attention check at \(currentTime)", path: logPath)
 
             if let orchestrator = orchestrator {
@@ -306,6 +455,9 @@ class MenuBarController: NSObject, NSMenuDelegate {
                     showNotification(title: "Attention Check Sent", body: "Check your email for the attention report")
                 } catch {
                     logToFile("Error generating attention check: \(error)", path: logPath)
+                    // Reset state so we can retry
+                    state.lastAttentionDate = nil
+                    saveSchedulerState(state)
                 }
             } else {
                 logToFile("Orchestrator not available for attention check", path: logPath)

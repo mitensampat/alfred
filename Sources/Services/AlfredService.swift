@@ -221,7 +221,14 @@ class AlfredService: ObservableObject {
         if let contact = contactName {
             contactsToScan = [contact]
         } else {
-            contactsToScan = config.autoScanContacts
+            // Merge favorites with autoScanContacts (favorites take priority)
+            let favorites = FavoritesService.shared.getFavorites()
+            let favoriteContactNames = favorites.contacts.map { $0.name }
+            let favoriteGroupNames = favorites.groups.map { $0.name }
+            let allFavoriteNames = favoriteContactNames + favoriteGroupNames
+            // Combine favorites with config, deduplicating
+            let combined = allFavoriteNames + config.autoScanContacts
+            contactsToScan = Array(Set(combined))
         }
 
         let startDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
@@ -438,7 +445,14 @@ class AlfredService: ObservableObject {
         if let contact = contactName {
             contactsToScan = [contact]
         } else {
-            contactsToScan = config.autoScanContacts
+            // Merge favorites with autoScanContacts (favorites take priority)
+            let favorites = FavoritesService.shared.getFavorites()
+            let favoriteContactNames = favorites.contacts.map { $0.name }
+            let favoriteGroupNames = favorites.groups.map { $0.name }
+            let allFavoriteNames = favoriteContactNames + favoriteGroupNames
+            // Combine favorites with config, deduplicating
+            let combined = allFavoriteNames + config.autoScanContacts
+            contactsToScan = Array(Set(combined))
         }
 
         let startDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()

@@ -13,7 +13,7 @@ class ClaudeAIService {
         self.baseURL = config.effectiveBaseUrl
     }
 
-    func analyzeMessages(_ threads: [MessageThread]) async throws -> [MessageSummary] {
+    func analyzeMessages(_ threads: [MessageThread], favoriteNames: [String] = []) async throws -> [MessageSummary] {
         print("  ⚡ Using \(messageModel) for fast message analysis")
         var summaries: [MessageSummary] = []
 
@@ -27,7 +27,7 @@ class ClaudeAIService {
             let batchSummaries = try await withThrowingTaskGroup(of: MessageSummary.self) { group in
                 for thread in batch {
                     group.addTask {
-                        try await self.analyzeThread(thread, useModel: self.messageModel)
+                        try await self.analyzeThread(thread, useModel: self.messageModel, favoriteNames: favoriteNames)
                     }
                 }
 
@@ -171,7 +171,7 @@ class ClaudeAIService {
         )
     }
 
-    private func analyzeThread(_ thread: MessageThread, useModel: String? = nil) async throws -> MessageSummary {
+    private func analyzeThread(_ thread: MessageThread, useModel: String? = nil, favoriteNames: [String] = []) async throws -> MessageSummary {
         let recentMessages = Array(thread.messages.prefix(20))
         let messagesText = recentMessages.map { msg in
             "[\(msg.timestamp.formatted())] \(msg.direction == .incoming ? thread.contactName ?? "Unknown" : "You"): \(msg.content)"
@@ -200,6 +200,12 @@ class ClaudeAIService {
             threadId: thread.contactIdentifier
         )
 
+        // Check if this thread is from a priority contact/group
+        let threadName = thread.contactName ?? ""
+        let isFavorite = favoriteNames.contains { favName in
+            threadName.localizedCaseInsensitiveContains(favName) || favName.localizedCaseInsensitiveContains(threadName)
+        }
+
         let participationContext: String
         if userMessageCount == 0 {
             participationContext = """
@@ -221,6 +227,11 @@ class ClaudeAIService {
             """
         }
 
+        let priorityContext = isFavorite ? """
+
+        PRIORITY CONTACT: This is a priority contact/group for the user. Weight urgency assessment accordingly - messages from priority contacts warrant faster response times and higher attention.
+        """ : ""
+
         var prompt = """
         Analyze this message thread and provide:
         1. A concise summary (2-3 sentences max)
@@ -229,7 +240,7 @@ class ClaudeAIService {
         4. Sentiment (positive/neutral/negative/urgent)
         5. Whether it needs a response and suggested response if applicable
 
-        \(participationContext)
+        \(participationContext)\(priorityContext)
         """
 
         // Add historical context if available
@@ -340,7 +351,8 @@ class ClaudeAIService {
         actionItems: [ActionItem],
         todaySchedule: DailySchedule,
         tomorrowSchedule: DailySchedule,
-        currentTime: Date
+        currentTime: Date,
+        favoriteNames: [String] = []
     ) async throws -> AttentionDefenseReport {
         let calendar = Calendar.current
         let endOfDay = calendar.date(bySettingHour: 18, minute: 0, second: 0, of: currentTime)!
@@ -374,13 +386,20 @@ class ClaudeAIService {
             return "- \(event.startTime.formatted(.dateTime.hour().minute()))-\(event.endTime.formatted(.dateTime.hour().minute())): \(event.title) (\(Int(event.duration/60))min)\(extFlag)"
         }.joined(separator: "\n")
 
-        // Action items with rich context
+        // Action items with rich context - mark items from priority contacts
         let itemsText = actionItems.isEmpty ? "No open tasks found." : actionItems.map { item in
             var line = "- [\(item.id)] [\(item.priority.rawValue.uppercased())] \(item.title)"
             if item.description != item.title {
                 line += ": \(item.description)"
             }
             line += " (Category: \(item.category.rawValue), Source: \(item.source.rawValue))"
+            // Check if this item is from a priority contact
+            let isPriority = favoriteNames.contains { favName in
+                item.title.localizedCaseInsensitiveContains(favName) || item.description.localizedCaseInsensitiveContains(favName)
+            }
+            if isPriority {
+                line += " [PRIORITY CONTACT]"
+            }
             if let dueDate = item.dueDate {
                 let dueDateStr = dateFormatter.string(from: dueDate)
                 let isOverdue = dueDate < currentTime
@@ -389,9 +408,18 @@ class ClaudeAIService {
             return line
         }.joined(separator: "\n")
 
+        // Priority contacts context
+        let priorityContext = favoriteNames.isEmpty ? "" : """
+
+        === PRIORITY CONTACTS ===
+        The following are priority contacts/groups. Tasks involving them should be weighted higher in urgency:
+        \(favoriteNames.joined(separator: ", "))
+        """
+
         let prompt = """
         You are the executive assistant for a busy professional. It's currently \(currentTime.formatted()) on \(todayStr).
         Workday ends at 18:00. Time remaining today: \(Int(timeRemaining/3600))h \(Int((timeRemaining.truncatingRemainder(dividingBy: 3600))/60))m
+        \(priorityContext)
 
         === TODAY'S REMAINING MEETINGS ===
         \(todayMeetingsText)
@@ -406,7 +434,7 @@ class ClaudeAIService {
 
         === YOUR ANALYSIS ===
         Consider:
-        1. What MUST be done today? (overdue items, critical priority, time-sensitive responses, items due today)
+        1. What MUST be done today? (overdue items, critical priority, time-sensitive responses, items due today, items from priority contacts)
         2. What can safely be pushed to tomorrow or later? Give clear reasoning for each.
         3. Does tomorrow's schedule allow space for pushed items, or is it already packed?
         4. Are there any preparation tasks needed for tomorrow's meetings?

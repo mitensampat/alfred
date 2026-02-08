@@ -17,6 +17,8 @@ class BriefingOrchestrator {
     // Public accessors for commitments feature
     let commitmentAnalyzer: CommitmentAnalyzer
     var notionServicePublic: NotionService { notionService }
+    var aiServicePublic: ClaudeAIService { aiService }
+    var whatsAppReaderPublic: WhatsAppReader { whatsappReader }
 
     init(config: AppConfig) {
         self.config = config
@@ -409,7 +411,8 @@ class BriefingOrchestrator {
         }
 
         print("🤖 Analyzing messages with AI...")
-        let summaries = try await aiService.analyzeMessages(allThreads)
+        let favorites = FavoritesService.shared.getFavorites()
+        let summaries = try await aiService.analyzeMessages(allThreads, favoriteNames: favorites.allNames)
         print("✓ Analysis complete\n")
 
         return summaries
@@ -750,13 +753,14 @@ class BriefingOrchestrator {
         let favorites = FavoritesService.shared.getFavorites()
         print("✓ Loaded \(favorites.contacts.count) favorite contacts, \(favorites.groups.count) groups")
 
-        // Step 5: AI analysis (the longest step)
+        // Step 5: AI analysis (the longest step) - pass favorites for priority weighting
         await sendProgress("analyzing", "🤖 AI analyzing priorities...", 60)
         let report = try await aiService.generateAttentionDefenseReport(
             actionItems: actionItems,
             todaySchedule: todaySchedule,
             tomorrowSchedule: tomorrowSchedule,
-            currentTime: Date()
+            currentTime: Date(),
+            favoriteNames: favorites.allNames
         )
         print("✓ AI analysis complete")
 
@@ -837,8 +841,9 @@ class BriefingOrchestrator {
         let allFilteredThreads = filteredMessagingThreads + filteredEmailThreads
         let allThreads = messagingThreads + emailThreads
 
-        // Analyze threads with AI
-        let summaries = try await aiService.analyzeMessages(allFilteredThreads)
+        // Analyze threads with AI (include favorites for priority weighting)
+        let favorites = FavoritesService.shared.getFavorites()
+        let summaries = try await aiService.analyzeMessages(allFilteredThreads, favoriteNames: favorites.allNames)
 
         // Categorize summaries
         let keyInteractions = summaries.filter { $0.urgency >= .medium }.prefix(10)

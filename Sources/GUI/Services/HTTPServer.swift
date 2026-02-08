@@ -341,6 +341,18 @@ class HTTPServer {
         case ("POST", "/api/setup/complete"):
             return handleCompleteSetup()
 
+        // Task/Commitment status updates
+        case ("PATCH", "/api/tasks/status"):
+            return await handleUpdateTaskStatus(request)
+
+        // Nudge message generation
+        case ("POST", "/api/nudge/generate"):
+            return await handleGenerateNudge(request)
+
+        // Auto-completion detection
+        case ("POST", "/api/commitments/detect-completions"):
+            return await handleDetectCompletions(request)
+
         default:
             return HTTPResponse(
                 statusCode: 404,
@@ -427,6 +439,7 @@ class HTTPServer {
             let response: [[String: Any]] = commitments.map { commitment in
                 [
                     "id": commitment.id.uuidString,
+                    "notionId": commitment.notionId as Any,
                     "type": commitment.type.rawValue,
                     "status": commitment.status.rawValue,
                     "title": commitment.title,
@@ -460,6 +473,7 @@ class HTTPServer {
             let response: [[String: Any]] = commitments.map { commitment in
                 [
                     "id": commitment.id.uuidString,
+                    "notionId": commitment.notionId as Any,
                     "type": commitment.type.rawValue,
                     "status": commitment.status.rawValue,
                     "title": commitment.title,
@@ -482,6 +496,367 @@ class HTTPServer {
             return HTTPResponse(
                 statusCode: 500,
                 body: ["error": error.localizedDescription]
+            )
+        }
+    }
+
+    /// Generate a nudge message for a "They Owe Me" commitment
+    private func handleGenerateNudge(_ request: HTTPRequest) async -> HTTPResponse {
+        guard let body = request.body,
+              let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Invalid request body"]
+            )
+        }
+
+        let title = json["title"] as? String ?? "the item"
+        let committedBy = json["committedBy"] as? String ?? "them"
+        let commitmentText = json["commitmentText"] as? String ?? title
+        let dueDate = json["dueDate"] as? String
+        let isOverdue = json["isOverdue"] as? Bool ?? false
+        let sourceThread = json["sourceThread"] as? String
+
+        // Build context for nudge generation
+        var context = "Commitment: \(commitmentText)"
+        if let thread = sourceThread {
+            context += "\nFrom conversation with: \(thread)"
+        }
+        if let due = dueDate {
+            let formatter = ISO8601DateFormatter()
+            if let date = formatter.date(from: due) {
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateStyle = .medium
+                context += "\nDue date: \(dateFormatter.string(from: date))"
+            }
+        }
+        if isOverdue {
+            context += "\nStatus: OVERDUE"
+        }
+
+        do {
+            let nudgeMessage = try await generateNudgeWithLLM(
+                personName: committedBy,
+                commitment: title,
+                context: context,
+                isOverdue: isOverdue
+            )
+
+            return HTTPResponse(
+                statusCode: 200,
+                body: [
+                    "message": nudgeMessage,
+                    "recipient": committedBy,
+                    "commitment": title
+                ]
+            )
+        } catch {
+            print("❌ Failed to generate nudge: \(error)")
+            return HTTPResponse(
+                statusCode: 500,
+                body: ["error": "Failed to generate nudge: \(error.localizedDescription)"]
+            )
+        }
+    }
+
+    /// Generate nudge message using Claude API
+    private func generateNudgeWithLLM(personName: String, commitment: String, context: String, isOverdue: Bool) async throws -> String {
+        let url = URL(string: "https://api.anthropic.com/v1/messages")!
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue(alfredService.claudeApiKey, forHTTPHeaderField: "x-api-key")
+        urlRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        urlRequest.setValue("application/json", forHTTPHeaderField: "content-type")
+
+        let urgency = isOverdue ? "The commitment is overdue, so be slightly more direct but still friendly." : "The commitment is not overdue yet, so keep it casual and friendly."
+
+        let prompt = """
+        Generate a short, friendly follow-up message to remind someone about something they committed to.
+
+        Person to message: \(personName)
+        \(context)
+
+        \(urgency)
+
+        Guidelines:
+        - Keep it brief (2-3 sentences max)
+        - Be friendly and professional
+        - Don't be pushy or passive-aggressive
+        - Reference the specific commitment
+        - If overdue, gently acknowledge the timeline without being accusatory
+        - End with an offer to help or a simple question
+
+        Return ONLY the message text, no quotes or explanation.
+        """
+
+        let body: [String: Any] = [
+            "model": "claude-3-haiku-20240307",  // Use Haiku for fast, cheap nudge generation
+            "max_tokens": 200,
+            "messages": [
+                ["role": "user", "content": prompt]
+            ]
+        ]
+
+        urlRequest.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            throw NSError(domain: "NudgeGeneration", code: 1, userInfo: [NSLocalizedDescriptionKey: "API request failed"])
+        }
+
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard let content = json?["content"] as? [[String: Any]],
+              let firstContent = content.first,
+              let text = firstContent["text"] as? String else {
+            throw NSError(domain: "NudgeGeneration", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid response format"])
+        }
+
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Detect completion signals in messages and match to open commitments
+    private func handleDetectCompletions(_ request: HTTPRequest) async -> HTTPResponse {
+        guard let body = request.body,
+              let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let contact = json["contact"] as? String else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Missing required field: contact"]
+            )
+        }
+
+        let timeframe = json["timeframe"] as? String ?? "24h"
+
+        do {
+            // Get recent messages from this contact
+            let messages = try await alfredService.fetchRecentMessages(from: contact, timeframe: timeframe)
+
+            // Look for completion signals in messages
+            let completionSignals = detectCompletionSignals(in: messages)
+
+            if completionSignals.isEmpty {
+                return HTTPResponse(
+                    statusCode: 200,
+                    body: ["completions": [], "message": "No completion signals detected"]
+                )
+            }
+
+            // Get open commitments for this contact to match against
+            let commitments = try await alfredService.fetchCommitments(contact: contact)
+            let openCommitments = commitments.filter { $0.status == .open || $0.status == .inProgress }
+
+            // Match completion signals to commitments
+            let matches = matchCompletionsToCommitments(signals: completionSignals, commitments: openCommitments)
+
+            let response: [[String: Any]] = matches.map { match in
+                [
+                    "signal": [
+                        "message": match.signal.messageContent,
+                        "timestamp": ISO8601DateFormatter().string(from: match.signal.timestamp),
+                        "sender": match.signal.sender
+                    ],
+                    "commitment": match.commitment.map { c in
+                        [
+                            "id": c.id.uuidString,
+                            "notionId": c.notionId as Any,
+                            "title": c.title,
+                            "type": c.type.rawValue,
+                            "status": c.status.rawValue
+                        ]
+                    } as Any,
+                    "confidence": match.confidence
+                ]
+            }
+
+            return HTTPResponse(
+                statusCode: 200,
+                body: [
+                    "completions": response,
+                    "count": matches.count,
+                    "contact": contact
+                ]
+            )
+        } catch {
+            print("❌ Failed to detect completions: \(error)")
+            return HTTPResponse(
+                statusCode: 500,
+                body: ["error": "Failed to detect completions: \(error.localizedDescription)"]
+            )
+        }
+    }
+
+    // MARK: - Completion Detection Helpers
+
+    struct CompletionSignal {
+        let messageContent: String
+        let timestamp: Date
+        let sender: String
+        let keywords: [String]
+    }
+
+    struct CompletionMatch {
+        let signal: CompletionSignal
+        let commitment: Commitment?
+        let confidence: Double
+    }
+
+    /// Detect completion signals in messages
+    private func detectCompletionSignals(in messages: [Message]) -> [CompletionSignal] {
+        let completionPatterns: [(pattern: String, keywords: [String])] = [
+            ("done", ["done", "finished", "completed"]),
+            ("sent", ["sent", "sent it", "shared", "shared it"]),
+            ("fixed", ["fixed", "fixed it", "resolved"]),
+            ("updated", ["updated", "updated it", "changed"]),
+            ("submitted", ["submitted", "filed", "delivered"]),
+            ("called", ["called", "spoke with", "talked to"]),
+            ("scheduled", ["scheduled", "booked", "set up"]),
+            ("paid", ["paid", "transferred", "sent payment"]),
+            ("replied", ["replied", "responded", "answered"]),
+            ("reviewed", ["reviewed", "looked at", "checked"]),
+            ("✅", ["✅", "✔️", "👍"]),
+            ("here you go", ["here you go", "here it is", "attached"])
+        ]
+
+        var signals: [CompletionSignal] = []
+
+        for message in messages {
+            let lowercased = message.content.lowercased()
+            var matchedKeywords: [String] = []
+
+            for (_, keywords) in completionPatterns {
+                for keyword in keywords {
+                    if lowercased.contains(keyword) {
+                        matchedKeywords.append(keyword)
+                    }
+                }
+            }
+
+            // If message has completion signals and is short (likely a status update)
+            if !matchedKeywords.isEmpty && message.content.count < 200 {
+                signals.append(CompletionSignal(
+                    messageContent: message.content,
+                    timestamp: message.timestamp,
+                    sender: message.senderName ?? message.sender,
+                    keywords: matchedKeywords
+                ))
+            }
+        }
+
+        return signals
+    }
+
+    /// Match completion signals to open commitments
+    private func matchCompletionsToCommitments(signals: [CompletionSignal], commitments: [Commitment]) -> [CompletionMatch] {
+        var matches: [CompletionMatch] = []
+
+        for signal in signals {
+            var bestMatch: Commitment?
+            var bestConfidence = 0.0
+
+            for commitment in commitments {
+                let confidence = calculateMatchConfidence(signal: signal, commitment: commitment)
+                if confidence > bestConfidence && confidence >= 0.3 {
+                    bestMatch = commitment
+                    bestConfidence = confidence
+                }
+            }
+
+            matches.append(CompletionMatch(
+                signal: signal,
+                commitment: bestMatch,
+                confidence: bestConfidence
+            ))
+        }
+
+        return matches
+    }
+
+    /// Calculate how likely a completion signal relates to a commitment
+    private func calculateMatchConfidence(signal: CompletionSignal, commitment: Commitment) -> Double {
+        var confidence = 0.0
+
+        let signalLower = signal.messageContent.lowercased()
+        let titleLower = commitment.title.lowercased()
+        let textLower = commitment.commitmentText.lowercased()
+
+        // Check for word overlap with commitment title
+        let signalWords = Set(signalLower.components(separatedBy: .alphanumerics.inverted).filter { $0.count > 2 })
+        let titleWords = Set(titleLower.components(separatedBy: .alphanumerics.inverted).filter { $0.count > 2 })
+
+        let overlap = signalWords.intersection(titleWords)
+        if !overlap.isEmpty {
+            confidence += Double(overlap.count) * 0.2
+        }
+
+        // Check if signal mentions similar topic words from commitment text
+        let commitmentWords = Set(textLower.components(separatedBy: .alphanumerics.inverted).filter { $0.count > 3 })
+        let topicOverlap = signalWords.intersection(commitmentWords)
+        if !topicOverlap.isEmpty {
+            confidence += Double(topicOverlap.count) * 0.1
+        }
+
+        // Sender match (person who made commitment confirming completion)
+        if signal.sender.localizedCaseInsensitiveContains(commitment.committedBy) ||
+           commitment.committedBy.localizedCaseInsensitiveContains(signal.sender) {
+            confidence += 0.3
+        }
+
+        // Time proximity (more recent = more relevant)
+        if let _ = commitment.createdAt {
+            confidence += 0.1
+        }
+
+        // If commitment is overdue and there's a completion signal, higher confidence
+        if commitment.isOverdue {
+            confidence += 0.2
+        }
+
+        return min(confidence, 1.0)
+    }
+
+    /// Update task/commitment status (syncs to Notion)
+    private func handleUpdateTaskStatus(_ request: HTTPRequest) async -> HTTPResponse {
+        // Parse request body
+        guard let body = request.body,
+              let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let notionId = json["notionId"] as? String,
+              let statusString = json["status"] as? String else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Missing required fields: notionId, status"]
+            )
+        }
+
+        // Validate status
+        guard let status = TaskItem.TaskStatus(rawValue: statusString) else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Invalid status. Valid values: Not Started, In Progress, Done, Cancelled"]
+            )
+        }
+
+        do {
+            // Update in Notion
+            try await notionService.updateTaskStatus(notionId: notionId, status: status)
+
+            print("✅ Updated task \(notionId) to status: \(status.rawValue)")
+
+            return HTTPResponse(
+                statusCode: 200,
+                body: [
+                    "success": true,
+                    "notionId": notionId,
+                    "newStatus": status.rawValue,
+                    "message": "Status updated successfully"
+                ]
+            )
+        } catch {
+            print("❌ Failed to update task status: \(error)")
+            return HTTPResponse(
+                statusCode: 500,
+                body: ["error": "Failed to update status: \(error.localizedDescription)"]
             )
         }
     }

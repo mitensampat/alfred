@@ -133,6 +133,7 @@ struct NotionConfig: Codable {
     let databaseId: String
     let tasksDatabaseId: String?
     let briefingSources: BriefingSources?
+    let playbookPageId: String?
 
     struct BriefingSources: Codable {
         let tasksDatabaseId: String?
@@ -149,6 +150,7 @@ struct NotionConfig: Codable {
         case databaseId = "database_id"
         case tasksDatabaseId = "tasks_database_id"
         case briefingSources = "briefing_sources"
+        case playbookPageId = "playbook_page_id"
     }
 }
 

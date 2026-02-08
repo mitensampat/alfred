@@ -11,8 +11,16 @@ class iMessageReader {
 
     func connect() throws {
         let path = (dbPath as NSString).expandingTildeInPath
+
+        // Pre-flight check: verify file exists AND is readable (Full Disk Access check)
         guard FileManager.default.fileExists(atPath: path) else {
             throw MessageReaderError.databaseNotFound(path)
+        }
+
+        // Check if we can actually read the file (tests Full Disk Access permission)
+        guard FileManager.default.isReadableFile(atPath: path) else {
+            print("⚠️ iMessage: Full Disk Access not granted - cannot read \(path)")
+            throw MessageReaderError.connectionFailed("iMessage - Full Disk Access required. Grant in System Settings → Privacy & Security → Full Disk Access")
         }
 
         var db: OpaquePointer?

@@ -298,6 +298,447 @@
             color: var(--text-secondary);
         }
 
+        /* Commitment Status Buttons */
+        .commitment-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 6px;
+        }
+
+        .status-btn {
+            padding: 4px 8px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            background: var(--bg-primary);
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.15s;
+            opacity: 0.7;
+        }
+
+        .status-btn:hover {
+            opacity: 1;
+            background: var(--bg-secondary);
+            transform: scale(1.1);
+        }
+
+        .status-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status-btn.loading {
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+
+        .commitment-item.status-updated {
+            animation: flash-success 0.5s ease-out;
+        }
+
+        @keyframes flash-success {
+            0% { background: rgba(16, 185, 129, 0.2); }
+            100% { background: transparent; }
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes slideOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
+        }
+
+        /* Commitment Dashboard - Notion-inspired clean design */
+        .commitment-dashboard {
+            padding: 0;
+        }
+
+        .commitment-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+
+        .summary-card {
+            padding: 20px 16px;
+            background: var(--bg-primary);
+            border-radius: var(--radius-lg);
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .summary-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+            border-color: var(--accent-color);
+        }
+
+        .summary-card.overdue-card {
+            background: linear-gradient(135deg, rgba(224, 62, 62, 0.05), rgba(224, 62, 62, 0.1));
+            border-color: rgba(224, 62, 62, 0.3);
+        }
+
+        .summary-card.overdue-card:hover {
+            background: linear-gradient(135deg, rgba(224, 62, 62, 0.08), rgba(224, 62, 62, 0.15));
+            border-color: #e03e3e;
+        }
+
+        .summary-icon {
+            font-size: 28px;
+            margin-bottom: 8px;
+            filter: grayscale(0.1);
+        }
+
+        .summary-number {
+            font-family: var(--font-display);
+            font-size: 36px;
+            font-weight: 600;
+            color: var(--text-primary);
+            line-height: 1;
+        }
+
+        .summary-label {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-tertiary);
+            margin-top: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .commitment-actions-section {
+            margin-bottom: 24px;
+            padding-top: 4px;
+        }
+
+        .action-title {
+            font-family: var(--font-display);
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .action-title::before {
+            content: '';
+            display: inline-block;
+            width: 3px;
+            height: 16px;
+            background: var(--accent-color);
+            border-radius: 2px;
+        }
+
+        .commitment-quick-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .commitment-action-btn {
+            padding: 10px 16px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .commitment-action-btn:hover {
+            background: var(--bg-secondary);
+            border-color: var(--accent-color);
+            color: var(--accent-color);
+            transform: translateY(-1px);
+        }
+
+        .overdue-alert {
+            background: linear-gradient(135deg, rgba(224, 62, 62, 0.04), rgba(224, 62, 62, 0.08));
+            border: 1px solid rgba(224, 62, 62, 0.15);
+            border-radius: var(--radius-lg);
+            padding: 16px 18px;
+            margin-bottom: 20px;
+        }
+
+        .overdue-header {
+            font-family: var(--font-display);
+            font-size: 14px;
+            font-weight: 600;
+            color: #dc2626;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .overdue-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            background: rgba(255, 255, 255, 0.6);
+            border-radius: var(--radius-md);
+            margin-bottom: 8px;
+            transition: all 0.15s ease;
+        }
+
+        .overdue-item:hover {
+            background: rgba(255, 255, 255, 0.9);
+        }
+
+        .overdue-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .overdue-type {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+
+        .overdue-title {
+            flex: 1;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+            line-height: 1.4;
+        }
+
+        .mark-done-btn {
+            padding: 6px 12px;
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            border: none;
+            border-radius: var(--radius-md);
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
+        }
+
+        .mark-done-btn:hover {
+            background: linear-gradient(135deg, #059669, #047857);
+            transform: translateY(-1px);
+            box-shadow: 0 3px 6px rgba(16, 185, 129, 0.4);
+        }
+
+        .followup-section {
+            margin-top: 20px;
+            padding-top: 4px;
+        }
+
+        .followup-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 16px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            margin-bottom: 10px;
+            transition: all 0.15s ease;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .followup-item:hover {
+            border-color: #8b5cf6;
+            box-shadow: var(--shadow-md);
+        }
+
+        .followup-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .followup-person {
+            font-family: var(--font-display);
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+
+        .followup-title {
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+
+        .nudge-btn-small {
+            padding: 8px 14px;
+            background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+            color: white;
+            border: none;
+            border-radius: var(--radius-md);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            box-shadow: 0 2px 4px rgba(139, 92, 246, 0.3);
+        }
+
+        .nudge-btn-small:hover {
+            background: linear-gradient(135deg, #7c3aed, #6d28d9);
+            transform: translateY(-1px);
+            box-shadow: 0 3px 6px rgba(139, 92, 246, 0.4);
+        }
+
+        .completion-suggestion {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border-color);
+            transition: background 0.15s ease;
+        }
+
+        .completion-suggestion:hover {
+            background: var(--bg-secondary);
+        }
+
+        .completion-suggestion:last-child {
+            border-bottom: none;
+        }
+
+        /* Empty state styling */
+        .commitment-empty-state {
+            text-align: center;
+            padding: 48px 24px;
+            color: var(--text-tertiary);
+        }
+
+        .commitment-empty-state .empty-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            filter: grayscale(0.3);
+        }
+
+        .commitment-empty-state p {
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .commitment-empty-state .empty-hint {
+            font-size: 12px;
+            color: var(--text-tertiary);
+        }
+
+        /* Nudge Button */
+        .nudge-btn {
+            padding: 4px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            background: var(--bg-primary);
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.15s;
+            color: var(--text-secondary);
+        }
+
+        .nudge-btn:hover {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+
+        .nudge-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Nudge Modal */
+        .nudge-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .nudge-modal-content {
+            background: var(--bg-primary);
+            border-radius: var(--radius-md);
+            padding: 24px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+        }
+
+        .nudge-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .nudge-modal-title {
+            font-family: var(--font-serif);
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .nudge-modal-close {
+            background: none;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: var(--text-tertiary);
+        }
+
+        .nudge-textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            font-family: var(--font-body);
+            font-size: 14px;
+            line-height: 1.5;
+            resize: vertical;
+            margin-bottom: 16px;
+        }
+
+        .nudge-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .nudge-copy-btn {
+            padding: 8px 16px;
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .nudge-copy-btn:hover {
+            background: #059669;
+        }
+
         /* Suggested Actions */
         .suggested-actions {
             margin-top: 12px;
@@ -2252,6 +2693,604 @@
                 padding: 20px;
             }
         }
+
+        /* ===============================================
+           FTUE (First Time User Experience) Wizard Styles
+           =============================================== */
+
+        .ftue-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--bg-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .ftue-container {
+            max-width: 560px;
+            width: 100%;
+            padding: 48px 40px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .ftue-progress {
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            margin-bottom: 40px;
+        }
+
+        .ftue-step-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--border-color);
+            transition: all 0.2s ease;
+        }
+
+        .ftue-step-dot.active {
+            background: var(--accent-color);
+            width: 24px;
+            border-radius: 4px;
+        }
+
+        .ftue-step-dot.completed {
+            background: #10b981;
+        }
+
+        .ftue-content {
+            min-height: 400px;
+        }
+
+        .ftue-icon {
+            font-size: 48px;
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .ftue-content h1 {
+            font-family: var(--font-display);
+            font-size: 32px;
+            font-weight: 600;
+            color: var(--text-primary);
+            text-align: center;
+            margin-bottom: 12px;
+        }
+
+        .ftue-content h2 {
+            font-family: var(--font-display);
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+
+        .ftue-content > p {
+            font-family: var(--font-body);
+            font-size: 15px;
+            color: var(--text-secondary);
+            text-align: center;
+            margin-bottom: 32px;
+            line-height: 1.6;
+        }
+
+        .ftue-content h2 + p {
+            text-align: left;
+            margin-bottom: 24px;
+        }
+
+        .ftue-features {
+            list-style: none;
+            padding: 0;
+            margin: 0 0 32px 0;
+        }
+
+        .ftue-features li {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border-radius: var(--radius-md);
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+
+        .ftue-features li span {
+            font-size: 18px;
+        }
+
+        .ftue-field {
+            margin-bottom: 20px;
+        }
+
+        .ftue-field label {
+            display: block;
+            font-weight: 500;
+            font-size: 14px;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+
+        .ftue-field label .required {
+            color: #e53e3e;
+            margin-left: 2px;
+        }
+
+        .ftue-field input[type="text"],
+        .ftue-field input[type="password"],
+        .ftue-field input[type="email"],
+        .ftue-field select {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            font-family: var(--font-body);
+            color: var(--text-primary);
+            background: var(--bg-primary);
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .ftue-field input:focus,
+        .ftue-field select:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 3px rgba(35, 131, 226, 0.15);
+        }
+
+        .ftue-field small {
+            display: block;
+            font-size: 12px;
+            color: var(--text-tertiary);
+            margin-top: 6px;
+        }
+
+        .ftue-field small a {
+            color: var(--accent-color);
+            text-decoration: none;
+        }
+
+        .ftue-field small a:hover {
+            text-decoration: underline;
+        }
+
+        .ftue-field-row {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .ftue-field-row select {
+            flex: 1;
+        }
+
+        .ftue-test-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-top: 8px;
+        }
+
+        .ftue-test-btn:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .ftue-test-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .ftue-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            margin-top: 8px;
+            margin-left: 8px;
+        }
+
+        .ftue-status.success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .ftue-status.error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .ftue-status.loading {
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+        }
+
+        .ftue-oauth-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            width: 100%;
+            padding: 14px 20px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 15px;
+            font-weight: 500;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .ftue-oauth-btn:hover {
+            background: var(--bg-secondary);
+            border-color: var(--text-tertiary);
+        }
+
+        .ftue-oauth-btn img {
+            width: 20px;
+            height: 20px;
+        }
+
+        .ftue-toggle {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px;
+            background: var(--bg-secondary);
+            border-radius: var(--radius-md);
+            margin-bottom: 12px;
+        }
+
+        .ftue-toggle input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--accent-color);
+        }
+
+        .ftue-toggle label {
+            font-weight: 500;
+            font-size: 14px;
+            color: var(--text-primary);
+            flex: 1;
+        }
+
+        .ftue-toggle small {
+            font-size: 12px;
+            color: var(--text-tertiary);
+        }
+
+        .ftue-permission-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            padding: 16px;
+            background: var(--bg-secondary);
+            border-radius: var(--radius-md);
+            margin-bottom: 12px;
+        }
+
+        .ftue-permission-item .icon {
+            font-size: 24px;
+        }
+
+        .ftue-permission-item .info {
+            flex: 1;
+        }
+
+        .ftue-permission-item .info strong {
+            display: block;
+            font-size: 14px;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .ftue-permission-item .info p {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin: 0;
+        }
+
+        .ftue-permission-item .status {
+            font-size: 13px;
+            color: #10b981;
+        }
+
+        .ftue-permission-btn {
+            padding: 8px 14px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .ftue-permission-btn:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .ftue-permission-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            margin: 16px 0;
+        }
+
+        .ftue-permission-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .ftue-permission-header .icon {
+            font-size: 24px;
+        }
+
+        .ftue-permission-header strong {
+            display: block;
+            font-size: 16px;
+            margin-bottom: 4px;
+        }
+
+        .ftue-permission-header p {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin: 0;
+        }
+
+        .ftue-permission-steps {
+            background: var(--bg-primary);
+            border-radius: var(--radius-md);
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+
+        .ftue-permission-steps .step {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 0;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .ftue-permission-steps .step:not(:last-child) {
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .ftue-permission-steps .step-num {
+            width: 24px;
+            height: 24px;
+            background: var(--accent-blue);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+
+        .ftue-permission-btn-large {
+            width: 100%;
+            padding: 14px 20px;
+            background: var(--accent-blue);
+            border: none;
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            font-weight: 600;
+            color: white;
+            cursor: pointer;
+            transition: background 0.15s ease;
+        }
+
+        .ftue-permission-btn-large:hover {
+            background: #2563eb;
+        }
+
+        .ftue-permission-note {
+            font-size: 12px;
+            color: var(--text-tertiary);
+            margin-top: 16px;
+            padding: 12px;
+            background: var(--bg-primary);
+            border-radius: var(--radius-md);
+        }
+
+        .ftue-permission-note strong {
+            color: var(--text-secondary);
+        }
+
+        .ftue-database-section {
+            margin-bottom: 24px;
+        }
+
+        .ftue-database-section > label {
+            display: block;
+            font-weight: 500;
+            font-size: 14px;
+            color: var(--text-primary);
+            margin-bottom: 10px;
+        }
+
+        .ftue-database-picker {
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            max-height: 180px;
+            overflow-y: auto;
+        }
+
+        .ftue-database-option {
+            padding: 12px 14px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border-color);
+            transition: background 0.15s ease;
+        }
+
+        .ftue-database-option:last-child {
+            border-bottom: none;
+        }
+
+        .ftue-database-option:hover {
+            background: var(--bg-secondary);
+        }
+
+        .ftue-database-option.selected {
+            background: #eff6ff;
+            border-left: 3px solid var(--accent-color);
+        }
+
+        .ftue-database-option strong {
+            display: block;
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+
+        .ftue-database-option small {
+            font-size: 12px;
+            color: var(--text-tertiary);
+        }
+
+        .ftue-success-icon {
+            font-size: 64px;
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .ftue-summary {
+            background: var(--bg-secondary);
+            border-radius: var(--radius-md);
+            padding: 20px;
+            margin-bottom: 32px;
+        }
+
+        .ftue-summary div {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 0;
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+
+        .ftue-summary div::before {
+            content: '✓';
+            color: #10b981;
+            font-weight: 600;
+        }
+
+        .ftue-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: space-between;
+            margin-top: 32px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .ftue-btn {
+            padding: 12px 24px;
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .ftue-btn-secondary {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .ftue-btn-secondary:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .ftue-btn-primary {
+            background: var(--accent-color);
+            border: none;
+            color: white;
+            margin-left: auto;
+        }
+
+        .ftue-btn-primary:hover {
+            background: var(--accent-hover);
+        }
+
+        .ftue-btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .ftue-launch-btn {
+            display: block;
+            width: 100%;
+            padding: 16px 24px;
+            background: var(--accent-color);
+            border: none;
+            border-radius: var(--radius-md);
+            font-size: 16px;
+            font-weight: 600;
+            color: white;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+
+        .ftue-launch-btn:hover {
+            background: var(--accent-hover);
+        }
+
+        /* FTUE Mobile Responsive */
+        @media (max-width: 600px) {
+            .ftue-container {
+                padding: 32px 20px;
+            }
+
+            .ftue-content h1 {
+                font-size: 26px;
+            }
+
+            .ftue-content h2 {
+                font-size: 20px;
+            }
+
+            .ftue-actions {
+                flex-direction: column;
+            }
+
+            .ftue-btn-primary {
+                margin-left: 0;
+                width: 100%;
+            }
+
+            .ftue-btn-secondary {
+                width: 100%;
+            }
+        }
     </style>
 </head>
 <body>
@@ -2264,7 +3303,22 @@
                    onkeypress="if(event.key==='Enter')authenticate()" autofocus />
             <button class="auth-button" onclick="authenticate()">let's go</button>
             <div id="authError" class="auth-error hidden"></div>
-            <div class="auth-footer">v1.5.0 · crafted by ms foundry</div>
+            <div class="auth-footer">v1.6.2 · crafted by ms foundry</div>
+        </div>
+    </div>
+
+    <!-- FTUE Wizard -->
+    <div id="ftueWizard" class="ftue-screen hidden">
+        <div class="ftue-container">
+            <div class="ftue-progress" id="ftueProgress">
+                <!-- Progress dots generated dynamically -->
+            </div>
+            <div class="ftue-content" id="ftueContent">
+                <!-- Step content rendered dynamically -->
+            </div>
+            <div class="ftue-actions" id="ftueActions">
+                <!-- Navigation buttons -->
+            </div>
         </div>
     </div>
 
@@ -2276,7 +3330,7 @@
         <div class="header">
             <div class="header-content">
                 <div class="header-left">
-                    <h1>alfred <span class="version-tag">v1.5.0</span></h1>
+                    <h1>alfred <span class="version-tag">v1.6.2</span></h1>
                     <p>judgement from noise</p>
                 </div>
                 <button id="logoutButton" class="logout-button" onclick="logout()" title="Logout">
@@ -2599,12 +3653,622 @@
         const STORAGE_TOKEN_KEY = 'alfred_auth_token';
         const STORAGE_EXPIRES_KEY = 'alfred_token_expires';
 
+        // ===============================================
+        // FTUE (First Time User Experience) Wizard
+        // ===============================================
+
+        const FTUE_STEPS = ['welcome', 'apiKeys', 'notion', 'googleOauth', 'profile', 'messaging', 'permissions', 'complete'];
+        let currentFtueStep = 0;
+        let ftueData = {};
+        let notionDatabases = [];
+
+        async function checkSetupStatus() {
+            try {
+                const response = await fetch('/api/setup/status');
+                const status = await response.json();
+                return status;
+            } catch (error) {
+                console.error('Failed to check setup status:', error);
+                return { isComplete: true }; // Default to complete if error
+            }
+        }
+
+        function showFtueWizard() {
+            document.getElementById('authScreen').classList.add('hidden');
+            document.getElementById('appContainer').classList.add('hidden');
+            document.getElementById('ftueWizard').classList.remove('hidden');
+            renderFtueStep(0);
+        }
+
+        function hideFtueWizard() {
+            document.getElementById('ftueWizard').classList.add('hidden');
+        }
+
+        function renderFtueProgress() {
+            const progress = document.getElementById('ftueProgress');
+            progress.innerHTML = FTUE_STEPS.map((step, index) => {
+                let className = 'ftue-step-dot';
+                if (index < currentFtueStep) className += ' completed';
+                else if (index === currentFtueStep) className += ' active';
+                return `<div class="${className}"></div>`;
+            }).join('');
+        }
+
+        function renderFtueStep(stepIndex) {
+            currentFtueStep = stepIndex;
+            renderFtueProgress();
+
+            const content = document.getElementById('ftueContent');
+            const actions = document.getElementById('ftueActions');
+            const step = FTUE_STEPS[stepIndex];
+
+            content.innerHTML = getFtueStepContent(step);
+            actions.innerHTML = getFtueStepActions(step);
+        }
+
+        function getFtueStepContent(step) {
+            switch(step) {
+                case 'welcome':
+                    return `
+                        <div class="ftue-icon">🎯</div>
+                        <h1>Welcome to Alfred</h1>
+                        <p>Your intelligent executive assistant that helps you stay on top of everything.</p>
+                        <ul class="ftue-features">
+                            <li><span>📧</span> Email priorities and responses</li>
+                            <li><span>📅</span> Calendar and meeting prep</li>
+                            <li><span>✅</span> Tasks and commitments tracking</li>
+                            <li><span>💬</span> Message scanning for action items</li>
+                        </ul>
+                        <p style="font-size: 13px; color: var(--text-tertiary);">Let's get you set up in about 5 minutes.</p>
+                    `;
+
+                case 'apiKeys':
+                    return `
+                        <h2>Connect Your AI</h2>
+                        <p>Alfred uses Claude AI to understand your communications and provide intelligent assistance.</p>
+                        <div class="ftue-field">
+                            <label>Claude API Key <span class="required">*</span></label>
+                            <input type="password" id="ftueClaudeApiKey" placeholder="sk-ant-..." value="${ftueData.claudeApiKey || ''}">
+                            <small>Get yours at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a></small>
+                            <div style="display: flex; align-items: center; margin-top: 8px;">
+                                <button class="ftue-test-btn" onclick="testClaudeApiKey()">Test Connection</button>
+                                <span id="claudeApiKeyStatus"></span>
+                            </div>
+                        </div>
+                        <div class="ftue-field">
+                            <label>Todoist API Key <span style="color: var(--text-tertiary);">(optional)</span></label>
+                            <input type="password" id="ftueTodoistApiKey" placeholder="Your Todoist API key" value="${ftueData.todoistApiKey || ''}">
+                            <small>For syncing tasks to Todoist</small>
+                        </div>
+                    `;
+
+                case 'notion':
+                    const dbPickerHtml = notionDatabases.length > 0 ? renderNotionDatabasePickers() : '';
+                    return `
+                        <h2>Connect Notion</h2>
+                        <p>Alfred stores your tasks, commitments, and favorites in Notion databases.</p>
+                        <div class="ftue-field">
+                            <label>Notion Integration Token <span class="required">*</span></label>
+                            <input type="password" id="ftueNotionApiKey" placeholder="secret_..." value="${ftueData.notionApiKey || ''}">
+                            <small>
+                                Create an integration at <a href="https://www.notion.so/my-integrations" target="_blank">notion.so/my-integrations</a>
+                                <br>Then share your databases with the integration.
+                            </small>
+                            <div style="display: flex; align-items: center; margin-top: 8px;">
+                                <button class="ftue-test-btn" onclick="testNotionConnection()">Connect & Load Databases</button>
+                                <span id="notionStatus"></span>
+                            </div>
+                        </div>
+                        <div id="notionDatabasePicker" class="${notionDatabases.length > 0 ? '' : 'hidden'}">
+                            ${dbPickerHtml}
+                        </div>
+                    `;
+
+                case 'googleOauth':
+                    const googleConnected = ftueData.googleConnected;
+                    return `
+                        <h2>Connect Google</h2>
+                        <p>Access your Calendar and Gmail for briefings and meeting prep.</p>
+                        <button class="ftue-oauth-btn" onclick="startGoogleOAuth()">
+                            <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                            ${googleConnected ? 'Connected ✓' : 'Connect Google Account'}
+                        </button>
+                        <div id="googleOAuthStatus" style="text-align: center; margin-top: 16px;">
+                            ${googleConnected ? '<span class="ftue-status success">✓ Connected</span>' : '<span style="color: var(--text-tertiary); font-size: 13px;">Not connected</span>'}
+                        </div>
+                        <p style="font-size: 12px; color: var(--text-tertiary); text-align: center; margin-top: 24px;">Alfred reads but never modifies your data.</p>
+                    `;
+
+                case 'profile':
+                    return `
+                        <h2>About You</h2>
+                        <p>Help Alfred personalize your experience and address you correctly.</p>
+                        <div class="ftue-field">
+                            <label>Your Name <span class="required">*</span></label>
+                            <input type="text" id="ftueUserName" placeholder="John Doe" value="${ftueData.userName || ''}">
+                        </div>
+                        <div class="ftue-field">
+                            <label>Email <span class="required">*</span></label>
+                            <input type="email" id="ftueUserEmail" placeholder="you@example.com" value="${ftueData.userEmail || ''}">
+                        </div>
+                        <div class="ftue-field">
+                            <label>Work Hours</label>
+                            <div class="ftue-field-row">
+                                <select id="ftueWorkStartHour">
+                                    ${generateHourOptions(ftueData.workStartHour || '09')}
+                                </select>
+                                <span style="color: var(--text-tertiary);">to</span>
+                                <select id="ftueWorkEndHour">
+                                    ${generateHourOptions(ftueData.workEndHour || '17')}
+                                </select>
+                            </div>
+                        </div>
+                    `;
+
+                case 'messaging':
+                    return `
+                        <h2>Message Scanning</h2>
+                        <p>Alfred can extract action items and commitments from your messages.</p>
+                        <div class="ftue-toggle">
+                            <input type="checkbox" id="ftueEnableIMessage" ${ftueData.enableIMessage !== false ? 'checked' : ''}>
+                            <div>
+                                <label for="ftueEnableIMessage">iMessage</label>
+                                <small>Scans your iMessage database for action items</small>
+                            </div>
+                        </div>
+                        <div class="ftue-toggle">
+                            <input type="checkbox" id="ftueEnableWhatsApp" ${ftueData.enableWhatsApp ? 'checked' : ''}>
+                            <div>
+                                <label for="ftueEnableWhatsApp">WhatsApp</label>
+                                <small>Scans exported WhatsApp chats</small>
+                            </div>
+                        </div>
+                        <p style="font-size: 12px; color: var(--text-tertiary); margin-top: 24px;">Note: iMessage requires Full Disk Access permission (next step).</p>
+                    `;
+
+                case 'permissions':
+                    return `
+                        <h2>macOS Permissions</h2>
+                        <p>Alfred needs Full Disk Access to read your messages and files. This is a one-time setup.</p>
+
+                        <div class="ftue-permission-card">
+                            <div class="ftue-permission-header">
+                                <span class="icon">🔐</span>
+                                <div>
+                                    <strong>Full Disk Access</strong>
+                                    <p>Required for iMessage, WhatsApp, and file access</p>
+                                </div>
+                            </div>
+
+                            <div class="ftue-permission-steps">
+                                <div class="step">
+                                    <span class="step-num">1</span>
+                                    <span>Click the button below to open System Settings</span>
+                                </div>
+                                <div class="step">
+                                    <span class="step-num">2</span>
+                                    <span>Click the <strong>+</strong> button at the bottom</span>
+                                </div>
+                                <div class="step">
+                                    <span class="step-num">3</span>
+                                    <span>Navigate to <strong>/Applications</strong> and select <strong>Alfred.app</strong></span>
+                                </div>
+                                <div class="step">
+                                    <span class="step-num">4</span>
+                                    <span>Make sure the toggle is <strong>ON</strong> (blue)</span>
+                                </div>
+                            </div>
+
+                            <button class="ftue-permission-btn-large" onclick="openPermissionSettings('FullDiskAccess')">
+                                Open System Settings → Privacy & Security
+                            </button>
+
+                            <p class="ftue-permission-note">
+                                <strong>Why?</strong> macOS protects your messages and files. Alfred needs this permission to scan for action items and commitments.
+                            </p>
+                        </div>
+
+                        <div class="ftue-permission-item" style="margin-top: 16px; opacity: 0.7;">
+                            <span class="icon">🔔</span>
+                            <div class="info">
+                                <strong>Notifications</strong>
+                                <p>Optional: For scheduled alerts</p>
+                            </div>
+                            <button class="ftue-permission-btn" onclick="requestNotificationPermission()">Enable</button>
+                        </div>
+                    `;
+
+                case 'complete':
+                    return `
+                        <div class="ftue-success-icon">✅</div>
+                        <h1>You're All Set!</h1>
+                        <p>Alfred is ready to be your executive assistant.</p>
+                        <div class="ftue-summary">
+                            <div>Claude AI connected</div>
+                            <div>Notion databases configured</div>
+                            <div>Profile configured</div>
+                            ${ftueData.googleConnected ? '<div>Google Calendar synced</div>' : ''}
+                        </div>
+                        <button class="ftue-launch-btn" onclick="completeFtue()">Launch Alfred</button>
+                    `;
+
+                default:
+                    return '<p>Unknown step</p>';
+            }
+        }
+
+        function getFtueStepActions(step) {
+            if (step === 'welcome') {
+                return `
+                    <button class="ftue-btn ftue-btn-primary" onclick="nextFtueStep()">Get Started</button>
+                    <div style="margin-top: 16px; text-align: center;">
+                        <a href="#" onclick="skipFtueEntirely(); return false;" style="color: #64748b; font-size: 13px; text-decoration: none;">
+                            Already configured? Skip to login →
+                        </a>
+                    </div>
+                `;
+            }
+            if (step === 'complete') {
+                return ''; // No actions, button is in content
+            }
+
+            const backBtn = currentFtueStep > 0 ? `<button class="ftue-btn ftue-btn-secondary" onclick="prevFtueStep()">Back</button>` : '<div></div>';
+            const skipSteps = ['googleOauth', 'messaging', 'permissions'];
+            const isSkippable = skipSteps.includes(step);
+
+            return `
+                ${backBtn}
+                <div style="display: flex; gap: 8px;">
+                    ${isSkippable ? `<button class="ftue-btn ftue-btn-secondary" onclick="skipFtueStep()">Skip</button>` : ''}
+                    <button class="ftue-btn ftue-btn-primary" onclick="nextFtueStep()">Continue</button>
+                </div>
+            `;
+        }
+
+        function renderNotionDatabasePickers() {
+            const taskDbOptions = notionDatabases.map(db => `
+                <div class="ftue-database-option ${ftueData.tasksDatabaseId === db.id ? 'selected' : ''}"
+                     onclick="selectDatabase('tasks', '${db.id}', this)">
+                    <strong>${db.icon} ${db.title}</strong>
+                    <small>${db.id.substring(0, 8)}...</small>
+                </div>
+            `).join('');
+
+            const commitmentDbOptions = notionDatabases.map(db => `
+                <div class="ftue-database-option ${ftueData.commitmentsDatabaseId === db.id ? 'selected' : ''}"
+                     onclick="selectDatabase('commitments', '${db.id}', this)">
+                    <strong>${db.icon} ${db.title}</strong>
+                    <small>${db.id.substring(0, 8)}...</small>
+                </div>
+            `).join('');
+
+            return `
+                <h3 style="font-size: 16px; margin: 24px 0 16px 0;">Select Your Databases</h3>
+                <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 20px;">Choose existing databases for Alfred to use.</p>
+
+                <div class="ftue-database-section">
+                    <label>📋 Tasks Database <span class="required">*</span></label>
+                    <div class="ftue-database-picker" id="tasksDatabaseOptions">
+                        ${taskDbOptions}
+                    </div>
+                </div>
+
+                <div class="ftue-database-section">
+                    <label>🤝 Commitments Database</label>
+                    <div class="ftue-database-picker" id="commitmentsDatabaseOptions">
+                        ${commitmentDbOptions}
+                        <div class="ftue-database-option ${!ftueData.commitmentsDatabaseId ? 'selected' : ''}"
+                             onclick="selectDatabase('commitments', '', this)">
+                            <strong>Same as Tasks</strong>
+                            <small>Use the Tasks database for commitments too</small>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function selectDatabase(type, id, element) {
+            // Update selection in UI
+            const picker = element.parentElement;
+            picker.querySelectorAll('.ftue-database-option').forEach(opt => opt.classList.remove('selected'));
+            element.classList.add('selected');
+
+            // Store selection
+            if (type === 'tasks') {
+                ftueData.tasksDatabaseId = id;
+            } else if (type === 'commitments') {
+                ftueData.commitmentsDatabaseId = id;
+            }
+        }
+
+        function generateHourOptions(selectedHour) {
+            let options = '';
+            for (let h = 6; h <= 22; h++) {
+                const hour = h.toString().padStart(2, '0');
+                const label = h === 12 ? '12 PM' : h > 12 ? `${h-12} PM` : `${h} AM`;
+                options += `<option value="${hour}" ${hour === selectedHour ? 'selected' : ''}>${label}</option>`;
+            }
+            return options;
+        }
+
+        async function nextFtueStep() {
+            // Save current step data
+            const step = FTUE_STEPS[currentFtueStep];
+            if (!await validateAndSaveFtueStep(step)) {
+                return; // Validation failed
+            }
+
+            if (currentFtueStep < FTUE_STEPS.length - 1) {
+                renderFtueStep(currentFtueStep + 1);
+            }
+        }
+
+        function prevFtueStep() {
+            if (currentFtueStep > 0) {
+                renderFtueStep(currentFtueStep - 1);
+            }
+        }
+
+        function skipFtueStep() {
+            if (currentFtueStep < FTUE_STEPS.length - 1) {
+                renderFtueStep(currentFtueStep + 1);
+            }
+        }
+
+        async function skipFtueEntirely() {
+            // Mark setup as complete and go to login
+            try {
+                await fetch('/api/setup/complete', { method: 'POST' });
+            } catch (e) {
+                console.log('Could not mark setup complete, proceeding anyway');
+            }
+            document.getElementById('ftueWizard').classList.add('hidden');
+            document.getElementById('authScreen').classList.remove('hidden');
+        }
+
+        async function validateAndSaveFtueStep(step) {
+            switch(step) {
+                case 'apiKeys':
+                    const claudeKey = document.getElementById('ftueClaudeApiKey')?.value?.trim();
+                    const todoistKey = document.getElementById('ftueTodoistApiKey')?.value?.trim();
+
+                    if (!claudeKey) {
+                        alert('Claude API Key is required');
+                        return false;
+                    }
+
+                    ftueData.claudeApiKey = claudeKey;
+                    ftueData.todoistApiKey = todoistKey;
+
+                    // Save to config
+                    await saveFtueStepData('apiKeys', { claudeApiKey: claudeKey, todoistApiKey: todoistKey });
+                    return true;
+
+                case 'notion':
+                    const notionKey = document.getElementById('ftueNotionApiKey')?.value?.trim();
+
+                    if (!notionKey) {
+                        alert('Notion Integration Token is required');
+                        return false;
+                    }
+
+                    if (!ftueData.tasksDatabaseId) {
+                        alert('Please select a Tasks database');
+                        return false;
+                    }
+
+                    ftueData.notionApiKey = notionKey;
+
+                    await saveFtueStepData('notion', {
+                        notionApiKey: notionKey,
+                        tasksDatabaseId: ftueData.tasksDatabaseId,
+                        commitmentsDatabaseId: ftueData.commitmentsDatabaseId || ftueData.tasksDatabaseId
+                    });
+                    return true;
+
+                case 'profile':
+                    const userName = document.getElementById('ftueUserName')?.value?.trim();
+                    const userEmail = document.getElementById('ftueUserEmail')?.value?.trim();
+                    const workStartHour = document.getElementById('ftueWorkStartHour')?.value;
+                    const workEndHour = document.getElementById('ftueWorkEndHour')?.value;
+
+                    if (!userName || !userEmail) {
+                        alert('Name and Email are required');
+                        return false;
+                    }
+
+                    ftueData.userName = userName;
+                    ftueData.userEmail = userEmail;
+                    ftueData.workStartHour = workStartHour;
+                    ftueData.workEndHour = workEndHour;
+
+                    await saveFtueStepData('profile', {
+                        name: userName,
+                        email: userEmail,
+                        workStartHour: workStartHour,
+                        workEndHour: workEndHour
+                    });
+                    return true;
+
+                case 'messaging':
+                    const enableIMessage = document.getElementById('ftueEnableIMessage')?.checked;
+                    const enableWhatsApp = document.getElementById('ftueEnableWhatsApp')?.checked;
+
+                    ftueData.enableIMessage = enableIMessage;
+                    ftueData.enableWhatsApp = enableWhatsApp;
+
+                    await saveFtueStepData('messaging', {
+                        enableIMessage: enableIMessage ? 'true' : 'false',
+                        enableWhatsApp: enableWhatsApp ? 'true' : 'false'
+                    });
+                    return true;
+
+                default:
+                    return true;
+            }
+        }
+
+        async function saveFtueStepData(step, data) {
+            try {
+                await fetch('/api/setup/step', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ step, data })
+                });
+            } catch (error) {
+                console.error('Failed to save step data:', error);
+            }
+        }
+
+        async function testClaudeApiKey() {
+            const apiKey = document.getElementById('ftueClaudeApiKey')?.value?.trim();
+            const statusEl = document.getElementById('claudeApiKeyStatus');
+
+            if (!apiKey) {
+                statusEl.innerHTML = '<span class="ftue-status error">Please enter an API key</span>';
+                return;
+            }
+
+            statusEl.innerHTML = '<span class="ftue-status loading">Testing...</span>';
+
+            try {
+                const response = await fetch('/api/setup/test-api-key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ apiKey })
+                });
+                const result = await response.json();
+
+                if (result.valid) {
+                    statusEl.innerHTML = '<span class="ftue-status success">✓ Connected</span>';
+                    ftueData.claudeApiKey = apiKey;
+                } else {
+                    statusEl.innerHTML = `<span class="ftue-status error">${result.error || 'Invalid key'}</span>`;
+                }
+            } catch (error) {
+                statusEl.innerHTML = '<span class="ftue-status error">Connection failed</span>';
+            }
+        }
+
+        async function testNotionConnection() {
+            const apiKey = document.getElementById('ftueNotionApiKey')?.value?.trim();
+            const statusEl = document.getElementById('notionStatus');
+            const pickerEl = document.getElementById('notionDatabasePicker');
+
+            if (!apiKey) {
+                statusEl.innerHTML = '<span class="ftue-status error">Please enter a token</span>';
+                return;
+            }
+
+            statusEl.innerHTML = '<span class="ftue-status loading">Connecting...</span>';
+
+            try {
+                const response = await fetch('/api/setup/test-notion', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ apiKey })
+                });
+                const result = await response.json();
+
+                if (result.valid) {
+                    statusEl.innerHTML = `<span class="ftue-status success">✓ Connected as ${result.user}</span>`;
+                    ftueData.notionApiKey = apiKey;
+
+                    // Save the API key first so we can fetch databases
+                    await saveFtueStepData('notion', { notionApiKey: apiKey });
+
+                    // Now fetch databases
+                    statusEl.innerHTML = '<span class="ftue-status loading">Loading databases...</span>';
+                    const dbResponse = await fetch('/api/setup/notion-databases');
+                    const dbResult = await dbResponse.json();
+
+                    if (dbResult.databases && dbResult.databases.length > 0) {
+                        notionDatabases = dbResult.databases;
+                        pickerEl.innerHTML = renderNotionDatabasePickers();
+                        pickerEl.classList.remove('hidden');
+                        statusEl.innerHTML = `<span class="ftue-status success">✓ Found ${notionDatabases.length} databases</span>`;
+                    } else {
+                        statusEl.innerHTML = '<span class="ftue-status error">No databases found. Share a database with your integration.</span>';
+                    }
+                } else {
+                    statusEl.innerHTML = `<span class="ftue-status error">${result.error || 'Invalid token'}</span>`;
+                }
+            } catch (error) {
+                statusEl.innerHTML = '<span class="ftue-status error">Connection failed</span>';
+            }
+        }
+
+        function startGoogleOAuth() {
+            // Open Google OAuth in new window
+            window.open('/auth/google', 'googleOAuth', 'width=600,height=700');
+            // Mark as connected after some time (in real app, would use postMessage or polling)
+            setTimeout(() => {
+                ftueData.googleConnected = true;
+                renderFtueStep(currentFtueStep); // Re-render to show connected state
+            }, 5000);
+        }
+
+        async function openPermissionSettings(type) {
+            // Call server to open System Preferences (can't do from browser directly)
+            try {
+                await fetch('/api/setup/open-system-preferences', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ panel: type })
+                });
+            } catch (e) {
+                // Fallback: try the URL scheme (may work in some browsers)
+                if (type === 'FullDiskAccess') {
+                    window.location.href = 'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles';
+                }
+            }
+        }
+
+        function requestNotificationPermission() {
+            if ('Notification' in window) {
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') {
+                        alert('Notifications enabled!');
+                    }
+                });
+            }
+        }
+
+        async function completeFtue() {
+            try {
+                await fetch('/api/setup/complete', { method: 'POST' });
+                hideFtueWizard();
+                showAuthScreen();
+            } catch (error) {
+                console.error('Failed to complete setup:', error);
+                hideFtueWizard();
+                showAuthScreen();
+            }
+        }
+
+        // ===============================================
+        // End FTUE Wizard Code
+        // ===============================================
+
         function generateSessionId() {
             return 'session-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
         }
 
         // Check for saved session on page load
-        function checkSavedSession() {
+        async function checkSavedSession() {
+            // First check if FTUE is needed
+            try {
+                const setupStatus = await checkSetupStatus();
+                if (!setupStatus.isComplete) {
+                    showFtueWizard();
+                    return;
+                }
+            } catch (error) {
+                console.error('Failed to check setup status:', error);
+                // Continue with normal auth flow if status check fails
+            }
+
+            // Normal auth flow
             const savedToken = localStorage.getItem(STORAGE_TOKEN_KEY);
             const savedExpires = localStorage.getItem(STORAGE_EXPIRES_KEY);
 
@@ -2654,11 +4318,13 @@
         function showAuthScreen() {
             document.getElementById('authScreen').classList.remove('hidden');
             document.getElementById('appContainer').classList.add('hidden');
+            document.getElementById('ftueWizard').classList.add('hidden');
         }
 
         function showApp() {
             document.getElementById('authScreen').classList.add('hidden');
             document.getElementById('appContainer').classList.remove('hidden');
+            document.getElementById('ftueWizard').classList.add('hidden');
             document.getElementById('queryInput').focus();
             // Load recent activity on app initialization
             loadRecentActivity();
@@ -3453,12 +5119,25 @@
                 html += '<div class="data-card">';
                 html += '<div class="data-card-header">They Owe Me (' + theyOwe.length + ')</div>';
                 html += '<div class="data-card-content">';
-                theyOwe.forEach(commitment => {
+                theyOwe.forEach((commitment, idx) => {
                     const overdueTag = commitment.isOverdue ? '<span style="color:#e03e3e;margin-left:8px;">OVERDUE</span>' : '';
+                    const commitmentData = encodeURIComponent(JSON.stringify({
+                        title: commitment.title,
+                        committedBy: commitment.committedBy,
+                        sourceThread: commitment.sourceThread,
+                        commitmentText: commitment.commitmentText,
+                        dueDate: commitment.dueDate,
+                        isOverdue: commitment.isOverdue
+                    }));
                     html += `
-                        <div class="data-item">
+                        <div class="data-item commitment-item they-owe-item" data-commitment="${commitmentData}">
                             <div class="data-item-title">${escapeHtml(commitment.title)}${overdueTag}</div>
                             <div class="data-item-meta">${commitment.committedBy || 'Unknown'} → ${commitment.committedTo || 'You'}</div>
+                            <div class="commitment-actions" style="margin-top:6px;">
+                                <button onclick="generateNudge(this)" class="nudge-btn" title="Generate follow-up message">
+                                    💬 Nudge
+                                </button>
+                            </div>
                         </div>
                     `;
                 });
@@ -3499,14 +5178,27 @@
 
                 const renderItem = (c) => {
                     const overdueTag = c.isOverdue ? '<span style="color:#e03e3e;margin-left:6px;font-size:10px;">overdue</span>' : '';
-                    const statusIcon = c.status === 'Completed' ? '&#10003;' : '&#9675;';
+                    const statusIcon = c.status === 'Completed' || c.status === 'Done' ? '✅' : (c.status === 'In Progress' ? '🟡' : '⚪');
                     let dueLine = '';
                     if (c.dueDate) {
                         const d = new Date(c.dueDate);
                         dueLine = `<span style="color:var(--text-tertiary);font-size:11px;margin-left:4px;">due ${d.toLocaleDateString('en-GB', {day:'numeric',month:'short'})}</span>`;
                     }
-                    return `<div class="data-item">
+
+                    // Add status action buttons if commitment is in Notion
+                    let actionButtons = '';
+                    if (c.notionId && c.status !== 'Done' && c.status !== 'Completed') {
+                        actionButtons = `
+                            <div class="commitment-actions" style="display:flex;gap:6px;margin-top:6px;">
+                                <button onclick="updateCommitmentStatus('${c.notionId}', 'In Progress', this)" class="status-btn status-btn-progress" title="Mark In Progress">🟡</button>
+                                <button onclick="updateCommitmentStatus('${c.notionId}', 'Done', this)" class="status-btn status-btn-done" title="Mark Done">✅</button>
+                            </div>
+                        `;
+                    }
+
+                    return `<div class="data-item commitment-item" data-notion-id="${c.notionId || ''}">
                         <div class="data-item-title">${statusIcon} ${escapeHtml(c.title)}${overdueTag}${dueLine}</div>
+                        ${actionButtons}
                     </div>`;
                 };
 
@@ -3543,6 +5235,173 @@
 
         // Store commitment check items for approval
         let pendingCommitmentCheckItems = [];
+
+        // Update commitment status in Notion
+        async function updateCommitmentStatus(notionId, newStatus, buttonElement) {
+            if (!notionId) {
+                console.error('No Notion ID provided');
+                return;
+            }
+
+            // Disable buttons and show loading state
+            const commitmentItem = buttonElement.closest('.commitment-item');
+            const allButtons = commitmentItem?.querySelectorAll('.status-btn');
+            allButtons?.forEach(btn => {
+                btn.disabled = true;
+                btn.classList.add('loading');
+            });
+
+            try {
+                const response = await authFetch('/api/tasks/status', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        notionId: notionId,
+                        status: newStatus
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    // Update the UI
+                    const titleEl = commitmentItem?.querySelector('.data-item-title');
+                    if (titleEl) {
+                        // Update status icon
+                        const newIcon = newStatus === 'Done' ? '✅' : (newStatus === 'In Progress' ? '🟡' : '⚪');
+                        titleEl.innerHTML = titleEl.innerHTML.replace(/^[✅🟡⚪]/, newIcon);
+                    }
+
+                    // Flash success and hide action buttons if done
+                    commitmentItem?.classList.add('status-updated');
+                    if (newStatus === 'Done') {
+                        const actionsEl = commitmentItem?.querySelector('.commitment-actions');
+                        if (actionsEl) actionsEl.style.display = 'none';
+                    }
+
+                    // Brief success toast
+                    showToast(`Marked as ${newStatus}`, 'success');
+                } else {
+                    throw new Error(data.error || 'Failed to update status');
+                }
+            } catch (error) {
+                console.error('Failed to update commitment status:', error);
+                showToast('Failed to update: ' + error.message, 'error');
+            } finally {
+                // Re-enable buttons
+                allButtons?.forEach(btn => {
+                    btn.disabled = false;
+                    btn.classList.remove('loading');
+                });
+            }
+        }
+
+        // Generate nudge message for "They Owe Me" commitment
+        async function generateNudge(buttonElement) {
+            const commitmentItem = buttonElement.closest('.they-owe-item');
+            const commitmentDataStr = commitmentItem?.dataset?.commitment;
+            if (!commitmentDataStr) {
+                showToast('No commitment data found', 'error');
+                return;
+            }
+
+            const commitment = JSON.parse(decodeURIComponent(commitmentDataStr));
+
+            // Show loading state
+            buttonElement.disabled = true;
+            buttonElement.textContent = '⏳ Generating...';
+
+            try {
+                const response = await authFetch('/api/nudge/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(commitment)
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.message) {
+                    showNudgeModal(commitment, data.message);
+                } else {
+                    throw new Error(data.error || 'Failed to generate nudge');
+                }
+            } catch (error) {
+                console.error('Failed to generate nudge:', error);
+                showToast('Failed to generate message: ' + error.message, 'error');
+            } finally {
+                buttonElement.disabled = false;
+                buttonElement.textContent = '💬 Nudge';
+            }
+        }
+
+        // Show modal with generated nudge message
+        function showNudgeModal(commitment, message) {
+            const modal = document.createElement('div');
+            modal.className = 'nudge-modal';
+            modal.innerHTML = `
+                <div class="nudge-modal-content">
+                    <div class="nudge-modal-header">
+                        <span class="nudge-modal-title">Follow-up: ${escapeHtml(commitment.committedBy || 'them')}</span>
+                        <button class="nudge-modal-close" onclick="this.closest('.nudge-modal').remove()">&times;</button>
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-tertiary); margin-bottom: 12px;">
+                        Re: ${escapeHtml(commitment.title)}
+                    </div>
+                    <textarea class="nudge-textarea" id="nudgeMessage">${escapeHtml(message)}</textarea>
+                    <div class="nudge-actions">
+                        <button onclick="this.closest('.nudge-modal').remove()" style="padding: 8px 16px; border: 1px solid var(--border-color); background: var(--bg-primary); border-radius: var(--radius-sm); cursor: pointer;">
+                            Cancel
+                        </button>
+                        <button class="nudge-copy-btn" onclick="copyNudgeMessage()">
+                            📋 Copy Message
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            // Close on backdrop click
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.remove();
+            });
+        }
+
+        // Copy nudge message to clipboard
+        function copyNudgeMessage() {
+            const textarea = document.getElementById('nudgeMessage');
+            if (textarea) {
+                navigator.clipboard.writeText(textarea.value).then(() => {
+                    showToast('Message copied to clipboard!', 'success');
+                    document.querySelector('.nudge-modal')?.remove();
+                }).catch(err => {
+                    showToast('Failed to copy: ' + err.message, 'error');
+                });
+            }
+        }
+
+        // Simple toast notification
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.textContent = message;
+            toast.style.cssText = `
+                position: fixed;
+                bottom: 20px;
+                right: 20px;
+                padding: 12px 20px;
+                background: ${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6'};
+                color: white;
+                border-radius: 8px;
+                font-size: 14px;
+                z-index: 9999;
+                animation: slideIn 0.3s ease-out;
+            `;
+            document.body.appendChild(toast);
+            setTimeout(() => {
+                toast.style.animation = 'slideOut 0.3s ease-in forwards';
+                setTimeout(() => toast.remove(), 300);
+            }, 2000);
+        }
 
         function escapeHtml(text) {
             const div = document.createElement('div');
@@ -3732,31 +5591,277 @@
             });
         }
 
-        // Show commitments options (combined view)
+        // Show commitments dashboard with quick actions
         function showCommitmentsOptions() {
+            // First, fetch commitments to show a summary
+            showCommitmentsDashboard();
+        }
+
+        async function showCommitmentsDashboard() {
+            const loadingHtml = `
+                <div class="commitment-dashboard">
+                    <div style="text-align:center;padding:40px;color:var(--text-tertiary);">
+                        Loading commitments...
+                    </div>
+                </div>
+            `;
+            showFormPage('Commitments Dashboard', loadingHtml, null, true);
+
+            try {
+                const response = await authFetch('/api/commitments');
+                const data = await response.json();
+                const commitments = data.commitments || [];
+
+                // User name for filtering
+                const userName = 'Miten Sampat';
+                const isMe = (name) => !name || name === userName || name === 'You' || name.toLowerCase() === 'miten';
+
+                // Separate by type
+                const iOwe = commitments.filter(c => c.type === 'I Owe');
+                const theyOwe = commitments.filter(c => c.type === 'They Owe Me');
+                const overdue = commitments.filter(c => c.isOverdue);
+
+                // Filter "They Owe Me" to exclude self-commitments (where I'm both the committer and recipient)
+                const followUpNeeded = theyOwe.filter(c => !isMe(c.committedBy));
+
+                const dashboardHtml = `
+                    <div class="commitment-dashboard">
+                        <!-- Summary Cards -->
+                        <div class="commitment-summary">
+                            <div class="summary-card" onclick="callDirectAPI('/api/commitments?type=iOwe', 'I Owe')">
+                                <div class="summary-icon">📤</div>
+                                <div class="summary-number">${iOwe.length}</div>
+                                <div class="summary-label">I Owe</div>
+                            </div>
+                            <div class="summary-card" onclick="callDirectAPI('/api/commitments?type=theyOwe', 'They Owe Me')">
+                                <div class="summary-icon">📥</div>
+                                <div class="summary-number">${theyOwe.length}</div>
+                                <div class="summary-label">They Owe Me</div>
+                            </div>
+                            ${overdue.length > 0 ? `
+                            <div class="summary-card overdue-card" onclick="callDirectAPI('/api/commitments/overdue', 'Overdue Commitments')">
+                                <div class="summary-icon">⚠️</div>
+                                <div class="summary-number">${overdue.length}</div>
+                                <div class="summary-label">Overdue</div>
+                            </div>
+                            ` : ''}
+                        </div>
+
+                        <!-- Quick Actions -->
+                        <div class="commitment-actions-section">
+                            <div class="action-title">Quick Actions</div>
+                            <div class="commitment-quick-actions">
+                                <button class="commitment-action-btn" onclick="callDirectAPI('/api/commitments', 'All Commitments')">
+                                    📋 View All
+                                </button>
+                                <button class="commitment-action-btn" onclick="showCommitmentCheckForm()">
+                                    🔍 Scan Contact
+                                </button>
+                                <button class="commitment-action-btn" onclick="showDetectCompletionsForm()">
+                                    ✅ Detect Completions
+                                </button>
+                            </div>
+                        </div>
+
+                        ${overdue.length > 0 ? `
+                        <!-- Overdue Alert -->
+                        <div class="overdue-alert">
+                            <div class="overdue-header">⚠️ Overdue Items</div>
+                            ${overdue.slice(0, 3).map(c => `
+                                <div class="overdue-item">
+                                    <span class="overdue-type">${c.type === 'I Owe' ? '📤' : '📥'}</span>
+                                    <span class="overdue-title">${escapeHtml(c.title)}</span>
+                                    ${c.notionId ? `
+                                        <button class="mark-done-btn" onclick="updateCommitmentStatus('${c.notionId}', 'Done', this)">
+                                            ✅ Done
+                                        </button>
+                                    ` : ''}
+                                </div>
+                            `).join('')}
+                            ${overdue.length > 3 ? `<div style="font-size:12px;color:var(--text-tertiary);margin-top:8px;">+ ${overdue.length - 3} more...</div>` : ''}
+                        </div>
+                        ` : ''}
+
+                        ${followUpNeeded.length > 0 ? `
+                        <!-- Follow-up Suggestions -->
+                        <div class="followup-section">
+                            <div class="action-title">Follow-up Needed</div>
+                            ${followUpNeeded.slice(0, 3).map(c => `
+                                <div class="followup-item">
+                                    <div class="followup-info">
+                                        <span class="followup-person">${escapeHtml(c.committedBy || 'Someone')}</span>
+                                        <span class="followup-title">${escapeHtml(c.title)}</span>
+                                    </div>
+                                    <button class="nudge-btn-small" onclick='generateNudgeForCommitment(${JSON.stringify(c).replace(/'/g, "&#39;")})'>
+                                        💬 Nudge
+                                    </button>
+                                </div>
+                            `).join('')}
+                            ${followUpNeeded.length > 3 ? `<div style="font-size:12px;color:var(--text-tertiary);margin-top:12px;text-align:center;">+ ${followUpNeeded.length - 3} more pending follow-ups</div>` : ''}
+                        </div>
+                        ` : ''}
+
+                        ${commitments.length === 0 ? `
+                        <!-- Empty State -->
+                        <div class="commitment-empty-state">
+                            <div class="empty-icon">✨</div>
+                            <p>No active commitments</p>
+                            <p class="empty-hint">Scan your messages to extract commitments from conversations</p>
+                        </div>
+                        ` : ''}
+                    </div>
+                `;
+
+                // Update the form page with the dashboard
+                const formContainer = document.querySelector('.commitment-dashboard');
+                if (formContainer) {
+                    formContainer.outerHTML = dashboardHtml;
+                }
+
+            } catch (error) {
+                console.error('Failed to load commitments:', error);
+                const formContainer = document.querySelector('.commitment-dashboard');
+                if (formContainer) {
+                    formContainer.innerHTML = `
+                        <div style="text-align:center;padding:40px;color:var(--text-tertiary);">
+                            Failed to load commitments. <br/>
+                            <button onclick="showCommitmentsDashboard()" style="margin-top:12px;">Retry</button>
+                        </div>
+                    `;
+                }
+            }
+        }
+
+        // Generate nudge for a commitment object
+        function generateNudgeForCommitment(commitment) {
+            showNudgeGenerating(commitment);
+        }
+
+        async function showNudgeGenerating(commitment) {
+            showToast('Generating follow-up message...', 'info');
+
+            try {
+                const response = await authFetch('/api/nudge/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        title: commitment.title,
+                        committedBy: commitment.committedBy,
+                        sourceThread: commitment.sourceThread,
+                        commitmentText: commitment.commitmentText,
+                        dueDate: commitment.dueDate,
+                        isOverdue: commitment.isOverdue
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.message) {
+                    showNudgeModal(commitment, data.message);
+                } else {
+                    throw new Error(data.error || 'Failed to generate nudge');
+                }
+            } catch (error) {
+                console.error('Failed to generate nudge:', error);
+                showToast('Failed to generate message: ' + error.message, 'error');
+            }
+        }
+
+        // Form for detecting completions
+        function showDetectCompletionsForm() {
             const formHTML = `
                 <div class="form-group">
-                    <label class="form-label">What would you like to do?</label>
+                    <label class="form-label">Contact Name</label>
+                    <input type="text" name="contact" class="form-input" placeholder="Enter name..." required autofocus />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Look back</label>
                     <div class="radio-group">
                         <label class="radio-option">
-                            <input type="radio" name="commitAction" value="view" checked />
-                            <span>View all commitments</span>
+                            <input type="radio" name="timeframe" value="24h" checked />
+                            <span>24 Hours</span>
                         </label>
                         <label class="radio-option">
-                            <input type="radio" name="commitAction" value="check" />
-                            <span>Check commitments with someone</span>
+                            <input type="radio" name="timeframe" value="48h" />
+                            <span>48 Hours</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="timeframe" value="7d" />
+                            <span>1 Week</span>
                         </label>
                     </div>
                 </div>
             `;
 
-            showFormPage('Commitments', formHTML, (data) => {
-                if (data.commitAction === 'check') {
-                    showCommitmentCheckForm();
-                } else {
-                    callDirectAPI('/api/commitments', 'My Commitments');
+            showFormPage('Detect Completions', formHTML, async (data) => {
+                showLoading('Scanning for completion signals...');
+
+                try {
+                    const response = await authFetch('/api/commitments/detect-completions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contact: data.contact.trim(),
+                            timeframe: data.timeframe
+                        })
+                    });
+
+                    const result = await response.json();
+                    hideLoading();
+
+                    if (result.completions && result.completions.length > 0) {
+                        showCompletionSuggestions(result.completions, data.contact.trim());
+                    } else {
+                        addMessage('assistant', `No completion signals found in recent messages with ${data.contact.trim()}.`);
+                    }
+                } catch (error) {
+                    hideLoading();
+                    addMessage('assistant', 'Failed to detect completions: ' + error.message);
                 }
             });
+        }
+
+        // Show completion suggestions
+        function showCompletionSuggestions(completions, contact) {
+            let html = `<div class="data-card"><div class="data-card-header">Possible Completions from ${escapeHtml(contact)}</div><div class="data-card-content">`;
+
+            for (const match of completions) {
+                const signal = match.signal;
+                const commitment = match.commitment;
+                const confidence = Math.round(match.confidence * 100);
+
+                html += `
+                    <div class="completion-suggestion" style="padding:12px;border-bottom:1px solid var(--border-color);">
+                        <div style="font-size:13px;margin-bottom:4px;">
+                            <strong>${escapeHtml(signal.sender)}</strong>: "${escapeHtml(signal.message)}"
+                        </div>
+                `;
+
+                if (commitment) {
+                    html += `
+                        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:8px;">
+                            Might be completing: <strong>${escapeHtml(commitment.title)}</strong> (${confidence}% match)
+                        </div>
+                        ${commitment.notionId ? `
+                            <button onclick="updateCommitmentStatus('${commitment.notionId}', 'Done', this)" class="status-btn status-btn-done">
+                                ✅ Mark Done
+                            </button>
+                        ` : ''}
+                    `;
+                } else {
+                    html += `<div style="font-size:11px;color:var(--text-tertiary);">No matching commitment found</div>`;
+                }
+
+                html += `</div>`;
+            }
+
+            html += `</div></div>`;
+            addMessage('assistant', html);
+        }
+
+        // Legacy function kept for backward compatibility
+        function showCommitmentsOptionsLegacy() {
+            // Deprecated - use showCommitmentsOptions() instead
         }
 
         function showCommitmentCheckForm() {

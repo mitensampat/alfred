@@ -480,25 +480,64 @@ extension NotionService {
 
         if let desc = description {
             if type == .commitment {
-                // Try to extract commitment details from description
-                // Format: "Direction: I Owe\nCommitted by: X\nCommitted to: Y\n\nOriginal context:\n..."
+                // Parse commitment details from description
+                // New arrow format: "→ John" (I Owe to John) or "← Sarah" (Sarah owes me)
+                // Legacy format: "Direction: I Owe\nCommitted by: X\nCommitted to: Y\n..."
                 let lines = desc.components(separatedBy: "\n")
-                for line in lines {
-                    if line.hasPrefix("Direction: ") {
-                        let direction = line.replacingOccurrences(of: "Direction: ", with: "")
-                        commitmentDirection = TaskItem.CommitmentDirection(rawValue: direction)
-                    } else if line.hasPrefix("Committed by: ") {
-                        committedBy = line.replacingOccurrences(of: "Committed by: ", with: "")
-                    } else if line.hasPrefix("Committed to: ") {
-                        committedTo = line.replacingOccurrences(of: "Committed to: ", with: "")
-                    } else if line.hasPrefix("Original context:") {
-                        // Rest of the description is context
-                        if let range = desc.range(of: "Original context:\n") {
-                            originalContext = String(desc[range.upperBound...])
-                        }
-                        break
+
+                // Check for new arrow format first (first line starts with → or ←)
+                if let firstLine = lines.first?.trimmingCharacters(in: .whitespaces) {
+                    if firstLine.hasPrefix("→ ") {
+                        // I Owe direction: "→ John" means I owe to John
+                        commitmentDirection = .iOwe
+                        committedTo = String(firstLine.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+                        // committedBy will be extracted from title or left as nil (the user)
+                    } else if firstLine.hasPrefix("← ") {
+                        // They Owe direction: "← Sarah" means Sarah owes me
+                        commitmentDirection = .theyOweMe
+                        committedBy = String(firstLine.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+                        // committedTo will be the user
                     }
                 }
+
+                // Also try to extract from title (arrow format: "→ John: Task title")
+                if commitmentDirection == nil {
+                    if plainText.hasPrefix("→ ") {
+                        commitmentDirection = .iOwe
+                        if let colonIndex = plainText.firstIndex(of: ":") {
+                            let counterparty = plainText[plainText.index(plainText.startIndex, offsetBy: 2)..<colonIndex]
+                            committedTo = String(counterparty).trimmingCharacters(in: .whitespaces)
+                        }
+                    } else if plainText.hasPrefix("← ") {
+                        commitmentDirection = .theyOweMe
+                        if let colonIndex = plainText.firstIndex(of: ":") {
+                            let counterparty = plainText[plainText.index(plainText.startIndex, offsetBy: 2)..<colonIndex]
+                            committedBy = String(counterparty).trimmingCharacters(in: .whitespaces)
+                        }
+                    }
+                }
+
+                // Fall back to legacy format parsing
+                if commitmentDirection == nil {
+                    for line in lines {
+                        if line.hasPrefix("Direction: ") {
+                            let direction = line.replacingOccurrences(of: "Direction: ", with: "")
+                            commitmentDirection = TaskItem.CommitmentDirection(rawValue: direction)
+                        } else if line.hasPrefix("Committed by: ") {
+                            committedBy = line.replacingOccurrences(of: "Committed by: ", with: "")
+                        } else if line.hasPrefix("Committed to: ") {
+                            committedTo = line.replacingOccurrences(of: "Committed to: ", with: "")
+                        }
+                    }
+                }
+
+                // Extract context (after "---" separator or "Context:" prefix)
+                if let contextRange = desc.range(of: "---\nContext: ") {
+                    originalContext = String(desc[contextRange.upperBound...])
+                } else if let contextRange = desc.range(of: "Original context:\n") {
+                    originalContext = String(desc[contextRange.upperBound...])
+                }
+
             } else if type == .followup {
                 // For follow-ups, the description is the original context
                 originalContext = desc

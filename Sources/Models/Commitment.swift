@@ -226,6 +226,7 @@ struct CommitmentExtractionRequest: Codable {
 
     struct MessageContext: Codable {
         let sender: String
+        let senderName: String?  // Display name (especially important for group chats)
         let content: String
         let timestamp: Date
         let isFromUser: Bool

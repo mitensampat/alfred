@@ -44,6 +44,7 @@ class CommitmentAnalyzer {
         let messageContexts = messages.map { message in
             CommitmentExtractionRequest.MessageContext(
                 sender: message.sender,
+                senderName: message.senderName,  // Pass the actual sender name for group chats
                 content: message.content,
                 timestamp: message.timestamp,
                 isFromUser: message.direction == .outgoing
@@ -176,10 +177,22 @@ class CommitmentAnalyzer {
     }
 
     private func buildExtractionPrompt(_ request: CommitmentExtractionRequest, platform: String, threadId: String) -> String {
-        // Use threadName for the counterparty instead of raw sender IDs
-        let counterpartyName = request.threadName
+        // Collect unique participant names from group chats (for non-user messages with sender names)
+        let otherParticipants = Set(request.messages.compactMap { message -> String? in
+            guard !message.isFromUser else { return nil }
+            return message.senderName ?? message.sender
+        })
+        let isGroupChat = otherParticipants.count > 1
+
+        // Build messages with actual sender names (not just thread name)
         let messagesText = request.messages.map { message in
-            let sender = message.isFromUser ? request.userInfo.name : counterpartyName
+            let sender: String
+            if message.isFromUser {
+                sender = request.userInfo.name
+            } else {
+                // Use sender name if available (important for groups), otherwise fall back to sender ID
+                sender = message.senderName ?? message.sender
+            }
             let timestamp = ISO8601DateFormatter().string(from: message.timestamp)
             return "[\(timestamp)] \(sender): \(message.content)"
         }.joined(separator: "\n")
@@ -234,10 +247,15 @@ class CommitmentAnalyzer {
         // Get historical thread context from contact learning
         let historicalContext = ContactLearner.shared.getPromptContext(platform: platform, threadId: threadId)
 
+        // For HotReloadManager, provide appropriate counterparty info
+        let counterpartyInfo = isGroupChat
+            ? "GROUP: \(request.threadName) (Participants: \(otherParticipants.sorted().joined(separator: ", ")))"
+            : request.threadName
+
         // Try to use external prompt from HotReloadManager (hot-reloadable)
         let externalPrompt = HotReloadManager.shared.getCommitmentExtractionPrompt(
             userName: userName,
-            counterpartyName: counterpartyName,
+            counterpartyName: counterpartyInfo,
             participationLevel: "\(participationLevel)\nUser was directly mentioned by others: \(userMentioned ? "Yes" : "No")",
             participationGuidance: participationGuidance,
             correctionContext: correctionContext.isEmpty ? "" : "## LEARNING FROM PAST CORRECTIONS\nThe user has previously rejected or corrected these items. Avoid extracting similar items:\n\(correctionContext)",
@@ -305,11 +323,35 @@ class CommitmentAnalyzer {
         """
         }
 
+        // Build counterparty info section depending on whether it's a group
+        let counterpartySection: String
+        let exampleCommittedTo: String
+        if isGroupChat {
+            let participantsList = otherParticipants.sorted().joined(separator: ", ")
+            counterpartySection = """
+        ## PARTICIPANTS (GROUP CHAT)
+        This is a GROUP chat named: "\(request.threadName)"
+        Participants (besides \(userName)): \(participantsList)
+
+        CRITICAL for group chats:
+        - Use the ACTUAL PERSON'S NAME for committedBy/committedTo fields (e.g., "Kunal", "John")
+        - Do NOT use the group name as the person (e.g., NOT "Team - Alex Directs")
+        - Each message already shows WHO said it - use that person's name
+        - If someone says "I'll send the deck", committedBy = that person's name
+        """
+            exampleCommittedTo = otherParticipants.first ?? request.threadName
+        } else {
+            counterpartySection = """
+        ## COUNTERPARTY
+        The other person in this conversation is: \(request.threadName)
+        Use "\(request.threadName)" (not raw IDs) for committedBy/committedTo fields.
+        """
+            exampleCommittedTo = request.threadName
+        }
+
         prompt += """
 
-        ## COUNTERPARTY
-        The other person/group in this conversation is: \(counterpartyName)
-        Use "\(counterpartyName)" (not raw IDs) for committedBy/committedTo fields.
+        \(counterpartySection)
 
         Conversation:
         \(messagesText)
@@ -322,7 +364,7 @@ class CommitmentAnalyzer {
               "title": "Send Q4 metrics deck",
               "commitmentText": "I'll send you the Q4 metrics by EOW",
               "committedBy": "\(request.userInfo.name)",
-              "committedTo": "\(counterpartyName)",
+              "committedTo": "\(exampleCommittedTo)",
               "dueDate": "2026-01-24T23:59:59Z",
               "priority": "high",
               "context": "Discussion about quarterly review",
@@ -423,9 +465,11 @@ struct CommitmentExtraction {
 struct CommitmentExtractionRequest: Codable {
     let messages: [MessageContext]
     let userInfo: UserInfo
+    let threadName: String
 
     struct MessageContext: Codable {
         let sender: String
+        let senderName: String?  // Display name (especially important for group chats)
         let content: String
         let timestamp: Date
         let isFromUser: Bool
