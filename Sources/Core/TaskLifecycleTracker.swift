@@ -831,23 +831,30 @@ class TaskLifecycleTracker {
 
         var stats = LifecycleStats()
 
-        // Get computed stats
-        let query = "SELECT stat_key, stat_value, sample_count FROM completion_stats"
+        // Get completed tasks count from status_done stat
+        let doneStatQuery = "SELECT stat_value FROM completion_stats WHERE stat_key = 'status_done'"
         var stmt: OpaquePointer?
 
-        if sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK {
-            defer { sqlite3_finalize(stmt) }
+        if sqlite3_prepare_v2(db, doneStatQuery, -1, &stmt, nil) == SQLITE_OK {
+            if sqlite3_step(stmt) == SQLITE_ROW {
+                stats.totalCompleted = Int(sqlite3_column_double(stmt, 0))
+            }
+            sqlite3_finalize(stmt)
+            stmt = nil
+        }
 
+        // Get computed stats (completion rate and overdue rate)
+        let query = "SELECT stat_key, stat_value FROM completion_stats WHERE stat_key IN ('completion_rate', 'overdue_rate')"
+
+        if sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK {
             while sqlite3_step(stmt) == SQLITE_ROW {
                 if let keyPtr = sqlite3_column_text(stmt, 0) {
                     let key = String(cString: keyPtr)
                     let value = sqlite3_column_double(stmt, 1)
-                    let count = Int(sqlite3_column_int(stmt, 2))
 
                     switch key {
                     case "completion_rate":
                         stats.completionRate = value
-                        stats.totalCompleted = count
                     case "overdue_rate":
                         stats.overdueRate = value
                     default:
@@ -855,30 +862,45 @@ class TaskLifecycleTracker {
                     }
                 }
             }
+            sqlite3_finalize(stmt)
+            stmt = nil
         }
 
         // Get total tasks tracked
         let countQuery = "SELECT COUNT(*) FROM task_snapshots"
         if sqlite3_prepare_v2(db, countQuery, -1, &stmt, nil) == SQLITE_OK {
-            defer { sqlite3_finalize(stmt) }
             if sqlite3_step(stmt) == SQLITE_ROW {
                 stats.totalTasks = Int(sqlite3_column_int(stmt, 0))
+            }
+            sqlite3_finalize(stmt)
+            stmt = nil
+        }
+
+        // If totalCompleted wasn't set from stats, count Done tasks directly
+        if stats.totalCompleted == 0 {
+            let doneQuery = "SELECT COUNT(*) FROM task_snapshots WHERE status = 'Done'"
+            if sqlite3_prepare_v2(db, doneQuery, -1, &stmt, nil) == SQLITE_OK {
+                if sqlite3_step(stmt) == SQLITE_ROW {
+                    stats.totalCompleted = Int(sqlite3_column_int(stmt, 0))
+                }
+                sqlite3_finalize(stmt)
+                stmt = nil
             }
         }
 
         // Get total changes recorded
         let changesQuery = "SELECT COUNT(*) FROM status_changes"
         if sqlite3_prepare_v2(db, changesQuery, -1, &stmt, nil) == SQLITE_OK {
-            defer { sqlite3_finalize(stmt) }
             if sqlite3_step(stmt) == SQLITE_ROW {
                 stats.totalChanges = Int(sqlite3_column_int(stmt, 0))
             }
+            sqlite3_finalize(stmt)
+            stmt = nil
         }
 
         // Get last scan time
         let scanQuery = "SELECT MAX(scanned_at) FROM scan_history"
         if sqlite3_prepare_v2(db, scanQuery, -1, &stmt, nil) == SQLITE_OK {
-            defer { sqlite3_finalize(stmt) }
             if sqlite3_step(stmt) == SQLITE_ROW {
                 if let datePtr = sqlite3_column_text(stmt, 0) {
                     let dateStr = String(cString: datePtr)
@@ -889,6 +911,8 @@ class TaskLifecycleTracker {
                     stats.lastScanTime = formatter.date(from: dateStr)
                 }
             }
+            sqlite3_finalize(stmt)
+            stmt = nil
         }
 
         return stats
