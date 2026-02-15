@@ -259,6 +259,13 @@ class HTTPServer {
                 return
             }
 
+            // Allow health endpoint without authentication (version/status is not sensitive)
+            if request.path == "/api/health" {
+                let response = await route(request)
+                try await client.send(response)
+                return
+            }
+
             // Allow FTUE setup endpoints without authentication (needed before setup is complete)
             if request.path.hasPrefix("/api/setup/") {
                 let response = await route(request)
@@ -729,6 +736,7 @@ class HTTPServer {
             statusCode: 200,
             body: [
                 "status": "ok",
+                "version": AlfredApp.version,
                 "timestamp": Self.iso8601Formatter.string(from: Date())
             ]
         )

@@ -81,19 +81,6 @@
             color: var(--text-secondary);
         }
 
-        .header .version-tag {
-            display: inline-block;
-            font-family: var(--font-body);
-            font-size: 11px;
-            font-weight: 500;
-            color: var(--accent-color);
-            background: rgba(35, 131, 226, 0.1);
-            padding: 2px 8px;
-            border-radius: 4px;
-            margin-left: 8px;
-            vertical-align: middle;
-        }
-
         .header .header-content {
             display: flex;
             justify-content: space-between;
@@ -4926,7 +4913,7 @@
                    onkeypress="if(event.key==='Enter')authenticate()" autofocus />
             <button class="auth-button" onclick="authenticate()">let's go</button>
             <div id="authError" class="auth-error hidden"></div>
-            <div class="auth-footer">v1.6.3.2 · crafted by ms foundry</div>
+            <div class="auth-footer"><span id="authVersion"></span> · crafted by ms foundry</div>
         </div>
     </div>
 
@@ -4953,7 +4940,7 @@
         <div class="header">
             <div class="header-content">
                 <div class="header-left">
-                    <h1>alfred <span class="version-tag">v1.6.3.2</span></h1>
+                    <h1>alfred</h1>
                     <p>judgement from noise</p>
                 </div>
                 <button id="logoutButton" class="logout-button" onclick="logout()" title="Logout">
@@ -5307,6 +5294,18 @@
         // Storage keys
         const STORAGE_TOKEN_KEY = 'alfred_auth_token';
         const STORAGE_EXPIRES_KEY = 'alfred_token_expires';
+
+        // Fetch and display version from server (auto-updates from single source of truth)
+        (async function loadVersion() {
+            try {
+                const res = await fetch('/api/health');
+                const data = await res.json();
+                if (data.version) {
+                    const ver = 'v' + data.version;
+                    document.querySelectorAll('#authVersion, #appVersion').forEach(el => el.textContent = ver);
+                }
+            } catch(e) { /* version display is non-critical */ }
+        })();
 
         // ===============================================
         // FTUE (First Time User Experience) Wizard
@@ -11700,7 +11699,7 @@
 
     <!-- Footer -->
     <footer class="app-footer">
-        <div class="branding">crafted by ms foundry</div>
+        <div class="branding"><span id="appVersion"></span> · crafted by ms foundry</div>
     </footer>
 </body>
 </html>
