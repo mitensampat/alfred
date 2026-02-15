@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="alfred">
     <title>alfred</title>
     <!-- Google Fonts - Playfair Display for elegant headlines -->
@@ -48,6 +48,11 @@
             color: var(--text-primary);
             line-height: 1.5;
             -webkit-font-smoothing: antialiased;
+            /* Safe area insets for iPhone notch/Dynamic Island/home indicator */
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
         }
 
         /* Layout */
@@ -132,6 +137,7 @@
         .app-footer {
             text-align: center;
             padding: 24px 0;
+            padding-bottom: calc(24px + env(safe-area-inset-bottom));
             margin-top: auto;
             border-top: 1px solid var(--border-color);
         }
@@ -904,7 +910,7 @@
             padding: 12px;
             box-shadow: var(--shadow-md);
             position: sticky;
-            bottom: 24px;
+            bottom: calc(24px + env(safe-area-inset-bottom));
         }
 
         .input-wrapper {
@@ -1140,6 +1146,8 @@
             justify-content: center;
             min-height: 100vh;
             padding: 24px;
+            padding-top: calc(24px + env(safe-area-inset-top));
+            padding-bottom: calc(24px + env(safe-area-inset-bottom));
         }
 
         .auth-card {
@@ -1271,8 +1279,8 @@
         /* Back Home Button */
         .back-home-button {
             position: fixed;
-            top: 24px;
-            right: 24px;
+            top: calc(24px + env(safe-area-inset-top));
+            right: calc(24px + env(safe-area-inset-right));
             padding: 10px 20px;
             background: var(--bg-primary);
             border: 1px solid var(--border-color);
@@ -1282,7 +1290,7 @@
             color: var(--text-primary);
             cursor: pointer;
             transition: all 0.15s;
-            box-shadow: var(--shadow-sm);
+            box-shadow: var(--shadow-md);
             z-index: 100;
         }
 
@@ -1290,7 +1298,7 @@
             background: var(--bg-tertiary);
             border-color: var(--accent-color);
             transform: translateY(-1px);
-            box-shadow: var(--shadow-md);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
         }
 
         .back-home-button::before {
@@ -1300,8 +1308,8 @@
         /* Settings Button */
         .settings-button {
             position: fixed;
-            top: 24px;
-            left: 24px;
+            top: calc(24px + env(safe-area-inset-top));
+            left: calc(24px + env(safe-area-inset-left));
             width: 42px;
             height: 42px;
             background: var(--bg-primary);
@@ -2399,10 +2407,14 @@
         @media (max-width: 640px) {
             .container {
                 padding: 12px 12px 80px 12px;
+                padding-top: calc(12px + env(safe-area-inset-top));
+                padding-bottom: calc(80px + env(safe-area-inset-bottom));
             }
 
             .header {
                 margin-bottom: 20px;
+                /* Add right padding so header text doesn't collide with Back Home button */
+                padding-right: 100px;
             }
 
             .header h1 {
@@ -2479,10 +2491,10 @@
                 padding: 4px 6px;
             }
 
-            /* Back Home Button */
+            /* Back Home Button - mobile safe area */
             .back-home-button {
-                top: 12px;
-                right: 12px;
+                top: calc(12px + env(safe-area-inset-top));
+                right: calc(12px + env(safe-area-inset-right));
                 padding: 8px 16px;
                 font-size: 13px;
             }
@@ -2490,11 +2502,14 @@
             /* Form Page */
             .form-page {
                 padding: 24px;
+                /* Prevent title overlap with Back Home button */
+                padding-right: 24px;
             }
 
             .form-page-title {
                 font-size: 20px;
                 margin-bottom: 20px;
+                padding-right: 80px; /* Room for Back Home button */
             }
 
             .form-input {
@@ -2508,6 +2523,8 @@
             /* Modal */
             .modal-overlay {
                 padding: 16px;
+                padding-top: calc(16px + env(safe-area-inset-top));
+                padding-bottom: calc(16px + env(safe-area-inset-bottom));
             }
 
             .modal {
@@ -2519,9 +2536,9 @@
                 margin-bottom: 16px;
             }
 
-            /* Input Area */
+            /* Input Area - safe area for home indicator */
             .input-container {
-                bottom: 12px;
+                bottom: calc(12px + env(safe-area-inset-bottom));
                 padding: 10px;
             }
 
@@ -2535,7 +2552,11 @@
                 height: 38px;
             }
 
-            /* Messages */
+            /* Messages - improved spacing for narrow screens */
+            .message {
+                gap: 10px;
+            }
+
             .message-avatar {
                 width: 28px;
                 height: 28px;
@@ -2552,11 +2573,19 @@
 
             .message-text {
                 font-size: 14px;
+                line-height: 1.6;
+                word-break: break-word;
+                overflow-wrap: anywhere;
             }
 
             .message.assistant .message-text {
                 font-size: 14px;
-                padding: 14px 16px;
+                padding: 12px 14px;
+                line-height: 1.65;
+            }
+
+            .message.user .message-text {
+                padding: 10px 14px;
             }
 
             /* Approval UI Mobile */
@@ -2641,8 +2670,8 @@
 
             /* Settings */
             .settings-button {
-                top: 12px;
-                left: 12px;
+                top: calc(12px + env(safe-area-inset-top));
+                left: calc(12px + env(safe-area-inset-left));
                 width: 38px;
                 height: 38px;
                 font-size: 16px;
@@ -2673,24 +2702,109 @@
             .settings-input {
                 font-size: 16px; /* Prevent iOS zoom */
             }
+
+            /* Pattern stat grid - tighter on mobile */
+            .pattern-stat-card {
+                padding: 12px 8px;
+            }
+
+            .pattern-stat-value {
+                font-size: 22px;
+            }
+
+            .pattern-stat-label {
+                font-size: 11px;
+            }
         }
 
-        /* Extra small mobile devices */
-        @media (max-width: 375px) {
+        /* iPhone 17 Pro and similar (up to ~420px viewport) */
+        @media (max-width: 420px) {
             .container {
-                padding: 12px 10px 80px 10px;
+                padding: 10px 10px 80px 10px;
+                padding-top: calc(10px + env(safe-area-inset-top));
+                padding-bottom: calc(80px + env(safe-area-inset-bottom));
             }
 
             .header h1 {
                 font-size: 24px;
             }
 
+            .header {
+                padding-right: 90px;
+            }
+
             .quick-prompt {
-                padding: 12px;
+                padding: 10px 8px;
+            }
+
+            .quick-prompt-title {
+                font-size: 12px;
+            }
+
+            .quick-prompt-desc {
+                font-size: 10px;
             }
 
             .form-page {
                 padding: 20px;
+            }
+
+            .form-page-title {
+                font-size: 18px;
+                padding-right: 70px;
+            }
+
+            /* Tighter message bubbles */
+            .message.assistant .message-text {
+                padding: 10px 12px;
+            }
+
+            .message.user .message-text {
+                padding: 8px 12px;
+            }
+
+            /* Stat grids - ensure they don't cramp */
+            .pattern-stat-value {
+                font-size: 20px;
+            }
+
+            .pattern-stat-label {
+                font-size: 10px;
+            }
+
+            .pattern-stat-card {
+                padding: 10px 6px;
+            }
+
+            /* Back Home button - compact */
+            .back-home-button {
+                padding: 6px 12px;
+                font-size: 12px;
+            }
+        }
+
+        /* Extra small mobile devices (iPhone SE, etc.) */
+        @media (max-width: 375px) {
+            .container {
+                padding: 8px 8px 80px 8px;
+                padding-top: calc(8px + env(safe-area-inset-top));
+                padding-bottom: calc(80px + env(safe-area-inset-bottom));
+            }
+
+            .header h1 {
+                font-size: 22px;
+            }
+
+            .header {
+                padding-right: 80px;
+            }
+
+            .quick-prompt {
+                padding: 10px;
+            }
+
+            .form-page {
+                padding: 16px;
             }
         }
 
@@ -3268,6 +3382,8 @@
         @media (max-width: 600px) {
             .ftue-container {
                 padding: 32px 20px;
+                padding-top: calc(32px + env(safe-area-inset-top));
+                padding-bottom: calc(32px + env(safe-area-inset-bottom));
             }
 
             .ftue-content h1 {
@@ -3303,7 +3419,7 @@
                    onkeypress="if(event.key==='Enter')authenticate()" autofocus />
             <button class="auth-button" onclick="authenticate()">let's go</button>
             <div id="authError" class="auth-error hidden"></div>
-            <div class="auth-footer">v1.6.2 · crafted by ms foundry</div>
+            <div class="auth-footer">v1.6.3.3 · crafted by ms foundry</div>
         </div>
     </div>
 
@@ -3330,7 +3446,7 @@
         <div class="header">
             <div class="header-content">
                 <div class="header-left">
-                    <h1>alfred <span class="version-tag">v1.6.2</span></h1>
+                    <h1>alfred <span class="version-tag">v1.6.3.3</span></h1>
                     <p>judgement from noise</p>
                 </div>
                 <button id="logoutButton" class="logout-button" onclick="logout()" title="Logout">

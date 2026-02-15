@@ -12,7 +12,7 @@ Task {
 RunLoop.main.run()
 
 struct AlfredApp {
-    static let version = "1.6.3.2"
+    static let version = "1.6.3.3"
     static var menuBarController: MenuBarController?  // Keep reference to prevent deallocation
 
     static func main() async {
