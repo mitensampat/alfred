@@ -263,6 +263,12 @@ class CommitmentAnalyzer {
             prompt += "\n\n\(historicalContext)"
         }
 
+        // Add workflow patterns learned from user behavior
+        let workflowContext = WorkflowLearningService.shared.getPatternContextForAI()
+        if !workflowContext.isEmpty {
+            prompt += "\n\n\(workflowContext)"
+        }
+
         prompt += """
 
 
@@ -558,6 +564,172 @@ class CommitmentAnalyzer {
 
         return .medium
     }
+
+    // MARK: - Closure Detection
+
+    /// Analyze messages for commitment closure signals
+    /// Returns detected closures with confidence scores for auto-closing
+    func detectClosures(
+        openCommitments: [(hash: String, title: String, type: String, counterparty: String)],
+        messages: [Message],
+        threadName: String
+    ) async throws -> [ClosureDetection] {
+        guard !openCommitments.isEmpty && !messages.isEmpty else {
+            return []
+        }
+
+        let url = URL(string: "https://api.anthropic.com/v1/messages")!
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue(anthropicApiKey, forHTTPHeaderField: "x-api-key")
+        urlRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        urlRequest.setValue("application/json", forHTTPHeaderField: "content-type")
+
+        let prompt = buildClosureDetectionPrompt(
+            openCommitments: openCommitments,
+            messages: messages,
+            threadName: threadName
+        )
+
+        let body: [String: Any] = [
+            "model": model,
+            "max_tokens": 2048,
+            "messages": [
+                [
+                    "role": "user",
+                    "content": prompt
+                ]
+            ]
+        ]
+
+        urlRequest.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw CommitmentAnalyzerError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw CommitmentAnalyzerError.apiError(statusCode: httpResponse.statusCode, message: errorBody)
+        }
+
+        // Parse Claude response
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard let content = json?["content"] as? [[String: Any]],
+              let firstContent = content.first,
+              let text = firstContent["text"] as? String else {
+            throw CommitmentAnalyzerError.invalidResponse
+        }
+
+        return try parseClosureResponse(text)
+    }
+
+    private func buildClosureDetectionPrompt(
+        openCommitments: [(hash: String, title: String, type: String, counterparty: String)],
+        messages: [Message],
+        threadName: String
+    ) -> String {
+        let commitmentsText = openCommitments.enumerated().map { index, commitment in
+            """
+            [\(index + 1)] Hash: \(commitment.hash)
+                Title: \(commitment.title)
+                Type: \(commitment.type)
+                Counterparty: \(commitment.counterparty)
+            """
+        }.joined(separator: "\n")
+
+        let messagesText = messages.suffix(50).map { message in
+            let sender = message.direction == .outgoing ? userInfo.name : message.senderName ?? message.sender
+            let timestamp = ISO8601DateFormatter().string(from: message.timestamp ?? Date())
+            return "[\(timestamp)] \(sender): \(message.content)"
+        }.joined(separator: "\n")
+
+        return """
+        You are analyzing recent messages to detect if any open commitments have been fulfilled or closed.
+
+        ## OPEN COMMITMENTS
+        These are commitments that are currently marked as open/pending:
+        \(commitmentsText)
+
+        ## RECENT MESSAGES
+        Thread: \(threadName)
+        \(messagesText)
+
+        ## CLOSURE SIGNALS TO LOOK FOR
+
+        1. **Direct Completion Acknowledgment** (highest confidence):
+           - "Done", "Sent", "Here's the...", "I've shared..."
+           - The committer explicitly stating they fulfilled it
+
+        2. **Recipient Acknowledgment** (high confidence):
+           - "Thanks!", "Got it", "Received", "Perfect"
+           - The person who was owed acknowledging receipt
+
+        3. **Context Completion** (medium confidence):
+           - Discussion moving past the topic
+           - References to the item being complete
+           - Follow-up questions about delivered item
+
+        4. **Time-Based Staleness** (low confidence):
+           - No mention in >14 days
+           - Topic seems abandoned
+
+        ## OUTPUT FORMAT
+        Return JSON with closures detected:
+        {
+          "closures": [
+            {
+              "commitmentHash": "hash_value",
+              "closureSignal": "Recipient said 'Thanks, got the deck!'",
+              "confidence": 0.95,
+              "autoClose": true,
+              "reason": "Direct acknowledgment from recipient"
+            }
+          ]
+        }
+
+        Guidelines:
+        - confidence >= 0.85: Set autoClose = true (safe to auto-close)
+        - confidence 0.6-0.84: Set autoClose = false (suggest to user)
+        - confidence < 0.6: Do not include in results
+
+        If no closures detected, return: {"closures": []}
+        """
+    }
+
+    private func parseClosureResponse(_ text: String) throws -> [ClosureDetection] {
+        var jsonText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Remove markdown code blocks if present
+        if jsonText.hasPrefix("```json") {
+            jsonText = jsonText.replacingOccurrences(of: "```json", with: "")
+            jsonText = jsonText.replacingOccurrences(of: "```", with: "")
+            jsonText = jsonText.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        guard let data = jsonText.data(using: .utf8) else {
+            throw CommitmentAnalyzerError.invalidJSON
+        }
+
+        let response = try JSONDecoder().decode(ClosureDetectionResponse.self, from: data)
+        return response.closures
+    }
+}
+
+// MARK: - Closure Detection Models
+
+struct ClosureDetection: Codable {
+    let commitmentHash: String
+    let closureSignal: String
+    let confidence: Double
+    let autoClose: Bool
+    let reason: String
+}
+
+struct ClosureDetectionResponse: Codable {
+    let closures: [ClosureDetection]
 }
 
 // MARK: - Errors

@@ -204,7 +204,7 @@ class AlfredService: ObservableObject {
         return tasks.filter { $0.isOverdue }.compactMap { $0.toCommitment() }
     }
 
-    func scanCommitments(contactName: String?, lookbackDays: Int) async throws -> CommitmentScanResult {
+    func scanCommitments(contactName: String?, lookbackDays: Int, scanMode: String = "favorites") async throws -> CommitmentScanResult {
         guard let orchestrator = orchestrator else {
             throw ServiceError.notInitialized
         }
@@ -218,26 +218,41 @@ class AlfredService: ObservableObject {
         }
 
         let contactsToScan: [String]
-        if let contact = contactName {
-            contactsToScan = [contact]
-        } else {
-            // Merge favorites with autoScanContacts (favorites take priority)
+
+        switch scanMode {
+        case "contact":
+            // Scan specific contact (requires contactName)
+            if let contact = contactName {
+                contactsToScan = [contact]
+            } else {
+                throw ServiceError.missingParameter("contactName required for 'contact' scan mode")
+            }
+
+        case "full":
+            // Scan all active threads (slow but comprehensive)
+            contactsToScan = buildSmartContactList(appConfig: orchestrator.config)
+            print("📊 Full scan mode: scanning \(contactsToScan.count) contacts/threads")
+
+        case "favorites":
+            fallthrough
+        default:
+            // Scan only favorites (fast)
             let favorites = FavoritesService.shared.getFavorites()
             let favoriteContactNames = favorites.contacts.map { $0.name }
             let favoriteGroupNames = favorites.groups.map { $0.name }
-            let allFavoriteNames = favoriteContactNames + favoriteGroupNames
-            // Combine favorites with config, deduplicating
-            let combined = allFavoriteNames + config.autoScanContacts
-            contactsToScan = Array(Set(combined))
+            contactsToScan = favoriteContactNames + favoriteGroupNames
+            print("⭐ Favorites scan mode: scanning \(contactsToScan.count) favorites")
         }
 
-        let startDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+        let fullLookbackDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+        let tracker = CommitmentScanTracker.shared
 
         var totalFound = 0
         var totalSaved = 0
+        var totalSkippedNewMessages = 0
 
         for contact in contactsToScan {
-            let allMessages = try await orchestrator.fetchMessagesForContact(contact, since: startDate)
+            let allMessages = try await orchestrator.fetchMessagesForContact(contact, since: fullLookbackDate)
 
             guard !allMessages.isEmpty else { continue }
 
@@ -245,29 +260,102 @@ class AlfredService: ObservableObject {
 
             for (threadName, threadMessages) in groupedByThread {
                 guard let firstMessage = threadMessages.first else { continue }
-                let messages = threadMessages.map { $0.message }
+                let threadId = firstMessage.threadId
+
+                // INCREMENTAL SCAN: Only analyze messages newer than the last scan
+                let lastMsgTimestamp = tracker.getLastMessageTimestamp(threadId: threadId)
+                let newMessages: [Message]
+
+                if let lastTimestamp = lastMsgTimestamp {
+                    // Filter to only messages AFTER the last scanned message
+                    let filtered = threadMessages.filter { $0.message.timestamp > lastTimestamp }
+                    if filtered.isEmpty {
+                        totalSkippedNewMessages += threadMessages.count
+                        print("⏭️  Skipping \(threadName) - no new messages since last scan")
+                        continue
+                    }
+                    newMessages = filtered.map { $0.message }
+                    print("📬 \(threadName): \(newMessages.count) new messages (of \(threadMessages.count) total)")
+                } else {
+                    // Never scanned before - analyze all messages
+                    newMessages = threadMessages.map { $0.message }
+                    print("🆕 \(threadName): first scan - \(newMessages.count) messages")
+                }
 
                 let extraction = try await orchestrator.commitmentAnalyzer.analyzeMessages(
-                    messages,
+                    newMessages,
                     platform: firstMessage.platform,
                     threadName: threadName,
-                    threadId: firstMessage.threadId
+                    threadId: threadId
                 )
 
                 totalFound += extraction.commitments.count
 
                 for commitment in extraction.commitments {
-                    // Use unified Tasks database
+                    // Check 1: Local tracker (fast, catches same-session duplicates)
+                    if tracker.hasExtractedCommitment(hash: commitment.uniqueHash) {
+                        print("⏭️  Skipping duplicate (local tracker): \(commitment.title)")
+                        continue
+                    }
+
+                    // Check 2: Notion database (catches completed/done items too - no status filter)
                     let existingCommitment = try await orchestrator.notionServicePublic.findCommitmentByHashInTasks(
                         commitment.uniqueHash
                     )
 
-                    if existingCommitment == nil {
-                        _ = try await orchestrator.notionServicePublic.createCommitmentInTasks(commitment)
-                        totalSaved += 1
+                    if existingCommitment != nil {
+                        // Record in local tracker so we skip faster next time
+                        tracker.recordExtraction(
+                            hash: commitment.uniqueHash,
+                            threadId: threadId,
+                            type: commitment.type.rawValue,
+                            title: commitment.title,
+                            counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy,
+                            confidence: 0.8
+                        )
+                        print("⏭️  Skipping duplicate (exists in Notion): \(commitment.title)")
+                        continue
                     }
+
+                    _ = try await orchestrator.notionServicePublic.createCommitmentInTasks(commitment)
+                    totalSaved += 1
+
+                    // Record extraction to tracker
+                    tracker.recordExtraction(
+                        hash: commitment.uniqueHash,
+                        threadId: threadId,
+                        type: commitment.type.rawValue,
+                        title: commitment.title,
+                        counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy,
+                        confidence: 0.8
+                    )
+
+                    // Record commitment creation for workflow learning
+                    let counterparty = commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy
+                    WorkflowLearningService.shared.recordCommitmentCreated(
+                        hash: commitment.uniqueHash,
+                        counterparty: counterparty,
+                        commitmentType: commitment.type.rawValue,
+                        priority: commitment.priority.rawValue
+                    )
                 }
+
+                // Record thread scan with the newest message timestamp from ALL messages (not just new)
+                let allMsgs = threadMessages.map { $0.message }
+                let newestMsgTime = allMsgs.compactMap { $0.timestamp }.max() ?? Date()
+                tracker.recordThreadScan(
+                    threadId: threadId,
+                    threadName: threadName,
+                    platform: firstMessage.platform.rawValue,
+                    lastMessageTimestamp: newestMsgTime,
+                    messagesScanned: newMessages.count,
+                    commitmentsFound: extraction.commitments.count
+                )
             }
+        }
+
+        if totalSkippedNewMessages > 0 {
+            print("📊 Scan summary: \(totalFound) found, \(totalSaved) new, skipped \(totalSkippedNewMessages) already-scanned messages")
         }
 
         return CommitmentScanResult(
@@ -275,6 +363,55 @@ class AlfredService: ObservableObject {
             saved: totalSaved,
             duplicates: totalFound - totalSaved
         )
+    }
+
+    func closeCommitmentByHash(hash: String, reason: String) async throws {
+        guard let orchestrator = orchestrator else {
+            throw ServiceError.notInitialized
+        }
+        try await orchestrator.notionServicePublic.closeCommitmentInTasks(hash: hash, reason: reason)
+    }
+
+    /// Build smart list of contacts/threads to scan for commitments
+    /// Includes: All Favorites + Active threads with >5 messages
+    private func buildSmartContactList(appConfig: AppConfig) -> [String] {
+        var contacts = Set<String>()
+
+        // 1. Add all favorites (contacts and groups)
+        let favorites = FavoritesService.shared.getFavorites()
+        for contact in favorites.contacts {
+            contacts.insert(contact.name)
+        }
+        for group in favorites.groups {
+            contacts.insert(group.name)
+        }
+
+        // 2. Add config autoScanContacts if available
+        if let commitmentsConfig = appConfig.commitments {
+            for contact in commitmentsConfig.autoScanContacts {
+                contacts.insert(contact)
+            }
+        }
+
+        // 3. Add active threads with significant message history (>5 messages)
+        let allThreads = ContactLearner.shared.getAllThreads()
+        let minMessageThreshold = 5
+
+        for thread in allThreads {
+            // Sum total messages from participation history
+            let totalMessages = thread.participationHistory.reduce(0) { $0 + $1.totalMessages }
+
+            // Include if has enough messages and user participates
+            if totalMessages >= minMessageThreshold && thread.avgParticipation > 0 {
+                contacts.insert(thread.threadName)
+            }
+        }
+
+        print("🎯 Smart contact list: \(contacts.count) contacts/groups to scan")
+        print("   - Favorites: \(favorites.contacts.count) contacts, \(favorites.groups.count) groups")
+        print("   - Active threads added: \(contacts.count - favorites.contacts.count - favorites.groups.count)")
+
+        return Array(contacts)
     }
 
     // MARK: - Drafts
@@ -455,38 +592,84 @@ class AlfredService: ObservableObject {
             contactsToScan = Array(Set(combined))
         }
 
-        let startDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+        let fullLookbackDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+        let tracker = CommitmentScanTracker.shared
         var extractedItems: [ExtractedItem] = []
 
         for contact in contactsToScan {
-            let allMessages = try await orchestrator.fetchMessagesForContact(contact, since: startDate)
+            let allMessages = try await orchestrator.fetchMessagesForContact(contact, since: fullLookbackDate)
             guard !allMessages.isEmpty else { continue }
 
             let groupedByThread = Dictionary(grouping: allMessages) { $0.threadName }
 
             for (threadName, threadMessages) in groupedByThread {
                 guard let firstMessage = threadMessages.first else { continue }
-                let messages = threadMessages.map { $0.message }
+                let threadId = firstMessage.threadId
+
+                // INCREMENTAL SCAN: Only analyze messages newer than the last scan
+                let lastMsgTimestamp = tracker.getLastMessageTimestamp(threadId: threadId)
+                let newMessages: [Message]
+
+                if let lastTimestamp = lastMsgTimestamp {
+                    let filtered = threadMessages.filter { $0.message.timestamp > lastTimestamp }
+                    if filtered.isEmpty {
+                        print("⏭️  Skipping \(threadName) - no new messages since last scan")
+                        continue
+                    }
+                    newMessages = filtered.map { $0.message }
+                    print("📬 \(threadName): \(newMessages.count) new messages (of \(threadMessages.count) total)")
+                } else {
+                    newMessages = threadMessages.map { $0.message }
+                    print("🆕 \(threadName): first scan - \(newMessages.count) messages")
+                }
 
                 let extraction = try await orchestrator.commitmentAnalyzer.analyzeMessages(
-                    messages,
+                    newMessages,
                     platform: firstMessage.platform,
                     threadName: threadName,
-                    threadId: firstMessage.threadId
+                    threadId: threadId
                 )
 
                 for commitment in extraction.commitments {
-                    // Check if already exists in unified Tasks database
+                    // Check 1: Local tracker (fast)
+                    if tracker.hasExtractedCommitment(hash: commitment.uniqueHash) {
+                        continue
+                    }
+
+                    // Check 2: Notion database (includes Done/Cancelled)
                     let existing = try? await orchestrator.notionServicePublic.findCommitmentByHashInTasks(
                         commitment.uniqueHash
                     )
 
-                    if existing == nil {
-                        // Convert to ExtractedItem for review
-                        let item = ExtractedItem.fromCommitment(commitment)
-                        extractedItems.append(item)
+                    if existing != nil {
+                        // Sync to local tracker for faster future skips
+                        tracker.recordExtraction(
+                            hash: commitment.uniqueHash,
+                            threadId: threadId,
+                            type: commitment.type.rawValue,
+                            title: commitment.title,
+                            counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy,
+                            confidence: 0.8
+                        )
+                        continue
                     }
+
+                    // Convert to ExtractedItem for review
+                    let item = ExtractedItem.fromCommitment(commitment)
+                    extractedItems.append(item)
                 }
+
+                // Record the scan so next time we only look at new messages
+                let allMsgs = threadMessages.map { $0.message }
+                let newestMsgTime = allMsgs.compactMap { $0.timestamp }.max() ?? Date()
+                tracker.recordThreadScan(
+                    threadId: threadId,
+                    threadName: threadName,
+                    platform: firstMessage.platform.rawValue,
+                    lastMessageTimestamp: newestMsgTime,
+                    messagesScanned: newMessages.count,
+                    commitmentsFound: extraction.commitments.count
+                )
             }
         }
 
@@ -605,6 +788,7 @@ enum ServiceError: Error, LocalizedError {
     case commitmentsNotEnabled
     case notionDatabaseNotConfigured
     case notImplemented(String)
+    case missingParameter(String)
 
     var errorDescription: String? {
         switch self {
@@ -618,6 +802,8 @@ enum ServiceError: Error, LocalizedError {
             return "Notion database ID not configured for commitments."
         case .notImplemented(let message):
             return message
+        case .missingParameter(let param):
+            return "Missing required parameter: \(param)"
         }
     }
 }

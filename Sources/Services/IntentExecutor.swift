@@ -103,14 +103,18 @@ class IntentExecutor {
 
         let contactsToScan: [String]
         if let contact = contactName {
+            // Specific contact requested
             contactsToScan = [contact]
         } else {
-            contactsToScan = config.autoScanContacts
+            // Build smart contact list: Favorites + active threads (>5 messages)
+            contactsToScan = buildSmartContactList()
         }
 
         let startDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+        let tracker = CommitmentScanTracker.shared
         var totalFound = 0
         var totalSaved = 0
+        var threadsScanned = 0
 
         for contact in contactsToScan {
             let allMessages = try await orchestrator.fetchMessagesForContact(contact, since: startDate)
@@ -120,36 +124,234 @@ class IntentExecutor {
 
             for (threadName, threadMessages) in groupedByThread {
                 guard let firstMessage = threadMessages.first else { continue }
-                let messages = threadMessages.map { $0.message }
 
-                let extraction = try await orchestrator.commitmentAnalyzer.analyzeMessages(
-                    messages,
-                    platform: firstMessage.platform,
-                    threadName: threadName,
-                    threadId: firstMessage.threadId
-                )
+                let threadId = firstMessage.threadId
 
-                totalFound += extraction.commitments.count
+                // Check for incremental scanning - skip if recently scanned
+                if let lastScan = tracker.getLastScanTime(threadId: threadId),
+                   let lastMsgTimestamp = tracker.getLastMessageTimestamp(threadId: threadId) {
+                    // Find the most recent message in this batch
+                    let newestMsgTime = threadMessages.compactMap { $0.message.timestamp }.max() ?? Date()
 
-                for commitment in extraction.commitments {
-                    // Use unified Tasks database
-                    let existingCommitment = try await orchestrator.notionServicePublic.findCommitmentByHashInTasks(
-                        commitment.uniqueHash
+                    // Skip if we've scanned within 1 hour AND no new messages
+                    if Date().timeIntervalSince(lastScan) < 3600 && newestMsgTime <= lastMsgTimestamp {
+                        print("⏭️ Skipping \(threadName) - recently scanned with no new messages")
+                        continue
+                    }
+
+                    // Filter to only new messages since last scan
+                    let newMessages = threadMessages.filter {
+                        ($0.message.timestamp ?? Date.distantPast) > lastMsgTimestamp
+                    }
+
+                    if !newMessages.isEmpty {
+                        // Scan only new messages
+                        let extraction = try await orchestrator.commitmentAnalyzer.analyzeMessages(
+                            newMessages.map { $0.message },
+                            platform: firstMessage.platform,
+                            threadName: threadName,
+                            threadId: threadId
+                        )
+
+                        totalFound += extraction.commitments.count
+
+                        for commitment in extraction.commitments {
+                            // Check if already extracted (by hash)
+                            if tracker.hasExtractedCommitment(hash: commitment.uniqueHash) {
+                                continue
+                            }
+
+                            // Check Notion for existing
+                            let existingCommitment = try await orchestrator.notionServicePublic.findCommitmentByHashInTasks(
+                                commitment.uniqueHash
+                            )
+
+                            if existingCommitment == nil {
+                                _ = try await orchestrator.notionServicePublic.createCommitmentInTasks(commitment)
+                                totalSaved += 1
+
+                                // Record extraction (use default confidence of 0.8 for AI-detected commitments)
+                                tracker.recordExtraction(
+                                    hash: commitment.uniqueHash,
+                                    threadId: threadId,
+                                    type: commitment.type.rawValue,
+                                    title: commitment.title,
+                                    counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy,
+                                    confidence: 0.8
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    // First scan for this thread - scan all messages
+                    let messages = threadMessages.map { $0.message }
+
+                    let extraction = try await orchestrator.commitmentAnalyzer.analyzeMessages(
+                        messages,
+                        platform: firstMessage.platform,
+                        threadName: threadName,
+                        threadId: threadId
                     )
 
-                    if existingCommitment == nil {
-                        _ = try await orchestrator.notionServicePublic.createCommitmentInTasks(commitment)
-                        totalSaved += 1
+                    totalFound += extraction.commitments.count
+
+                    for commitment in extraction.commitments {
+                        // Check if already extracted (by hash)
+                        if tracker.hasExtractedCommitment(hash: commitment.uniqueHash) {
+                            continue
+                        }
+
+                        // Check Notion for existing
+                        let existingCommitment = try await orchestrator.notionServicePublic.findCommitmentByHashInTasks(
+                            commitment.uniqueHash
+                        )
+
+                        if existingCommitment == nil {
+                            _ = try await orchestrator.notionServicePublic.createCommitmentInTasks(commitment)
+                            totalSaved += 1
+
+                            // Record extraction (use default confidence of 0.8 for AI-detected commitments)
+                            tracker.recordExtraction(
+                                hash: commitment.uniqueHash,
+                                threadId: threadId,
+                                type: commitment.type.rawValue,
+                                title: commitment.title,
+                                counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy,
+                                confidence: 0.8
+                            )
+                        }
                     }
                 }
+
+                // Record that we scanned this thread
+                let newestMsgTime = threadMessages.compactMap { $0.message.timestamp }.max() ?? Date()
+                tracker.recordThreadScan(
+                    threadId: threadId,
+                    threadName: threadName,
+                    platform: firstMessage.platform.rawValue,
+                    lastMessageTimestamp: newestMsgTime,
+                    messagesScanned: threadMessages.count,
+                    commitmentsFound: totalFound
+                )
+                threadsScanned += 1
             }
+        }
+
+        print("📊 Commitment scan complete: \(threadsScanned) threads, \(totalFound) found, \(totalSaved) saved")
+
+        // Phase 2: Closure Detection
+        // Check if any open commitments have been fulfilled based on recent messages
+        var closedCount = 0
+        var pendingClosures: [(hash: String, title: String, signal: String, confidence: Double)] = []
+
+        for contact in contactsToScan {
+            let allMessages = try await orchestrator.fetchMessagesForContact(contact, since: startDate)
+            guard !allMessages.isEmpty else { continue }
+
+            let groupedByThread = Dictionary(grouping: allMessages) { $0.threadId }
+
+            for (threadId, threadMessages) in groupedByThread {
+                // Get open commitments for this thread
+                let openCommitments = tracker.getOpenCommitmentsForThread(threadId: threadId)
+                guard !openCommitments.isEmpty else { continue }
+
+                // Detect closures using AI
+                do {
+                    let messages = threadMessages.map { $0.message }
+                    let closures = try await orchestrator.commitmentAnalyzer.detectClosures(
+                        openCommitments: openCommitments,
+                        messages: messages,
+                        threadName: threadMessages.first?.threadName ?? contact
+                    )
+
+                    for closure in closures {
+                        // Record the closure detection
+                        tracker.recordClosureDetection(
+                            commitmentHash: closure.commitmentHash,
+                            closureSignal: closure.closureSignal,
+                            confidence: closure.confidence,
+                            autoClosed: closure.autoClose
+                        )
+
+                        if closure.autoClose {
+                            // High confidence - auto-close
+                            tracker.markCommitmentClosed(hash: closure.commitmentHash)
+
+                            // Also update in Notion
+                            try? await orchestrator.notionServicePublic.closeCommitmentInTasks(
+                                hash: closure.commitmentHash,
+                                reason: closure.reason
+                            )
+
+                            closedCount += 1
+                            print("✅ Auto-closed commitment: \(closure.reason)")
+                        } else {
+                            // Medium confidence - queue for user confirmation
+                            if let commitment = openCommitments.first(where: { $0.hash == closure.commitmentHash }) {
+                                pendingClosures.append((
+                                    hash: closure.commitmentHash,
+                                    title: commitment.title,
+                                    signal: closure.closureSignal,
+                                    confidence: closure.confidence
+                                ))
+                            }
+                        }
+                    }
+                } catch {
+                    print("⚠️ Closure detection failed for thread \(threadId): \(error)")
+                }
+            }
+        }
+
+        if closedCount > 0 {
+            print("🎯 Auto-closed \(closedCount) commitments")
+        }
+        if !pendingClosures.isEmpty {
+            print("❓ \(pendingClosures.count) commitments need user confirmation for closure")
         }
 
         return CommitmentScanResult(
             totalFound: totalFound,
             saved: totalSaved,
-            duplicates: totalFound - totalSaved
+            duplicates: totalFound - totalSaved,
+            autoClosed: closedCount,
+            pendingClosures: pendingClosures.count
         )
+    }
+
+    /// Build smart list of contacts/threads to scan for commitments
+    /// Includes: All Favorites + Active threads with >5 messages
+    private func buildSmartContactList() -> [String] {
+        var contacts = Set<String>()
+
+        // 1. Add all favorites (contacts and groups)
+        let favorites = FavoritesService.shared.getFavorites()
+        for contact in favorites.contacts {
+            contacts.insert(contact.name)
+        }
+        for group in favorites.groups {
+            contacts.insert(group.name)
+        }
+
+        // 2. Add active threads with significant message history (>5 messages)
+        let allThreads = ContactLearner.shared.getAllThreads()
+        let minMessageThreshold = 5
+
+        for thread in allThreads {
+            // Sum total messages from participation history
+            let totalMessages = thread.participationHistory.reduce(0) { $0 + $1.totalMessages }
+
+            // Include if has enough messages and user participates
+            if totalMessages >= minMessageThreshold && thread.avgParticipation > 0 {
+                contacts.insert(thread.threadName)
+            }
+        }
+
+        print("🎯 Smart contact list: \(contacts.count) contacts/groups to scan")
+        print("   - Favorites: \(favorites.contacts.count) contacts, \(favorites.groups.count) groups")
+        print("   - Active threads added: \(contacts.count - favorites.contacts.count - favorites.groups.count)")
+
+        return Array(contacts)
     }
 
     private func fetchCommitments(type: UserIntent.IntentFilters.CommitmentType?, contactName: String?) async throws -> [Commitment] {
@@ -275,7 +477,21 @@ class IntentExecutor {
     }
 
     private func formatCommitmentScanResponse(_ result: CommitmentScanResult, query: String) -> IntentExecutionResult {
-        let response = "I found \(result.totalFound) commitments. Saved \(result.saved) new ones (\(result.duplicates) were duplicates)."
+        var response = "I found \(result.totalFound) commitments. Saved \(result.saved) new ones"
+
+        if result.duplicates > 0 {
+            response += " (\(result.duplicates) were duplicates)"
+        }
+        response += "."
+
+        if result.autoClosed > 0 {
+            response += " Auto-closed \(result.autoClosed) completed commitment\(result.autoClosed == 1 ? "" : "s")."
+        }
+
+        if result.pendingClosures > 0 {
+            response += " \(result.pendingClosures) commitment\(result.pendingClosures == 1 ? "" : "s") may be complete and need\(result.pendingClosures == 1 ? "s" : "") your confirmation."
+        }
+
         return IntentExecutionResult(data: result, conversationalResponse: response, structuredData: nil)
     }
 
@@ -340,6 +556,8 @@ struct CommitmentScanResult {
     let totalFound: Int
     let saved: Int
     let duplicates: Int
+    var autoClosed: Int = 0
+    var pendingClosures: Int = 0
 }
 
 // MARK: - Errors

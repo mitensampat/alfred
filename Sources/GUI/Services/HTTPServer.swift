@@ -277,6 +277,18 @@ class HTTPServer {
         case ("POST", "/api/commitments/scan"):
             return await handleScanCommitments(request)
 
+        case ("GET", "/api/commitment-tracker/stats"):
+            return handleGetCommitmentTrackerStats()
+
+        case ("GET", "/api/commitment-tracker/pending-closures"):
+            return handleGetPendingClosures()
+
+        case ("POST", "/api/commitment-tracker/confirm-closure"):
+            return await handleConfirmClosure(request)
+
+        case ("POST", "/api/commitment-tracker/reject-closure"):
+            return handleRejectClosure(request)
+
         case ("GET", "/api/briefing"):
             return await handleGetDailyBriefing(request)
 
@@ -894,6 +906,93 @@ class HTTPServer {
                 body: ["error": error.localizedDescription]
             )
         }
+    }
+
+    // MARK: - Commitment Tracker Stats
+
+    private func handleGetCommitmentTrackerStats() -> HTTPResponse {
+        let stats = CommitmentScanTracker.shared.getStats()
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "openCommitments": stats.openCommitments,
+                "closedCount": stats.closedCount,
+                "autoClosedCount": stats.autoClosedCount,
+                "pendingClosures": stats.pendingClosures,
+                "totalExtracted": stats.totalExtracted,
+                "threadsTracked": stats.threadsTracked,
+                "favoritesCount": stats.favoritesCount,
+                "activeThreadsCount": stats.activeThreadsCount,
+                "lastScanTime": stats.lastScanTime.map { ISO8601DateFormatter().string(from: $0) } as Any
+            ]
+        )
+    }
+
+    private func handleGetPendingClosures() -> HTTPResponse {
+        let pendingClosures = CommitmentScanTracker.shared.getPendingClosureConfirmations()
+
+        let response: [[String: Any]] = pendingClosures.map { closure in
+            [
+                "hash": closure.hash,
+                "title": closure.title,
+                "signal": closure.signal,
+                "confidence": closure.confidence
+            ]
+        }
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: ["pendingClosures": response, "count": pendingClosures.count]
+        )
+    }
+
+    private func handleConfirmClosure(_ request: HTTPRequest) async -> HTTPResponse {
+        guard let body = request.body,
+              let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let hash = json["hash"] as? String else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Missing 'hash' in request body"]
+            )
+        }
+
+        // Mark as closed in tracker
+        CommitmentScanTracker.shared.markCommitmentClosed(hash: hash)
+
+        // Also close in Notion
+        do {
+            try await notionService.closeCommitmentInTasks(hash: hash, reason: "User confirmed closure")
+            return HTTPResponse(
+                statusCode: 200,
+                body: ["success": true, "message": "Commitment closed"]
+            )
+        } catch {
+            return HTTPResponse(
+                statusCode: 500,
+                body: ["error": error.localizedDescription]
+            )
+        }
+    }
+
+    private func handleRejectClosure(_ request: HTTPRequest) -> HTTPResponse {
+        guard let body = request.body,
+              let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let hash = json["hash"] as? String else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Missing 'hash' in request body"]
+            )
+        }
+
+        // Mark the closure detection as rejected (user_confirmed = false)
+        // This prevents it from being suggested again
+        CommitmentScanTracker.shared.rejectClosureDetection(hash: hash)
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: ["success": true, "message": "Closure suggestion rejected"]
+        )
     }
 
     private func handleGetDailyBriefing(_ request: HTTPRequest) async -> HTTPResponse {

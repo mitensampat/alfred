@@ -284,13 +284,14 @@ class AlfredService: ObservableObject {
             contactsToScan = Array(Set(combined))
         }
 
-        let startDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+        let fullLookbackDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+        let tracker = CommitmentScanTracker.shared
 
         var totalFound = 0
         var totalSaved = 0
 
         for contact in contactsToScan {
-            let allMessages = try await orchestrator.fetchMessagesForContact(contact, since: startDate)
+            let allMessages = try await orchestrator.fetchMessagesForContact(contact, since: fullLookbackDate)
 
             guard !allMessages.isEmpty else { continue }
 
@@ -298,28 +299,78 @@ class AlfredService: ObservableObject {
 
             for (threadName, threadMessages) in groupedByThread {
                 guard let firstMessage = threadMessages.first else { continue }
-                let messages = threadMessages.map { $0.message }
+                let threadId = firstMessage.threadId
+
+                // INCREMENTAL SCAN: Only analyze messages newer than the last scan
+                let lastMsgTimestamp = tracker.getLastMessageTimestamp(threadId: threadId)
+                let newMessages: [Message]
+
+                if let lastTimestamp = lastMsgTimestamp {
+                    let filtered = threadMessages.filter { $0.message.timestamp > lastTimestamp }
+                    if filtered.isEmpty {
+                        continue
+                    }
+                    newMessages = filtered.map { $0.message }
+                } else {
+                    newMessages = threadMessages.map { $0.message }
+                }
 
                 let extraction = try await orchestrator.commitmentAnalyzer.analyzeMessages(
-                    messages,
+                    newMessages,
                     platform: firstMessage.platform,
                     threadName: threadName,
-                    threadId: firstMessage.threadId
+                    threadId: threadId
                 )
 
                 totalFound += extraction.commitments.count
 
                 for commitment in extraction.commitments {
-                    // Use unified Tasks database
+                    // Check local tracker first (fast)
+                    if tracker.hasExtractedCommitment(hash: commitment.uniqueHash) {
+                        continue
+                    }
+
+                    // Check Notion (includes Done/Cancelled - no status filter)
                     let existingCommitment = try await orchestrator.notionServicePublic.findCommitmentByHashInTasks(
                         commitment.uniqueHash
                     )
 
-                    if existingCommitment == nil {
-                        _ = try await orchestrator.notionServicePublic.createCommitmentInTasks(commitment)
-                        totalSaved += 1
+                    if existingCommitment != nil {
+                        tracker.recordExtraction(
+                            hash: commitment.uniqueHash,
+                            threadId: threadId,
+                            type: commitment.type.rawValue,
+                            title: commitment.title,
+                            counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy,
+                            confidence: 0.8
+                        )
+                        continue
                     }
+
+                    _ = try await orchestrator.notionServicePublic.createCommitmentInTasks(commitment)
+                    totalSaved += 1
+
+                    tracker.recordExtraction(
+                        hash: commitment.uniqueHash,
+                        threadId: threadId,
+                        type: commitment.type.rawValue,
+                        title: commitment.title,
+                        counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy,
+                        confidence: 0.8
+                    )
                 }
+
+                // Record thread scan for incremental lookback
+                let allMsgs = threadMessages.map { $0.message }
+                let newestMsgTime = allMsgs.compactMap { $0.timestamp }.max() ?? Date()
+                tracker.recordThreadScan(
+                    threadId: threadId,
+                    threadName: threadName,
+                    platform: firstMessage.platform.rawValue,
+                    lastMessageTimestamp: newestMsgTime,
+                    messagesScanned: newMessages.count,
+                    commitmentsFound: extraction.commitments.count
+                )
             }
         }
 
@@ -508,38 +559,79 @@ class AlfredService: ObservableObject {
             contactsToScan = Array(Set(combined))
         }
 
-        let startDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+        let fullLookbackDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
+        let tracker = CommitmentScanTracker.shared
         var extractedItems: [ExtractedItem] = []
 
         for contact in contactsToScan {
-            let allMessages = try await orchestrator.fetchMessagesForContact(contact, since: startDate)
+            let allMessages = try await orchestrator.fetchMessagesForContact(contact, since: fullLookbackDate)
             guard !allMessages.isEmpty else { continue }
 
             let groupedByThread = Dictionary(grouping: allMessages) { $0.threadName }
 
             for (threadName, threadMessages) in groupedByThread {
                 guard let firstMessage = threadMessages.first else { continue }
-                let messages = threadMessages.map { $0.message }
+                let threadId = firstMessage.threadId
+
+                // INCREMENTAL SCAN: Only analyze messages newer than the last scan
+                let lastMsgTimestamp = tracker.getLastMessageTimestamp(threadId: threadId)
+                let newMessages: [Message]
+
+                if let lastTimestamp = lastMsgTimestamp {
+                    let filtered = threadMessages.filter { $0.message.timestamp > lastTimestamp }
+                    if filtered.isEmpty {
+                        continue
+                    }
+                    newMessages = filtered.map { $0.message }
+                } else {
+                    newMessages = threadMessages.map { $0.message }
+                }
 
                 let extraction = try await orchestrator.commitmentAnalyzer.analyzeMessages(
-                    messages,
+                    newMessages,
                     platform: firstMessage.platform,
                     threadName: threadName,
-                    threadId: firstMessage.threadId
+                    threadId: threadId
                 )
 
                 for commitment in extraction.commitments {
-                    // Check if already exists in unified Tasks database
+                    // Check local tracker first
+                    if tracker.hasExtractedCommitment(hash: commitment.uniqueHash) {
+                        continue
+                    }
+
+                    // Check Notion (includes Done/Cancelled)
                     let existing = try? await orchestrator.notionServicePublic.findCommitmentByHashInTasks(
                         commitment.uniqueHash
                     )
 
-                    if existing == nil {
-                        // Convert to ExtractedItem for review
-                        let item = ExtractedItem.fromCommitment(commitment)
-                        extractedItems.append(item)
+                    if existing != nil {
+                        tracker.recordExtraction(
+                            hash: commitment.uniqueHash,
+                            threadId: threadId,
+                            type: commitment.type.rawValue,
+                            title: commitment.title,
+                            counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy,
+                            confidence: 0.8
+                        )
+                        continue
                     }
+
+                    let item = ExtractedItem.fromCommitment(commitment)
+                    extractedItems.append(item)
                 }
+
+                // Record the scan for incremental lookback
+                let allMsgs = threadMessages.map { $0.message }
+                let newestMsgTime = allMsgs.compactMap { $0.timestamp }.max() ?? Date()
+                tracker.recordThreadScan(
+                    threadId: threadId,
+                    threadName: threadName,
+                    platform: firstMessage.platform.rawValue,
+                    lastMessageTimestamp: newestMsgTime,
+                    messagesScanned: newMessages.count,
+                    commitmentsFound: extraction.commitments.count
+                )
             }
         }
 

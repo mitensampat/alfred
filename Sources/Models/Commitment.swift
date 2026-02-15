@@ -101,13 +101,72 @@ struct Commitment: Codable, Identifiable {
 
     // MARK: - Hash Generation
 
+    /// Generate a unique hash for deduplication
+    /// Uses normalized text to handle AI extraction variations
     static func generateHash(commitmentText: String, sourceThread: String, committedBy: String, dueDate: Date?) -> String {
-        let dueDateString = dueDate?.timeIntervalSince1970.description ?? "no-date"
-        let combined = "\(commitmentText)|\(sourceThread)|\(committedBy)|\(dueDateString)"
+        // Normalize commitment text to handle AI extraction variations
+        let normalizedText = normalizeForHash(commitmentText)
+
+        // Normalize committed by (lowercase, trim)
+        let normalizedBy = committedBy.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Normalize thread (lowercase, trim)
+        let normalizedThread = sourceThread.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Use date bucket (same day = same bucket) instead of exact timestamp
+        let dateBucket: String
+        if let dueDate = dueDate {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            dateBucket = formatter.string(from: dueDate)
+        } else {
+            dateBucket = "no-date"
+        }
+
+        let combined = "\(normalizedText)|\(normalizedThread)|\(normalizedBy)|\(dateBucket)"
 
         let data = Data(combined.utf8)
         let hash = SHA256.hash(data: data)
         return hash.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Normalize text for hash comparison
+    /// - Lowercase
+    /// - Remove punctuation and extra whitespace
+    /// - Extract key nouns/verbs (simplified approach: keep words >= 3 chars)
+    /// - Sort words to handle word order variations
+    private static func normalizeForHash(_ text: String) -> String {
+        // Common words to ignore (articles, prepositions, common verbs)
+        let stopWords: Set<String> = [
+            "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+            "have", "has", "had", "do", "does", "did", "will", "would", "could",
+            "should", "may", "might", "must", "shall", "can", "need", "dare",
+            "to", "of", "in", "for", "on", "with", "at", "by", "from", "as",
+            "into", "through", "during", "before", "after", "above", "below",
+            "and", "but", "or", "nor", "so", "yet", "both", "either", "neither",
+            "this", "that", "these", "those", "it", "its", "i", "you", "he",
+            "she", "we", "they", "me", "him", "her", "us", "them", "my", "your",
+            "his", "our", "their", "please", "pls", "thanks", "thank", "hi", "hey"
+        ]
+
+        // 1. Lowercase
+        var normalized = text.lowercased()
+
+        // 2. Remove punctuation (keep only letters, numbers, spaces)
+        normalized = normalized.filter { $0.isLetter || $0.isNumber || $0.isWhitespace }
+
+        // 3. Split into words, filter stop words and short words
+        let words = normalized.split(separator: " ")
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+            .filter { $0.count >= 3 && !stopWords.contains($0) }
+
+        // 4. Sort words alphabetically for order-independent matching
+        let sortedWords = words.sorted()
+
+        // 5. Take first 8 significant words (to keep hash focused on key content)
+        let keyWords = Array(sortedWords.prefix(8))
+
+        return keyWords.joined(separator: " ")
     }
 
     // MARK: - Helpers

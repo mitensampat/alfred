@@ -54,3 +54,13 @@ notion_backup/
 
 # Cleanup directory
 .cleanup/
+
+# Build artifacts (app bundle)
+Alfred.app/
+
+# Development planning notes
+PLAN.md
+*IMPROVEMENT_PLAN.md
+
+# Local deployment script (process documented in CLAUDE.md)
+deploy.sh

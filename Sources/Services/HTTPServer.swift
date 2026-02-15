@@ -599,6 +599,18 @@ class HTTPServer {
         case ("GET", "/api/memory/unified"):
             return handleGetUnifiedMemory()
 
+        case ("GET", "/api/workflow-patterns"):
+            return handleGetWorkflowPatterns()
+
+        case ("POST", "/api/workflow-patterns/compute"):
+            return handleComputeWorkflowPatterns()
+
+        case ("GET", "/api/workflow-patterns/digest"):
+            return handleGetLearningDigest()
+
+        case ("POST", "/api/workflow-patterns/send-digest"):
+            return await handleSendLearningDigest()
+
         case ("POST", "/api/memory/feedback"):
             return handleMemoryFeedback(request)
 
@@ -636,6 +648,19 @@ class HTTPServer {
 
         case ("POST", "/api/commitments/detect-completions"):
             return await handleDetectCompletions(request)
+
+        // Commitment Tracker endpoints
+        case ("GET", "/api/commitment-tracker/stats"):
+            return await handleGetCommitmentTrackerStats()
+
+        case ("GET", "/api/commitment-tracker/pending-closures"):
+            return handleGetPendingClosures()
+
+        case ("POST", "/api/commitment-tracker/confirm-closure"):
+            return await handleConfirmClosure(request)
+
+        case ("POST", "/api/commitment-tracker/reject-closure"):
+            return handleRejectClosure(request)
 
         default:
             return HTTPResponse(
@@ -712,7 +737,7 @@ class HTTPServer {
     private func handleGetCommitments(_ request: HTTPRequest) async -> HTTPResponse {
         do {
             let typeFilter = request.queryParams["type"]
-            let commitments: [Commitment]
+            var commitments: [Commitment]
 
             if let typeString = typeFilter, let type = parseCommitmentType(typeString) {
                 commitments = try await alfredService.fetchCommitments(type: type)
@@ -720,8 +745,56 @@ class HTTPServer {
                 commitments = try await alfredService.fetchCommitments()
             }
 
+            // Sort commitments by urgency:
+            // 1. Overdue items first (most overdue at top)
+            // 2. Due soon (within 2 days) next
+            // 3. Higher priority before lower
+            // 4. Sooner due date before later
+            commitments.sort { a, b in
+                // Overdue items first
+                if a.isOverdue != b.isOverdue {
+                    return a.isOverdue
+                }
+
+                // If both overdue, most overdue first
+                if a.isOverdue && b.isOverdue {
+                    let aDays = a.daysUntilDue ?? 0
+                    let bDays = b.daysUntilDue ?? 0
+                    return aDays < bDays  // More negative = more overdue
+                }
+
+                // Due soon items next (within 2 days)
+                let aDueSoon = (a.daysUntilDue ?? 999) <= 2
+                let bDueSoon = (b.daysUntilDue ?? 999) <= 2
+                if aDueSoon != bDueSoon {
+                    return aDueSoon
+                }
+
+                // Higher priority first (critical < high < medium < low in raw value)
+                if a.priority != b.priority {
+                    return a.priority.rawValue < b.priority.rawValue
+                }
+
+                // Sooner due date first
+                let aDays = a.daysUntilDue ?? 999
+                let bDays = b.daysUntilDue ?? 999
+                return aDays < bDays
+            }
+
             let response: [[String: Any]] = commitments.map { commitment in
-                [
+                // Calculate urgency zone for frontend
+                let urgencyZone: String
+                if commitment.isOverdue {
+                    urgencyZone = "overdue"
+                } else if (commitment.daysUntilDue ?? 999) <= 2 {
+                    urgencyZone = "due_soon"
+                } else if (commitment.daysUntilDue ?? 999) <= 7 {
+                    urgencyZone = "this_week"
+                } else {
+                    urgencyZone = "later"
+                }
+
+                var result: [String: Any] = [
                     "id": commitment.id.uuidString,
                     "type": commitment.type.rawValue,
                     "status": commitment.status.rawValue,
@@ -731,12 +804,32 @@ class HTTPServer {
                     "committedTo": commitment.committedTo,
                     "sourcePlatform": commitment.sourcePlatform.rawValue,
                     "sourceThread": commitment.sourceThread,
-                    "dueDate": commitment.dueDate.map { Self.iso8601Formatter.string(from: $0) } as Any,
                     "priority": commitment.priority.rawValue,
                     "isOverdue": commitment.isOverdue,
-                    "notionId": commitment.notionId as Any,
+                    "urgencyZone": urgencyZone,
                     "originalContext": commitment.originalContext
                 ]
+
+                // Explicitly set optional fields with NSNull for nil values
+                if let dueDate = commitment.dueDate {
+                    result["dueDate"] = Self.iso8601Formatter.string(from: dueDate)
+                } else {
+                    result["dueDate"] = NSNull()
+                }
+
+                if let daysUntilDue = commitment.daysUntilDue {
+                    result["daysUntilDue"] = daysUntilDue
+                } else {
+                    result["daysUntilDue"] = NSNull()
+                }
+
+                if let notionId = commitment.notionId {
+                    result["notionId"] = notionId
+                } else {
+                    result["notionId"] = NSNull()
+                }
+
+                return result
             }
 
             // Format as text response
@@ -803,10 +896,12 @@ class HTTPServer {
 
             let contactName = json["contactName"] as? String
             let lookbackDays = json["lookbackDays"] as? Int ?? 14
+            let scanMode = json["scanMode"] as? String ?? "favorites"
 
             let result = try await alfredService.scanCommitments(
                 contactName: contactName,
-                lookbackDays: lookbackDays
+                lookbackDays: lookbackDays,
+                scanMode: scanMode
             )
 
             return HTTPResponse(
@@ -1509,7 +1604,7 @@ The Commitment Check feature requires a properly configured Notion database.
         guard FileManager.default.fileExists(atPath: configPath) else {
             return HTTPResponse(
                 statusCode: 200,
-                body: ["tasksDatabaseId": NSNull()]
+                body: ["tasksDatabaseId": NSNull(), "contextDatabases": []]
             )
         }
 
@@ -1536,9 +1631,16 @@ The Commitment Check feature requires a properly configured Notion database.
                 tasksDatabaseId = dbId
             }
 
+            // Get context databases
+            var contextDatabases: [String] = []
+            if let notion = config?["notion"] as? [String: Any],
+               let contextDbs = notion["context_databases"] as? [String] {
+                contextDatabases = contextDbs.filter { !$0.isEmpty }
+            }
+
             return HTTPResponse(
                 statusCode: 200,
-                body: ["tasksDatabaseId": tasksDatabaseId as Any]
+                body: ["tasksDatabaseId": tasksDatabaseId as Any, "contextDatabases": contextDatabases]
             )
         } catch {
             return HTTPResponse(
@@ -1550,34 +1652,60 @@ The Commitment Check feature requires a properly configured Notion database.
 
     private func handleUpdateNotionConfig(_ request: HTTPRequest) async -> HTTPResponse {
         guard let bodyData = request.body,
-              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
-              let tasksDatabaseId = json["tasksDatabaseId"] as? String else {
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] else {
             return HTTPResponse(
                 statusCode: 400,
-                body: ["error": "Missing tasksDatabaseId in request body"]
+                body: ["error": "Invalid request body"]
             )
         }
 
-        // Update the Tasks database ID in the orchestrator's NotionService
-        // No longer needs MainActor since AlfredService is not @MainActor
-        guard let orchestrator = alfredService.orchestrator else {
+        // Extract tasksDatabaseId (optional now)
+        let tasksDatabaseId = json["tasksDatabaseId"] as? String
+
+        // Extract context databases (optional)
+        let contextDatabases = json["contextDatabases"] as? [String] ?? []
+
+        // At least one must be provided
+        if tasksDatabaseId == nil && contextDatabases.isEmpty {
             return HTTPResponse(
-                statusCode: 500,
-                body: ["error": "Alfred not initialized"]
+                statusCode: 400,
+                body: ["error": "At least tasksDatabaseId or contextDatabases must be provided"]
             )
         }
-        orchestrator.notionServicePublic.setTasksDatabaseId(tasksDatabaseId)
 
-        // Also update in config file (top-level notion.tasks_database_id)
+        // Update the Tasks database ID in the orchestrator's NotionService if provided
+        if let tasksDatabaseId = tasksDatabaseId {
+            guard let orchestrator = alfredService.orchestrator else {
+                return HTTPResponse(
+                    statusCode: 500,
+                    body: ["error": "Alfred not initialized"]
+                )
+            }
+            orchestrator.notionServicePublic.setTasksDatabaseId(tasksDatabaseId)
+        }
+
+        // Update in config file
         let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
         do {
             if FileManager.default.fileExists(atPath: configPath) {
                 let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
                 var config = try JSONSerialization.jsonObject(with: data) as! [String: Any]
 
-                // Update notion.tasks_database_id (top-level takes priority)
+                // Update notion section
                 if var notion = config["notion"] as? [String: Any] {
-                    notion["tasks_database_id"] = tasksDatabaseId
+                    // Update tasks_database_id if provided
+                    if let tasksDatabaseId = tasksDatabaseId {
+                        notion["tasks_database_id"] = tasksDatabaseId
+                    }
+
+                    // Update context_databases
+                    if !contextDatabases.isEmpty {
+                        notion["context_databases"] = contextDatabases
+                    } else {
+                        // If empty array was explicitly sent, clear it
+                        notion["context_databases"] = []
+                    }
+
                     config["notion"] = notion
                 }
 
@@ -1588,9 +1716,17 @@ The Commitment Check feature requires a properly configured Notion database.
             print("⚠️ Failed to update config file: \(error)")
         }
 
+        var responseBody: [String: Any] = ["message": "Notion configuration updated successfully"]
+        if let tasksDatabaseId = tasksDatabaseId {
+            responseBody["tasksDatabaseId"] = tasksDatabaseId
+        }
+        if !contextDatabases.isEmpty {
+            responseBody["contextDatabases"] = contextDatabases
+        }
+
         return HTTPResponse(
             statusCode: 200,
-            body: ["message": "Notion configuration updated successfully", "tasksDatabaseId": tasksDatabaseId]
+            body: responseBody
         )
     }
 
@@ -2480,6 +2616,39 @@ The Commitment Check feature requires a properly configured Notion database.
                     statusCode: 400,
                     body: ["error": "No valid items to save"]
                 )
+            }
+
+            // Record scan feedback for learning (approved items)
+            let learningService = WorkflowLearningService.shared
+            for item in items {
+                learningService.recordScanFeedback(
+                    threadId: item.source.threadId ?? item.source.contact,
+                    threadName: item.source.threadName ?? item.source.contact,
+                    platform: item.source.platform.rawValue,
+                    itemType: item.type.rawValue,
+                    accepted: true,
+                    edited: false,
+                    originalTitle: item.title,
+                    editedTitle: nil
+                )
+            }
+
+            // Also record rejections if provided in request
+            if let rejectedArray = json["rejected"] as? [[String: Any]] {
+                for rejectedDict in rejectedArray {
+                    if let sourceDict = rejectedDict["source"] as? [String: Any],
+                       let contact = sourceDict["contact"] as? String,
+                       let platformStr = sourceDict["platform"] as? String,
+                       let typeStr = rejectedDict["type"] as? String {
+                        learningService.recordScanFeedback(
+                            threadId: sourceDict["threadId"] as? String ?? contact,
+                            threadName: sourceDict["threadName"] as? String ?? contact,
+                            platform: platformStr,
+                            itemType: typeStr,
+                            accepted: false
+                        )
+                    }
+                }
             }
 
             let (saved, failed) = try await alfredService.saveApprovedItems(items)
@@ -4334,6 +4503,138 @@ extension HTTPServer {
         )
     }
 
+    // MARK: - Commitment Tracker Handlers
+
+    private func handleGetCommitmentTrackerStats() async -> HTTPResponse {
+        let stats = CommitmentScanTracker.shared.getStats()
+
+        // Also get actual counts from Notion
+        var notionOpen = 0
+        var notionClosed = 0
+        var notionTotal = 0
+
+        if let orchestrator = alfredService.orchestrator {
+            do {
+                let notionStats = try await orchestrator.notionServicePublic.getCommitmentStatsFromNotion()
+                notionOpen = notionStats.open
+                notionClosed = notionStats.closed
+                notionTotal = notionStats.total
+            } catch {
+                print("⚠️ Failed to get Notion commitment stats: \(error)")
+            }
+        }
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                // Notion-based counts (source of truth for open/closed)
+                "openCommitments": notionOpen,
+                "closedCount": notionClosed,
+                "totalCommitments": notionTotal,
+                // Tracker stats
+                "autoClosedCount": stats.autoClosedCount,
+                "pendingClosures": stats.pendingClosures,
+                "totalExtracted": stats.totalExtracted,
+                "threadsTracked": stats.threadsTracked,
+                "favoritesCount": stats.favoritesCount,
+                "activeThreadsCount": stats.activeThreadsCount,
+                "lastScanTime": stats.lastScanTime.map { Self.iso8601Formatter.string(from: $0) } as Any
+            ]
+        )
+    }
+
+    private func handleGetPendingClosures() -> HTTPResponse {
+        let pendingClosures = CommitmentScanTracker.shared.getPendingClosureConfirmations()
+
+        let response: [[String: Any]] = pendingClosures.map { closure in
+            [
+                "hash": closure.hash,
+                "title": closure.title,
+                "signal": closure.signal,
+                "confidence": closure.confidence
+            ]
+        }
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: ["pendingClosures": response, "count": pendingClosures.count]
+        )
+    }
+
+    private func handleConfirmClosure(_ request: HTTPRequest) async -> HTTPResponse {
+        guard let body = request.body,
+              let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let hash = json["hash"] as? String else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Missing 'hash' in request body"]
+            )
+        }
+
+        // Get the pending closure info for learning before we process it
+        let pendingClosures = CommitmentScanTracker.shared.getPendingClosureConfirmations()
+        if let closure = pendingClosures.first(where: { $0.hash == hash }) {
+            // Record the closure feedback for learning
+            WorkflowLearningService.shared.recordClosureDetectionFeedback(
+                commitmentHash: hash,
+                commitmentTitle: closure.title,
+                signal: closure.signal,
+                aiConfidence: closure.confidence,
+                userAccepted: true
+            )
+        }
+
+        // Mark as closed in tracker
+        CommitmentScanTracker.shared.markCommitmentClosed(hash: hash)
+
+        // Also close in Notion via AlfredService
+        do {
+            try await alfredService.closeCommitmentByHash(hash: hash, reason: "User confirmed closure")
+            return HTTPResponse(
+                statusCode: 200,
+                body: ["success": true, "message": "Commitment closed"]
+            )
+        } catch {
+            // Still return success since the local tracker was updated
+            return HTTPResponse(
+                statusCode: 200,
+                body: ["success": true, "message": "Commitment closed (Notion update may have failed)"]
+            )
+        }
+    }
+
+    private func handleRejectClosure(_ request: HTTPRequest) -> HTTPResponse {
+        guard let body = request.body,
+              let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let hash = json["hash"] as? String else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Missing 'hash' in request body"]
+            )
+        }
+
+        // Get the pending closure info for learning before we process it
+        let pendingClosures = CommitmentScanTracker.shared.getPendingClosureConfirmations()
+        if let closure = pendingClosures.first(where: { $0.hash == hash }) {
+            // Record the rejection for learning
+            WorkflowLearningService.shared.recordClosureDetectionFeedback(
+                commitmentHash: hash,
+                commitmentTitle: closure.title,
+                signal: closure.signal,
+                aiConfidence: closure.confidence,
+                userAccepted: false
+            )
+        }
+
+        // Mark the closure detection as rejected
+        CommitmentScanTracker.shared.rejectClosureDetection(hash: hash)
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: ["success": true, "message": "Closure suggestion rejected"]
+        )
+    }
+
     // MARK: - Simplified Learning Handlers
 
     private func handleTeachAlfred(_ request: HTTPRequest) -> HTTPResponse {
@@ -4419,6 +4720,155 @@ extension HTTPServer {
                 ]
             ]
         )
+    }
+
+    // MARK: - Workflow Patterns Handlers
+
+    private func handleGetWorkflowPatterns() -> HTTPResponse {
+        let learningService = WorkflowLearningService.shared
+        let patterns = learningService.getComputedPatterns()
+        let summary = learningService.getSummary()
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "patterns": patterns,
+                "summary": summary
+            ]
+        )
+    }
+
+    private func handleComputeWorkflowPatterns() -> HTTPResponse {
+        let learningService = WorkflowLearningService.shared
+        learningService.computePatterns()
+
+        // Wait a moment for async computation to complete
+        Thread.sleep(forTimeInterval: 0.5)
+
+        let patterns = learningService.getComputedPatterns()
+        let summary = learningService.getSummary()
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "success": true,
+                "message": "Patterns computed successfully",
+                "patterns": patterns,
+                "summary": summary
+            ]
+        )
+    }
+
+    private func handleGetLearningDigest() -> HTTPResponse {
+        let learningService = WorkflowLearningService.shared
+
+        guard let digest = learningService.generateLearningDigest() else {
+            return HTTPResponse(
+                statusCode: 200,
+                body: [
+                    "hasDigest": false,
+                    "message": "Not enough data to generate a learning digest yet"
+                ]
+            )
+        }
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "hasDigest": true,
+                "subject": digest.subject,
+                "body": digest.body
+            ]
+        )
+    }
+
+    private func handleSendLearningDigest() async -> HTTPResponse {
+        let learningService = WorkflowLearningService.shared
+
+        guard let digest = learningService.generateLearningDigest() else {
+            return HTTPResponse(
+                statusCode: 200,
+                body: [
+                    "success": false,
+                    "error": "Not enough data to generate a learning digest yet"
+                ]
+            )
+        }
+
+        // Check if we have access to config
+        guard let orchestrator = alfredService.orchestrator else {
+            return HTTPResponse(
+                statusCode: 500,
+                body: [
+                    "success": false,
+                    "error": "Service not properly initialized"
+                ]
+            )
+        }
+
+        // Convert markdown to HTML for email
+        let htmlBody = convertMarkdownToHtml(digest.body)
+
+        // Send email using NotificationService
+        do {
+            let notificationService = NotificationService(config: orchestrator.config.notifications)
+            try await notificationService.sendLearningDigest(subject: digest.subject, body: htmlBody)
+
+            return HTTPResponse(
+                statusCode: 200,
+                body: [
+                    "success": true,
+                    "message": "Learning digest email sent successfully"
+                ]
+            )
+        } catch {
+            return HTTPResponse(
+                statusCode: 500,
+                body: [
+                    "success": false,
+                    "error": "Failed to send email: \(error.localizedDescription)"
+                ]
+            )
+        }
+    }
+
+    private func convertMarkdownToHtml(_ markdown: String) -> String {
+        // Simple markdown to HTML conversion
+        var html = markdown
+
+        // Headers
+        html = html.replacingOccurrences(of: "# ", with: "<h1>")
+        html = html.replacingOccurrences(of: "## ", with: "<h2>")
+        html = html.replacingOccurrences(of: "---", with: "<hr>")
+
+        // Bold
+        let boldRegex = try? NSRegularExpression(pattern: "\\*\\*(.+?)\\*\\*", options: [])
+        html = boldRegex?.stringByReplacingMatches(in: html, range: NSRange(html.startIndex..., in: html), withTemplate: "<strong>$1</strong>") ?? html
+
+        // Line breaks
+        html = html.replacingOccurrences(of: "\n\n", with: "</p><p>")
+        html = html.replacingOccurrences(of: "\n- ", with: "<br>• ")
+        html = html.replacingOccurrences(of: "\n", with: "<br>")
+
+        // Wrap in body
+        return """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
+                h1 { color: #1a1a1a; font-size: 24px; margin-bottom: 8px; }
+                h2 { color: #4a4a4a; font-size: 18px; margin-top: 24px; margin-bottom: 12px; }
+                hr { border: none; border-top: 1px solid #e5e5e5; margin: 20px 0; }
+                strong { color: #1a1a1a; }
+                p { margin: 12px 0; }
+            </style>
+        </head>
+        <body>
+            <p>\(html)</p>
+        </body>
+        </html>
+        """
     }
 
     // MARK: - Unified Memory Handlers
@@ -4872,6 +5322,12 @@ extension HTTPServer {
             return HTTPResponse(statusCode: 400, body: ["error": "Missing notionId or status"])
         }
 
+        // Get additional context from request for learning
+        let taskType = json["taskType"] as? String ?? "Unknown"
+        let priority = json["priority"] as? String ?? "Medium"
+        let counterparty = json["counterparty"] as? String
+        let fromStatus = json["fromStatus"] as? String ?? "Not Started"
+
         // Map status string to TaskItem.TaskStatus
         let status: TaskItem.TaskStatus
         switch statusString {
@@ -4893,6 +5349,18 @@ extension HTTPServer {
 
         do {
             try await orchestrator.notionServicePublic.updateTaskStatus(notionId: notionId, status: status)
+
+            // Record the status change for learning
+            WorkflowLearningService.shared.recordTaskStatusChange(
+                taskId: notionId,
+                taskType: taskType,
+                fromStatus: fromStatus,
+                toStatus: status.rawValue,
+                priority: priority,
+                counterparty: counterparty,
+                daysInPreviousStatus: nil  // Could be computed if we track timestamps
+            )
+
             return HTTPResponse(statusCode: 200, body: ["success": true, "status": status.rawValue])
         } catch {
             return HTTPResponse(statusCode: 500, body: ["error": "Failed to update status: \(error.localizedDescription)"])

@@ -390,6 +390,109 @@ extension NotionService {
         return try await createTask(taskItem)
     }
 
+    /// Close a commitment by hash in the unified Tasks database
+    /// Updates status to "Done" and adds closure reason to description
+    func closeCommitmentInTasks(hash: String, reason: String) async throws {
+        guard tasksDatabaseId != nil else {
+            throw NSError(domain: "NotionService", code: 100, userInfo: [NSLocalizedDescriptionKey: "Tasks database not configured"])
+        }
+
+        // First find the page ID by hash
+        guard let pageId = try await findTaskByHash(hash) else {
+            print("⚠️ Commitment with hash \(hash.prefix(8))... not found in Notion")
+            return
+        }
+
+        // Update the page
+        let url = URL(string: "https://api.notion.com/v1/pages/\(pageId)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "properties": [
+                "Status": [
+                    "status": [
+                        "name": "Done"
+                    ]
+                ]
+            ]
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw NSError(domain: "NotionService", code: 101, userInfo: [NSLocalizedDescriptionKey: "Invalid response"])
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw NSError(domain: "NotionService", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Failed to close commitment: \(errorBody)"])
+        }
+
+        print("✅ Closed commitment in Notion: \(reason)")
+    }
+
+    /// Get commitment statistics from Notion (open, closed, total)
+    func getCommitmentStatsFromNotion() async throws -> (open: Int, closed: Int, total: Int) {
+        guard let databaseId = tasksDatabaseId else {
+            return (0, 0, 0)
+        }
+
+        let url = URL(string: "https://api.notion.com/v1/databases/\(databaseId)/query")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Filter for commitments only (Type = "Commitment")
+        let body: [String: Any] = [
+            "filter": [
+                "property": "Type",
+                "select": [
+                    "equals": "Commitment"
+                ]
+            ],
+            "page_size": 100
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            return (0, 0, 0)
+        }
+
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let results = json["results"] as? [[String: Any]] else {
+            return (0, 0, 0)
+        }
+
+        var openCount = 0
+        var closedCount = 0
+
+        for page in results {
+            if let properties = page["properties"] as? [String: Any],
+               let status = properties["Status"] as? [String: Any],
+               let statusObj = status["status"] as? [String: Any],
+               let statusName = statusObj["name"] as? String {
+                if statusName == "Done" {
+                    closedCount += 1
+                } else {
+                    openCount += 1
+                }
+            }
+        }
+
+        return (openCount, closedCount, results.count)
+    }
+
     // MARK: - Parsing
 
     /// Parse Task from Notion page JSON

@@ -285,6 +285,12 @@ class CommitmentAnalyzer {
             prompt += "\n\n\(historicalContext)"
         }
 
+        // Add workflow patterns learned from user behavior
+        let workflowContext = WorkflowLearningService.shared.getPatternContextForAI()
+        if !workflowContext.isEmpty {
+            prompt += "\n\n\(workflowContext)"
+        }
+
         prompt += """
 
 

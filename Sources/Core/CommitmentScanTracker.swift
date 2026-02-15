@@ -1,0 +1,495 @@
+import Foundation
+import SQLite3
+
+/// Tracks commitment scanning history for incremental updates
+/// Remembers what threads we've scanned and when, enabling efficient delta scans
+class CommitmentScanTracker {
+    static let shared = CommitmentScanTracker()
+
+    private let dbPath: URL
+    private var db: OpaquePointer?
+    private let dbLock = NSLock()
+
+    private init() {
+        let alfredDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".alfred")
+
+        try? FileManager.default.createDirectory(at: alfredDir, withIntermediateDirectories: true)
+
+        self.dbPath = alfredDir.appendingPathComponent("commitment_scan.db")
+
+        setupDatabase()
+    }
+
+    deinit {
+        sqlite3_close(db)
+    }
+
+    // MARK: - Database Setup
+
+    private func setupDatabase() {
+        guard sqlite3_open(dbPath.path, &db) == SQLITE_OK else {
+            print("⚠️ Failed to open commitment scan database")
+            return
+        }
+
+        // Thread scan history - tracks when each thread was last scanned
+        let createThreadHistoryTable = """
+        CREATE TABLE IF NOT EXISTS thread_scan_history (
+            thread_id TEXT PRIMARY KEY,
+            thread_name TEXT,
+            platform TEXT,
+            last_scanned_at DATETIME,
+            last_message_timestamp DATETIME,
+            messages_scanned INTEGER DEFAULT 0,
+            commitments_found INTEGER DEFAULT 0
+        )
+        """
+
+        // Commitment extraction log - tracks what we've extracted
+        let createExtractionLogTable = """
+        CREATE TABLE IF NOT EXISTS commitment_extractions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            commitment_hash TEXT UNIQUE,
+            thread_id TEXT,
+            extracted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            commitment_type TEXT,
+            title TEXT,
+            counterparty TEXT,
+            confidence REAL,
+            was_closed BOOLEAN DEFAULT 0,
+            closed_at DATETIME
+        )
+        """
+
+        // Closure detection log - tracks closure signals we've detected
+        let createClosureLogTable = """
+        CREATE TABLE IF NOT EXISTS closure_detections (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            commitment_hash TEXT,
+            detected_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            closure_signal TEXT,
+            confidence REAL,
+            auto_closed BOOLEAN DEFAULT 0,
+            user_confirmed BOOLEAN
+        )
+        """
+
+        var errMsg: UnsafeMutablePointer<CChar>?
+        sqlite3_exec(db, createThreadHistoryTable, nil, nil, &errMsg)
+        sqlite3_exec(db, createExtractionLogTable, nil, nil, &errMsg)
+        sqlite3_exec(db, createClosureLogTable, nil, nil, &errMsg)
+
+        print("✓ Commitment scan database ready")
+    }
+
+    // MARK: - Thread Scan History
+
+    /// Get the last scan time for a thread (returns nil if never scanned)
+    func getLastScanTime(threadId: String) -> Date? {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let query = "SELECT last_scanned_at FROM thread_scan_history WHERE thread_id = ?"
+        var stmt: OpaquePointer?
+
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+
+        bindText(stmt, 1, threadId)
+
+        if sqlite3_step(stmt) == SQLITE_ROW {
+            if let datePtr = sqlite3_column_text(stmt, 0) {
+                let dateStr = String(cString: datePtr)
+                let formatter = ISO8601DateFormatter()
+                return formatter.date(from: dateStr)
+            }
+        }
+
+        return nil
+    }
+
+    /// Get the last message timestamp we processed for a thread
+    func getLastMessageTimestamp(threadId: String) -> Date? {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let query = "SELECT last_message_timestamp FROM thread_scan_history WHERE thread_id = ?"
+        var stmt: OpaquePointer?
+
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+
+        bindText(stmt, 1, threadId)
+
+        if sqlite3_step(stmt) == SQLITE_ROW {
+            if let datePtr = sqlite3_column_text(stmt, 0) {
+                let dateStr = String(cString: datePtr)
+                let formatter = ISO8601DateFormatter()
+                return formatter.date(from: dateStr)
+            }
+        }
+
+        return nil
+    }
+
+    /// Record that we scanned a thread
+    func recordThreadScan(
+        threadId: String,
+        threadName: String,
+        platform: String,
+        lastMessageTimestamp: Date,
+        messagesScanned: Int,
+        commitmentsFound: Int
+    ) {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let formatter = ISO8601DateFormatter()
+        let now = formatter.string(from: Date())
+        let lastMsgTime = formatter.string(from: lastMessageTimestamp)
+
+        let sql = """
+        INSERT OR REPLACE INTO thread_scan_history
+        (thread_id, thread_name, platform, last_scanned_at, last_message_timestamp, messages_scanned, commitments_found)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+
+        bindText(stmt, 1, threadId)
+        bindText(stmt, 2, threadName)
+        bindText(stmt, 3, platform)
+        bindText(stmt, 4, now)
+        bindText(stmt, 5, lastMsgTime)
+        sqlite3_bind_int(stmt, 6, Int32(messagesScanned))
+        sqlite3_bind_int(stmt, 7, Int32(commitmentsFound))
+
+        sqlite3_step(stmt)
+    }
+
+    /// Get all threads that need scanning (not scanned recently or never scanned)
+    func getThreadsNeedingScan(maxAge: TimeInterval = 3600) -> [String] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let cutoff = Date().addingTimeInterval(-maxAge)
+        let formatter = ISO8601DateFormatter()
+        let cutoffStr = formatter.string(from: cutoff)
+
+        let query = """
+        SELECT thread_id FROM thread_scan_history
+        WHERE last_scanned_at < ? OR last_scanned_at IS NULL
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+
+        bindText(stmt, 1, cutoffStr)
+
+        var threads: [String] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let idPtr = sqlite3_column_text(stmt, 0) {
+                threads.append(String(cString: idPtr))
+            }
+        }
+
+        return threads
+    }
+
+    // MARK: - Commitment Extraction Tracking
+
+    /// Check if we've already extracted a commitment (by hash)
+    func hasExtractedCommitment(hash: String) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let query = "SELECT 1 FROM commitment_extractions WHERE commitment_hash = ?"
+        var stmt: OpaquePointer?
+
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(stmt) }
+
+        bindText(stmt, 1, hash)
+        return sqlite3_step(stmt) == SQLITE_ROW
+    }
+
+    /// Record a commitment extraction
+    func recordExtraction(
+        hash: String,
+        threadId: String,
+        type: String,
+        title: String,
+        counterparty: String,
+        confidence: Double
+    ) {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let sql = """
+        INSERT OR IGNORE INTO commitment_extractions
+        (commitment_hash, thread_id, commitment_type, title, counterparty, confidence)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+
+        bindText(stmt, 1, hash)
+        bindText(stmt, 2, threadId)
+        bindText(stmt, 3, type)
+        bindText(stmt, 4, title)
+        bindText(stmt, 5, counterparty)
+        sqlite3_bind_double(stmt, 6, confidence)
+
+        sqlite3_step(stmt)
+    }
+
+    /// Get open commitments for a thread (not yet closed)
+    func getOpenCommitmentsForThread(threadId: String) -> [(hash: String, title: String, type: String, counterparty: String)] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let query = """
+        SELECT commitment_hash, title, commitment_type, counterparty
+        FROM commitment_extractions
+        WHERE thread_id = ? AND was_closed = 0
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+
+        bindText(stmt, 1, threadId)
+
+        var results: [(String, String, String, String)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let hash = String(cString: sqlite3_column_text(stmt, 0))
+            let title = String(cString: sqlite3_column_text(stmt, 1))
+            let type = String(cString: sqlite3_column_text(stmt, 2))
+            let counterparty = String(cString: sqlite3_column_text(stmt, 3))
+            results.append((hash, title, type, counterparty))
+        }
+
+        return results
+    }
+
+    // MARK: - Closure Detection
+
+    /// Record a closure detection
+    func recordClosureDetection(
+        commitmentHash: String,
+        closureSignal: String,
+        confidence: Double,
+        autoClosed: Bool
+    ) {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let sql = """
+        INSERT INTO closure_detections
+        (commitment_hash, closure_signal, confidence, auto_closed)
+        VALUES (?, ?, ?, ?)
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+
+        bindText(stmt, 1, commitmentHash)
+        bindText(stmt, 2, closureSignal)
+        sqlite3_bind_double(stmt, 3, confidence)
+        sqlite3_bind_int(stmt, 4, autoClosed ? 1 : 0)
+
+        sqlite3_step(stmt)
+    }
+
+    /// Mark a commitment as closed
+    func markCommitmentClosed(hash: String) {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let formatter = ISO8601DateFormatter()
+        let now = formatter.string(from: Date())
+
+        let sql = "UPDATE commitment_extractions SET was_closed = 1, closed_at = ? WHERE commitment_hash = ?"
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+
+        bindText(stmt, 1, now)
+        bindText(stmt, 2, hash)
+
+        sqlite3_step(stmt)
+    }
+
+    /// Reject a closure detection (user says it's not actually closed)
+    func rejectClosureDetection(hash: String) {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let sql = "UPDATE closure_detections SET user_confirmed = 0 WHERE commitment_hash = ? AND user_confirmed IS NULL"
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+
+        bindText(stmt, 1, hash)
+        sqlite3_step(stmt)
+
+        print("❌ User rejected closure for commitment: \(hash.prefix(8))...")
+    }
+
+    /// Get pending closure detections that need user confirmation
+    func getPendingClosureConfirmations() -> [(hash: String, title: String, signal: String, confidence: Double)] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let query = """
+        SELECT cd.commitment_hash, ce.title, cd.closure_signal, cd.confidence
+        FROM closure_detections cd
+        JOIN commitment_extractions ce ON cd.commitment_hash = ce.commitment_hash
+        WHERE cd.auto_closed = 0 AND cd.user_confirmed IS NULL AND ce.was_closed = 0
+        ORDER BY cd.detected_at DESC
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+
+        var results: [(String, String, String, Double)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let hash = String(cString: sqlite3_column_text(stmt, 0))
+            let title = String(cString: sqlite3_column_text(stmt, 1))
+            let signal = String(cString: sqlite3_column_text(stmt, 2))
+            let confidence = sqlite3_column_double(stmt, 3)
+            results.append((hash, title, signal, confidence))
+        }
+
+        return results
+    }
+
+    // MARK: - Stats
+
+    /// Get scan statistics
+    func getStats() -> CommitmentScanStats {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        var stats = CommitmentScanStats()
+
+        // Total threads tracked
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM thread_scan_history", -1, &stmt, nil) == SQLITE_OK {
+            if sqlite3_step(stmt) == SQLITE_ROW {
+                stats.threadsTracked = Int(sqlite3_column_int(stmt, 0))
+            }
+            sqlite3_finalize(stmt)
+            stmt = nil
+        }
+
+        // Total commitments extracted
+        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM commitment_extractions", -1, &stmt, nil) == SQLITE_OK {
+            if sqlite3_step(stmt) == SQLITE_ROW {
+                stats.totalExtracted = Int(sqlite3_column_int(stmt, 0))
+            }
+            sqlite3_finalize(stmt)
+            stmt = nil
+        }
+
+        // Open commitments
+        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM commitment_extractions WHERE was_closed = 0", -1, &stmt, nil) == SQLITE_OK {
+            if sqlite3_step(stmt) == SQLITE_ROW {
+                stats.openCommitments = Int(sqlite3_column_int(stmt, 0))
+            }
+            sqlite3_finalize(stmt)
+            stmt = nil
+        }
+
+        // Closed commitments (total)
+        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM commitment_extractions WHERE was_closed = 1", -1, &stmt, nil) == SQLITE_OK {
+            if sqlite3_step(stmt) == SQLITE_ROW {
+                stats.closedCount = Int(sqlite3_column_int(stmt, 0))
+            }
+            sqlite3_finalize(stmt)
+            stmt = nil
+        }
+
+        // Auto-closed
+        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM closure_detections WHERE auto_closed = 1", -1, &stmt, nil) == SQLITE_OK {
+            if sqlite3_step(stmt) == SQLITE_ROW {
+                stats.autoClosedCount = Int(sqlite3_column_int(stmt, 0))
+            }
+            sqlite3_finalize(stmt)
+            stmt = nil
+        }
+
+        // Pending closures (need user confirmation)
+        let pendingQuery = """
+        SELECT COUNT(*) FROM closure_detections cd
+        JOIN commitment_extractions ce ON cd.commitment_hash = ce.commitment_hash
+        WHERE cd.auto_closed = 0 AND cd.user_confirmed IS NULL AND ce.was_closed = 0
+        """
+        if sqlite3_prepare_v2(db, pendingQuery, -1, &stmt, nil) == SQLITE_OK {
+            if sqlite3_step(stmt) == SQLITE_ROW {
+                stats.pendingClosures = Int(sqlite3_column_int(stmt, 0))
+            }
+            sqlite3_finalize(stmt)
+            stmt = nil
+        }
+
+        // Last scan time
+        if sqlite3_prepare_v2(db, "SELECT MAX(last_scanned_at) FROM thread_scan_history", -1, &stmt, nil) == SQLITE_OK {
+            if sqlite3_step(stmt) == SQLITE_ROW {
+                if let datePtr = sqlite3_column_text(stmt, 0) {
+                    let dateStr = String(cString: datePtr)
+                    let formatter = ISO8601DateFormatter()
+                    stats.lastScanTime = formatter.date(from: dateStr)
+                }
+            }
+            sqlite3_finalize(stmt)
+            stmt = nil
+        }
+
+        // Get scan coverage from FavoritesService and ContactLearner
+        let favorites = FavoritesService.shared.getFavorites()
+        stats.favoritesCount = favorites.contacts.count + favorites.groups.count
+
+        let allThreads = ContactLearner.shared.getAllThreads()
+        let activeThreads = allThreads.filter { thread in
+            let totalMessages = thread.participationHistory.reduce(0) { $0 + $1.totalMessages }
+            return totalMessages >= 5 && thread.avgParticipation > 0
+        }
+        stats.activeThreadsCount = activeThreads.count
+
+        return stats
+    }
+
+    // MARK: - Helpers
+
+    private func bindText(_ stmt: OpaquePointer?, _ index: Int32, _ value: String) {
+        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        value.withCString { cString in
+            _ = sqlite3_bind_text(stmt, index, cString, -1, SQLITE_TRANSIENT)
+        }
+    }
+}
+
+// MARK: - Data Models
+
+struct CommitmentScanStats: Codable {
+    var threadsTracked: Int = 0
+    var totalExtracted: Int = 0
+    var openCommitments: Int = 0
+    var closedCount: Int = 0
+    var autoClosedCount: Int = 0
+    var pendingClosures: Int = 0
+    var lastScanTime: Date?
+    var favoritesCount: Int = 0
+    var activeThreadsCount: Int = 0
+}

@@ -107,6 +107,14 @@ class NotificationService {
         }
     }
 
+    func sendLearningDigest(subject: String, body: String) async throws {
+        if config.email.enabled {
+            print("  → Sending learning digest email...")
+            try await sendEmail(subject: subject, body: body)
+            print("  ✓ Learning digest email sent")
+        }
+    }
+
     // MARK: - Email
 
     private func sendEmail(subject: String, body: String, toAddress: String? = nil) async throws {
