@@ -1,6 +1,6 @@
-# Alfred
+# Coach Alfred
 
-**Your AI chief of staff.** An always-on executive assistant that reads your messages, scans your calendar, tracks your commitments, and coaches you like Bill Campbell meets Matt Mochary — so you wake up knowing exactly what matters.
+**Your AI executive coach.** Reads your messages, scans your calendar, tracks your commitments — then coaches you like Bill Campbell meets Matt Mochary. You wake up knowing what matters, who needs attention, and what you're avoiding.
 
 ![macOS](https://img.shields.io/badge/macOS-13%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9%2B-orange)
@@ -223,4 +223,4 @@ See [SETUP.md](SETUP.md) for the full guide.
 
 ---
 
-*Alfred: because the best chief of staff doesn't just organize your day — they make you think about it differently.*
+*Coach Alfred: because the best coach doesn't just organize your day — they make you think about it differently.*
