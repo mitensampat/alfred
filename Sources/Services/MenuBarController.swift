@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import UserNotifications
+import SQLite3
 
 /// Menu bar controller for Alfred - shows server status and provides quick controls
 class MenuBarController: NSObject, NSMenuDelegate {
@@ -50,10 +51,21 @@ class MenuBarController: NSObject, NSMenuDelegate {
     private func performPermissionsCheck() {
         var missingPermissions: [String] = []
 
-        // Check Full Disk Access by trying to read iMessage database
+        // Check Full Disk Access by trying to open iMessage database via SQLite
+        // (FileManager.isReadableFile falsely returns false for TCC-protected files even with Full Disk Access)
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
         let imessageDBPath = "\(homeDir)/Library/Messages/chat.db"
-        if !FileManager.default.isReadableFile(atPath: imessageDBPath) {
+        var testDB: OpaquePointer?
+        if sqlite3_open_v2(imessageDBPath, &testDB, SQLITE_OPEN_READONLY, nil) == SQLITE_OK {
+            var stmt: OpaquePointer?
+            let testResult = sqlite3_prepare_v2(testDB, "SELECT 1 FROM message LIMIT 1", -1, &stmt, nil)
+            sqlite3_finalize(stmt)
+            sqlite3_close(testDB)
+            if testResult != SQLITE_OK {
+                missingPermissions.append("Full Disk Access (for iMessage)")
+            }
+        } else {
+            sqlite3_close(testDB)
             missingPermissions.append("Full Disk Access (for iMessage)")
         }
 

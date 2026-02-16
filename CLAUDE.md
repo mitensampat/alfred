@@ -17,10 +17,13 @@ launchctl unload ~/Library/LaunchAgents/com.msfoundry.alfred.plist
 # 3. Install new binary
 cp .build/release/Alfred /Applications/Alfred.app/Contents/MacOS/Alfred
 
-# 4. Sync HTML to hot-reload directory
+# 4. Re-sign with stable bundle identifier (CRITICAL for Full Disk Access / TCC permissions)
+codesign --force --sign - --identifier com.msfoundry.alfred /Applications/Alfred.app/Contents/MacOS/Alfred
+
+# 5. Sync HTML to hot-reload directory
 cp Sources/GUI/Resources/index-notion.html ~/.config/alfred/web/index-notion.html
 
-# 5. Restart via LaunchAgent
+# 6. Restart via LaunchAgent
 launchctl load ~/Library/LaunchAgents/com.msfoundry.alfred.plist
 ```
 
@@ -108,10 +111,8 @@ All endpoints require `?passcode=REDACTED_PASSCODE` query parameter.
 
 ## Git State Notes
 
-- Current HEAD: `f706c56` (Revert "v1.6.3.3")
-- Working tree has uncommitted changes across ~10 Swift files
-- HTML was recovered from a previous Claude session transcript after a power cut
-- Version in code: `1.7.0` (in `main.swift`)
+- Latest release: `v1.7.0` (tag pushed to GitHub with release)
+- Version in code: `1.7.0` (in `main.swift` line 15 — single source of truth)
 
 ## Debugging Tips
 
@@ -120,3 +121,12 @@ All endpoints require `?passcode=REDACTED_PASSCODE` query parameter.
 - If two Alfred processes exist, one is always wrong -- use `launchctl unload/load`
 - URL encoding: use `%20` for spaces in contact names, NOT `+`
 - Cache TTLs: Briefing 4h, Calendar 10min, Messages 10min, Attention 4h, Todos 10min
+
+## TCC / Permissions Notes
+
+- **Full Disk Access** is required for iMessage (`~/Library/Messages/chat.db`)
+- Grant to `/Applications/Alfred.app` in System Settings → Privacy & Security → Full Disk Access
+- **CRITICAL**: After copying a new binary, you MUST re-sign with `codesign --force --sign - --identifier com.msfoundry.alfred /Applications/Alfred.app/Contents/MacOS/Alfred`
+- Without re-signing, the ad-hoc signature changes on every build, and macOS TCC revokes Full Disk Access
+- `FileManager.isReadableFile` returns FALSE for TCC-protected files even with FDA granted — always use `sqlite3_open_v2` directly
+- The codesign step is included in the Golden Path above (step 4)

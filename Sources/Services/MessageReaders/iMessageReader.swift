@@ -12,22 +12,30 @@ class iMessageReader {
     func connect() throws {
         let path = (dbPath as NSString).expandingTildeInPath
 
-        // Pre-flight check: verify file exists AND is readable (Full Disk Access check)
+        // Pre-flight check: verify file exists
         guard FileManager.default.fileExists(atPath: path) else {
             throw MessageReaderError.databaseNotFound(path)
         }
 
-        // Check if we can actually read the file (tests Full Disk Access permission)
-        guard FileManager.default.isReadableFile(atPath: path) else {
-            print("⚠️ iMessage: Full Disk Access not granted - cannot read \(path)")
-            throw MessageReaderError.connectionFailed("iMessage - Full Disk Access required. Grant in System Settings → Privacy & Security → Full Disk Access")
-        }
-
+        // Open database directly — sqlite3_open_v2 properly goes through macOS TCC
+        // (FileManager.isReadableFile falsely returns false for TCC-protected files even with Full Disk Access)
         var db: OpaquePointer?
-        if sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK {
-            self.db = db
+        let result = sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil)
+        if result == SQLITE_OK {
+            // Verify we can actually read by running a simple query (TCC may defer rejection)
+            var stmt: OpaquePointer?
+            let testResult = sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM message LIMIT 1", -1, &stmt, nil)
+            sqlite3_finalize(stmt)
+            if testResult == SQLITE_OK {
+                self.db = db
+            } else {
+                sqlite3_close(db)
+                print("⚠️ iMessage: Full Disk Access not granted - cannot query \(path)")
+                throw MessageReaderError.connectionFailed("iMessage - Full Disk Access required. Grant in System Settings → Privacy & Security → Full Disk Access")
+            }
         } else {
-            throw MessageReaderError.connectionFailed("iMessage")
+            print("⚠️ iMessage: Failed to open database at \(path) (error: \(result))")
+            throw MessageReaderError.connectionFailed("iMessage - Full Disk Access required. Grant in System Settings → Privacy & Security → Full Disk Access")
         }
     }
 
