@@ -462,6 +462,91 @@ class ClaudeAIService {
         return analysis
     }
 
+    // MARK: - Streaming
+
+    /// Stream text from Claude API, calling onChunk for each text delta
+    func streamText(
+        prompt: String,
+        system: String? = nil,
+        maxTokens: Int = 4096,
+        useModel: String? = nil,
+        onChunk: @escaping (String) -> Void
+    ) async throws {
+        let url = URL(string: baseURL)!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.timeoutInterval = 120
+
+        var body: [String: Any] = [
+            "model": useModel ?? model,
+            "max_tokens": maxTokens,
+            "stream": true,
+            "messages": [
+                ["role": "user", "content": prompt]
+            ]
+        ]
+
+        if let system = system {
+            body["system"] = system
+        }
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AIError.requestFailed
+        }
+
+        if httpResponse.statusCode != 200 {
+            // Read the error body
+            var errorData = Data()
+            for try await byte in bytes {
+                errorData.append(byte)
+            }
+            if let errorBody = String(data: errorData, encoding: .utf8) {
+                print("ERROR: HTTP \(httpResponse.statusCode): \(errorBody)")
+            }
+            throw AIError.requestFailed
+        }
+
+        // Parse SSE stream from Anthropic
+        var buffer = ""
+        for try await byte in bytes {
+            buffer.append(Character(UnicodeScalar(byte)))
+
+            // Process complete lines
+            while let newlineRange = buffer.range(of: "\n") {
+                let line = String(buffer[buffer.startIndex..<newlineRange.lowerBound])
+                buffer = String(buffer[newlineRange.upperBound...])
+
+                // SSE data lines start with "data: "
+                guard line.hasPrefix("data: ") else { continue }
+                let jsonStr = String(line.dropFirst(6))
+
+                // [DONE] marker or empty
+                if jsonStr == "[DONE]" || jsonStr.isEmpty { continue }
+
+                // Parse the event JSON
+                guard let jsonData = jsonStr.data(using: .utf8),
+                      let event = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                      let eventType = event["type"] as? String else {
+                    continue
+                }
+
+                // Extract text delta from content_block_delta events
+                if eventType == "content_block_delta",
+                   let delta = event["delta"] as? [String: Any],
+                   let text = delta["text"] as? String {
+                    onChunk(text)
+                }
+            }
+        }
+    }
+
     // MARK: - Private Helpers
 
     /// Generate text from a prompt (public method for agents)

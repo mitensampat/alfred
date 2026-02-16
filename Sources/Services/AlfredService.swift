@@ -358,10 +358,97 @@ class AlfredService: ObservableObject {
             print("📊 Scan summary: \(totalFound) found, \(totalSaved) new, skipped \(totalSkippedNewMessages) already-scanned messages")
         }
 
+        // Phase 1.5: Reverse Sync (Notion → Local Tracker)
+        // If user manually marked commitments as Done in Notion, update local tracker
+        var reverseSyncCount = 0
+        let allOpenLocal = tracker.getAllOpenCommitments()
+        for openCommitment in allOpenLocal {
+            do {
+                if let result = try await orchestrator.notionServicePublic.findCommitmentWithStatusByHash(openCommitment.hash) {
+                    if result.status.lowercased() == "done" || result.status.lowercased() == "cancelled" {
+                        tracker.markCommitmentClosed(hash: openCommitment.hash)
+                        reverseSyncCount += 1
+                    }
+                }
+            } catch {
+                // Non-fatal: skip this commitment if Notion lookup fails
+            }
+        }
+        if reverseSyncCount > 0 {
+            print("🔄 Reverse sync: updated \(reverseSyncCount) commitments from Notion (manually closed)")
+        }
+
+        // Phase 2: Closure Detection
+        // Check if any open commitments have been fulfilled based on recent messages
+        var closedCount = 0
+        var pendingClosureCount = 0
+
+        for contact in contactsToScan {
+            let allMessages = try await orchestrator.fetchMessagesForContact(contact, since: fullLookbackDate)
+            guard !allMessages.isEmpty else { continue }
+
+            let groupedByThread = Dictionary(grouping: allMessages) { $0.threadId }
+
+            for (threadId, threadMessages) in groupedByThread {
+                // Get open commitments for this thread from local tracker
+                let openCommitments = tracker.getOpenCommitmentsForThread(threadId: threadId)
+                guard !openCommitments.isEmpty else { continue }
+
+                // Detect closures using AI
+                do {
+                    let messages = threadMessages.map { $0.message }
+                    let closures = try await orchestrator.commitmentAnalyzer.detectClosures(
+                        openCommitments: openCommitments,
+                        messages: messages,
+                        threadName: threadMessages.first?.threadName ?? contact
+                    )
+
+                    for closure in closures {
+                        // Record the closure detection
+                        tracker.recordClosureDetection(
+                            commitmentHash: closure.commitmentHash,
+                            closureSignal: closure.closureSignal,
+                            confidence: closure.confidence,
+                            autoClosed: closure.autoClose
+                        )
+
+                        if closure.autoClose {
+                            // High confidence (>=0.85) - auto-close
+                            tracker.markCommitmentClosed(hash: closure.commitmentHash)
+
+                            // Also update in Notion
+                            try? await orchestrator.notionServicePublic.closeCommitmentInTasks(
+                                hash: closure.commitmentHash,
+                                reason: closure.reason
+                            )
+
+                            closedCount += 1
+                            print("✅ Auto-closed commitment: \(closure.reason)")
+                        } else {
+                            // Medium confidence (0.6-0.84) - queue for user confirmation
+                            pendingClosureCount += 1
+                            print("❓ Pending closure: \(closure.closureSignal) (confidence: \(closure.confidence))")
+                        }
+                    }
+                } catch {
+                    print("⚠️ Closure detection failed for thread \(threadId): \(error)")
+                }
+            }
+        }
+
+        if closedCount > 0 {
+            print("🎯 Auto-closed \(closedCount) commitments")
+        }
+        if pendingClosureCount > 0 {
+            print("❓ \(pendingClosureCount) commitments need user confirmation for closure")
+        }
+
         return CommitmentScanResult(
             totalFound: totalFound,
             saved: totalSaved,
-            duplicates: totalFound - totalSaved
+            duplicates: totalFound - totalSaved,
+            autoClosed: closedCount,
+            pendingClosures: pendingClosureCount
         )
     }
 

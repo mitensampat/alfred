@@ -1,387 +1,1797 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Alfred - Executive Assistant</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1d21; color: #d1d2d3; line-height: 1.6; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Alfred">
+<meta name="theme-color" content="#ffffff">
+<link rel="manifest" href="/manifest.json">
+<title>Alfred</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --bg-primary: #ffffff;
+  --bg-secondary: #f7f6f3;
+  --bg-tertiary: #f1f0ee;
+  --bg-card: #ffffff;
+  --text-primary: #37352f;
+  --text-secondary: #787774;
+  --text-tertiary: #9b9a97;
+  --accent: #2383e2;
+  --accent-hover: #1a73d9;
+  --green: #2d8a56;
+  --green-bg: #e8f5e9;
+  --red: #d44c47;
+  --red-bg: #fde8e8;
+  --orange: #d9730d;
+  --orange-bg: #fff3e0;
+  --yellow: #dfab01;
+  --yellow-bg: #fff9e0;
+  --border: #e9e9e7;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 2px 8px rgba(0,0,0,0.08);
+  --shadow-lg: 0 4px 16px rgba(0,0,0,0.12);
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --tab-height: 52px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+}
 
-        /* Auth Screen */
-        .auth-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
-        .auth-logo { font-size: 32px; font-weight: 700; letter-spacing: 3px; color: #fff; margin-bottom: 48px; }
-        .auth-card { width: 100%; max-width: 400px; background: #252a2e; border: 1px solid #2f3338; border-radius: 12px; padding: 32px; }
-        .auth-card input { width: 100%; padding: 14px; background: #1a1d21; border: 1px solid #2f3338; border-radius: 6px; color: #fff; font-size: 15px; }
-        .auth-card button { width: 100%; padding: 14px; background: #522d5b; border: none; border-radius: 6px; color: #fff; font-size: 15px; font-weight: 600; margin-top: 16px; cursor: pointer; transition: background 0.2s; }
-        .auth-card button:hover { background: #6d3a7a; }
-        .auth-error { color: #e01e5a; font-size: 13px; margin-top: 12px; }
-        .hidden { display: none !important; }
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
-        /* Main App Container */
-        .app-container { display: none; max-width: 800px; margin: 0 auto; padding: 20px; min-height: 100vh; }
-        .app-container.active { display: flex; flex-direction: column; }
+body {
+  font-family: var(--font-body);
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
 
-        /* Header */
-        .header { text-align: center; padding: 24px 0; }
-        .header h1 { font-size: 28px; font-weight: 700; letter-spacing: 2px; color: #fff; margin-bottom: 8px; }
-        .header p { font-size: 14px; color: #9ca3af; }
+/* ==================== AUTH SCREEN ==================== */
+.auth-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  height: 100dvh;
+  padding: 24px;
+  background: var(--bg-secondary);
+}
+.auth-screen.hidden { display: none; }
+.auth-title {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+.auth-subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 32px;
+}
+.auth-input {
+  width: 100%;
+  max-width: 280px;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 16px;
+  font-family: var(--font-body);
+  text-align: center;
+  letter-spacing: 4px;
+  background: var(--bg-card);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.auth-input:focus { border-color: var(--accent); }
+.auth-input::placeholder { letter-spacing: normal; color: var(--text-tertiary); }
+.auth-btn {
+  margin-top: 16px;
+  padding: 12px 40px;
+  background: var(--text-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 15px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.auth-btn:hover { background: #4a4843; }
+.auth-error {
+  color: var(--red);
+  font-size: 13px;
+  margin-top: 12px;
+}
+.auth-error.hidden { display: none; }
+.auth-version {
+  position: absolute;
+  bottom: 24px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
 
-        /* Query Input Section */
-        .query-section { margin: 24px 0; }
-        .query-input-container { position: relative; }
-        .query-input { width: 100%; padding: 16px 52px 16px 16px; background: #252a2e; border: 2px solid #2f3338; border-radius: 12px; color: #fff; font-size: 15px; resize: none; min-height: 80px; transition: border-color 0.2s; }
-        .query-input:focus { outline: none; border-color: #522d5b; }
-        .query-input::placeholder { color: #6b7280; }
-        .send-button { position: absolute; right: 12px; bottom: 12px; width: 40px; height: 40px; background: #522d5b; border: none; border-radius: 8px; color: #fff; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
-        .send-button:hover { background: #6d3a7a; }
-        .send-button:disabled { background: #2f3338; cursor: not-allowed; }
+/* ==================== APP CONTAINER ==================== */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+}
+.app-container.hidden { display: none; }
 
-        /* Quick Actions Grid */
-        .quick-actions { margin: 32px 0; }
-        .quick-actions-label { font-size: 11px; font-weight: 600; color: #9ca3af; letter-spacing: 1px; margin-bottom: 12px; text-transform: uppercase; }
-        .actions-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
-        .quick-action-btn { background: #252a2e; border: 1px solid #2f3338; border-radius: 10px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.2s; }
-        .quick-action-btn:hover { background: #2f3338; border-color: #522d5b; }
-        .quick-action-icon { font-size: 24px; margin-bottom: 8px; }
-        .quick-action-text { font-size: 13px; font-weight: 500; color: #fff; }
+/* ==================== TOP BAR ==================== */
+.top-bar {
+  background: var(--bg-primary);
+  padding: calc(var(--safe-top) + 8px) 20px 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  z-index: 100;
+}
+.top-bar-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.top-bar-subtitle {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+.top-bar-date {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
 
-        /* Response Area */
-        .response-area { margin: 32px 0; }
-        .response-card { background: #252a2e; border: 1px solid #2f3338; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
-        .response-query { font-size: 14px; color: #9ca3af; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #2f3338; }
-        .response-query strong { color: #fff; }
-        .response-text { font-size: 15px; color: #fff; line-height: 1.6; white-space: pre-wrap; }
-        .response-loading { text-align: center; padding: 40px; color: #9ca3af; }
-        .response-loading::after { content: '...'; animation: dots 1.5s steps(4, end) infinite; }
-        @keyframes dots { 0%, 20% { content: '.'; } 40% { content: '..'; } 60% { content: '...'; } }
+/* ==================== TAB CONTENT ==================== */
+.tab-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+.tab-panel {
+  display: none;
+  min-height: 100%;
+}
+.tab-panel.active {
+  display: flex;
+  flex-direction: column;
+}
 
-        /* Data Display */
-        .data-card { background: #1a1d21; border: 1px solid #2f3338; border-radius: 8px; padding: 16px; margin-top: 16px; }
-        .data-card-title { font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 12px; }
-        .data-item { padding: 12px; background: #252a2e; border-radius: 6px; margin-bottom: 8px; }
-        .data-item-title { font-size: 14px; font-weight: 500; color: #fff; margin-bottom: 4px; }
-        .data-item-text { font-size: 13px; color: #9ca3af; }
-        .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-left: 8px; }
-        .badge-high { background: rgba(224, 30, 90, 0.2); color: #e01e5a; }
-        .badge-medium { background: rgba(255, 212, 0, 0.2); color: #ffd400; }
-        .badge-low { background: rgba(90, 200, 250, 0.2); color: #5ac8fa; }
+/* ==================== HOME TAB ==================== */
+.home-panel {
+  padding: 16px 16px 24px;
+  gap: 14px;
+}
 
-        /* Suggested Follow-ups */
-        .follow-ups { margin-top: 16px; }
-        .follow-up-label { font-size: 12px; font-weight: 600; color: #9ca3af; margin-bottom: 8px; }
-        .follow-up-btn { background: #1a1d21; border: 1px solid #2f3338; border-radius: 6px; padding: 10px 14px; margin-right: 8px; margin-bottom: 8px; display: inline-block; font-size: 13px; color: #fff; cursor: pointer; transition: all 0.2s; }
-        .follow-up-btn:hover { background: #252a2e; border-color: #522d5b; }
+/* Focus Card */
+.focus-card {
+  background: var(--text-primary);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  color: white;
+  position: relative;
+}
+.focus-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  opacity: 0.7;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.focus-goal {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+  margin-bottom: 12px;
+}
+.focus-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+  opacity: 0.8;
+}
+.focus-streak { display: flex; align-items: center; gap: 4px; }
+.focus-block { display: flex; align-items: center; gap: 4px; }
+.focus-complete-btn {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.focus-complete-btn:hover { background: rgba(255,255,255,0.25); }
+.focus-complete-btn.done { background: var(--green); border-color: var(--green); }
 
-        /* Query History */
-        .history-section { margin: 48px 0 24px 0; padding-top: 24px; border-top: 1px solid #2f3338; }
-        .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-        .history-title { font-size: 11px; font-weight: 600; color: #9ca3af; letter-spacing: 1px; text-transform: uppercase; }
-        .history-clear { font-size: 12px; color: #9ca3af; cursor: pointer; transition: color 0.2s; }
-        .history-clear:hover { color: #e01e5a; }
-        .history-list { display: flex; flex-direction: column; gap: 8px; }
-        .history-item { background: #252a2e; border: 1px solid #2f3338; border-radius: 8px; padding: 12px 16px; cursor: pointer; transition: all 0.2s; display: flex; justify-content: space-between; align-items: center; }
-        .history-item:hover { background: #2f3338; border-color: #522d5b; }
-        .history-item-text { font-size: 13px; color: #fff; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 12px; }
-        .history-item-time { font-size: 11px; color: #6b7280; white-space: nowrap; }
-        .history-empty { text-align: center; padding: 24px; color: #6b7280; font-size: 13px; }
-    </style>
+/* Pulse Strip */
+.pulse-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.pulse-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 10px;
+  text-align: center;
+}
+.pulse-value {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.pulse-label {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Coaching Cards */
+.coaching-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  position: relative;
+}
+.coaching-card-type {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 4px;
+  color: var(--text-tertiary);
+}
+.coaching-card-text {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+/* Pending Actions */
+.pending-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pending-content { flex: 1; min-width: 0; }
+.pending-title {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pending-subtitle {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.pending-action {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all 0.15s;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
+/* Skeleton loading */
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-secondary) 50%, var(--bg-tertiary) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.skeleton-text { height: 14px; margin-bottom: 8px; }
+.skeleton-text.short { width: 60%; }
+.skeleton-text.medium { width: 80%; }
+
+/* ==================== FLOATING CHAT ==================== */
+.chat-fab {
+  position: fixed;
+  bottom: calc(68px + var(--safe-bottom));
+  right: 16px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  color: white;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(55, 53, 47, 0.25);
+  z-index: 200;
+  transition: all 0.2s;
+}
+.chat-fab:hover { background: #4a4843; transform: scale(1.05); }
+.chat-fab.open { transform: rotate(45deg) scale(1.05); }
+.chat-overlay {
+  position: fixed;
+  bottom: calc(128px + var(--safe-bottom));
+  right: 16px;
+  left: 16px;
+  max-height: 420px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+  display: none;
+  flex-direction: column;
+  z-index: 199;
+  overflow: hidden;
+}
+.chat-overlay.visible {
+  display: flex;
+  animation: chatSlideUp 0.25s ease-out;
+}
+@keyframes chatSlideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.chat-overlay-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.chat-overlay-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.chat-overlay-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.chat-messages {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.chat-msg {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.chat-msg.user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+.chat-msg.alfred {
+  align-self: flex-start;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-bottom-left-radius: 4px;
+}
+.chat-msg.alfred strong { color: var(--text-primary); }
+.chat-input-container {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.chat-input {
+  flex: 1;
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 14px;
+  font-family: var(--font-body);
+  background: var(--bg-card);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.chat-input:focus { border-color: var(--accent); }
+.chat-input::placeholder { color: var(--text-tertiary); }
+.chat-send-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: white;
+  font-size: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.chat-send-btn:hover { background: var(--accent-hover); }
+
+/* ==================== TOOLS TAB ==================== */
+.tools-panel {
+  padding: 20px 16px;
+  gap: 16px;
+}
+.tools-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+.tool-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tool-card:hover, .tool-card:active {
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow-sm);
+}
+.tool-icon { font-size: 28px; margin-bottom: 8px; }
+.tool-name { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 2px; }
+.tool-desc { font-size: 11px; color: var(--text-tertiary); line-height: 1.3; }
+.tool-badge {
+  display: inline-block;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 10px;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+}
+.tools-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ==================== TOOL SLIDE-UP PANEL ==================== */
+.tool-panel-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.3);
+  z-index: 300;
+  display: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.tool-panel-overlay.visible {
+  display: block;
+  opacity: 1;
+}
+.tool-panel {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-height: 85vh;
+  background: var(--bg-primary);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  z-index: 301;
+  display: flex;
+  flex-direction: column;
+  transform: translateY(100%);
+  transition: transform 0.3s ease-out;
+  overflow: hidden;
+}
+.tool-panel.visible {
+  transform: translateY(0);
+}
+.tool-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.tool-panel-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.tool-panel-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tool-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  -webkit-overflow-scrolling: touch;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.tool-panel-body .progress-step {
+  color: var(--text-tertiary);
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.tool-panel-body .error-msg {
+  color: var(--red);
+  padding: 12px;
+  background: var(--red-bg);
+  border-radius: var(--radius-md);
+}
+.tool-panel-body .result-content {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* ==================== SETTINGS TAB ==================== */
+.settings-panel {
+  padding: 20px 16px;
+  gap: 8px;
+}
+.settings-group { margin-bottom: 20px; }
+.settings-group-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0 4px 8px;
+}
+.settings-item {
+  background: var(--bg-card);
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  transition: background 0.1s;
+}
+.settings-item:first-of-type { border-radius: var(--radius-md) var(--radius-md) 0 0; }
+.settings-item:last-of-type { border-radius: 0 0 var(--radius-md) var(--radius-md); }
+.settings-item:only-of-type { border-radius: var(--radius-md); }
+.settings-item + .settings-item { border-top: none; }
+.settings-item:active { background: var(--bg-secondary); }
+.settings-item-left { display: flex; align-items: center; gap: 12px; }
+.settings-item-icon { font-size: 18px; width: 24px; text-align: center; }
+.settings-item-label { font-size: 15px; font-weight: 500; }
+.settings-item-value { font-size: 13px; color: var(--text-tertiary); }
+.settings-chevron { color: var(--text-tertiary); font-size: 14px; }
+.settings-version {
+  text-align: center;
+  padding: 20px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* ==================== BOTTOM TAB BAR ==================== */
+.tab-bar {
+  display: flex;
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border);
+  padding: 6px 0 calc(6px + var(--safe-bottom));
+  flex-shrink: 0;
+  z-index: 100;
+}
+.tab-bar-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0;
+  cursor: pointer;
+  transition: all 0.15s;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.tab-bar-icon { font-size: 22px; line-height: 1; }
+.tab-bar-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  letter-spacing: 0.2px;
+}
+.tab-bar-item.active .tab-bar-label { color: var(--accent); }
+.tab-bar-item.active .tab-bar-icon { transform: scale(1.05); }
+
+/* ==================== ANIMATIONS ==================== */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.tool-card, .pulse-item { animation: fadeIn 0.3s ease-out; }
+
+/* ==================== SCROLLBAR ==================== */
+.tab-content::-webkit-scrollbar { display: none; }
+.tab-content { -ms-overflow-style: none; scrollbar-width: none; }
+.tool-panel-body::-webkit-scrollbar { display: none; }
+</style>
 </head>
 <body>
-    <!-- Auth Screen -->
-    <div id="authScreen" class="auth-screen">
-        <div class="auth-logo">ALFRED</div>
-        <div class="auth-card">
-            <input type="password" id="passcodeInput" placeholder="Enter your passcode" onkeypress="if(event.key==='Enter')authenticate()" />
-            <button onclick="authenticate()">Unlock</button>
-            <div id="authError" class="auth-error hidden"></div>
+
+<!-- ==================== AUTH SCREEN ==================== -->
+<div class="auth-screen" id="authScreen">
+  <div class="auth-title">Alfred</div>
+  <div class="auth-subtitle">Your Coach</div>
+  <input type="password" class="auth-input" id="passcodeInput" placeholder="Passcode" maxlength="20"
+    inputmode="numeric" autocomplete="off">
+  <button class="auth-btn" id="authBtn" onclick="authenticate()">Sign In</button>
+  <div class="auth-error hidden" id="authError"></div>
+  <div class="auth-version" id="authVersion"></div>
+</div>
+
+<!-- ==================== APP ==================== -->
+<div class="app-container hidden" id="appContainer">
+
+  <!-- Top Bar -->
+  <div class="top-bar">
+    <div>
+      <div class="top-bar-title">Alfred</div>
+      <div class="top-bar-subtitle">Your Coach</div>
+    </div>
+    <div class="top-bar-date" id="topBarDate"></div>
+  </div>
+
+  <!-- Tab Content -->
+  <div class="tab-content">
+
+    <!-- ========== HOME TAB ========== -->
+    <div id="homePanel" class="tab-panel home-panel active">
+
+      <!-- Focus Card -->
+      <div class="focus-card" id="focusCard">
+        <div class="focus-label">Today's Top Goal</div>
+        <div class="focus-goal" id="focusGoal">
+          <div class="skeleton skeleton-text" style="width:90%; height:20px; background:rgba(255,255,255,0.1);"></div>
+          <div class="skeleton skeleton-text short" style="width:50%; height:16px; margin-top:8px; background:rgba(255,255,255,0.1);"></div>
         </div>
+        <div class="focus-meta" id="focusMeta" style="display:none;">
+          <div class="focus-block" id="focusDue"></div>
+        </div>
+        <button class="focus-complete-btn" id="focusCompleteBtn" onclick="toggleFocusComplete()" style="display:none;">Mark Done</button>
+      </div>
+
+      <!-- Pulse Strip -->
+      <div class="pulse-strip">
+        <div class="pulse-item">
+          <div class="pulse-value" id="pulseOpen">--</div>
+          <div class="pulse-label">Open</div>
+        </div>
+        <div class="pulse-item">
+          <div class="pulse-value" id="pulseOverdue">--</div>
+          <div class="pulse-label">Overdue</div>
+        </div>
+        <div class="pulse-item">
+          <div class="pulse-value" id="pulseMeetings">--</div>
+          <div class="pulse-label">Meetings</div>
+        </div>
+        <div class="pulse-item">
+          <div class="pulse-value" id="pulseReliable">--</div>
+          <div class="pulse-label">Reliable</div>
+        </div>
+      </div>
+
+      <!-- Coaching Cards (skeleton until Phase 4) -->
+      <div id="coachingCardsContainer">
+        <div class="coaching-card">
+          <div class="coaching-card-type">Leverage</div>
+          <div class="coaching-card-text" style="color:var(--text-tertiary);">Loading insights...</div>
+        </div>
+        <div class="coaching-card">
+          <div class="coaching-card-type">Relationship</div>
+          <div class="coaching-card-text" style="color:var(--text-tertiary);">Loading insights...</div>
+        </div>
+        <div class="coaching-card">
+          <div class="coaching-card-type">Avoidance</div>
+          <div class="coaching-card-text" style="color:var(--text-tertiary);">Loading insights...</div>
+        </div>
+      </div>
+
+      <!-- Pending Actions -->
+      <div id="pendingActionsContainer"></div>
+
     </div>
 
-    <!-- Main App -->
-    <div id="appContainer" class="app-container">
-        <div class="header">
-            <h1>ALFRED</h1>
-            <p id="greeting">Your executive assistant</p>
-        </div>
+    <!-- ========== TOOLS TAB ========== -->
+    <div id="toolsPanel" class="tab-panel tools-panel">
 
-        <!-- Query Input -->
-        <div class="query-section">
-            <div class="query-input-container">
-                <textarea
-                    id="queryInput"
-                    class="query-input"
-                    placeholder="Ask me anything... e.g., 'Find my commitments to Mona Gandhi over the last two weeks'"
-                    onkeypress="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendQuery();}"
-                ></textarea>
-                <button class="send-button" onclick="sendQuery()" id="sendButton">
-                    ➤
-                </button>
-            </div>
+      <div class="tools-section-title">Daily Intelligence</div>
+      <div class="tools-grid">
+        <div class="tool-card" onclick="openTool('briefing')">
+          <div class="tool-icon">&#x1F4CB;</div>
+          <div class="tool-name">Daily Briefing</div>
+          <div class="tool-desc">Messages, calendar, meeting prep</div>
         </div>
-
-        <!-- Quick Actions -->
-        <div class="quick-actions">
-            <div class="quick-actions-label">Quick Actions</div>
-            <div class="actions-grid">
-                <div class="quick-action-btn" onclick="quickAction('What are my priorities today?')">
-                    <div class="quick-action-icon">⚡</div>
-                    <div class="quick-action-text">Today's Priorities</div>
-                </div>
-                <div class="quick-action-btn" onclick="quickAction('Show me messages that need a response')">
-                    <div class="quick-action-icon">💬</div>
-                    <div class="quick-action-text">Pending Messages</div>
-                </div>
-                <div class="quick-action-btn" onclick="quickAction('What meetings do I have today?')">
-                    <div class="quick-action-icon">📅</div>
-                    <div class="quick-action-text">Today's Meetings</div>
-                </div>
-                <div class="quick-action-btn" onclick="quickAction('Run an attention check')">
-                    <div class="quick-action-icon">👁️</div>
-                    <div class="quick-action-text">Attention Check</div>
-                </div>
-                <div class="quick-action-btn" onclick="quickAction('Show my commitments')">
-                    <div class="quick-action-icon">📋</div>
-                    <div class="quick-action-text">My Commitments</div>
-                </div>
-                <div class="quick-action-btn" onclick="quickAction('Scan for todos')">
-                    <div class="quick-action-icon">✅</div>
-                    <div class="quick-action-text">Scan Todos</div>
-                </div>
-            </div>
+        <div class="tool-card" onclick="openTool('calendar')">
+          <div class="tool-icon">&#x1F4C5;</div>
+          <div class="tool-name">Calendar</div>
+          <div class="tool-desc">Today's schedule & meetings</div>
         </div>
-
-        <!-- Response Area -->
-        <div id="responseArea" class="response-area"></div>
-
-        <!-- Query History -->
-        <div class="history-section">
-            <div class="history-header">
-                <div class="history-title">Recent Queries</div>
-                <div class="history-clear" onclick="clearHistory()">Clear All</div>
-            </div>
-            <div id="historyList" class="history-list">
-                <div class="history-empty">No recent queries</div>
-            </div>
+        <div class="tool-card" onclick="openTool('messages')">
+          <div class="tool-icon">&#x1F4AC;</div>
+          <div class="tool-name">Messages</div>
+          <div class="tool-desc">Summaries by contact</div>
         </div>
+        <div class="tool-card" onclick="openTool('attention')">
+          <div class="tool-icon">&#x1F3AF;</div>
+          <div class="tool-name">Attention Check</div>
+          <div class="tool-desc">What must get done today</div>
+        </div>
+      </div>
+
+      <div class="tools-section-title" style="margin-top: 20px;">Commitment Tracking</div>
+      <div class="tools-grid">
+        <div class="tool-card" onclick="openTool('commitments')">
+          <div class="tool-icon">&#x2705;</div>
+          <div class="tool-name">Commitments</div>
+          <div class="tool-desc">Track & close commitments</div>
+          <div class="tool-badge" id="commitmentBadge" style="display:none;"></div>
+        </div>
+        <div class="tool-card" onclick="openTool('todos')">
+          <div class="tool-icon">&#x1F4DD;</div>
+          <div class="tool-name">Scan Todos</div>
+          <div class="tool-desc">Extract action items</div>
+        </div>
+        <div class="tool-card" onclick="openTool('tracker')">
+          <div class="tool-icon">&#x1F4CA;</div>
+          <div class="tool-name">Tracker Stats</div>
+          <div class="tool-desc">Reliability & counterparties</div>
+        </div>
+        <div class="tool-card" onclick="openTool('scanContacts')">
+          <div class="tool-icon">&#x1F504;</div>
+          <div class="tool-name">Scan Contacts</div>
+          <div class="tool-desc">Run commitment scan</div>
+        </div>
+      </div>
+
+      <div class="tools-section-title" style="margin-top: 20px;">Learning & Memory</div>
+      <div class="tools-grid">
+        <div class="tool-card" onclick="openTool('patterns')">
+          <div class="tool-icon">&#x1F9E0;</div>
+          <div class="tool-name">Patterns</div>
+          <div class="tool-desc">Discovered workflow patterns</div>
+        </div>
+        <div class="tool-card" onclick="openTool('playbook')">
+          <div class="tool-icon">&#x1F4D6;</div>
+          <div class="tool-name">Playbook</div>
+          <div class="tool-desc">Notion playbook sync</div>
+        </div>
+      </div>
+
     </div>
 
-    <script>
-        let apiKey = '';
+    <!-- ========== SETTINGS TAB ========== -->
+    <div id="settingsPanel" class="tab-panel settings-panel">
 
-        // Authentication
-        function authenticate() {
-            const passcode = document.getElementById('passcodeInput').value;
-            if (!passcode) {
-                showAuthError('Please enter a passcode');
-                return;
-            }
+      <div class="settings-group">
+        <div class="settings-group-title">Schedule</div>
+        <div class="settings-item" onclick="editScheduleTime('briefing')">
+          <div class="settings-item-left">
+            <span class="settings-item-label">Morning Briefing</span>
+          </div>
+          <span class="settings-item-value" id="settingsBriefingTime">--:--</span>
+          <input type="time" id="briefingTimeInput" style="display:none;font-size:13px;background:transparent;border:1px solid var(--border);border-radius:6px;padding:2px 6px;color:var(--text-primary);" onchange="saveScheduleTime('briefing',this.value)" onblur="cancelTimeEdit('briefing')">
+        </div>
+        <div class="settings-item" onclick="editScheduleTime('attention')">
+          <div class="settings-item-left">
+            <span class="settings-item-label">Attention Check</span>
+          </div>
+          <span class="settings-item-value" id="settingsAttentionTime">--:--</span>
+          <input type="time" id="attentionTimeInput" style="display:none;font-size:13px;background:transparent;border:1px solid var(--border);border-radius:6px;padding:2px 6px;color:var(--text-primary);" onchange="saveScheduleTime('attention',this.value)" onblur="cancelTimeEdit('attention')">
+        </div>
+      </div>
 
-            apiKey = passcode;
-            fetch('/api/health', { headers: { 'X-API-Key': apiKey } })
-                .then(r => {
-                    if (r.ok) {
-                        localStorage.setItem('alfred-api-key', apiKey);
-                        showApp();
-                    } else {
-                        showAuthError('Invalid passcode');
-                    }
-                })
-                .catch(() => showAuthError('Connection failed'));
-        }
+      <div class="settings-group">
+        <div class="settings-group-title">Favorites</div>
+        <div class="settings-item">
+          <div class="settings-item-left">
+            <span class="settings-item-label">Favorite Contacts</span>
+          </div>
+          <span class="settings-item-value" id="settingsFavContacts">--</span>
+        </div>
+        <div class="settings-item">
+          <div class="settings-item-left">
+            <span class="settings-item-label">Favorite Groups</span>
+          </div>
+          <span class="settings-item-value" id="settingsFavGroups">--</span>
+        </div>
+      </div>
 
-        function showAuthError(message) {
-            const errorEl = document.getElementById('authError');
-            errorEl.textContent = message;
-            errorEl.classList.remove('hidden');
-        }
+      <div class="settings-group">
+        <div class="settings-group-title">Connections</div>
+        <div class="settings-item">
+          <div class="settings-item-left">
+            <span class="settings-item-label">Notion</span>
+          </div>
+          <span class="settings-item-value" id="settingsNotion">--</span>
+        </div>
+        <div class="settings-item">
+          <div class="settings-item-left">
+            <span class="settings-item-label">Google Calendar</span>
+          </div>
+          <span class="settings-item-value">Connected</span>
+        </div>
+        <div class="settings-item">
+          <div class="settings-item-left">
+            <span class="settings-item-label">iMessage</span>
+          </div>
+          <span class="settings-item-value">Connected</span>
+        </div>
+        <div class="settings-item">
+          <div class="settings-item-left">
+            <span class="settings-item-label">WhatsApp</span>
+          </div>
+          <span class="settings-item-value">Connected</span>
+        </div>
+      </div>
 
-        function showApp() {
-            document.getElementById('authScreen').style.display = 'none';
-            document.getElementById('appContainer').classList.add('active');
-            updateGreeting();
-        }
+      <div class="settings-group">
+        <div class="settings-group-title">Account</div>
+        <div class="settings-item" style="border-radius: var(--radius-md);" onclick="logout()">
+          <div class="settings-item-left">
+            <span class="settings-item-label" style="color:var(--red);">Sign Out</span>
+          </div>
+          <span class="settings-chevron">&#x203A;</span>
+        </div>
+      </div>
 
-        function updateGreeting() {
-            const hour = new Date().getHours();
-            let greeting = 'Good evening';
-            if (hour < 12) greeting = 'Good morning';
-            else if (hour < 17) greeting = 'Good afternoon';
-            document.getElementById('greeting').textContent = greeting;
-        }
+      <div class="settings-version" id="settingsVersion">Alfred v2.0.0</div>
 
-        // Query Handling
-        function quickAction(query) {
-            document.getElementById('queryInput').value = query;
-            sendQuery();
-        }
+    </div>
 
-        async function sendQuery() {
-            const queryInput = document.getElementById('queryInput');
-            const query = queryInput.value.trim();
+  </div>
 
-            if (!query) return;
+  <!-- Bottom Tab Bar -->
+  <div class="tab-bar">
+    <div class="tab-bar-item active" onclick="switchTab('home', this)">
+      <span class="tab-bar-icon">&#x1F3E0;</span>
+      <span class="tab-bar-label">Home</span>
+    </div>
+    <div class="tab-bar-item" onclick="switchTab('tools', this)">
+      <span class="tab-bar-icon">&#x1F6E0;</span>
+      <span class="tab-bar-label">Tools</span>
+    </div>
+    <div class="tab-bar-item" onclick="switchTab('settings', this)">
+      <span class="tab-bar-icon">&#x2699;&#xFE0F;</span>
+      <span class="tab-bar-label">Settings</span>
+    </div>
+  </div>
 
-            // Save to history
-            saveQueryToHistory(query);
+  <!-- Floating Chat -->
+  <button class="chat-fab" id="chatFab" onclick="toggleChat()">&#x1F4AC;</button>
+  <div class="chat-overlay" id="chatOverlay">
+    <div class="chat-overlay-header">
+      <span class="chat-overlay-title">Ask Alfred</span>
+      <button class="chat-overlay-close" onclick="toggleChat()">&#x2715;</button>
+    </div>
+    <div class="chat-messages" id="chatMessages">
+      <div class="chat-msg alfred">What can I help you with? I have full context on your messages, calendar, commitments, and patterns.</div>
+    </div>
+    <div class="chat-input-container">
+      <input type="text" class="chat-input" placeholder="Ask anything..." id="chatInput">
+      <button class="chat-send-btn" onclick="sendChat()">&#x2191;</button>
+    </div>
+  </div>
 
-            // Disable send button
-            const sendButton = document.getElementById('sendButton');
-            sendButton.disabled = true;
+</div>
 
-            // Show loading state
-            const responseArea = document.getElementById('responseArea');
-            responseArea.innerHTML = '<div class="response-card"><div class="response-loading">Processing your request</div></div>';
+<!-- Tool Slide-Up Panel -->
+<div class="tool-panel-overlay" id="toolPanelOverlay" onclick="closeToolPanel()"></div>
+<div class="tool-panel" id="toolPanel">
+  <div class="tool-panel-header">
+    <span class="tool-panel-title" id="toolPanelTitle">Tool</span>
+    <button class="tool-panel-close" onclick="closeToolPanel()">&#x2715;</button>
+  </div>
+  <div class="tool-panel-body" id="toolPanelBody"></div>
+</div>
 
-            try {
-                const response = await fetch('/api/query', {
-                    method: 'POST',
-                    headers: {
-                        'X-API-Key': apiKey,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ query })
-                });
+<script>
+// ==========================================
+// AUTH
+// ==========================================
+let authToken = '';
+const STORAGE_TOKEN_KEY = 'alfred_v2_auth_token';
+const STORAGE_EXPIRES_KEY = 'alfred_v2_token_expires';
 
-                const data = await response.json();
+// Load version
+(async function loadVersion() {
+  try {
+    const res = await fetch('/api/health');
+    const data = await res.json();
+    if (data.version) {
+      const ver = 'Alfred v' + data.version;
+      const authVer = document.getElementById('authVersion');
+      const settingsVer = document.getElementById('settingsVersion');
+      if (authVer) authVer.textContent = ver;
+      if (settingsVer) settingsVer.textContent = ver + ' \u00B7 Built by MSFoundry';
+    }
+  } catch(e) {}
+})();
 
-                if (data.type === 'clarification') {
-                    displayClarification(query, data.question);
-                } else if (data.type === 'result') {
-                    displayResult(query, data);
-                }
+function saveSession(token, expiresAt) {
+  localStorage.setItem(STORAGE_TOKEN_KEY, token);
+  localStorage.setItem(STORAGE_EXPIRES_KEY, expiresAt);
+}
 
-                // Clear input
-                queryInput.value = '';
-            } catch (error) {
-                responseArea.innerHTML = `<div class="response-card"><div class="response-text" style="color: #e01e5a;">Error: ${error.message}</div></div>`;
-            } finally {
-                sendButton.disabled = false;
-            }
-        }
+function clearSavedSession() {
+  localStorage.removeItem(STORAGE_TOKEN_KEY);
+  localStorage.removeItem(STORAGE_EXPIRES_KEY);
+  authToken = '';
+}
 
-        function displayClarification(query, question) {
-            const responseArea = document.getElementById('responseArea');
-            responseArea.innerHTML = `
-                <div class="response-card">
-                    <div class="response-query"><strong>You asked:</strong> ${escapeHtml(query)}</div>
-                    <div class="response-text">
-                        I need more information to help with this request:
+function showAuthScreen() {
+  document.getElementById('authScreen').classList.remove('hidden');
+  document.getElementById('appContainer').classList.add('hidden');
+}
 
-                        ${escapeHtml(question)}
-                    </div>
-                </div>
-            `;
-        }
+function showApp() {
+  document.getElementById('authScreen').classList.add('hidden');
+  document.getElementById('appContainer').classList.remove('hidden');
+  updateTopBarDate();
+  loadHomeData();
+  loadSettingsData();
+}
 
-        function displayResult(query, data) {
-            const responseArea = document.getElementById('responseArea');
+function authenticate() {
+  const input = document.getElementById('passcodeInput');
+  const error = document.getElementById('authError');
+  const passcode = input.value;
 
-            let html = `
-                <div class="response-card">
-                    <div class="response-query"><strong>You asked:</strong> ${escapeHtml(query)}</div>
-                    <div class="response-text">${escapeHtml(data.response)}</div>
-            `;
+  if (!passcode) {
+    error.textContent = 'Please enter a passcode';
+    error.classList.remove('hidden');
+    return;
+  }
 
-            // Add structured data if available
-            if (data.data) {
-                html += '<div class="data-card"><div class="data-card-title">Details</div>';
-                html += `<pre style="color: #9ca3af; font-size: 12px; overflow-x: auto;">${JSON.stringify(data.data, null, 2)}</pre>`;
-                html += '</div>';
-            }
+  fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ passcode: passcode })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success && data.token) {
+      authToken = data.token;
+      saveSession(data.token, data.expiresAt);
+      input.value = '';
+      error.classList.add('hidden');
+      showApp();
+    } else {
+      error.textContent = data.error || 'Invalid passcode';
+      error.classList.remove('hidden');
+    }
+  })
+  .catch(() => {
+    error.textContent = 'Connection error';
+    error.classList.remove('hidden');
+  });
+}
 
-            // Add follow-ups if available
-            if (data.suggestedFollowUps && data.suggestedFollowUps.length > 0) {
-                html += '<div class="follow-ups"><div class="follow-up-label">Try these next:</div>';
-                data.suggestedFollowUps.forEach(followUp => {
-                    html += `<span class="follow-up-btn" onclick="quickAction('${escapeHtml(followUp)}')">${escapeHtml(followUp)}</span>`;
-                });
-                html += '</div>';
-            }
+function logout() {
+  authFetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+  clearSavedSession();
+  showAuthScreen();
+}
 
-            html += '</div>';
-            responseArea.innerHTML = html;
-        }
+async function checkSavedSession() {
+  const savedToken = localStorage.getItem(STORAGE_TOKEN_KEY);
+  const savedExpires = localStorage.getItem(STORAGE_EXPIRES_KEY);
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        // Query History
-        function saveQueryToHistory(query) {
-            let history = JSON.parse(localStorage.getItem('alfred-query-history') || '[]');
-
-            // Don't save duplicate consecutive queries
-            if (history.length > 0 && history[0].query === query) {
-                return;
-            }
-
-            // Add new query at the beginning
-            history.unshift({
-                query: query,
-                timestamp: new Date().toISOString()
-            });
-
-            // Keep only last 10 queries
-            history = history.slice(0, 10);
-
-            localStorage.setItem('alfred-query-history', JSON.stringify(history));
-            renderHistory();
-        }
-
-        function loadHistory() {
-            return JSON.parse(localStorage.getItem('alfred-query-history') || '[]');
-        }
-
-        function renderHistory() {
-            const history = loadHistory();
-            const historyList = document.getElementById('historyList');
-
-            if (history.length === 0) {
-                historyList.innerHTML = '<div class="history-empty">No recent queries</div>';
-                return;
-            }
-
-            historyList.innerHTML = history.map(item => {
-                const timeAgo = formatTimeAgo(new Date(item.timestamp));
-                return `
-                    <div class="history-item" onclick="quickAction('${escapeHtml(item.query)}')">
-                        <div class="history-item-text">${escapeHtml(item.query)}</div>
-                        <div class="history-item-time">${timeAgo}</div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        function clearHistory() {
-            if (confirm('Clear all query history?')) {
-                localStorage.removeItem('alfred-query-history');
-                renderHistory();
-            }
-        }
-
-        function formatTimeAgo(date) {
-            const seconds = Math.floor((new Date() - date) / 1000);
-
-            if (seconds < 60) return 'Just now';
-            if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-            if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-            if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
-
-            return date.toLocaleDateString();
-        }
-
-        // Auto-load if API key is stored
-        window.addEventListener('load', () => {
-            const storedKey = localStorage.getItem('alfred-api-key');
-            if (storedKey) {
-                apiKey = storedKey;
-                showApp();
-                renderHistory();
-            }
+  if (savedToken && savedExpires) {
+    const expiresAt = new Date(savedExpires);
+    if (expiresAt > new Date()) {
+      try {
+        const response = await fetch('/api/auth/validate', {
+          method: 'GET',
+          headers: { 'Authorization': 'Bearer ' + savedToken }
         });
-    </script>
+        const data = await response.json();
+        if (data.valid) {
+          authToken = savedToken;
+          showApp();
+          return;
+        }
+      } catch(e) {}
+    }
+  }
+  clearSavedSession();
+  showAuthScreen();
+}
+
+async function authFetch(url, options = {}) {
+  const headers = options.headers || {};
+  headers['Authorization'] = 'Bearer ' + authToken;
+  const response = await fetch(url, { ...options, headers });
+  if (response.status === 401) {
+    clearSavedSession();
+    showAuthScreen();
+    throw new Error('Session expired.');
+  }
+  return response;
+}
+
+// ==========================================
+// SSE STREAMING
+// ==========================================
+async function streamRequest(endpoint, onProgress, onResult) {
+  const token = localStorage.getItem(STORAGE_TOKEN_KEY);
+  const url = new URL(endpoint, window.location.origin);
+  const controller = new AbortController();
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: {
+      'Accept': 'text/event-stream',
+      'Authorization': 'Bearer ' + token,
+      'Cache-Control': 'no-cache'
+    },
+    signal: controller.signal
+  });
+
+  if (!response.ok) throw new Error('HTTP ' + response.status);
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    let currentEvent = null;
+    let currentData = '';
+
+    for (const line of lines) {
+      if (line.startsWith('event:')) {
+        currentEvent = line.slice(6).trim();
+      } else if (line.startsWith('data:')) {
+        currentData = line.slice(5).trim();
+      } else if (line === '' && currentData) {
+        try {
+          const data = JSON.parse(currentData);
+          if (currentEvent === 'progress' && onProgress) {
+            onProgress(data);
+          } else if (currentEvent === 'result' && onResult) {
+            onResult(data);
+            return data;
+          } else if (currentEvent === 'error') {
+            throw new Error(data.error || 'Server error');
+          }
+        } catch (e) {
+          if (e.message && !e.message.includes('JSON')) throw e;
+        }
+        currentEvent = null;
+        currentData = '';
+      }
+    }
+  }
+}
+
+// ==========================================
+// TAB SWITCHING
+// ==========================================
+function switchTab(tab, el) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-bar-item').forEach(i => i.classList.remove('active'));
+  document.getElementById(tab + 'Panel').classList.add('active');
+  el.classList.add('active');
+  document.querySelector('.tab-content').scrollTop = 0;
+}
+
+// ==========================================
+// TOP BAR DATE
+// ==========================================
+function updateTopBarDate() {
+  const now = new Date();
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  document.getElementById('topBarDate').textContent = days[now.getDay()] + ', ' + months[now.getMonth()] + ' ' + now.getDate();
+}
+
+// ==========================================
+// HOME TAB DATA
+// ==========================================
+async function loadHomeData() {
+  loadHomePulse();
+  loadCoachingCards();
+}
+
+async function loadHomePulse() {
+  try {
+    const res = await authFetch('/api/home/pulse');
+    if (!res.ok) throw new Error('pulse endpoint unavailable');
+    const data = await res.json();
+
+    // Focus Card
+    if (data.topGoal) {
+      document.getElementById('focusGoal').textContent = data.topGoal.title;
+      if (data.topGoal.dueDate) {
+        document.getElementById('focusDue').textContent = 'Due: ' + data.topGoal.dueDate;
+        document.getElementById('focusMeta').style.display = 'flex';
+      }
+      document.getElementById('focusCompleteBtn').style.display = 'block';
+      // Store notionId for mark-done
+      document.getElementById('focusCompleteBtn').dataset.notionId = data.topGoal.notionId || '';
+    } else {
+      document.getElementById('focusGoal').textContent = 'Set your top goal in Settings';
+      document.getElementById('focusGoal').style.opacity = '0.7';
+    }
+
+    // Pulse metrics
+    const m = data.metrics || {};
+    document.getElementById('pulseOpen').textContent = m.openTasks || 0;
+    document.getElementById('pulseOverdue').textContent = m.overdueCount || 0;
+    document.getElementById('pulseMeetings').textContent = m.meetingsToday || 0;
+    const rel = m.reliabilityScore || 0;
+    document.getElementById('pulseReliable').textContent = (rel > 1 ? rel : Math.round(rel * 100)) + '%';
+
+    // Overdue badge on tools tab
+    if ((m.overdueCount || 0) > 0) {
+      const badge = document.getElementById('commitmentBadge');
+      badge.textContent = m.overdueCount + ' overdue';
+      badge.style.display = 'inline-block';
+    }
+
+    // Pending actions
+    const container = document.getElementById('pendingActionsContainer');
+    container.innerHTML = '';
+    const actions = data.pendingActions || [];
+    actions.forEach(item => {
+      const card = document.createElement('div');
+      card.className = 'pending-card';
+      card.innerHTML = '<div class="pending-content">' +
+        '<div class="pending-title">' + escapeHtml(item.title || 'Untitled') + '</div>' +
+        '<div class="pending-subtitle">' + escapeHtml(item.subtitle || '') + '</div>' +
+        '</div>' +
+        '<button class="pending-action" onclick="markCommitmentDone(this, \'' + escapeHtml(item.id || '') + '\')">Done</button>';
+      container.appendChild(card);
+    });
+
+  } catch(e) {
+    console.warn('Home pulse failed, using fallback:', e.message);
+    loadPulseFallback();
+  }
+}
+
+async function loadPulseFallback() {
+  // Fallback: individual API calls (Phase 1 behavior)
+  try {
+    const [statsRes, calRes, lifecycleRes] = await Promise.all([
+      authFetch('/api/commitment-tracker/stats').then(r => r.json()).catch(() => null),
+      authFetch('/api/calendar?date=' + todayStr()).then(r => r.json()).catch(() => null),
+      authFetch('/api/task-lifecycle/stats').then(r => r.json()).catch(() => null)
+    ]);
+
+    if (statsRes) {
+      document.getElementById('pulseOpen').textContent = statsRes.openCommitments || 0;
+    }
+    if (calRes) {
+      const events = (calRes.schedule && calRes.schedule.events) || calRes.events || [];
+      document.getElementById('pulseMeetings').textContent = Array.isArray(events) ? events.length : 0;
+    }
+    if (lifecycleRes) {
+      const rate = lifecycleRes.completionRate || 0;
+      document.getElementById('pulseReliable').textContent = (rate > 1 ? Math.round(rate) : Math.round(rate * 100)) + '%';
+    }
+  } catch(e) {
+    console.error('Pulse fallback error:', e);
+  }
+
+  // Focus card placeholder
+  document.getElementById('focusGoal').textContent = 'Set your top goal in Settings';
+  document.getElementById('focusGoal').style.opacity = '0.7';
+
+  // Pending actions fallback
+  try {
+    const res = await authFetch('/api/commitments/overdue');
+    const data = await res.json();
+    const items = data.commitments || data.items || data || [];
+    const container = document.getElementById('pendingActionsContainer');
+    container.innerHTML = '';
+    (Array.isArray(items) ? items.slice(0, 3) : []).forEach(item => {
+      const title = item.title || item.commitment || item.description || 'Untitled';
+      const subtitle = item.counterparty ? 'With ' + item.counterparty : '';
+      const card = document.createElement('div');
+      card.className = 'pending-card';
+      card.innerHTML = '<div class="pending-content">' +
+        '<div class="pending-title">' + escapeHtml(title) + '</div>' +
+        '<div class="pending-subtitle">' + escapeHtml(subtitle) + '</div>' +
+        '</div>' +
+        '<button class="pending-action" onclick="markCommitmentDone(this, \'' + escapeHtml(item.id || '') + '\')">Done</button>';
+      container.appendChild(card);
+    });
+  } catch(e) {}
+}
+
+async function loadCoachingCards() {
+  try {
+    const res = await authFetch('/api/coaching/cards');
+    if (res.ok) {
+      const data = await res.json();
+      const cards = data.cards || [];
+      if (cards.length > 0) {
+        const container = document.getElementById('coachingCardsContainer');
+        container.innerHTML = '';
+        cards.forEach(card => {
+          const el = document.createElement('div');
+          el.className = 'coaching-card';
+          el.innerHTML = '<div class="coaching-card-type">' + escapeHtml(card.label || card.type || 'Insight') + '</div>' +
+            '<div class="coaching-card-text">' + formatMarkdown(card.insight || card.text || '') + '</div>';
+          container.appendChild(el);
+        });
+      }
+    }
+  } catch(e) {
+    // Expected to fail until Phase 4
+  }
+}
+
+async function toggleFocusComplete() {
+  const btn = document.getElementById('focusCompleteBtn');
+  const notionId = btn.dataset.notionId;
+  if (!notionId) return;
+
+  const wasDone = btn.classList.contains('done');
+  const newStatus = wasDone ? 'Not Started' : 'Done';
+
+  // Optimistic UI update
+  btn.disabled = true;
+  btn.textContent = '...';
+
+  try {
+    const res = await authFetch('/api/tasks/status', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notionId: notionId, status: newStatus })
+    });
+    if (!res.ok) throw new Error('Failed');
+
+    if (wasDone) {
+      btn.classList.remove('done');
+      btn.textContent = 'Mark Done';
+    } else {
+      btn.classList.add('done');
+      btn.textContent = '\u2713 Done!';
+    }
+  } catch(e) {
+    // Revert on failure
+    if (wasDone) {
+      btn.classList.add('done');
+      btn.textContent = '\u2713 Done!';
+    } else {
+      btn.classList.remove('done');
+      btn.textContent = 'Mark Done';
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function markCommitmentDone(btnEl, commitmentId) {
+  btnEl.textContent = '...';
+  btnEl.disabled = true;
+  try {
+    if (commitmentId) {
+      await authFetch('/api/commitments/' + commitmentId + '/complete', { method: 'POST' });
+    }
+    const card = btnEl.closest('.pending-card');
+    card.style.opacity = '0.4';
+    card.style.transition = 'opacity 0.3s';
+    setTimeout(() => card.remove(), 500);
+  } catch(e) {
+    btnEl.textContent = 'Done';
+    btnEl.disabled = false;
+  }
+}
+
+// ==========================================
+// TOOLS TAB
+// ==========================================
+const TOOL_CONFIG = {
+  briefing: { title: 'Daily Briefing', endpoint: '/api/briefing/stream', method: 'stream' },
+  calendar: { title: 'Calendar', endpoint: '/api/calendar/stream', method: 'stream' },
+  messages: { title: 'Messages', endpoint: '/api/messages/summary/stream', method: 'stream' },
+  attention: { title: 'Attention Check', endpoint: '/api/attention-check/stream', method: 'stream' },
+  commitments: { title: 'Commitments', endpoint: '/api/commitments', method: 'json' },
+  todos: { title: 'Scan Todos', endpoint: '/api/todos/scan', method: 'post-json' },
+  tracker: { title: 'Tracker Stats', endpoint: '/api/commitment-tracker/stats', method: 'json' },
+  scanContacts: { title: 'Scan Contacts', endpoint: '/api/commitments/scan', method: 'post-json' },
+  patterns: { title: 'Patterns', endpoint: '/api/workflow-patterns', method: 'json' },
+  playbook: { title: 'Playbook', endpoint: '/api/playbook/status', method: 'json' }
+};
+
+function openTool(toolId) {
+  const config = TOOL_CONFIG[toolId];
+  if (!config) return;
+
+  const overlay = document.getElementById('toolPanelOverlay');
+  const panel = document.getElementById('toolPanel');
+  const title = document.getElementById('toolPanelTitle');
+  const body = document.getElementById('toolPanelBody');
+
+  title.textContent = config.title;
+  body.innerHTML = '<div class="progress-step">Loading...</div>';
+
+  overlay.classList.add('visible');
+  requestAnimationFrame(() => { panel.classList.add('visible'); });
+
+  if (config.method === 'stream') runStreamTool(config, body);
+  else if (config.method === 'json') runJsonTool(config, body);
+  else if (config.method === 'post-json') runPostJsonTool(config, body);
+}
+
+function closeToolPanel() {
+  document.getElementById('toolPanel').classList.remove('visible');
+  setTimeout(() => { document.getElementById('toolPanelOverlay').classList.remove('visible'); }, 300);
+}
+
+async function runStreamTool(config, body) {
+  try {
+    let resultHtml = '';
+    await streamRequest(config.endpoint,
+      (progress) => {
+        const stepEl = document.createElement('div');
+        stepEl.className = 'progress-step';
+        stepEl.textContent = progress.message || progress.step || 'Processing...';
+        body.appendChild(stepEl);
+        body.scrollTop = body.scrollHeight;
+      },
+      (result) => {
+        if (result.briefing) resultHtml = '<div class="result-content">' + formatMarkdown(result.briefing) + '</div>';
+        else if (result.summary) resultHtml = '<div class="result-content">' + formatMarkdown(result.summary) + '</div>';
+        else if (result.text) resultHtml = '<div class="result-content">' + formatMarkdown(result.text) + '</div>';
+        else if (result.markdown) resultHtml = '<div class="result-content">' + formatMarkdown(result.markdown) + '</div>';
+        else resultHtml = '<div class="result-content">' + escapeHtml(JSON.stringify(result, null, 2)) + '</div>';
+      }
+    );
+    body.innerHTML = resultHtml || '<div class="result-content">Done</div>';
+  } catch(e) {
+    body.innerHTML = '<div class="error-msg">Error: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+async function runJsonTool(config, body) {
+  try {
+    const res = await authFetch(config.endpoint);
+    const data = await res.json();
+    body.innerHTML = '<div class="result-content">' + formatJsonResult(config, data) + '</div>';
+  } catch(e) {
+    body.innerHTML = '<div class="error-msg">Error: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+async function runPostJsonTool(config, body) {
+  try {
+    const res = await authFetch(config.endpoint, { method: 'POST' });
+    const data = await res.json();
+    body.innerHTML = '<div class="result-content">' + formatJsonResult(config, data) + '</div>';
+  } catch(e) {
+    body.innerHTML = '<div class="error-msg">Error: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+function formatJsonResult(config, data) {
+  // Commitments list
+  if (config.endpoint.includes('/commitments') && !config.endpoint.includes('scan') && !config.endpoint.includes('tracker')) {
+    const items = data.commitments || data.items || data || [];
+    if (Array.isArray(items) && items.length > 0) {
+      return items.map(c => {
+        const title = c.title || c.commitment || c.description || 'Untitled';
+        const status = c.status || '';
+        const party = c.counterparty || '';
+        return '<div style="padding:10px 0; border-bottom:1px solid var(--border);">' +
+          '<strong>' + escapeHtml(title) + '</strong>' +
+          (party ? '<br><span style="color:var(--text-secondary);font-size:13px;">With ' + escapeHtml(party) + '</span>' : '') +
+          (status ? '<br><span style="color:var(--text-tertiary);font-size:12px;">' + escapeHtml(status) + '</span>' : '') +
+          '</div>';
+      }).join('');
+    }
+    return 'No commitments found.';
+  }
+
+  // Tracker stats
+  if (config.endpoint.includes('tracker/stats')) {
+    return Object.entries(data).map(([k, v]) =>
+      '<div style="padding:6px 0; display:flex; justify-content:space-between;">' +
+      '<span style="color:var(--text-secondary);">' + escapeHtml(formatKey(k)) + '</span>' +
+      '<strong>' + escapeHtml(String(v)) + '</strong></div>'
+    ).join('');
+  }
+
+  // Patterns
+  if (config.endpoint.includes('patterns')) {
+    const patterns = data.patterns || data || [];
+    if (Array.isArray(patterns) && patterns.length > 0) {
+      return patterns.map(p =>
+        '<div style="padding:10px 0; border-bottom:1px solid var(--border);">' +
+        '<strong>' + escapeHtml(p.name || p.pattern || 'Pattern') + '</strong>' +
+        (p.description ? '<br><span style="color:var(--text-secondary);font-size:13px;">' + escapeHtml(p.description) + '</span>' : '') +
+        '</div>'
+      ).join('');
+    }
+    return 'No patterns discovered yet.';
+  }
+
+  // Playbook
+  if (config.endpoint.includes('playbook')) {
+    return Object.entries(data).map(([k, v]) =>
+      '<div style="padding:6px 0; display:flex; justify-content:space-between;">' +
+      '<span style="color:var(--text-secondary);">' + escapeHtml(formatKey(k)) + '</span>' +
+      '<strong>' + escapeHtml(typeof v === 'object' ? JSON.stringify(v) : String(v)) + '</strong></div>'
+    ).join('');
+  }
+
+  // Todo / contact scan results
+  if (data.todos || data.items || data.results) {
+    const items = data.todos || data.items || data.results || [];
+    if (Array.isArray(items) && items.length > 0) {
+      return items.map(item => {
+        const text = item.title || item.text || item.description || JSON.stringify(item);
+        return '<div style="padding:8px 0; border-bottom:1px solid var(--border);">' + escapeHtml(text) + '</div>';
+      }).join('');
+    }
+    return data.message || data.summary || 'No items found.';
+  }
+
+  // Generic
+  if (typeof data === 'string') return escapeHtml(data);
+  return escapeHtml(JSON.stringify(data, null, 2));
+}
+
+function formatMarkdown(text) {
+  if (!text) return '';
+  return escapeHtml(text)
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+    .replace(/^### (.*$)/gm, '<h3 style="font-size:15px;font-weight:600;margin:16px 0 8px;">$1</h3>')
+    .replace(/^## (.*$)/gm, '<h2 style="font-size:17px;font-weight:600;margin:20px 0 8px;">$1</h2>')
+    .replace(/^# (.*$)/gm, '<h1 style="font-size:19px;font-weight:600;margin:24px 0 8px;">$1</h1>')
+    .replace(/^- (.*$)/gm, '<div style="padding-left:16px;">&#x2022; $1</div>')
+    .replace(/\n/g, '<br>');
+}
+
+// ==========================================
+// SETTINGS TAB DATA
+// ==========================================
+async function loadSettingsData() {
+  try {
+    const [favRes, notionRes, schedRes, healthRes] = await Promise.all([
+      authFetch('/api/favorites').then(r => r.json()).catch(() => null),
+      authFetch('/api/config/notion').then(r => r.json()).catch(() => null),
+      authFetch('/api/config/scheduled').then(r => r.json()).catch(() => null),
+      fetch('/api/health?passcode=' + (localStorage.getItem('alfred_v2_passcode') || '')).then(r => r.json()).catch(() => null)
+    ]);
+
+    if (favRes) {
+      const contacts = favRes.contacts || favRes.favoriteContacts || [];
+      const groups = favRes.groups || favRes.favoriteGroups || [];
+      document.getElementById('settingsFavContacts').textContent = (Array.isArray(contacts) ? contacts.length : 0) + ' contacts';
+      document.getElementById('settingsFavGroups').textContent = (Array.isArray(groups) ? groups.length : 0) + ' groups';
+    }
+
+    if (notionRes) {
+      const connected = notionRes.connected || notionRes.hasApiKey || notionRes.api_key_set || notionRes.tasksDatabaseId;
+      document.getElementById('settingsNotion').textContent = connected ? 'Connected' : 'Not connected';
+    }
+
+    if (schedRes) {
+      document.getElementById('settingsBriefingTime').textContent = schedRes.briefing_time || schedRes.briefingTime || '--:--';
+      document.getElementById('settingsAttentionTime').textContent = schedRes.attention_alert_time || schedRes.attention_time || schedRes.attentionTime || '--:--';
+    }
+
+    if (healthRes) {
+      document.getElementById('settingsVersion').textContent = 'Alfred v' + (healthRes.version || '2.0.0');
+    }
+  } catch(e) {
+    console.error('Settings data error:', e);
+  }
+}
+
+// ==========================================
+// SETTINGS WRITE-BACK
+// ==========================================
+function editScheduleTime(type) {
+  const label = document.getElementById(type === 'briefing' ? 'settingsBriefingTime' : 'settingsAttentionTime');
+  const input = document.getElementById(type === 'briefing' ? 'briefingTimeInput' : 'attentionTimeInput');
+  const currentVal = label.textContent.trim();
+  if (currentVal !== '--:--') input.value = currentVal;
+  label.style.display = 'none';
+  input.style.display = 'inline-block';
+  input.focus();
+}
+
+function cancelTimeEdit(type) {
+  setTimeout(() => {
+    const label = document.getElementById(type === 'briefing' ? 'settingsBriefingTime' : 'settingsAttentionTime');
+    const input = document.getElementById(type === 'briefing' ? 'briefingTimeInput' : 'attentionTimeInput');
+    label.style.display = '';
+    input.style.display = 'none';
+  }, 200);
+}
+
+async function saveScheduleTime(type, value) {
+  if (!value) return;
+  const label = document.getElementById(type === 'briefing' ? 'settingsBriefingTime' : 'settingsAttentionTime');
+  const input = document.getElementById(type === 'briefing' ? 'briefingTimeInput' : 'attentionTimeInput');
+
+  const body = {};
+  if (type === 'briefing') body.briefing_time = value;
+  else body.attention_alert_time = value;
+
+  try {
+    const res = await authFetch('/api/config/scheduled', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (res.ok) {
+      label.textContent = value;
+    }
+  } catch(e) {
+    console.error('Failed to save schedule:', e);
+  }
+
+  label.style.display = '';
+  input.style.display = 'none';
+}
+
+// ==========================================
+// CHAT
+// ==========================================
+let chatSessionId = 'chat-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
+
+function toggleChat() {
+  const fab = document.getElementById('chatFab');
+  const overlay = document.getElementById('chatOverlay');
+  const isOpen = overlay.classList.contains('visible');
+  if (isOpen) {
+    overlay.classList.remove('visible');
+    fab.classList.remove('open');
+    fab.innerHTML = '&#x1F4AC;';
+  } else {
+    overlay.classList.add('visible');
+    fab.classList.add('open');
+    fab.textContent = '+';
+    document.getElementById('chatInput').focus();
+  }
+}
+
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const messages = document.getElementById('chatMessages');
+  const text = input.value.trim();
+  if (!text) return;
+
+  // Disable input while streaming
+  input.disabled = true;
+
+  const userMsg = document.createElement('div');
+  userMsg.className = 'chat-msg user';
+  userMsg.textContent = text;
+  messages.appendChild(userMsg);
+  input.value = '';
+  messages.scrollTop = messages.scrollHeight;
+
+  const alfredMsg = document.createElement('div');
+  alfredMsg.className = 'chat-msg alfred';
+  alfredMsg.innerHTML = '<em style="color:var(--text-tertiary);">Thinking...</em>';
+  messages.appendChild(alfredMsg);
+  messages.scrollTop = messages.scrollHeight;
+
+  const chatUrl = '/api/chat/stream?q=' + encodeURIComponent(text) + '&sessionId=' + chatSessionId;
+
+  try {
+    const token = localStorage.getItem(STORAGE_TOKEN_KEY);
+    const url = new URL(chatUrl, window.location.origin);
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'Accept': 'text/event-stream',
+        'Authorization': 'Bearer ' + token,
+        'Cache-Control': 'no-cache'
+      }
+    });
+
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullText = '';
+    let firstChunk = true;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      let currentEvent = null;
+      let currentData = '';
+
+      for (const line of lines) {
+        if (line.startsWith('event:')) {
+          currentEvent = line.slice(6).trim();
+        } else if (line.startsWith('data:')) {
+          currentData = line.slice(5).trim();
+        } else if (line === '' && currentData) {
+          try {
+            const data = JSON.parse(currentData);
+            if (currentEvent === 'chunk' && data.text) {
+              if (firstChunk) {
+                alfredMsg.textContent = '';
+                firstChunk = false;
+              }
+              fullText += data.text;
+              alfredMsg.innerHTML = formatMarkdown(fullText);
+              messages.scrollTop = messages.scrollHeight;
+            } else if (currentEvent === 'done') {
+              // Final render with markdown
+              if (fullText) {
+                alfredMsg.innerHTML = formatMarkdown(fullText);
+              }
+              messages.scrollTop = messages.scrollHeight;
+            } else if (currentEvent === 'error') {
+              alfredMsg.innerHTML = '<em style="color:var(--text-tertiary);">' + escapeHtml(data.error || 'Something went wrong.') + '</em>';
+              messages.scrollTop = messages.scrollHeight;
+            }
+          } catch (e) {
+            // Ignore JSON parse errors
+          }
+          currentEvent = null;
+          currentData = '';
+        }
+      }
+    }
+
+    // If no chunks arrived, show fallback
+    if (firstChunk) {
+      alfredMsg.innerHTML = '<em style="color:var(--text-tertiary);">No response received.</em>';
+    }
+  } catch (err) {
+    alfredMsg.innerHTML = '<em style="color:var(--text-tertiary);">Failed to connect. Check that Alfred is running.</em>';
+    messages.scrollTop = messages.scrollHeight;
+  } finally {
+    input.disabled = false;
+    input.focus();
+  }
+}
+
+// ==========================================
+// UTILITIES
+// ==========================================
+function todayStr() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function formatKey(key) {
+  return key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').replace(/^./, s => s.toUpperCase());
+}
+
+// ==========================================
+// INIT
+// ==========================================
+document.addEventListener('DOMContentLoaded', () => {
+  // Enter key on passcode input
+  document.getElementById('passcodeInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') authenticate();
+  });
+
+  // Enter key on chat input
+  document.getElementById('chatInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') sendChat();
+  });
+
+  // Check if passcode is in URL (quick login links)
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlPasscode = urlParams.get('passcode');
+
+  if (urlPasscode) {
+    document.getElementById('passcodeInput').value = urlPasscode;
+    authenticate();
+    window.history.replaceState({}, '', window.location.pathname);
+  } else {
+    checkSavedSession();
+  }
+});
+</script>
+
 </body>
 </html>

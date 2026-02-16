@@ -1,5 +1,11 @@
 import Foundation
 
+struct CoachingCardData: Codable {
+    let type: String        // "leverage", "relationship", "avoidance"
+    let label: String       // "Leverage", "Relationship", "Avoidance"
+    let insight: String     // The coaching text (1-2 sentences)
+}
+
 struct DailyBriefing: Codable {
     let date: Date
     let messagingSummary: MessagingSummary
@@ -8,6 +14,7 @@ struct DailyBriefing: Codable {
     let notionContext: NotionContext?
     let agentDecisions: [AgentDecision]?
     let agentInsights: AgentInsights?
+    let coachingCards: [CoachingCardData]?
     let generatedAt: Date
 }
 

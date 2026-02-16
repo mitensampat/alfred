@@ -219,6 +219,7 @@ class NotificationService {
 
     private func formatBriefing(_ briefing: DailyBriefing) -> (markdown: String, html: String) {
         // Build both markdown and HTML simultaneously for consistency
+        // Layout order: Coach Says → Calendar → Messages → Action Items
         var markdown = "# Daily Briefing - \(briefing.date.formatted(date: .long, time: .omitted))\n\n"
 
         // HTML with clean, readable styling (matching web UI with Inter + Playfair Display fonts)
@@ -253,6 +254,13 @@ class NotificationService {
                 .priority-critical { border-left: 3px solid #eb5757; background: #fef2f2; }
                 .priority-medium { border-left: 3px solid #f7b955; }
                 .priority-low { border-left: 3px solid #6fcf97; }
+                .coaching-leverage { border-left: 3px solid #2383e2; background: #f0f7ff; }
+                .coaching-relationship { border-left: 3px solid #6fcf97; background: #f0fdf4; }
+                .coaching-avoidance { border-left: 3px solid #f7b955; background: #fffbeb; }
+                .coaching-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+                .coaching-leverage .coaching-label { color: #2383e2; }
+                .coaching-relationship .coaching-label { color: #27ae60; }
+                .coaching-avoidance .coaching-label { color: #d4880f; }
                 .event { padding: 10px 14px; border-left: 3px solid #2383e2; background: #f0f7ff; border-radius: 4px; margin-bottom: 8px; }
                 .event-time { font-size: 13px; color: #2383e2; font-weight: 500; }
                 .event-title { font-weight: 600; color: #37352f; }
@@ -267,42 +275,41 @@ class NotificationService {
             <h1>📅 Daily Briefing for \(briefing.date.formatted(date: .long, time: .omitted))</h1>
         """
 
-        // Messages Summary
-        markdown += "## Messages Summary\n"
-        markdown += "- Total Messages: \(briefing.messagingSummary.stats.totalMessages)\n"
-        markdown += "- Unread: \(briefing.messagingSummary.stats.unreadMessages)\n"
-        markdown += "- Need Response: \(briefing.messagingSummary.stats.threadsNeedingResponse)\n\n"
+        // ── Section 1: Coach Says ──────────────────────────────────────
+        if let cards = briefing.coachingCards, !cards.isEmpty {
+            markdown += "## Your Coach Says\n\n"
+            html += "<h2>🧭 Your Coach Says</h2>"
 
-        html += """
-            <h2>💬 Messages Summary</h2>
-            <div style="margin-bottom: 16px;">
-                <span class="stat"><span class="stat-value">\(briefing.messagingSummary.stats.totalMessages)</span><br><span class="stat-label">Total Messages</span></span>
-                <span class="stat"><span class="stat-value">\(briefing.messagingSummary.stats.unreadMessages)</span><br><span class="stat-label">Unread</span></span>
-                <span class="stat"><span class="stat-value">\(briefing.messagingSummary.stats.threadsNeedingResponse)</span><br><span class="stat-label">Need Response</span></span>
-            </div>
-        """
+            for card in cards {
+                let emoji: String
+                let cssClass: String
+                switch card.type {
+                case "leverage":
+                    emoji = "🎯"
+                    cssClass = "coaching-leverage"
+                case "relationship":
+                    emoji = "👤"
+                    cssClass = "coaching-relationship"
+                case "avoidance":
+                    emoji = "🪞"
+                    cssClass = "coaching-avoidance"
+                default:
+                    emoji = "💡"
+                    cssClass = "coaching-leverage"
+                }
 
-        // Critical Messages
-        if !briefing.messagingSummary.criticalMessages.isEmpty {
-            markdown += "### Critical Messages\n"
-            html += "<h3>🔴 Critical Messages</h3>"
-
-            for summary in briefing.messagingSummary.criticalMessages.prefix(5) {
-                let contactName = summary.thread.contactName ?? "Unknown"
-                let platform = summary.thread.platform.rawValue
-                markdown += "- \(contactName) (\(platform)): \(summary.summary)\n"
+                markdown += "**\(emoji) \(card.label):** \(card.insight)\n\n"
 
                 html += """
-                    <div class="item priority-critical">
-                        <div class="item-title">\(contactName) <span class="item-meta">(\(platform))</span></div>
-                        <div class="item-desc">\(summary.summary)</div>
+                    <div class="item \(cssClass)" style="border-radius: 6px;">
+                        <div class="coaching-label">\(emoji) \(card.label)</div>
+                        <div class="item-desc">\(card.insight)</div>
                     </div>
                 """
             }
-            markdown += "\n"
         }
 
-        // Calendar
+        // ── Section 2: Calendar ────────────────────────────────────────
         let meetingHours = Int(briefing.calendarBriefing.schedule.totalMeetingTime / 3600)
         let meetingMins = Int((briefing.calendarBriefing.schedule.totalMeetingTime.truncatingRemainder(dividingBy: 3600)) / 60)
         let focusHours = Int(briefing.calendarBriefing.focusTime / 3600)
@@ -355,7 +362,42 @@ class NotificationService {
             markdown += "\n"
         }
 
-        // Action Items
+        // ── Section 3: Messages ────────────────────────────────────────
+        markdown += "## Messages Summary\n"
+        markdown += "- Total Messages: \(briefing.messagingSummary.stats.totalMessages)\n"
+        markdown += "- Unread: \(briefing.messagingSummary.stats.unreadMessages)\n"
+        markdown += "- Need Response: \(briefing.messagingSummary.stats.threadsNeedingResponse)\n\n"
+
+        html += """
+            <h2>💬 Messages Summary</h2>
+            <div style="margin-bottom: 16px;">
+                <span class="stat"><span class="stat-value">\(briefing.messagingSummary.stats.totalMessages)</span><br><span class="stat-label">Total Messages</span></span>
+                <span class="stat"><span class="stat-value">\(briefing.messagingSummary.stats.unreadMessages)</span><br><span class="stat-label">Unread</span></span>
+                <span class="stat"><span class="stat-value">\(briefing.messagingSummary.stats.threadsNeedingResponse)</span><br><span class="stat-label">Need Response</span></span>
+            </div>
+        """
+
+        // Critical Messages
+        if !briefing.messagingSummary.criticalMessages.isEmpty {
+            markdown += "### Critical Messages\n"
+            html += "<h3>🔴 Critical Messages</h3>"
+
+            for summary in briefing.messagingSummary.criticalMessages.prefix(5) {
+                let contactName = summary.thread.contactName ?? "Unknown"
+                let platform = summary.thread.platform.rawValue
+                markdown += "- \(contactName) (\(platform)): \(summary.summary)\n"
+
+                html += """
+                    <div class="item priority-critical">
+                        <div class="item-title">\(contactName) <span class="item-meta">(\(platform))</span></div>
+                        <div class="item-desc">\(summary.summary)</div>
+                    </div>
+                """
+            }
+            markdown += "\n"
+        }
+
+        // ── Section 4: Action Items ────────────────────────────────────
         if !briefing.actionItems.isEmpty {
             markdown += "## Action Items (\(briefing.actionItems.count))\n"
             html += "<h2>✅ Action Items (\(briefing.actionItems.count))</h2>"

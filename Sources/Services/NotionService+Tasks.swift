@@ -338,6 +338,66 @@ extension NotionService {
         return id
     }
 
+    /// Get the single highest-priority active task, for Focus Card display
+    /// Priority order: Critical > High > Medium > Low > nil, then by due date ascending
+    func getTopPriorityTask() async throws -> TaskItem? {
+        guard let dbId = tasksDatabaseId else { return nil }
+
+        let url = URL(string: "https://api.notion.com/v1/databases/\(dbId)/query")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // Query active tasks with Critical or High priority first, sorted by due date
+        let body: [String: Any] = [
+            "filter": [
+                "and": [
+                    ["property": "Status", "status": ["does_not_equal": "Done"]],
+                    ["property": "Status", "status": ["does_not_equal": "Cancelled"]]
+                ]
+            ],
+            "sorts": [
+                ["property": "Due Date", "direction": "ascending"]
+            ],
+            "page_size": 20
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            return nil
+        }
+
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard let results = json?["results"] as? [[String: Any]] else {
+            return nil
+        }
+
+        let tasks = results.compactMap { parseTaskFromNotionPage($0) }
+
+        // Sort by priority weight (Critical=0, High=1, Medium=2, Low=3, nil=4), then due date
+        let priorityOrder: [TaskItem.Priority: Int] = [
+            .critical: 0, .high: 1, .medium: 2, .low: 3
+        ]
+
+        let sorted = tasks.sorted { a, b in
+            let aPri = a.priority.map { priorityOrder[$0] ?? 4 } ?? 4
+            let bPri = b.priority.map { priorityOrder[$0] ?? 4 } ?? 4
+            if aPri != bPri { return aPri < bPri }
+            // Same priority: earlier due date wins
+            let aDate = a.dueDate ?? Date.distantFuture
+            let bDate = b.dueDate ?? Date.distantFuture
+            return aDate < bDate
+        }
+
+        return sorted.first
+    }
+
     // MARK: - Commitment Compatibility Methods (use unified Tasks database)
 
     /// Query active commitments from the unified Tasks database
@@ -381,6 +441,48 @@ extension NotionService {
     /// Wrapper around findTaskByHash for backward compatibility
     func findCommitmentByHashInTasks(_ hash: String) async throws -> String? {
         return try await findTaskByHash(hash)
+    }
+
+    /// Find commitment by hash and return both page ID and status
+    /// Used for reverse sync: detecting when user manually marks Done in Notion
+    func findCommitmentWithStatusByHash(_ hash: String) async throws -> (pageId: String, status: String)? {
+        guard let dbId = tasksDatabaseId else { return nil }
+
+        let url = URL(string: "https://api.notion.com/v1/databases/\(dbId)/query")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "filter": [
+                "property": "Unique Hash",
+                "rich_text": ["equals": hash]
+            ]
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            return nil
+        }
+
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard let results = json?["results"] as? [[String: Any]],
+              let firstResult = results.first,
+              let id = firstResult["id"] as? String,
+              let properties = firstResult["properties"] as? [String: Any],
+              let statusProp = properties["Status"] as? [String: Any],
+              let statusObj = statusProp["status"] as? [String: Any],
+              let statusName = statusObj["name"] as? String else {
+            return nil
+        }
+
+        return (pageId: id, status: statusName)
     }
 
     /// Create a commitment in the unified Tasks database

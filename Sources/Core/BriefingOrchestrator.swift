@@ -194,6 +194,20 @@ class BriefingOrchestrator {
             }
         }
 
+        // 8. Generate coaching insights using already-fetched data
+        print("🧭 Generating coaching insights...")
+        let coachingCards = await generateCoachingInsights(
+            tasks: notionTasks,
+            events: calendarBriefing.schedule.events,
+            actionItems: actionItems,
+            messagingSummary: messagingSummary
+        )
+        if let cards = coachingCards {
+            print("✓ Coaching insights: \(cards.count) card(s)\n")
+        } else {
+            print("ℹ️  Coaching insights skipped\n")
+        }
+
         let briefing = DailyBriefing(
             date: date,
             messagingSummary: messagingSummary,
@@ -202,10 +216,11 @@ class BriefingOrchestrator {
             notionContext: NotionContext(notes: notionNotes, tasks: notionTasks),
             agentDecisions: agentDecisions,
             agentInsights: agentInsights,
+            coachingCards: coachingCards,
             generatedAt: Date()
         )
 
-        // 7. Send notifications only if requested
+        // 9. Send notifications only if requested
         if sendNotifications {
             print("📬 Sending briefing notifications...")
             try await notificationService.sendBriefing(briefing, toAddress: toAddress)
@@ -213,6 +228,76 @@ class BriefingOrchestrator {
         }
 
         return briefing
+    }
+
+    // MARK: - Coaching Insights for Email
+
+    /// Generates 3 coaching cards (Leverage, Relationship, Avoidance) using already-fetched briefing data.
+    /// Uses a single Claude call with structured output for efficiency.
+    private func generateCoachingInsights(
+        tasks: [NotionTask],
+        events: [CalendarEvent],
+        actionItems: [ActionItem],
+        messagingSummary: MessagingSummary
+    ) async -> [CoachingCardData]? {
+        // Build context summary from already-fetched data
+        let taskSummary = tasks.prefix(15).map { task in
+            let due = task.dueDate.map { "due \($0.formatted(date: .abbreviated, time: .omitted))" } ?? "no due date"
+            return "- \(task.title) [\(task.status)] (\(due))"
+        }.joined(separator: "\n")
+
+        let meetingCount = events.count
+        let externalCount = events.filter { $0.hasExternalAttendees }.count
+
+        let criticalCount = actionItems.filter { $0.priority == .critical }.count
+        let highCount = actionItems.filter { $0.priority == .high }.count
+        let responseNeeded = messagingSummary.stats.threadsNeedingResponse
+
+        // Identify stale tasks (created > 14 days ago, still not started)
+        let staleTasks = tasks.filter { task in
+            task.status.lowercased().contains("not started") || task.status.lowercased().contains("to do")
+        }
+
+        let prompt = """
+        You are a world-class executive coach inspired by Bill Campbell and Matt Mochary. Generate exactly 3 coaching insights based on this person's current state. Be specific, name names and tasks, and give ONE concrete action per card.
+
+        CONTEXT:
+        Active tasks (\(tasks.count) total, \(criticalCount) critical, \(highCount) high priority):
+        \(taskSummary.isEmpty ? "No active tasks" : taskSummary)
+
+        Today's calendar: \(meetingCount) meetings (\(externalCount) external)
+        Messages needing response: \(responseNeeded)
+        Stale tasks (not started): \(staleTasks.count)
+
+        ACTION ITEMS: \(actionItems.count) total (\(criticalCount) critical, \(highCount) high)
+
+        Respond ONLY with valid JSON — no markdown fences, no commentary:
+        [
+          {"type": "leverage", "label": "Leverage", "insight": "1-2 sentences: the single highest-leverage action right now and why"},
+          {"type": "relationship", "label": "Relationship", "insight": "1-2 sentences: which person/relationship needs attention and one concrete step"},
+          {"type": "avoidance", "label": "Avoidance", "insight": "1-2 sentences: what they're avoiding or procrastinating on, with empathetic but direct nudge"}
+        ]
+        """
+
+        do {
+            let response = try await aiService.generateText(
+                prompt: prompt,
+                maxTokens: 500
+            )
+
+            // Parse JSON response
+            let cleaned = response.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                .replacingOccurrences(of: "```json", with: "")
+                .replacingOccurrences(of: "```", with: "")
+                .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+
+            guard let data = cleaned.data(using: String.Encoding.utf8) else { return nil }
+            let cards = try JSONDecoder().decode([CoachingCardData].self, from: data)
+            return cards
+        } catch {
+            print("⚠️  Failed to generate coaching insights: \(error)")
+            return nil
+        }
     }
 
     // MARK: - Calendar Briefing

@@ -278,6 +278,33 @@ class CommitmentScanTracker {
         return results
     }
 
+    /// Get all open commitments across all threads (not yet closed)
+    func getAllOpenCommitments() -> [(hash: String, title: String, type: String, counterparty: String)] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let query = """
+        SELECT commitment_hash, title, commitment_type, counterparty
+        FROM commitment_extractions
+        WHERE was_closed = 0
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+
+        var results: [(String, String, String, String)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let hash = String(cString: sqlite3_column_text(stmt, 0))
+            let title = String(cString: sqlite3_column_text(stmt, 1))
+            let type = String(cString: sqlite3_column_text(stmt, 2))
+            let counterparty = String(cString: sqlite3_column_text(stmt, 3))
+            results.append((hash, title, type, counterparty))
+        }
+
+        return results
+    }
+
     // MARK: - Closure Detection
 
     /// Record a closure detection

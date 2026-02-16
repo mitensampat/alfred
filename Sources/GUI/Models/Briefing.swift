@@ -1,11 +1,18 @@
 import Foundation
 
+struct CoachingCardData: Codable {
+    let type: String        // "leverage", "relationship", "avoidance"
+    let label: String       // "Leverage", "Relationship", "Avoidance"
+    let insight: String     // The coaching text (1-2 sentences)
+}
+
 struct DailyBriefing: Codable {
     let date: Date
     let messagingSummary: MessagingSummary
     let calendarBriefing: CalendarBriefing
     let actionItems: [ActionItem]
     let notionContext: NotionContext?
+    let coachingCards: [CoachingCardData]?
     let generatedAt: Date
 }
 

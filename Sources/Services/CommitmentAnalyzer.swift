@@ -646,6 +646,14 @@ class CommitmentAnalyzer {
             return "[\(timestamp)] \(sender): \(message.content)"
         }.joined(separator: "\n")
 
+        // Include learned patterns from user feedback to improve accuracy
+        let workflowContext = WorkflowLearningService.shared.getPatternContextForAI()
+        let learningSection = workflowContext.isEmpty ? "" : """
+
+        ## LEARNED PATTERNS (from your previous feedback)
+        \(workflowContext)
+        """
+
         return """
         You are analyzing recent messages to detect if any open commitments have been fulfilled or closed.
 
@@ -656,6 +664,7 @@ class CommitmentAnalyzer {
         ## RECENT MESSAGES
         Thread: \(threadName)
         \(messagesText)
+        \(learningSection)
 
         ## CLOSURE SIGNALS TO LOOK FOR
 

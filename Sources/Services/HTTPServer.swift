@@ -232,15 +232,15 @@ class HTTPServer {
             }
 
             // Allow web UI without authentication
-            if request.path == "/" || request.path == "/index.html" {
-                let response = handleNotionUI()
+            if request.path == "/" || request.path == "/index.html" || request.path == "/index-v2.html" {
+                let response = handleWebUIv2()
                 try await client.send(response)
                 return
             }
 
-            // Allow v2 web UI without authentication (legacy)
-            if request.path == "/index-v2.html" {
-                let response = handleWebUIv2()
+            // Serve PWA manifest
+            if request.path == "/manifest.json" {
+                let response = handleManifestJSON()
                 try await client.send(response)
                 return
             }
@@ -302,6 +302,9 @@ class HTTPServer {
                     return
                 case ("GET", "/api/attention-check/stream"):
                     await handleStreamingAttentionCheck(request, client: client)
+                    return
+                case ("GET", "/api/chat/stream"):
+                    await handleChatStream(request, client: client)
                     return
                 default:
                     break
@@ -437,6 +440,14 @@ class HTTPServer {
 
         case ("POST", "/api/commitments/scan"):
             return await handleScanCommitments(request)
+
+        // Home pulse (consolidated endpoint for v2 Home tab)
+        case ("GET", "/api/home/pulse"):
+            return await handleHomePulse()
+
+        // Coaching cards (AI-generated insights)
+        case ("GET", "/api/coaching/cards"):
+            return await handleCoachingCards()
 
         case ("GET", "/api/briefing"):
             return await handleGetDailyBriefing(request)
@@ -693,6 +704,17 @@ class HTTPServer {
         return handleWebUI()
     }
 
+    private func handleManifestJSON() -> HTTPResponse {
+        if let json = HotReloadManager.shared.getWebFile("manifest.json") {
+            return HTTPResponse(
+                statusCode: 200,
+                headers: ["Content-Type": "application/manifest+json"],
+                htmlBody: json
+            )
+        }
+        return HTTPResponse(statusCode: 404, body: ["error": "Manifest not found"])
+    }
+
     private func handleNotionUI() -> HTTPResponse {
         // Use HotReloadManager for hot-reloadable web files
         if let html = HotReloadManager.shared.getWebFile("index-notion.html") {
@@ -917,7 +939,9 @@ class HTTPServer {
                 body: [
                     "found": result.totalFound,
                     "saved": result.saved,
-                    "duplicates": result.duplicates
+                    "duplicates": result.duplicates,
+                    "autoClosed": result.autoClosed,
+                    "pendingClosures": result.pendingClosures
                 ]
             )
         } catch {
@@ -1010,6 +1034,131 @@ class HTTPServer {
                 statusCode: 500,
                 body: ["error": error.localizedDescription]
             )
+        }
+    }
+
+    // MARK: - Home Pulse (consolidated endpoint for v2)
+
+    private func handleHomePulse() async -> HTTPResponse {
+        var topGoal: [String: Any]? = nil
+        var openTasks = 0
+        var overdueCount = 0
+        var meetingsToday = 0
+        var reliabilityScore = 0
+        var pendingActions: [[String: Any]] = []
+
+        // 1. Top Goal from Notion
+        if let orchestrator = alfredService.orchestrator {
+            do {
+                if let task = try await orchestrator.notionServicePublic.getTopPriorityTask() {
+                    var goalDict: [String: Any] = [
+                        "title": task.title,
+                        "priority": task.priority?.rawValue ?? "None"
+                    ]
+                    if !task.notionId.isEmpty {
+                        goalDict["notionId"] = task.notionId
+                    }
+                    if let dueDate = task.dueDate {
+                        goalDict["dueDate"] = Self.simpleDateFormatter.string(from: dueDate)
+                    }
+                    topGoal = goalDict
+                }
+            } catch {
+                print("⚠️ Home pulse: failed to get top priority task: \(error)")
+            }
+        }
+
+        // 2. Commitment stats (from tracker + Notion)
+        let trackerStats = CommitmentScanTracker.shared.getStats()
+        if let orchestrator = alfredService.orchestrator {
+            do {
+                let notionStats = try await orchestrator.notionServicePublic.getCommitmentStatsFromNotion()
+                openTasks = notionStats.open
+            } catch {
+                openTasks = trackerStats.openCommitments
+            }
+        } else {
+            openTasks = trackerStats.openCommitments
+        }
+
+        // 3. Overdue commitments
+        do {
+            let overdue = try await alfredService.fetchOverdueCommitments()
+            overdueCount = overdue.count
+
+            // Top 3 as pending actions
+            pendingActions = overdue.prefix(3).map { commitment in
+                var action: [String: Any] = [
+                    "title": commitment.title,
+                    "subtitle": "With \(commitment.committedTo)"
+                ]
+                if let id = commitment.notionId {
+                    action["id"] = id
+                }
+                if let dueDate = commitment.dueDate {
+                    let daysOverdue = Calendar.current.dateComponents([.day], from: dueDate, to: Date()).day ?? 0
+                    if daysOverdue > 0 {
+                        action["subtitle"] = "Due \(daysOverdue) day\(daysOverdue == 1 ? "" : "s") ago"
+                    }
+                }
+                return action
+            }
+        } catch {
+            print("⚠️ Home pulse: failed to get overdue commitments: \(error)")
+        }
+
+        // 4. Meetings today
+        do {
+            let calendarBriefing = try await alfredService.fetchCalendarBriefing(for: Date())
+            meetingsToday = calendarBriefing.schedule.events.count
+        } catch {
+            print("⚠️ Home pulse: failed to get calendar: \(error)")
+        }
+
+        // 5. Reliability score
+        let lifecycleStats = TaskLifecycleTracker.shared.getStats()
+        reliabilityScore = Int(lifecycleStats.completionRate * 100)
+
+        var responseBody: [String: Any] = [
+            "metrics": [
+                "openTasks": openTasks,
+                "overdueCount": overdueCount,
+                "meetingsToday": meetingsToday,
+                "reliabilityScore": reliabilityScore
+            ],
+            "pendingActions": pendingActions
+        ]
+
+        if let goal = topGoal {
+            responseBody["topGoal"] = goal
+        }
+
+        return HTTPResponse(statusCode: 200, body: responseBody)
+    }
+
+    private func handleCoachingCards() async -> HTTPResponse {
+        guard let config = AppConfig.load() else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Configuration not loaded"])
+        }
+
+        let engine = CoachingEngine(config: config, alfredService: alfredService)
+
+        do {
+            let cards = try await engine.generateCoachingCards()
+            let cardsArray: [[String: Any]] = cards.map { card in
+                var dict: [String: Any] = [
+                    "type": card.type,
+                    "label": card.label,
+                    "insight": card.insight
+                ]
+                if let context = card.context {
+                    dict["context"] = context
+                }
+                return dict
+            }
+            return HTTPResponse(statusCode: 200, body: ["cards": cardsArray])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to generate coaching cards: \(error.localizedDescription)"])
         }
     }
 
@@ -2865,6 +3014,144 @@ The Commitment Check feature requires a properly configured Notion database.
                 body: ["error": error.localizedDescription]
             )
         }
+    }
+
+    // MARK: - Chat Streaming
+
+    private func handleChatStream(_ request: HTTPRequest, client: ClientSocket) async {
+        client.beginSSE()
+
+        guard let query = request.queryParams["q"], !query.isEmpty else {
+            client.sendSSEJSON(event: "error", json: ["error": "Missing 'q' parameter"])
+            client.endSSE()
+            return
+        }
+
+        let sessionId = request.queryParams["sessionId"] ?? "default"
+
+        guard let config = AppConfig.load() else {
+            client.sendSSEJSON(event: "error", json: ["error": "Configuration not loaded"])
+            client.endSSE()
+            return
+        }
+
+        // Build rich system prompt with context
+        let userName = config.user.name.isEmpty ? "User" : config.user.name
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "EEEE, MMMM d, yyyy 'at' h:mm a"
+        let now = dateFormatter.string(from: Date())
+
+        // Gather context asynchronously
+        var contextParts: [String] = []
+
+        // Top commitments
+        let trackerStats = CommitmentScanTracker.shared.getStats()
+        contextParts.append("Open commitments: \(trackerStats.openCommitments)")
+
+        // Today's calendar summary
+        do {
+            let calBriefing = try await alfredService.fetchCalendarBriefing(for: Date())
+            let meetingCount = calBriefing.schedule.events.count
+            let nextMeeting = calBriefing.schedule.events.first(where: { $0.startTime > Date() })
+            var calStr = "Today: \(meetingCount) meetings."
+            if let next = nextMeeting {
+                let timeFmt = DateFormatter()
+                timeFmt.dateFormat = "h:mm a"
+                calStr += " Next: \(next.title) at \(timeFmt.string(from: next.startTime))"
+            }
+            contextParts.append(calStr)
+        } catch {
+            // Calendar context not critical
+        }
+
+        // Top priority task
+        if let orchestrator = alfredService.orchestrator {
+            do {
+                if let topTask = try await orchestrator.notionServicePublic.getTopPriorityTask() {
+                    contextParts.append("Top priority task: \(topTask.title) (\(topTask.priority?.rawValue ?? "No priority"))")
+                }
+            } catch {
+                // Not critical
+            }
+        }
+
+        // Reliability score
+        let lifecycleStats = TaskLifecycleTracker.shared.getStats()
+        contextParts.append("Reliability score: \(lifecycleStats.completionRate)%")
+
+        let contextBlock = contextParts.joined(separator: "\n")
+
+        let systemPrompt = """
+        You are Alfred, a personal executive assistant for \(userName). Today is \(now).
+
+        You are inspired by the coaching styles of Bill Campbell (coaching empathy, directness) and Matt Mochary (ruthless prioritization, energy audits). You are opinionated but concise. No fluff, no emojis in coaching. Use plain language.
+
+        Your context:
+        \(contextBlock)
+
+        Guidelines:
+        - Be direct and concise. Aim for 2-4 sentences unless more detail is asked for.
+        - When asked about priorities, reference actual tasks and commitments.
+        - When giving coaching advice, be opinionated — recommend ONE thing, not a list.
+        - If you don't have enough context, say so honestly.
+        - Never use emojis in your coaching responses.
+        - Format with markdown when helpful (bold for emphasis, bullet lists for multiple items).
+        """
+
+        // Try intent recognition first for structured queries
+        let intentService = IntentRecognitionService(config: config)
+        do {
+            let intentResponse = try await intentService.recognizeIntent(query, sessionId: sessionId)
+
+            // If high confidence structured intent, execute it and stream the result
+            if intentResponse.intent.confidence > 0.8 && !intentResponse.clarificationNeeded {
+                if let orchestrator = alfredService.orchestrator {
+                    let executor = IntentExecutor(orchestrator: orchestrator, config: config)
+                    let result = try await executor.execute(intentResponse.intent)
+
+                    // Record the turn
+                    intentService.recordTurn(sessionId: sessionId, query: query, intent: intentResponse.intent, result: result)
+
+                    // Stream the conversational response as chunks for natural feel
+                    let response = result.conversationalResponse
+                    let words = response.split(separator: " ")
+                    var chunk = ""
+                    for (i, word) in words.enumerated() {
+                        chunk += (chunk.isEmpty ? "" : " ") + word
+                        if chunk.count > 20 || i == words.count - 1 {
+                            client.sendSSEJSON(event: "chunk", json: ["text": chunk])
+                            chunk = ""
+                            try? await Task.sleep(nanoseconds: 15_000_000) // 15ms between chunks
+                        }
+                    }
+
+                    client.sendSSEJSON(event: "done", json: ["sessionId": sessionId])
+                    client.endSSE()
+                    return
+                }
+            }
+        } catch {
+            // Intent recognition failed, fall through to general chat
+            print("⚠️ Intent recognition failed, falling back to general chat: \(error)")
+        }
+
+        // General chat: stream from Claude
+        let claudeService = ClaudeAIService(config: config.ai)
+        do {
+            try await claudeService.streamText(
+                prompt: query,
+                system: systemPrompt,
+                maxTokens: 2048,
+                onChunk: { text in
+                    client.sendSSEJSON(event: "chunk", json: ["text": text])
+                }
+            )
+            client.sendSSEJSON(event: "done", json: ["sessionId": sessionId])
+        } catch {
+            client.sendSSEJSON(event: "error", json: ["error": "Failed to generate response: \(error.localizedDescription)"])
+        }
+
+        client.endSSE()
     }
 
     // MARK: - Helpers
