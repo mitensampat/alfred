@@ -161,10 +161,10 @@ struct NotionTodosView: View {
 
         Task {
             do {
-                let todos = try await viewModel.alfredService.scanWhatsAppForTodos()
+                let result = try await viewModel.alfredService.scanWhatsAppForTodos()
 
                 await MainActor.run {
-                    foundTodos = todos.map { todo in
+                    foundTodos = result.createdTodos.map { todo in
                         TodoItemPreview(
                             title: todo.title,
                             description: todo.description,

@@ -85,7 +85,8 @@ class CommitmentAnalyzer {
             let (committedBy, committedTo) = determineParties(
                 type: type,
                 extracted: extracted,
-                userName: userInfo.name
+                userName: userInfo.name,
+                threadName: threadName
             )
 
             // Build original context from messages
@@ -410,16 +411,25 @@ class CommitmentAnalyzer {
     private func determineParties(
         type: Commitment.CommitmentType,
         extracted: CommitmentExtractionResponse.ExtractedCommitment,
-        userName: String
+        userName: String,
+        threadName: String = ""
     ) -> (committedBy: String, committedTo: String) {
         switch type {
         case .iOwe:
-            // User committed to someone
-            let to = extracted.committedTo.isEmpty ? "Unknown" : extracted.committedTo
+            // User committed to someone — counterparty is committedTo
+            var to = extracted.committedTo.isEmpty ? "Unknown" : extracted.committedTo
+            // Guard: if AI returned the user's own name as the counterparty, use thread name instead
+            if to.lowercased() == userName.lowercased() {
+                to = threadName.isEmpty ? "Unknown" : threadName
+            }
             return (userName, to)
         case .theyOwe:
-            // Someone committed to user
-            let by = extracted.committedBy.isEmpty ? "Unknown" : extracted.committedBy
+            // Someone committed to user — counterparty is committedBy
+            var by = extracted.committedBy.isEmpty ? "Unknown" : extracted.committedBy
+            // Guard: if AI returned the user's own name as the counterparty, use thread name instead
+            if by.lowercased() == userName.lowercased() {
+                by = threadName.isEmpty ? "Unknown" : threadName
+            }
             return (by, userName)
         }
     }

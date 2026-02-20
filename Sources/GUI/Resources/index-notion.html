@@ -2502,9 +2502,459 @@
             display: none;
         }
 
-        /* Input Area - Hidden for now, will be rebuilt as conversational interface */
+        /* ===== Page-Level Tab Bar ===== */
+        .page-tabs {
+            display: flex;
+            gap: 0;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 24px;
+            padding: 0 24px;
+            max-width: 700px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .page-tab {
+            padding: 10px 20px;
+            font-family: var(--font-body);
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-tertiary);
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            position: relative;
+            bottom: -1px;
+        }
+
+        .page-tab:hover {
+            color: var(--text-secondary);
+        }
+
+        .page-tab.active {
+            color: var(--text-primary);
+            border-bottom-color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        /* ===== Coach View (Home Tab) ===== */
+        .coach-view {
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        .top-goal-card {
+            background: #2c2c2c;
+            color: #fff;
+            border-radius: 12px;
+            padding: 20px 24px;
+            position: relative;
+            margin-bottom: 16px;
+        }
+
+        .top-goal-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            opacity: 0.7;
+            margin-bottom: 8px;
+        }
+
+        .top-goal-title {
+            font-family: var(--font-heading);
+            font-size: 18px;
+            font-weight: 600;
+            line-height: 1.3;
+            padding-right: 100px;
+        }
+
+        .top-goal-meta {
+            font-size: 13px;
+            opacity: 0.6;
+            margin-top: 6px;
+        }
+
+        .top-goal-done-btn {
+            position: absolute;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(255,255,255,0.15);
+            color: #fff;
+            border: 1px solid rgba(255,255,255,0.25);
+            border-radius: 20px;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .top-goal-done-btn:hover {
+            background: rgba(255,255,255,0.25);
+        }
+
+        .top-goal-empty {
+            opacity: 0.5;
+            font-style: italic;
+        }
+
+        .pulse-strip {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .pulse-item {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 14px 12px;
+            text-align: center;
+        }
+
+        .pulse-value {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1;
+        }
+
+        .pulse-label {
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            color: var(--text-tertiary);
+            margin-top: 4px;
+        }
+
+        .coaching-cards-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .coaching-card {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
+        }
+
+        .coaching-card-type {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            margin-bottom: 6px;
+            color: var(--text-tertiary);
+        }
+
+        .coaching-card-text {
+            font-size: 14px;
+            line-height: 1.5;
+            color: var(--text-primary);
+        }
+
+        .coaching-card-loading {
+            color: var(--text-tertiary);
+            font-style: italic;
+        }
+
+        .coach-footer {
+            text-align: center;
+            padding: 16px 0 24px;
+            font-size: 12px;
+            color: var(--text-tertiary);
+        }
+
+        @media (max-width: 600px) {
+            .coaching-cards-grid {
+                grid-template-columns: 1fr;
+            }
+            .pulse-strip {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .top-goal-title {
+                padding-right: 0;
+            }
+            .top-goal-done-btn {
+                position: static;
+                transform: none;
+                margin-top: 12px;
+                display: inline-block;
+            }
+        }
+
+        /* ===== Chat View ===== */
+        .chat-view {
+            display: flex;
+            flex-direction: column;
+            max-width: 700px;
+            margin: 0 auto;
+            height: calc(100vh - 200px);
+            height: calc(100dvh - 200px); /* Mobile: accounts for browser chrome */
+            min-height: 400px;
+        }
+
+        .chat-message-list {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            padding-bottom: 16px;
+            scroll-behavior: smooth;
+        }
+
+        .chat-message-list::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .chat-message-list::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 2px;
+        }
+
+        .chat-suggestions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 16px 0;
+            justify-content: center;
+        }
+
+        .chat-suggestion-chip {
+            padding: 8px 16px;
+            font-family: var(--font-body);
+            font-size: 13px;
+            color: var(--text-secondary);
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .chat-suggestion-chip:hover {
+            color: var(--text-primary);
+            border-color: var(--text-tertiary);
+            background: var(--bg-secondary);
+        }
+
+        .chat-input-area {
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
+            padding: 16px 0;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .chat-input-field {
+            flex: 1;
+            min-height: 42px;
+            max-height: 200px;
+            padding: 10px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            font-size: 15px;
+            font-family: inherit;
+            color: var(--text-primary);
+            background: var(--bg-secondary);
+            resize: none;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        .chat-input-field:focus {
+            border-color: var(--accent-color);
+            background: var(--bg-primary);
+        }
+
+        .chat-input-field::placeholder {
+            color: var(--text-tertiary);
+        }
+
+        .chat-send-btn {
+            width: 42px;
+            height: 42px;
+            border: none;
+            border-radius: var(--radius-md);
+            background: var(--accent-color);
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s;
+            flex-shrink: 0;
+        }
+
+        .chat-send-btn:hover:not(:disabled) {
+            background: var(--accent-hover);
+        }
+
+        .chat-send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Chat message bubble styles (reuses .message pattern from existing) */
+        .chat-bubble {
+            display: flex;
+            gap: 12px;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .chat-bubble-avatar {
+            width: 28px;
+            height: 28px;
+            border-radius: var(--radius-md);
+            background: var(--bg-tertiary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .chat-bubble-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .chat-bubble-sender {
+            font-family: var(--font-body);
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+
+        .chat-bubble-text {
+            font-size: 15px;
+            color: var(--text-primary);
+            line-height: 1.6;
+            word-wrap: break-word;
+        }
+
+        .chat-bubble.user .chat-bubble-text {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 10px 14px;
+        }
+
+        .chat-bubble.assistant .chat-bubble-text {
+            font-family: var(--font-body);
+            line-height: 1.7;
+            white-space: pre-wrap;
+        }
+
+        /* Typing indicator */
+        .typing-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 8px 0;
+        }
+
+        .typing-indicator span {
+            width: 6px;
+            height: 6px;
+            background: var(--text-tertiary);
+            border-radius: 50%;
+            animation: typingDot 1.4s infinite;
+        }
+
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typingDot {
+            0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); }
+            30% { opacity: 1; transform: scale(1); }
+        }
+
+        /* Tool indicator in chat */
+        .chat-tool-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: var(--text-tertiary);
+            padding: 4px 0;
+            font-style: italic;
+        }
+
+        .chat-tool-indicator .spinner {
+            width: 12px;
+            height: 12px;
+            border: 2px solid var(--border-color);
+            border-top: 2px solid var(--accent-color);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Tool result card embedded in chat */
+        .chat-tool-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 12px 16px;
+            margin: 8px 0;
+            font-size: 14px;
+        }
+
+        .chat-tool-card-title {
+            font-weight: 600;
+            font-size: 12px;
+            color: var(--text-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        /* Chat welcome state */
+        .chat-welcome {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 40px 20px;
+        }
+
+        .chat-welcome h2 {
+            font-family: var(--font-display);
+            font-size: 24px;
+            font-weight: 400;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+
+        .chat-welcome p {
+            font-size: 14px;
+            color: var(--text-tertiary);
+            margin-bottom: 24px;
+        }
+
+        /* Input Area - Hidden (old, kept for backward compat) */
         .input-container {
-            display: none; /* Hidden until we build proper conversational interface */
+            display: none;
             background: var(--bg-primary);
             border: 1px solid var(--border-color);
             border-radius: var(--radius-lg);
@@ -2689,6 +3139,312 @@
             text-align: center;
             color: var(--text-tertiary);
             font-size: 14px;
+        }
+
+        /* ===== Past Conversations (Chat Tab) ===== */
+        .past-conversations {
+            width: 100%;
+            max-width: 480px;
+            margin: 0 auto 16px;
+        }
+
+        .past-conversations-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .past-conversations-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .past-conversations-new-btn {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: var(--radius-sm);
+            transition: all 0.15s;
+        }
+
+        .past-conversations-new-btn:hover {
+            color: var(--text-primary);
+            background: var(--bg-secondary);
+        }
+
+        .past-conversations-list {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            overflow: hidden;
+        }
+
+        .past-conversation-item {
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: background 0.15s;
+            cursor: pointer;
+        }
+
+        .past-conversation-item:last-child {
+            border-bottom: none;
+        }
+
+        .past-conversation-item:hover {
+            background: var(--bg-secondary);
+        }
+
+        .past-conversation-item:hover .past-conversation-delete {
+            opacity: 1;
+        }
+
+        .past-conversation-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .past-conversation-title {
+            font-family: var(--font-body);
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .past-conversation-meta {
+            font-size: 12px;
+            color: var(--text-tertiary);
+            margin-top: 1px;
+        }
+
+        .past-conversation-delete {
+            padding: 4px 6px;
+            margin-left: 8px;
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: var(--radius-sm);
+            color: var(--text-tertiary);
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.15s;
+            opacity: 0;
+            flex-shrink: 0;
+        }
+
+        .past-conversation-delete:hover {
+            background: #fee;
+            border-color: #fcc;
+            color: #c33;
+        }
+
+        .past-conversations-empty {
+            padding: 16px;
+            text-align: center;
+            color: var(--text-tertiary);
+            font-size: 13px;
+        }
+
+        /* ===== Cadence Items ===== */
+        .cadence-list {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md, 8px);
+            overflow: hidden;
+        }
+
+        .cadence-item {
+            display: grid;
+            grid-template-columns: 1fr 140px 60px 44px;
+            align-items: center;
+            gap: 8px;
+            padding: 11px 16px;
+            border-bottom: 1px solid var(--border-color);
+            transition: background 0.15s;
+        }
+
+        .cadence-item:last-child {
+            border-bottom: none;
+        }
+
+        .cadence-item:hover {
+            background: var(--bg-secondary, #f8f7f5);
+        }
+
+        .cadence-item-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+        }
+
+        .cadence-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .cadence-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .cadence-schedule {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            padding: 2px 8px;
+            background: var(--bg-secondary, #f8f7f5);
+            border-radius: 4px;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: border-color 0.15s;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        .cadence-schedule:hover {
+            border-color: var(--border-color);
+        }
+
+        .cadence-last-run {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .cadence-run-btn {
+            font-size: 11px;
+            padding: 3px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: var(--bg-primary);
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.15s;
+            white-space: nowrap;
+            text-align: center;
+        }
+
+        .cadence-run-btn:hover {
+            background: var(--text-primary);
+            color: var(--bg-primary);
+            border-color: var(--text-primary);
+        }
+
+        .cadence-run-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .cadence-run-btn.running {
+            background: var(--text-primary);
+            color: var(--bg-primary);
+            border-color: var(--text-primary);
+        }
+
+        /* Cadence edit modal */
+        .cadence-edit-popover {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px 24px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+            z-index: 1000;
+            min-width: 300px;
+        }
+
+        .cadence-edit-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.3);
+            z-index: 999;
+        }
+
+        .cadence-edit-title {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: var(--text-primary);
+        }
+
+        .cadence-edit-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .cadence-edit-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .cadence-edit-input {
+            font-size: 13px;
+            padding: 4px 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            width: 100px;
+            text-align: center;
+            font-family: var(--font-body);
+        }
+
+        .cadence-edit-select {
+            font-size: 13px;
+            padding: 4px 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-family: var(--font-body);
+            background: var(--bg-primary);
+        }
+
+        .cadence-edit-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+            margin-top: 16px;
+        }
+
+        .cadence-edit-save {
+            font-size: 13px;
+            padding: 6px 16px;
+            background: var(--text-primary);
+            color: var(--bg-primary);
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .cadence-edit-cancel {
+            font-size: 13px;
+            padding: 6px 16px;
+            background: none;
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            cursor: pointer;
         }
 
         .quick-prompt {
@@ -4283,6 +5039,50 @@
             .settings-input {
                 font-size: 16px; /* Prevent iOS zoom */
             }
+
+            /* Chat View Mobile */
+            .chat-view {
+                height: calc(100vh - 140px);
+                height: calc(100dvh - 140px);
+                min-height: 300px;
+            }
+
+            .chat-input-field {
+                font-size: 16px; /* Prevent iOS zoom */
+            }
+
+            .chat-input-area {
+                padding: 10px 0;
+            }
+
+            .chat-welcome h2 {
+                font-size: 20px;
+            }
+
+            .chat-welcome p {
+                font-size: 13px;
+            }
+
+            .chat-suggestion-chip {
+                font-size: 12px;
+                padding: 6px 12px;
+            }
+
+            /* Past Conversations Mobile */
+            .past-conversations {
+                max-width: 100%;
+            }
+
+            .past-conversation-delete {
+                opacity: 1; /* Always visible on touch */
+            }
+
+            .past-conversation-meta {
+                display: -webkit-box;
+                -webkit-line-clamp: 2;
+                -webkit-box-orient: vertical;
+                overflow: hidden;
+            }
         }
 
         /* Extra small mobile devices */
@@ -4953,6 +5753,100 @@
             </div>
         </div>
 
+        <!-- Page-Level Tabs -->
+        <div class="page-tabs" id="pageTabs">
+            <button class="page-tab active" data-page="home" onclick="switchPage('home')">Home</button>
+            <button class="page-tab" data-page="chat" onclick="switchPage('chat')">Chat</button>
+            <button class="page-tab" data-page="tools" onclick="switchPage('tools')">Tools</button>
+        </div>
+
+        <!-- Health Warning Banner (hidden by default) -->
+        <div id="healthWarningBanner" class="hidden" style="background: #2d2000; border: 1px solid #6b4f00; border-radius: 12px; padding: 12px 16px; margin: 0 16px 12px 16px; font-size: 13px; color: #fbbf24;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                <span>⚠️</span>
+                <span style="font-weight: 600;">Some features need attention</span>
+            </div>
+            <div id="healthWarningList" style="font-size: 12px; color: #d4a017; padding-left: 26px;"></div>
+        </div>
+
+        <!-- Coach View (Home Tab) -->
+        <div id="coachView" class="coach-view">
+            <!-- Top Goal Card -->
+            <div id="topGoalCard" class="top-goal-card">
+                <div class="top-goal-label">TODAY'S TOP GOAL</div>
+                <div id="topGoalTitle" class="top-goal-title coaching-card-loading">Loading...</div>
+                <div id="topGoalMeta" class="top-goal-meta hidden"></div>
+                <button id="topGoalDoneBtn" class="top-goal-done-btn hidden" onclick="markTopGoalDone()">Mark Done</button>
+            </div>
+
+            <!-- Pulse Metrics Strip -->
+            <div class="pulse-strip">
+                <div class="pulse-item">
+                    <div class="pulse-value" id="pulseOpen">--</div>
+                    <div class="pulse-label">Open</div>
+                </div>
+                <div class="pulse-item">
+                    <div class="pulse-value" id="pulseOverdue">--</div>
+                    <div class="pulse-label">Overdue</div>
+                </div>
+                <div class="pulse-item">
+                    <div class="pulse-value" id="pulseMeetings">--</div>
+                    <div class="pulse-label">Meetings</div>
+                </div>
+                <div class="pulse-item">
+                    <div class="pulse-value" id="pulseReliable">--</div>
+                    <div class="pulse-label">Reliable</div>
+                </div>
+            </div>
+
+            <!-- Coaching Cards -->
+            <div id="coachingCardsContainer" class="coaching-cards-grid">
+                <div class="coaching-card">
+                    <div class="coaching-card-type">Leverage</div>
+                    <div class="coaching-card-text coaching-card-loading">Loading insights...</div>
+                </div>
+                <div class="coaching-card">
+                    <div class="coaching-card-type">Relationship</div>
+                    <div class="coaching-card-text coaching-card-loading">Loading insights...</div>
+                </div>
+                <div class="coaching-card">
+                    <div class="coaching-card-type">Avoidance</div>
+                    <div class="coaching-card-text coaching-card-loading">Loading insights...</div>
+                </div>
+            </div>
+
+            <div class="coach-footer">✦ powered by your data · updated every 2 hours</div>
+        </div>
+
+        <!-- Chat View (hidden by default) -->
+        <div id="chatView" class="chat-view hidden">
+            <div id="chatMessageList" class="chat-message-list">
+                <div class="chat-welcome" id="chatWelcome">
+                    <h2>Coach Alfred</h2>
+                    <p id="chatWelcomeSubtitle">What's on your mind?</p>
+                </div>
+                <div class="chat-suggestions" id="chatSuggestions"></div>
+                <div class="past-conversations" id="pastConversationsSection" style="display:none;">
+                    <div class="past-conversations-header">
+                        <span class="past-conversations-title">Past Conversations</span>
+                        <button class="past-conversations-new-btn" onclick="startNewChat()" title="New conversation">↗ New</button>
+                    </div>
+                    <div class="past-conversations-list" id="pastConversationsList"></div>
+                </div>
+            </div>
+            <div class="chat-input-area">
+                <textarea id="chatInput" class="chat-input-field"
+                          placeholder="Reflect with your coach..."
+                          rows="1"
+                          onkeydown="handleChatKeydown(event)"
+                          oninput="autoResizeTextarea(this)"></textarea>
+                <button id="chatSendBtn" class="chat-send-btn" onclick="sendChatMessage()">↑</button>
+            </div>
+        </div>
+
+        <!-- Tools Content Wrapper (everything that belongs to Tools page) -->
+        <div id="homeContent" class="hidden">
+
         <!-- Form View (for parameterized actions) -->
         <div id="formView" class="hidden" style="width: 100%; max-width: 600px; margin: 0 auto;">
             <div id="formContent"></div>
@@ -5259,6 +6153,18 @@
             </div>
         </div>
 
+        <!-- Cadences -->
+        <div id="cadenceSection" class="recent-activity">
+            <div class="recent-activity-header">Cadences</div>
+            <div id="cadenceStatusContent" class="cadence-list">
+                <div class="recent-activity-empty">Loading cadences...</div>
+            </div>
+            <div id="groupSuggestionsSection" class="hidden" style="margin-top: 12px;">
+                <div class="recent-activity-header" style="font-size: 11px;">Group Suggestions</div>
+                <div id="groupSuggestionsList" class="cadence-list"></div>
+            </div>
+        </div>
+
         <!-- Recent Activity (shown when empty) -->
         <div id="recentActivitySection" class="recent-activity">
             <div class="recent-activity-header">Recent Activity</div>
@@ -5267,10 +6173,10 @@
             </div>
         </div>
 
-        <!-- Chat Messages -->
+        <!-- Chat Messages (for tool/action results on Home) -->
         <div id="chatContainer" class="chat-container"></div>
 
-        <!-- Input Area -->
+        <!-- Input Area (old, hidden) -->
         <div class="input-container">
             <div class="input-wrapper">
                 <textarea id="queryInput" class="input-field"
@@ -5283,6 +6189,8 @@
                 </button>
             </div>
         </div>
+
+        </div><!-- /homeContent -->
     </div>
 
     <script>
@@ -5295,6 +6203,47 @@
         const STORAGE_TOKEN_KEY = 'alfred_auth_token';
         const STORAGE_EXPIRES_KEY = 'alfred_token_expires';
 
+        // ===== Home Page Cache Layer =====
+        // Cache API responses in localStorage so the home page always renders
+        // even when the server is down, auth fails, or network is flaky.
+        const CACHE_PREFIX = 'alfred_cache_';
+        const CACHE_MAX_AGE_MS = 4 * 60 * 60 * 1000; // 4 hours — stale but usable
+
+        function cacheSet(key, data) {
+            try {
+                localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({
+                    data: data,
+                    timestamp: Date.now()
+                }));
+            } catch (e) { /* localStorage full — ignore */ }
+        }
+
+        function cacheGet(key) {
+            try {
+                const raw = localStorage.getItem(CACHE_PREFIX + key);
+                if (!raw) return null;
+                const parsed = JSON.parse(raw);
+                return parsed;
+            } catch (e) { return null; }
+        }
+
+        function cacheAge(key) {
+            const cached = cacheGet(key);
+            if (!cached || !cached.timestamp) return Infinity;
+            return Date.now() - cached.timestamp;
+        }
+
+        function formatCacheAge(key) {
+            const age = cacheAge(key);
+            if (age === Infinity) return '';
+            const mins = Math.floor(age / 60000);
+            if (mins < 1) return 'just now';
+            if (mins < 60) return mins + 'm ago';
+            const hrs = Math.floor(mins / 60);
+            if (hrs < 24) return hrs + 'h ago';
+            return Math.floor(hrs / 24) + 'd ago';
+        }
+
         // Fetch and display version from server (auto-updates from single source of truth)
         (async function loadVersion() {
             try {
@@ -5306,6 +6255,657 @@
                 }
             } catch(e) { /* version display is non-critical */ }
         })();
+
+        // ===============================================
+        // Page Tab Switching (Home / Chat)
+        // ===============================================
+
+        let currentPage = 'home';
+        let chatSessionId = 'chat-' + generateSessionId();
+        let chatAbortController = null;
+
+        function switchPage(page) {
+            currentPage = page;
+
+            // Update tab active states
+            document.querySelectorAll('.page-tab').forEach(tab => {
+                tab.classList.toggle('active', tab.dataset.page === page);
+            });
+
+            const coachView = document.getElementById('coachView');
+            const chatView = document.getElementById('chatView');
+            const homeContent = document.getElementById('homeContent');
+            const backHomeButton = document.getElementById('backHomeButton');
+
+            // Hide all three views first
+            coachView.classList.add('hidden');
+            chatView.classList.add('hidden');
+            homeContent.classList.add('hidden');
+
+            if (page === 'home') {
+                coachView.classList.remove('hidden');
+                backHomeButton.classList.add('hidden');
+            } else if (page === 'chat') {
+                chatView.classList.remove('hidden');
+                backHomeButton.classList.add('hidden');
+                renderCoachingChips();
+                loadCoachingOpener();
+                loadPastConversations();
+                setTimeout(() => document.getElementById('chatInput').focus(), 100);
+            } else if (page === 'tools') {
+                homeContent.classList.remove('hidden');
+                // Restore tools view — show quick prompts if no tool action is active
+                const chatContainer = document.getElementById('chatContainer');
+                if (!chatContainer.innerHTML.trim()) {
+                    document.getElementById('quickPromptsSection').classList.remove('hidden');
+                    document.getElementById('recentActivitySection').classList.remove('hidden');
+                    backHomeButton.classList.add('hidden');
+                }
+                // Refresh tools data
+                loadRecentActivity();
+                loadCadenceStatus();
+            }
+        }
+
+        // ===============================================
+        // Chat Tab — Coaching Prompts & Opener
+        // ===============================================
+
+        const coachingPrompts = {
+            reflection: [
+                { text: "What am I avoiding?", query: "What am I avoiding right now? Be honest and specific — use what you know about my tasks and patterns." },
+                { text: "Am I focused on what matters?", query: "Looking at my tasks and calendar, am I spending time on what matters most? Challenge me." },
+                { text: "Who am I neglecting?", query: "Based on my commitment data and relationships, who needs my attention that I've been neglecting?" },
+                { text: "Give me a hard truth", query: "Give me one hard truth about how I'm spending my time. Don't soften it." },
+                { text: "What pattern do you see?", query: "Based on everything you know about me, what pattern should I be aware of right now?" },
+            ],
+            action: [
+                { text: "What's my highest-leverage move?", query: "What's the single highest-leverage thing I should do right now? Be specific." },
+                { text: "Follow up on last time", query: "What did we discuss last time? Did I follow through on what I committed to?" },
+                { text: "One thing to drop", query: "What's one thing on my plate I should just drop or delegate? Tell me why." },
+                { text: "Help me say no", query: "What should I be saying no to right now? Look at my calendar and commitments." },
+            ],
+            wildcard: [
+                { text: "Roast my schedule", query: "Roast my schedule today. Make it funny but make it real." },
+                { text: "Make me laugh", query: "Based on what you know about my day and my patterns, say something funny. Then hit me with a truth." },
+                { text: "CEO therapy session", query: "Let's do a quick CEO therapy session. What do you think is really going on with me this week?" },
+                { text: "Rate my week", query: "Rate my week so far on leverage, relationships, and avoidance. Be brutally honest." },
+            ]
+        };
+
+        function renderCoachingChips() {
+            const container = document.getElementById('chatSuggestions');
+            if (!container) return;
+
+            // Pick 2 reflection, 1 action, 1 wildcard — randomized within each bucket
+            const shuffle = arr => [...arr].sort(() => Math.random() - 0.5);
+            const picks = [
+                ...shuffle(coachingPrompts.reflection).slice(0, 2),
+                ...shuffle(coachingPrompts.action).slice(0, 1),
+                ...shuffle(coachingPrompts.wildcard).slice(0, 1),
+            ];
+
+            container.innerHTML = picks.map(p =>
+                `<div class="chat-suggestion-chip" onclick="sendChatMessage('${p.query.replace(/'/g, "\\'")}')">${p.text}</div>`
+            ).join('');
+        }
+
+        let coachingOpenerLoaded = false;
+        let coachingOpenerAttempts = 0;
+
+        async function loadCoachingOpener() {
+            if (coachingOpenerLoaded) return;
+            if (coachingOpenerAttempts >= 3) return; // Max 3 attempts
+            coachingOpenerAttempts++;
+
+            const subtitle = document.getElementById('chatWelcomeSubtitle');
+            if (!subtitle) return;
+
+            try {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
+                const response = await authFetch('/api/coaching/opener', { signal: controller.signal });
+                clearTimeout(timeout);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.opener && data.opener.trim()) {
+                        subtitle.textContent = data.opener;
+                        coachingOpenerLoaded = true;
+                    }
+                }
+            } catch (e) {
+                // Silently retry on next tab switch (up to 3 attempts)
+                console.log('[Opener] Attempt', coachingOpenerAttempts, 'failed:', e.message);
+            }
+        }
+
+        // ===============================================
+        // Past Conversations
+        // ===============================================
+
+        async function loadPastConversations() {
+            const section = document.getElementById('pastConversationsSection');
+            const list = document.getElementById('pastConversationsList');
+            if (!section || !list) return;
+
+            try {
+                const response = await authFetch('/api/conversations?limit=7');
+                if (!response.ok) return;
+                const data = await response.json();
+
+                if (!data.conversations || data.conversations.length === 0) {
+                    section.style.display = 'none';
+                    return;
+                }
+
+                list.innerHTML = data.conversations.map(conv => {
+                    const timeAgo = formatConversationTime(conv.lastActiveAt);
+                    const title = conv.title || 'Untitled conversation';
+                    const summary = conv.summary || `${conv.turnCount} messages`;
+                    return `
+                        <div class="past-conversation-item" onclick="resumeConversation('${conv.id}')">
+                            <div class="past-conversation-content">
+                                <div class="past-conversation-title">${escapeHtml(title)}</div>
+                                <div class="past-conversation-meta">${escapeHtml(summary)} · ${timeAgo}</div>
+                            </div>
+                            <button class="past-conversation-delete" onclick="deletePastConversation(event, '${conv.id}')" title="Delete">×</button>
+                        </div>
+                    `;
+                }).join('');
+
+                section.style.display = 'block';
+            } catch (e) {
+                console.log('[PastConversations] Failed to load:', e.message);
+            }
+        }
+
+        function formatConversationTime(isoStr) {
+            if (!isoStr) return '';
+            const date = new Date(isoStr);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHrs = Math.floor(diffMs / 3600000);
+            const diffDays = Math.floor(diffMs / 86400000);
+
+            if (diffMins < 1) return 'just now';
+            if (diffMins < 60) return `${diffMins}m ago`;
+            if (diffHrs < 24) return `${diffHrs}h ago`;
+            if (diffDays < 7) return `${diffDays}d ago`;
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+
+        async function resumeConversation(id) {
+            try {
+                const response = await authFetch(`/api/conversations/restore?id=${encodeURIComponent(id)}`, { method: 'POST' });
+                if (!response.ok) {
+                    console.error('[Resume] Failed:', response.status);
+                    return;
+                }
+                const data = await response.json();
+
+                // Update session ID to the restored conversation
+                chatSessionId = id;
+                chatHasMessages = true;
+
+                // Clear current chat UI
+                const list = document.getElementById('chatMessageList');
+                list.innerHTML = '';
+
+                // Hide welcome, suggestions, and past conversations
+                const welcome = document.getElementById('chatWelcome');
+                if (welcome) welcome.remove();
+                const suggestions = document.getElementById('chatSuggestions');
+                if (suggestions) suggestions.classList.add('hidden');
+                const pastSection = document.getElementById('pastConversationsSection');
+                if (pastSection) pastSection.style.display = 'none';
+
+                // Render restored turns as chat bubbles
+                if (data.turns && data.turns.length > 0) {
+                    data.turns.forEach(turn => {
+                        addChatBubble(turn.role === 'user' ? 'user' : 'assistant', turn.content);
+                    });
+                }
+
+                // Focus input
+                setTimeout(() => document.getElementById('chatInput').focus(), 100);
+            } catch (e) {
+                console.error('[Resume] Error:', e);
+            }
+        }
+
+        async function deletePastConversation(event, id) {
+            event.stopPropagation(); // Don't trigger resume
+            try {
+                await authFetch(`/api/conversations?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+                // Remove from DOM
+                const item = event.target.closest('.past-conversation-item');
+                if (item) {
+                    item.style.transition = 'opacity 0.2s, max-height 0.2s';
+                    item.style.opacity = '0';
+                    item.style.maxHeight = '0';
+                    item.style.overflow = 'hidden';
+                    item.style.padding = '0 14px';
+                    setTimeout(() => {
+                        item.remove();
+                        // If no more items, hide section
+                        const list = document.getElementById('pastConversationsList');
+                        if (list && list.children.length === 0) {
+                            document.getElementById('pastConversationsSection').style.display = 'none';
+                        }
+                    }, 250);
+                }
+            } catch (e) {
+                console.error('[DeleteConversation] Error:', e);
+            }
+        }
+
+        function startNewChat() {
+            // Close current conversation
+            closePreviousConversation();
+
+            // Generate new session ID
+            chatSessionId = 'chat-' + generateSessionId();
+            chatHasMessages = false;
+
+            // Reset UI to welcome state (re-create all elements inside scrollable area)
+            const list = document.getElementById('chatMessageList');
+            list.innerHTML = `
+                <div class="chat-welcome" id="chatWelcome">
+                    <h2>Coach Alfred</h2>
+                    <p id="chatWelcomeSubtitle">What's on your mind?</p>
+                </div>
+                <div class="chat-suggestions" id="chatSuggestions"></div>
+                <div class="past-conversations" id="pastConversationsSection" style="display:none;">
+                    <div class="past-conversations-header">
+                        <span class="past-conversations-title">Past Conversations</span>
+                        <button class="past-conversations-new-btn" onclick="startNewChat()" title="New conversation">↗ New</button>
+                    </div>
+                    <div class="past-conversations-list" id="pastConversationsList"></div>
+                </div>
+            `;
+
+            // Show suggestions
+            const suggestions = document.getElementById('chatSuggestions');
+            if (suggestions) {
+                suggestions.classList.remove('hidden');
+                renderCoachingChips();
+            }
+
+            // Reload opener
+            coachingOpenerLoaded = false;
+            coachingOpenerAttempts = 0;
+            loadCoachingOpener();
+
+            // Reload past conversations
+            loadPastConversations();
+
+            // Focus input
+            setTimeout(() => document.getElementById('chatInput').focus(), 100);
+        }
+
+        let chatHasMessages = false; // Track if current session has any messages
+
+        function closePreviousConversation() {
+            if (!chatSessionId || !chatHasMessages) {
+                // No messages sent in this session — nothing to close
+                return;
+            }
+            // Fire-and-forget: close the conversation for title/summary generation
+            try {
+                const url = new URL('/api/conversations/close', window.location.origin);
+                url.searchParams.set('id', chatSessionId);
+                url.searchParams.set('passcode', new URLSearchParams(window.location.search).get('passcode') || '');
+                navigator.sendBeacon(url.toString());
+            } catch (e) {
+                console.log('[CloseConversation] sendBeacon failed:', e);
+            }
+            chatHasMessages = false;
+        }
+
+        // Close conversation on page unload
+        window.addEventListener('beforeunload', () => {
+            closePreviousConversation();
+        });
+
+        // Mobile keyboard: adjust chat view height when virtual keyboard opens/closes
+        if (window.visualViewport) {
+            let fullViewportHeight = window.visualViewport.height;
+            window.visualViewport.addEventListener('resize', () => {
+                const chatView = document.getElementById('chatView');
+                if (!chatView || chatView.classList.contains('hidden')) return;
+
+                const vvHeight = window.visualViewport.height;
+                const keyboardOpen = vvHeight < fullViewportHeight * 0.75;
+
+                if (keyboardOpen) {
+                    // Keyboard is open — shrink chat view to fit visible area
+                    chatView.style.height = (vvHeight - 80) + 'px';
+                    // Scroll input into view
+                    setTimeout(() => {
+                        const input = document.getElementById('chatInput');
+                        if (input) input.scrollIntoView({ block: 'nearest' });
+                    }, 50);
+                } else {
+                    // Keyboard closed — reset to CSS-defined height
+                    chatView.style.height = '';
+                    fullViewportHeight = vvHeight;
+                }
+            });
+        }
+
+        // ===============================================
+        // Chat Tab — SSE Streaming Interface
+        // ===============================================
+
+        function handleChatKeydown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendChatMessage();
+            }
+        }
+
+        function addChatBubble(sender, content) {
+            const list = document.getElementById('chatMessageList');
+            // Remove welcome message on first bubble
+            const welcome = document.getElementById('chatWelcome');
+            if (welcome) welcome.remove();
+
+            const bubble = document.createElement('div');
+            bubble.className = `chat-bubble ${sender}`;
+            bubble.id = 'chat-msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4);
+
+            const avatar = sender === 'user' ? '👤' : '🤖';
+            const name = sender === 'user' ? 'You' : 'Alfred';
+            const renderedContent = sender === 'user' ? escapeHtml(content) : renderMarkdown(content);
+
+            bubble.innerHTML = `
+                <div class="chat-bubble-avatar">${avatar}</div>
+                <div class="chat-bubble-content">
+                    <div class="chat-bubble-sender">${name}</div>
+                    <div class="chat-bubble-text">${renderedContent}</div>
+                </div>
+            `;
+
+            list.appendChild(bubble);
+            bubble.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            return bubble.id;
+        }
+
+        function createStreamingBubble() {
+            const list = document.getElementById('chatMessageList');
+            const welcome = document.getElementById('chatWelcome');
+            if (welcome) welcome.remove();
+
+            const bubble = document.createElement('div');
+            bubble.className = 'chat-bubble assistant';
+            bubble.id = 'chat-stream-' + Date.now();
+
+            bubble.innerHTML = `
+                <div class="chat-bubble-avatar">🤖</div>
+                <div class="chat-bubble-content">
+                    <div class="chat-bubble-sender">Alfred</div>
+                    <div class="chat-bubble-tools" style="display: none;"></div>
+                    <div class="chat-bubble-text">
+                        <div class="typing-indicator"><span></span><span></span><span></span></div>
+                    </div>
+                </div>
+            `;
+
+            list.appendChild(bubble);
+            bubble.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            return bubble.id;
+        }
+
+        function updateStreamingBubble(bubbleId, text) {
+            const bubble = document.getElementById(bubbleId);
+            if (!bubble) return;
+            const textEl = bubble.querySelector('.chat-bubble-text');
+            if (!textEl) return;
+            textEl.innerHTML = renderMarkdown(text);
+            bubble.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+
+        function showToolIndicator(bubbleId, toolName) {
+            const bubble = document.getElementById(bubbleId);
+            if (!bubble) return;
+            const toolsEl = bubble.querySelector('.chat-bubble-tools');
+            if (!toolsEl) return;
+            toolsEl.style.display = 'block';
+
+            const toolLabels = {
+                'calendar': 'Looking up your calendar...',
+                'commitments': 'Checking commitments...',
+                'messages': 'Reading messages...',
+                'briefing': 'Preparing your briefing...',
+                'todos': 'Scanning for todos...',
+                'attention': 'Running attention check...',
+                'memory': 'Checking memory...',
+                'tasks': 'Looking up tasks...',
+            };
+            const label = toolLabels[toolName] || `Running ${toolName}...`;
+
+            toolsEl.innerHTML = `
+                <div class="chat-tool-indicator">
+                    <div class="spinner"></div>
+                    <span>${escapeHtml(label)}</span>
+                </div>
+            `;
+        }
+
+        function renderToolCard(bubbleId, data) {
+            const bubble = document.getElementById(bubbleId);
+            if (!bubble) return;
+            const toolsEl = bubble.querySelector('.chat-bubble-tools');
+            if (!toolsEl) return;
+
+            // Clear the loading indicator
+            toolsEl.innerHTML = '';
+
+            // If the tool result has structured data, render a card
+            if (data && data.type) {
+                const card = document.createElement('div');
+                card.className = 'chat-tool-card';
+
+                let cardHtml = '';
+                if (data.type === 'calendar' && data.events) {
+                    cardHtml = `<div class="chat-tool-card-title">📅 ${escapeHtml(data.date || 'Calendar')} · ${data.eventCount || data.events.length} events</div>`;
+                    const events = Array.isArray(data.events) ? data.events.slice(0, 6) : [];
+                    events.forEach(evt => {
+                        const time = evt.start || evt.time || evt.startTime || '';
+                        const title = evt.title || evt.summary || '';
+                        cardHtml += `<div style="padding: 6px 0; border-bottom: 1px solid var(--border-color); display: flex; gap: 10px; align-items: baseline;">
+                            <span style="color: var(--text-tertiary); font-size: 12px; min-width: 70px; flex-shrink: 0;">${escapeHtml(time)}</span>
+                            <span style="font-size: 13px;">${escapeHtml(title)}</span>
+                        </div>`;
+                    });
+                    if (data.events.length > 6) cardHtml += `<div style="color: var(--text-tertiary); font-size: 12px; padding-top: 4px;">+${data.events.length - 6} more</div>`;
+                    if (events.length === 0) cardHtml += '<div style="color: var(--text-tertiary);">No events found.</div>';
+                } else if ((data.type === 'commitments' || data.type === 'commitment_scan') && (data.items || data.commitments)) {
+                    const items = Array.isArray(data.items) ? data.items : Array.isArray(data.commitments) ? data.commitments : [];
+                    cardHtml = `<div class="chat-tool-card-title">🤝 ${data.count || items.length} Commitments</div>`;
+                    items.slice(0, 5).forEach(c => {
+                        const who = c.committedBy || c.counterparty || '';
+                        cardHtml += `<div style="padding: 6px 0; border-bottom: 1px solid var(--border-color);">
+                            <div style="font-size: 13px;">${escapeHtml(c.title || c.description || '')}</div>
+                            ${who ? `<div style="color: var(--text-tertiary); font-size: 12px; margin-top: 2px;">${escapeHtml(who)}${c.dueDate ? ' · due ' + escapeHtml(c.dueDate) : ''}</div>` : ''}
+                        </div>`;
+                    });
+                    if (items.length > 5) cardHtml += `<div style="color: var(--text-tertiary); font-size: 12px; padding-top: 4px;">+${items.length - 5} more</div>`;
+                } else {
+                    // Generic tool result (attention check, etc.) — no card to show
+                    // The coaching response will come through text chunks
+                    toolsEl.style.display = 'none';
+                    return;
+                }
+
+                if (cardHtml) {
+                    card.innerHTML = cardHtml;
+                    toolsEl.appendChild(card);
+                }
+            } else {
+                // No type — just hide the tools area
+                toolsEl.style.display = 'none';
+            }
+        }
+
+        function finalizeStreamingBubble(bubbleId, hideToolIndicator) {
+            const bubble = document.getElementById(bubbleId);
+            if (!bubble) return;
+            // Remove typing indicator if still present
+            const typing = bubble.querySelector('.typing-indicator');
+            if (typing) typing.remove();
+            // Handle tool indicator
+            const toolIndicator = bubble.querySelector('.chat-tool-indicator');
+            if (toolIndicator) {
+                if (hideToolIndicator) {
+                    // tool_start fired but no tool_result followed — hide entirely
+                    toolIndicator.parentElement.style.display = 'none';
+                } else {
+                    const spinner = toolIndicator.querySelector('.spinner');
+                    if (spinner) spinner.remove();
+                    // Fade the indicator text since the real response is below
+                    toolIndicator.style.opacity = '0.4';
+                    toolIndicator.style.fontSize = '11px';
+                }
+            }
+        }
+
+        function showErrorInBubble(bubbleId, error) {
+            const bubble = document.getElementById(bubbleId);
+            if (!bubble) return;
+            const textEl = bubble.querySelector('.chat-bubble-text');
+            if (!textEl) return;
+            textEl.innerHTML = `<span style="color: var(--red, #d44c47);">⚠ ${escapeHtml(error || 'Something went wrong. Please try again.')}</span>`;
+        }
+
+        async function sendChatMessage(prefilled = null) {
+            const input = document.getElementById('chatInput');
+            const query = prefilled || input.value.trim();
+            if (!query) return;
+
+            // Hide suggestions and past conversations after first message
+            const suggestions = document.getElementById('chatSuggestions');
+            if (suggestions) suggestions.classList.add('hidden');
+            const pastSection = document.getElementById('pastConversationsSection');
+            if (pastSection) pastSection.style.display = 'none';
+            chatHasMessages = true;
+
+            // Clear input
+            if (!prefilled) {
+                input.value = '';
+                input.style.height = 'auto';
+            }
+
+            // Disable send button
+            document.getElementById('chatSendBtn').disabled = true;
+
+            // Add user bubble
+            addChatBubble('user', query);
+
+            // Create assistant streaming bubble
+            const bubbleId = createStreamingBubble();
+
+            // Abort any previous stream
+            if (chatAbortController) chatAbortController.abort();
+            chatAbortController = new AbortController();
+
+            const token = localStorage.getItem(STORAGE_TOKEN_KEY);
+            const url = new URL('/api/chat/stream', window.location.origin);
+            url.searchParams.set('q', query);
+            url.searchParams.set('sessionId', chatSessionId);
+            if (token) url.searchParams.set('passcode', new URLSearchParams(window.location.search).get('passcode') || '');
+
+            try {
+                const headers = { 'Accept': 'text/event-stream', 'Cache-Control': 'no-cache' };
+                if (token) headers['Authorization'] = `Bearer ${token}`;
+
+                const response = await fetch(url.toString(), {
+                    headers,
+                    signal: chatAbortController.signal
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server returned ${response.status}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let fullText = '';
+                let currentEvent = null;
+                let hadToolStart = false;
+                let hadToolResult = false;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const rawLine of lines) {
+                        const line = rawLine.replace(/\r$/, ''); // strip carriage return
+                        if (line.startsWith('event:')) {
+                            currentEvent = line.slice(6).trim();
+                        } else if (line.startsWith('data:')) {
+                            const dataStr = line.slice(5).trim();
+                            if (!dataStr) continue;
+                            try {
+                                const data = JSON.parse(dataStr);
+                                switch (currentEvent) {
+                                    case 'tool_start':
+                                        showToolIndicator(bubbleId, data.tool || data.type || 'unknown');
+                                        hadToolStart = true;
+                                        break;
+                                    case 'tool_result':
+                                        renderToolCard(bubbleId, data);
+                                        hadToolResult = true;
+                                        break;
+                                    case 'chunk':
+                                        const chunkText = data.text || '';
+                                        // Claude API tokens include natural spacing — no injection needed
+                                        fullText += chunkText;
+                                        updateStreamingBubble(bubbleId, fullText);
+                                        break;
+                                    case 'done':
+                                        if (data.sessionId) chatSessionId = data.sessionId;
+                                        finalizeStreamingBubble(bubbleId, hadToolStart && !hadToolResult);
+                                        break;
+                                    case 'error':
+                                        showErrorInBubble(bubbleId, data.error || data.message);
+                                        break;
+                                    default:
+                                        // If no event type, treat as chunk
+                                        if (data.text) {
+                                            fullText += data.text;
+                                            updateStreamingBubble(bubbleId, fullText);
+                                        }
+                                }
+                            } catch (parseErr) {
+                                console.warn('[Chat SSE] Parse error for event:', currentEvent, parseErr.message);
+                            }
+                        } else if (line.trim() === '') {
+                            // Empty line = end of SSE event, do NOT reset currentEvent here
+                            // because event: and data: are already handled above
+                        }
+                    }
+                }
+
+                // Ensure bubble is finalized even if no 'done' event
+                finalizeStreamingBubble(bubbleId, hadToolStart && !hadToolResult);
+
+            } catch (err) {
+                if (err.name !== 'AbortError') {
+                    showErrorInBubble(bubbleId, 'Connection failed. Please try again.');
+                    console.error('[Chat SSE Error]', err);
+                }
+            } finally {
+                document.getElementById('chatSendBtn').disabled = false;
+                input.focus();
+            }
+        }
 
         // ===============================================
         // FTUE (First Time User Experience) Wizard
@@ -5388,11 +6988,6 @@
                                 <button class="ftue-test-btn" onclick="testClaudeApiKey()">Test Connection</button>
                                 <span id="claudeApiKeyStatus"></span>
                             </div>
-                        </div>
-                        <div class="ftue-field">
-                            <label>Todoist API Key <span style="color: var(--text-tertiary);">(optional)</span></label>
-                            <input type="password" id="ftueTodoistApiKey" placeholder="Your Todoist API key" value="${ftueData.todoistApiKey || ''}">
-                            <small>For syncing tasks to Todoist</small>
                         </div>
                     `;
 
@@ -5684,7 +7279,6 @@
             switch(step) {
                 case 'apiKeys':
                     const claudeKey = document.getElementById('ftueClaudeApiKey')?.value?.trim();
-                    const todoistKey = document.getElementById('ftueTodoistApiKey')?.value?.trim();
 
                     if (!claudeKey) {
                         alert('Claude API Key is required');
@@ -5692,10 +7286,9 @@
                     }
 
                     ftueData.claudeApiKey = claudeKey;
-                    ftueData.todoistApiKey = todoistKey;
 
                     // Save to config
-                    await saveFtueStepData('apiKeys', { claudeApiKey: claudeKey, todoistApiKey: todoistKey });
+                    await saveFtueStepData('apiKeys', { claudeApiKey: claudeKey });
                     return true;
 
                 case 'notion':
@@ -5926,33 +7519,37 @@
             const savedToken = localStorage.getItem(STORAGE_TOKEN_KEY);
             const savedExpires = localStorage.getItem(STORAGE_EXPIRES_KEY);
 
-            if (savedToken && savedExpires) {
-                // Check if token is expired
-                const expiresAt = new Date(savedExpires);
-                if (expiresAt > new Date()) {
-                    // Validate token with server
-                    fetch('/api/auth/validate', {
-                        method: 'GET',
-                        headers: { 'Authorization': 'Bearer ' + savedToken }
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.valid) {
-                            authToken = savedToken;
-                            showApp();
-                        } else {
-                            clearSavedSession();
-                            showAuthScreen();
-                        }
-                    })
-                    .catch(() => {
+            if (savedToken) {
+                // Check if token is expired (if we have expiry info)
+                if (savedExpires) {
+                    const expiresAt = new Date(savedExpires);
+                    if (expiresAt <= new Date()) {
                         clearSavedSession();
                         showAuthScreen();
-                    });
-                } else {
-                    clearSavedSession();
-                    showAuthScreen();
+                        return;
+                    }
                 }
+
+                // Validate token with server (works whether or not we have expiry)
+                fetch('/api/auth/validate', {
+                    method: 'GET',
+                    headers: { 'Authorization': 'Bearer ' + savedToken }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.valid) {
+                        authToken = savedToken;
+                        showApp();
+                    } else {
+                        clearSavedSession();
+                        showAuthScreen();
+                    }
+                })
+                .catch(() => {
+                    // Server unreachable — still try to show app with cached data
+                    authToken = savedToken;
+                    showApp();
+                });
             } else {
                 showAuthScreen();
             }
@@ -5975,13 +7572,22 @@
             document.getElementById('ftueWizard').classList.add('hidden');
         }
 
+        let _appLoaded = false; // Prevent duplicate showApp() calls
         function showApp() {
+            if (_appLoaded) return; // Already loaded — don't re-fire all loaders
+            _appLoaded = true;
+
             document.getElementById('authScreen').classList.add('hidden');
             document.getElementById('appContainer').classList.remove('hidden');
             document.getElementById('ftueWizard').classList.add('hidden');
-            document.getElementById('queryInput').focus();
-            // Load recent activity on app initialization
+            // Start on Home (coach) tab
+            switchPage('home');
+            // Load coaching data for Home tab
+            loadHomePulse();
+            loadCoachingCards();
+            // Pre-load tools tab data
             loadRecentActivity();
+            loadCadenceStatus();
         }
 
         function authenticate() {
@@ -6020,6 +7626,7 @@
         }
 
         function logout() {
+            _appLoaded = false; // Allow showApp() to fire again after re-login
             // Call logout endpoint
             fetch('/api/auth/logout', {
                 method: 'POST',
@@ -6037,6 +7644,10 @@
 
         // Helper function for authenticated API calls
         async function authFetch(url, options = {}) {
+            if (!authToken) {
+                throw new Error('No auth token — cannot make authenticated request');
+            }
+
             const headers = options.headers || {};
             headers['Authorization'] = 'Bearer ' + authToken;
 
@@ -6044,6 +7655,7 @@
 
             // If unauthorized, session may have expired - redirect to login
             if (response.status === 401) {
+                _appLoaded = false;
                 clearSavedSession();
                 showAuthScreen();
                 throw new Error('Session expired. Please log in again.');
@@ -6078,8 +7690,9 @@
             // Hide quick prompts and recent activity after first message
             document.getElementById('quickPromptsSection').classList.add('hidden');
             document.getElementById('recentActivitySection').classList.add('hidden');
-            // Show back home button
+            // Show back home button, hide tabs
             document.getElementById('backHomeButton').classList.remove('hidden');
+            document.getElementById('pageTabs').classList.add('hidden');
 
             // Clear input
             input.value = '';
@@ -6127,8 +7740,9 @@
             // Hide quick prompts and recent activity after first interaction
             document.getElementById('quickPromptsSection').classList.add('hidden');
             document.getElementById('recentActivitySection').classList.add('hidden');
-            // Show back home button
+            // Show back home button, hide tabs
             document.getElementById('backHomeButton').classList.remove('hidden');
+            document.getElementById('pageTabs').classList.add('hidden');
 
             // Add user message showing what was clicked
             addMessage('user', title);
@@ -6413,10 +8027,21 @@
 
                 const savedCount = data.saved || 0;
                 const failedCount = data.failed || 0;
+                const duplicateCount = data.duplicates || 0;
 
-                let resultMessage = `Successfully added ${savedCount} item(s) to Notion Tasks.`;
+                let resultMessage = '';
+                if (savedCount > 0) {
+                    resultMessage = `Added ${savedCount} item${savedCount !== 1 ? 's' : ''} to Notion Tasks.`;
+                } else if (duplicateCount > 0 && failedCount === 0) {
+                    resultMessage = `All ${duplicateCount} item${duplicateCount !== 1 ? 's' : ''} already existed in Notion — no duplicates created.`;
+                } else {
+                    resultMessage = 'No new items were added.';
+                }
+                if (duplicateCount > 0 && savedCount > 0) {
+                    resultMessage += ` ${duplicateCount} duplicate${duplicateCount !== 1 ? 's' : ''} skipped.`;
+                }
                 if (failedCount > 0) {
-                    resultMessage += ` ${failedCount} item(s) failed or were duplicates.`;
+                    resultMessage += ` ${failedCount} item${failedCount !== 1 ? 's' : ''} failed to save.`;
                 }
 
                 if (approvalEl) {
@@ -7108,6 +8733,7 @@
             document.getElementById('recentActivitySection').classList.add('hidden');
             document.getElementById('chatContainer').innerHTML = '';
             document.getElementById('backHomeButton').classList.remove('hidden');
+            document.getElementById('pageTabs').classList.add('hidden');
 
             // Show form view
             const formView = document.getElementById('formView');
@@ -8439,6 +10065,7 @@
             document.getElementById('recentActivitySection').classList.add('hidden');
             document.getElementById('formView').classList.add('hidden');
             document.getElementById('backHomeButton').classList.remove('hidden');
+            document.getElementById('pageTabs').classList.add('hidden');
 
             const chatContainer = document.getElementById('chatContainer');
             chatContainer.innerHTML = `
@@ -8877,10 +10504,21 @@
 
                 const savedCount = data.saved || 0;
                 const failedCount = data.failed || 0;
+                const duplicateCount = data.duplicates || 0;
 
-                let resultMessage = `Successfully added ${savedCount} item(s) to Notion Tasks.`;
+                let resultMessage = '';
+                if (savedCount > 0) {
+                    resultMessage = `Added ${savedCount} item${savedCount !== 1 ? 's' : ''} to Notion Tasks.`;
+                } else if (duplicateCount > 0 && failedCount === 0) {
+                    resultMessage = `All ${duplicateCount} item${duplicateCount !== 1 ? 's' : ''} already existed in Notion — no duplicates created.`;
+                } else {
+                    resultMessage = 'No new items were added.';
+                }
+                if (duplicateCount > 0 && savedCount > 0) {
+                    resultMessage += ` ${duplicateCount} duplicate${duplicateCount !== 1 ? 's' : ''} skipped.`;
+                }
                 if (failedCount > 0) {
-                    resultMessage += ` ${failedCount} item(s) failed or were duplicates.`;
+                    resultMessage += ` ${failedCount} item${failedCount !== 1 ? 's' : ''} failed to save.`;
                 }
 
                 chatContainer.innerHTML = `
@@ -8916,9 +10554,9 @@
 
         // ===== END EXTRACTION AND APPROVAL FLOW =====
 
-        // Go back home - clear chat and show quick prompts
+        // Go back to Tools tab - clear chat and show quick prompts
         function goBackHome() {
-            // Clear chat container
+            // Clear chat container (for tool/action results)
             document.getElementById('chatContainer').innerHTML = '';
 
             // Hide form view, settings, agents, and favorites views
@@ -8937,6 +10575,12 @@
             // Hide back home button
             document.getElementById('backHomeButton').classList.add('hidden');
 
+            // Go to Tools tab (where action cards live)
+            switchPage('tools');
+
+            // Show page tabs
+            document.getElementById('pageTabs').classList.remove('hidden');
+
             // Clear and focus input
             const input = document.getElementById('queryInput');
             input.value = '';
@@ -8945,47 +10589,640 @@
             // Clear any pending callbacks
             currentModalCallback = null;
 
-            // Reload recent activity
+            // Reload recent activity and cadence status
             loadRecentActivity();
+            loadCadenceStatus();
         }
 
-        // Load recent activity from API
+        // Render recent activity list (shared by live + cached paths)
+        function renderRecentActivityData(activities) {
+            const listEl = document.getElementById('recentActivityList');
+            if (!activities || activities.length === 0) {
+                listEl.innerHTML = '<div class="recent-activity-empty">No recent activity yet</div>';
+                return;
+            }
+
+            const items = activities.slice(0, 7);
+            let html = '';
+            items.forEach((activity, index) => {
+                const activityJson = JSON.stringify(activity).replace(/'/g, "&apos;");
+                html += `
+                    <div class="recent-activity-item">
+                        <div class="recent-activity-main" onclick='rerunActivity(${activityJson})'>
+                            <div class="recent-activity-content">
+                                <div class="recent-activity-label">${escapeHtml(activity.label)}</div>
+                                <div class="recent-activity-time">${escapeHtml(activity.timestamp)}</div>
+                            </div>
+                            <div class="recent-activity-icon">↻</div>
+                        </div>
+                        <button class="recent-activity-delete" onclick="deleteRecentActivity(event, '${activity.endpoint}', '${encodeURIComponent(JSON.stringify(activity.params))}')">×</button>
+                    </div>
+                `;
+            });
+            listEl.innerHTML = html;
+        }
+
+        // Load recent activity from API (with cache fallback)
         async function loadRecentActivity() {
+            // Render cache immediately
+            const cached = cacheGet('recent_activity');
+            if (cached && cached.data) {
+                renderRecentActivityData(cached.data);
+            }
+
             try {
                 const response = await authFetch('/api/recent-activity');
                 if (!response.ok) return;
 
                 const data = await response.json();
-                const listEl = document.getElementById('recentActivityList');
-
-                if (!data.activities || data.activities.length === 0) {
-                    listEl.innerHTML = '<div class="recent-activity-empty">No recent activity yet</div>';
-                    return;
-                }
-
-                // Limit to 7 most recent activities
-                const activities = data.activities.slice(0, 7);
-
-                let html = '';
-                activities.forEach((activity, index) => {
-                    const activityJson = JSON.stringify(activity).replace(/'/g, "&apos;");
-                    html += `
-                        <div class="recent-activity-item">
-                            <div class="recent-activity-main" onclick='rerunActivity(${activityJson})'>
-                                <div class="recent-activity-content">
-                                    <div class="recent-activity-label">${escapeHtml(activity.label)}</div>
-                                    <div class="recent-activity-time">${escapeHtml(activity.timestamp)}</div>
-                                </div>
-                                <div class="recent-activity-icon">↻</div>
-                            </div>
-                            <button class="recent-activity-delete" onclick="deleteRecentActivity(event, '${activity.endpoint}', '${encodeURIComponent(JSON.stringify(activity.params))}')">×</button>
-                        </div>
-                    `;
-                });
-
-                listEl.innerHTML = html;
+                const activities = data.activities || [];
+                cacheSet('recent_activity', activities);
+                renderRecentActivityData(activities);
             } catch (error) {
                 console.error('Failed to load recent activity:', error);
+                // Cache already rendered above — page isn't broken
+            }
+        }
+
+        // ===== Coach View (Home Tab) Data Loading =====
+
+        // Render pulse data into the DOM (shared by live + cached paths)
+        function renderPulseData(data, staleLabel) {
+            const goalTitle = document.getElementById('topGoalTitle');
+            const goalMeta = document.getElementById('topGoalMeta');
+            const goalBtn = document.getElementById('topGoalDoneBtn');
+
+            if (data.topGoal && data.topGoal.title) {
+                goalTitle.textContent = data.topGoal.title;
+                goalTitle.classList.remove('coaching-card-loading', 'top-goal-empty');
+                if (data.topGoal.dueDate) {
+                    goalMeta.textContent = 'Due: ' + data.topGoal.dueDate + (staleLabel ? '  · cached ' + staleLabel : '');
+                    goalMeta.classList.remove('hidden');
+                } else if (staleLabel) {
+                    goalMeta.textContent = 'cached ' + staleLabel;
+                    goalMeta.classList.remove('hidden');
+                }
+                if (data.topGoal.notionId) {
+                    goalBtn.dataset.notionId = data.topGoal.notionId;
+                    goalBtn.classList.remove('hidden');
+                }
+            } else {
+                goalTitle.textContent = 'No top goal set — add one in Notion';
+                goalTitle.classList.remove('coaching-card-loading');
+                goalTitle.classList.add('top-goal-empty');
+            }
+
+            const m = data.metrics || {};
+            document.getElementById('pulseOpen').textContent = m.openTasks || 0;
+            document.getElementById('pulseOverdue').textContent = m.overdueCount || 0;
+            document.getElementById('pulseMeetings').textContent = m.meetingsToday || 0;
+            const rel = m.reliabilityScore || 0;
+            document.getElementById('pulseReliable').textContent = (rel > 1 ? rel : Math.round(rel * 100)) + '%';
+        }
+
+        async function checkHealthStatus() {
+            try {
+                const response = await authFetch('/api/health/detailed');
+                if (!response.ok) return;
+                const data = await response.json();
+                const banner = document.getElementById('healthWarningBanner');
+                const list = document.getElementById('healthWarningList');
+                if (data.warnings && data.warnings.length > 0) {
+                    list.innerHTML = data.warnings.map(w => `<div>• ${w}</div>`).join('');
+                    banner.classList.remove('hidden');
+                } else {
+                    banner.classList.add('hidden');
+                }
+            } catch (e) {
+                // Health check is best-effort, don't block the UI
+                console.log('Health check skipped:', e.message);
+            }
+        }
+
+        async function loadHomePulse() {
+            // Check service health (best-effort, non-blocking)
+            checkHealthStatus();
+
+            // Immediately render cached data so the page is never blank
+            const cached = cacheGet('pulse');
+            if (cached && cached.data) {
+                renderPulseData(cached.data, formatCacheAge('pulse'));
+            }
+
+            // Then try live fetch to get fresh data
+            try {
+                const response = await authFetch('/api/home/pulse');
+                if (!response.ok) throw new Error('Pulse API failed: ' + response.status);
+                const data = await response.json();
+
+                cacheSet('pulse', data);
+                renderPulseData(data, null); // fresh — no stale label
+            } catch (err) {
+                console.error('Failed to load pulse:', err);
+                // If we already rendered cache above, we're fine. If not, show error.
+                if (!cached || !cached.data) {
+                    document.getElementById('topGoalTitle').textContent = 'Could not load — tap to retry';
+                    document.getElementById('topGoalTitle').classList.remove('coaching-card-loading');
+                }
+                // Silent retry after 15 seconds
+                setTimeout(() => { loadHomePulse(); }, 15000);
+            }
+        }
+
+        // Render coaching cards into the DOM (shared by live + cached paths)
+        function renderCoachingCardsData(cards, staleLabel) {
+            const container = document.getElementById('coachingCardsContainer');
+            container.innerHTML = '';
+
+            if (!cards || cards.length === 0) {
+                container.innerHTML = '<div class="coaching-card"><div class="coaching-card-type">Coach</div><div class="coaching-card-text coaching-card-loading">Generating insights...</div></div>';
+                return;
+            }
+
+            cards.forEach(card => {
+                const el = document.createElement('div');
+                el.className = 'coaching-card';
+                const label = card.label || card.type || 'Insight';
+                el.innerHTML = '<div class="coaching-card-type">' + escapeHtml(label) + '</div>'
+                    + '<div class="coaching-card-text">' + escapeHtml(card.insight || '') + '</div>';
+                container.appendChild(el);
+            });
+
+            if (staleLabel) {
+                const staleEl = document.createElement('div');
+                staleEl.className = 'coaching-cards-stale';
+                staleEl.style.cssText = 'text-align:center;font-size:11px;color:#999;margin-top:6px;';
+                staleEl.textContent = 'cached ' + staleLabel + ' · refreshing...';
+                container.appendChild(staleEl);
+            }
+        }
+
+        async function loadCoachingCards() {
+            // Immediately render cached cards
+            const cached = cacheGet('coaching_cards');
+            if (cached && cached.data) {
+                renderCoachingCardsData(cached.data, formatCacheAge('coaching_cards'));
+            }
+
+            // Then try live fetch
+            try {
+                const response = await authFetch('/api/coaching/cards');
+                if (!response.ok) throw new Error('Coaching API failed: ' + response.status);
+                const data = await response.json();
+                const cards = data.cards || [];
+
+                cacheSet('coaching_cards', cards);
+                renderCoachingCardsData(cards, null); // fresh — no stale label
+            } catch (err) {
+                console.error('Failed to load coaching cards:', err);
+                // If cache was rendered, that's fine. Otherwise leave skeleton.
+                if (!cached || !cached.data) {
+                    // skeleton already in place from HTML
+                }
+                // Silent retry
+                setTimeout(() => { loadCoachingCards(); }, 15000);
+            }
+        }
+
+        async function markTopGoalDone() {
+            const btn = document.getElementById('topGoalDoneBtn');
+            const notionId = btn.dataset.notionId;
+            if (!notionId) return;
+
+            btn.textContent = 'Updating...';
+            btn.disabled = true;
+
+            try {
+                const response = await authFetch('/api/tasks/' + notionId + '/complete', {
+                    method: 'POST'
+                });
+                if (response.ok) {
+                    btn.textContent = '✓ Done';
+                    document.getElementById('topGoalTitle').style.textDecoration = 'line-through';
+                    document.getElementById('topGoalTitle').style.opacity = '0.5';
+                    // Refresh pulse after a moment
+                    setTimeout(() => loadHomePulse(), 2000);
+                } else {
+                    btn.textContent = 'Mark Done';
+                    btn.disabled = false;
+                }
+            } catch (err) {
+                console.error('Failed to mark done:', err);
+                btn.textContent = 'Mark Done';
+                btn.disabled = false;
+            }
+        }
+
+        // ===== Cadences Section =====
+
+        // Cadence definitions with their trigger APIs
+        const CADENCE_DEFS = {
+            todoScan: {
+                icon: '📝', label: 'Todo Scan',
+                triggerAPI: '/api/todos/scan',
+                triggerMethod: 'POST',
+                configFields: ['intervalHours'],
+                formatSchedule: (info) => `Every ${info.intervalHours || 3}h`
+            },
+            commitmentScan: {
+                icon: '🤝', label: 'Commitment Scan',
+                triggerAPI: '/api/commitments/scan',
+                triggerMethod: 'POST',
+                configFields: ['time'],
+                formatSchedule: (info) => `Daily @ ${info.time || '17:00'}`
+            },
+            patternLearn: {
+                icon: '🧠', label: 'Pattern Learning',
+                triggerAPI: '/api/workflow-patterns/compute',
+                triggerMethod: 'POST',
+                configFields: ['day', 'time'],
+                formatSchedule: (info) => {
+                    const day = (info.day || 'thursday');
+                    return day.charAt(0).toUpperCase() + day.slice(1) + ' @ ' + (info.time || '18:00');
+                }
+            },
+            groupAnalysis: {
+                icon: '📊', label: 'Group Analysis',
+                triggerAPI: '/api/cadence/run-group-analysis',
+                triggerMethod: 'POST',
+                configFields: ['day', 'time'],
+                formatSchedule: (info) => {
+                    const day = (info.day || 'monday');
+                    return day.charAt(0).toUpperCase() + day.slice(1) + ' @ ' + (info.time || '09:00');
+                }
+            }
+        };
+
+        let cadenceData = {}; // cached for edit modal
+
+        // Render cadence data into DOM (shared by live + cached paths)
+        function renderCadenceData(data) {
+            cadenceData = data;
+            const el = document.getElementById('cadenceStatusContent');
+
+            let html = '';
+            Object.entries(CADENCE_DEFS).forEach(([key, def]) => {
+                const info = data[key] || {};
+                const enabled = info.enabled !== false;
+                const lastRun = info.lastRun || null;
+                const dotColor = enabled ? (lastRun ? '#448361' : '#c4a33d') : '#999';
+                const lastRunText = lastRun ? formatRelativeTime(lastRun) : 'Never';
+                const schedule = def.formatSchedule(info);
+                const hasAPI = def.triggerAPI !== null;
+
+                html += `<div class="cadence-item">
+                    <div class="cadence-item-left">
+                        <div class="cadence-dot" style="background: ${dotColor};"></div>
+                        <span class="cadence-name">${def.icon} ${def.label}</span>
+                    </div>
+                    <span class="cadence-schedule" onclick="editCadence('${key}')" title="Click to edit">${schedule}</span>
+                    <span class="cadence-last-run">${lastRunText}</span>
+                    ${hasAPI ? `<button class="cadence-run-btn" id="cadenceRun_${key}" onclick="triggerCadence('${key}')">Run</button>` : '<span></span>'}
+                </div>`;
+            });
+
+            const autoGroups = data.autoSummary?.groups || [];
+            if (autoGroups.length > 0) {
+                html += `<div class="cadence-item">
+                    <div class="cadence-item-left">
+                        <div class="cadence-dot" style="background: #448361;"></div>
+                        <span class="cadence-name">📨 Auto-Summaries</span>
+                    </div>
+                    <span class="cadence-schedule">${autoGroups.length} group${autoGroups.length > 1 ? 's' : ''} @ ${data.autoSummary?.time || '18:00'}</span>
+                    <span class="cadence-last-run"></span>
+                    <span></span>
+                </div>`;
+            }
+
+            el.innerHTML = html || '<div class="recent-activity-empty">No cadences configured</div>';
+        }
+
+        async function loadCadenceStatus() {
+            // Render cache immediately
+            const cached = cacheGet('cadence_status');
+            if (cached && cached.data) {
+                renderCadenceData(cached.data);
+            }
+
+            try {
+                const response = await authFetch('/api/cadence/status');
+                if (!response.ok) return;
+                const data = await response.json();
+
+                cacheSet('cadence_status', data);
+                renderCadenceData(data);
+
+                await loadGroupSuggestions();
+            } catch (error) {
+                console.warn('Failed to load cadence status:', error);
+                // Cache already rendered — page isn't broken
+            }
+        }
+
+        async function triggerCadence(key) {
+            const def = CADENCE_DEFS[key];
+            if (!def || !def.triggerAPI) return;
+
+            const btn = document.getElementById('cadenceRun_' + key);
+            if (!btn || btn.disabled) return;
+
+            btn.disabled = true;
+            btn.textContent = '...';
+            btn.classList.add('running');
+
+            try {
+                const response = await authFetch(def.triggerAPI, { method: def.triggerMethod || 'POST' });
+                if (response.ok) {
+                    btn.textContent = '✓';
+                    setTimeout(() => {
+                        btn.textContent = 'Run';
+                        btn.disabled = false;
+                        btn.classList.remove('running');
+                        loadCadenceStatus(); // Refresh
+                    }, 2000);
+                } else {
+                    btn.textContent = 'Error';
+                    setTimeout(() => {
+                        btn.textContent = 'Run';
+                        btn.disabled = false;
+                        btn.classList.remove('running');
+                    }, 2000);
+                }
+            } catch (err) {
+                console.error('Cadence trigger failed:', err);
+                btn.textContent = 'Run';
+                btn.disabled = false;
+                btn.classList.remove('running');
+            }
+        }
+
+        function editCadence(key) {
+            const def = CADENCE_DEFS[key];
+            const info = cadenceData[key] || {};
+
+            let fieldsHtml = '';
+
+            if (def.configFields.includes('intervalHours')) {
+                fieldsHtml += `<div class="cadence-edit-row">
+                    <span class="cadence-edit-label">Every</span>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <input type="number" id="cadenceEdit_intervalHours" class="cadence-edit-input" value="${info.intervalHours || 3}" min="1" max="24" style="width:60px;">
+                        <span class="cadence-edit-label">hours</span>
+                    </div>
+                </div>`;
+            }
+
+            if (def.configFields.includes('day')) {
+                fieldsHtml += `<div class="cadence-edit-row">
+                    <span class="cadence-edit-label">Day</span>
+                    <select id="cadenceEdit_day" class="cadence-edit-select">
+                        ${['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].map(d =>
+                            `<option value="${d}" ${(info.day || '').toLowerCase() === d ? 'selected' : ''}>${d.charAt(0).toUpperCase() + d.slice(1)}</option>`
+                        ).join('')}
+                    </select>
+                </div>`;
+            }
+
+            if (def.configFields.includes('time')) {
+                fieldsHtml += `<div class="cadence-edit-row">
+                    <span class="cadence-edit-label">Time</span>
+                    <input type="time" id="cadenceEdit_time" class="cadence-edit-input" value="${info.time || '17:00'}" style="width:110px;">
+                </div>`;
+            }
+
+            // Create overlay + popover
+            const overlay = document.createElement('div');
+            overlay.className = 'cadence-edit-overlay';
+            overlay.onclick = () => closeCadenceEdit();
+
+            const popover = document.createElement('div');
+            popover.className = 'cadence-edit-popover';
+            popover.id = 'cadenceEditPopover';
+            popover.innerHTML = `
+                <div class="cadence-edit-title">${def.icon} ${def.label}</div>
+                ${fieldsHtml}
+                <div class="cadence-edit-actions">
+                    <button class="cadence-edit-cancel" onclick="closeCadenceEdit()">Cancel</button>
+                    <button class="cadence-edit-save" onclick="saveCadenceEdit('${key}')">Save</button>
+                </div>
+            `;
+
+            document.body.appendChild(overlay);
+            document.body.appendChild(popover);
+        }
+
+        function closeCadenceEdit() {
+            const overlay = document.querySelector('.cadence-edit-overlay');
+            const popover = document.getElementById('cadenceEditPopover');
+            if (overlay) overlay.remove();
+            if (popover) popover.remove();
+        }
+
+        async function saveCadenceEdit(key) {
+            const def = CADENCE_DEFS[key];
+            const updates = {};
+
+            // Map cadence key to config field names
+            const configKeyMap = {
+                todoScan: 'todo_scan',
+                commitmentScan: 'commitment_scan',
+                patternLearn: 'pattern_learn',
+                groupAnalysis: 'group_analysis'
+            };
+            const prefix = configKeyMap[key];
+
+            if (def.configFields.includes('intervalHours')) {
+                const val = document.getElementById('cadenceEdit_intervalHours')?.value;
+                if (val) updates[prefix + '_interval_hours'] = parseInt(val);
+            }
+            if (def.configFields.includes('day')) {
+                const val = document.getElementById('cadenceEdit_day')?.value;
+                if (val) updates[prefix + '_day'] = val;
+            }
+            if (def.configFields.includes('time')) {
+                const val = document.getElementById('cadenceEdit_time')?.value;
+                if (val) updates[prefix + '_time'] = val;
+            }
+
+            try {
+                const response = await authFetch('/api/cadence/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updates)
+                });
+                if (response.ok) {
+                    closeCadenceEdit();
+                    await loadCadenceStatus();
+                } else {
+                    alert('Failed to save. Server returned ' + response.status);
+                }
+            } catch (err) {
+                console.error('Save cadence config failed:', err);
+                alert('Failed to save cadence config');
+            }
+        }
+
+        async function loadGroupSuggestions() {
+            try {
+                const response = await authFetch('/api/cadence/group-suggestions');
+                if (!response.ok) return;
+                const data = await response.json();
+                const suggestions = data.suggestions || [];
+
+                if (suggestions.length === 0) return;
+
+                const section = document.getElementById('groupSuggestionsSection');
+                const list = document.getElementById('groupSuggestionsList');
+                section.classList.remove('hidden');
+
+                let html = '';
+                suggestions.forEach(s => {
+                    const name = s.name || 'Unknown';
+                    const count = s.messageCount || 0;
+                    html += `<div class="cadence-item" style="grid-template-columns: 1fr auto;">
+                        <div class="cadence-item-left">
+                            <span class="cadence-name">${escapeHtml(name)}</span>
+                            <span style="font-size: 11px; color: var(--text-tertiary);">${count} msgs/wk</span>
+                        </div>
+                        <button class="cadence-run-btn" onclick="approveAutoSummary('${escapeHtml(name)}')">+ Auto-summarize</button>
+                    </div>`;
+                });
+                list.innerHTML = html;
+            } catch (error) {
+                console.warn('Failed to load group suggestions:', error);
+            }
+        }
+
+        async function approveAutoSummary(groupName) {
+            // Show summary popup immediately while approving in background
+            showAutoSummaryPopup(groupName);
+
+            // Approve in background (add to daily cadence)
+            try {
+                await authFetch('/api/cadence/approve-auto-summary', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ groups: [groupName] })
+                });
+                loadCadenceStatus(); // refresh cadence list
+            } catch (error) {
+                console.error('Failed to approve auto-summary:', error);
+            }
+        }
+
+        async function showAutoSummaryPopup(groupName) {
+            // Create modal overlay
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            overlay.id = 'autoSummaryModal';
+            overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.style.maxWidth = '560px';
+            modal.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <div class="modal-header" style="margin-bottom: 0;">📨 ${escapeHtml(groupName)}</div>
+                    <button onclick="document.getElementById('autoSummaryModal').remove()" style="background: none; border: none; font-size: 18px; cursor: pointer; color: var(--text-tertiary); padding: 4px;">✕</button>
+                </div>
+                <div id="autoSummaryBody" style="min-height: 80px;">
+                    <div style="display: flex; align-items: center; gap: 8px; color: var(--text-tertiary); font-size: 13px;">
+                        <div class="spinner"></div>
+                        <span id="autoSummaryLoadingText">Generating summary of last 24 hours...</span>
+                    </div>
+                </div>
+                <div id="autoSummaryFooter" style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-color); display: none;">
+                    <div style="font-size: 11px; color: var(--text-tertiary);">✓ Added to daily summaries at 18:00</div>
+                </div>
+            `;
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            // Show "taking a moment" hint after 8 seconds
+            const slowHint = setTimeout(() => {
+                const loadingText = document.getElementById('autoSummaryLoadingText');
+                if (loadingText) loadingText.textContent = 'Reading messages and analyzing with AI — this takes ~30s...';
+            }, 8000);
+
+            // Fetch with 65-second timeout using AbortController (server has 60s internal timeout)
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 65000);
+
+            try {
+                const encodedName = encodeURIComponent(groupName);
+                const response = await authFetch(`/api/messages/summary?contact=${encodedName}&platform=whatsapp&timeframe=1d`, {
+                    signal: controller.signal
+                });
+                clearTimeout(timeout);
+                clearTimeout(slowHint);
+
+                const body = document.getElementById('autoSummaryBody');
+                const footer = document.getElementById('autoSummaryFooter');
+                if (!body) return; // Modal was closed
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const summary = data.summary || data.text || 'No messages found in the last 24 hours.';
+                    const messageCount = data.messageCount || data.count || 0;
+                    const actionItems = data.actionItems || data.keyPoints || [];
+
+                    let html = '';
+                    if (messageCount > 0) {
+                        html += `<div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-tertiary); margin-bottom: 8px;">${messageCount} messages · last 24h</div>`;
+                    }
+                    html += `<div style="font-size: 14px; line-height: 1.6; color: var(--text-primary); white-space: pre-line;">${escapeHtml(summary)}</div>`;
+
+                    if (actionItems.length > 0) {
+                        html += `<div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color);">`;
+                        html += `<div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-tertiary); margin-bottom: 6px;">Action Items</div>`;
+                        actionItems.forEach(item => {
+                            const text = typeof item === 'string' ? item : (item.title || item.item || item.text || JSON.stringify(item));
+                            html += `<div style="font-size: 13px; padding: 4px 0; color: var(--text-secondary);">• ${escapeHtml(text)}</div>`;
+                        });
+                        html += `</div>`;
+                    }
+
+                    body.innerHTML = html;
+                    if (footer) footer.style.display = 'block';
+                } else if (response.status === 504) {
+                    body.innerHTML = `<div style="color: var(--text-secondary); font-size: 13px;">Summary took too long — this group may have a lot of messages.<br><br>You'll receive the full summary by email at <strong>18:00</strong> as part of your daily digest.</div>`;
+                    if (footer) footer.style.display = 'block';
+                } else {
+                    body.innerHTML = `<div style="color: var(--text-tertiary); font-size: 13px;">Could not generate summary. The group has been added to daily summaries at 18:00.</div>`;
+                    if (footer) footer.style.display = 'block';
+                }
+            } catch (error) {
+                clearTimeout(timeout);
+                clearTimeout(slowHint);
+                const body = document.getElementById('autoSummaryBody');
+                const footer = document.getElementById('autoSummaryFooter');
+                if (!body) return; // Modal was closed
+
+                if (error.name === 'AbortError') {
+                    body.innerHTML = `<div style="color: var(--text-secondary); font-size: 13px;">Summary is taking longer than expected.<br><br>You'll receive the full summary by email at <strong>18:00</strong> as part of your daily digest.</div>`;
+                } else {
+                    body.innerHTML = `<div style="color: var(--text-tertiary); font-size: 13px;">Could not generate summary right now. The group has been added to daily summaries at 18:00.</div>`;
+                }
+                if (footer) footer.style.display = 'block';
+            }
+        }
+
+        function formatRelativeTime(timestamp) {
+            try {
+                const date = new Date(timestamp);
+                if (isNaN(date.getTime())) return timestamp;
+                const now = new Date();
+                const diffMs = now - date;
+                const diffMins = Math.floor(diffMs / (1000 * 60));
+                const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                if (diffMins < 1) return 'Just now';
+                if (diffMins < 60) return diffMins + 'm ago';
+                if (diffHours < 24) return diffHours + 'h ago';
+                if (diffDays === 1) return 'Yesterday';
+                return diffDays + 'd ago';
+            } catch {
+                return timestamp;
             }
         }
 
@@ -9037,6 +11274,7 @@
             document.getElementById('formView').classList.add('hidden');
             document.getElementById('favoritesView').classList.add('hidden');
             document.getElementById('backHomeButton').classList.remove('hidden');
+            document.getElementById('pageTabs').classList.add('hidden');
 
             // Show settings view
             document.getElementById('settingsView').classList.remove('hidden');
@@ -9058,6 +11296,7 @@
             document.getElementById('settingsView').classList.add('hidden');
             document.getElementById('agentsView').classList.add('hidden');
             document.getElementById('backHomeButton').classList.remove('hidden');
+            document.getElementById('pageTabs').classList.add('hidden');
 
             // Show favorites view
             document.getElementById('favoritesView').classList.remove('hidden');

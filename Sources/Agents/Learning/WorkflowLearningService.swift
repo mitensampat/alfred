@@ -477,6 +477,9 @@ class WorkflowLearningService {
     }
 
     private func computeCounterpartyPatterns(db: OpaquePointer?) {
+        // Get the user's own name so we can exclude self-referencing patterns
+        let userName = AppConfig.load()?.user.name ?? ""
+
         // Calculate completion rate per counterparty
         let sql = """
         SELECT counterparty, commitment_type,
@@ -488,6 +491,7 @@ class WorkflowLearningService {
         WHERE timestamp > datetime('now', '-90 days')
           AND counterparty != ''
           AND counterparty IS NOT NULL
+          AND LOWER(counterparty) != LOWER(?)
         GROUP BY counterparty, commitment_type
         HAVING COUNT(*) >= 2
         ORDER BY completed DESC
@@ -496,6 +500,13 @@ class WorkflowLearningService {
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
         defer { sqlite3_finalize(stmt) }
+
+        // Bind the user's name to exclude self-referencing patterns
+        if let cString = userName.cString(using: .utf8) {
+            sqlite3_bind_text(stmt, 1, cString, -1, nil)
+        } else {
+            sqlite3_bind_text(stmt, 1, "", -1, nil)
+        }
 
         while sqlite3_step(stmt) == SQLITE_ROW {
             let counterparty = String(cString: sqlite3_column_text(stmt, 0))

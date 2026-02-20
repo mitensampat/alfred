@@ -335,24 +335,69 @@ class CommitmentScanTracker {
         sqlite3_step(stmt)
     }
 
-    /// Mark a commitment as closed
-    func markCommitmentClosed(hash: String) {
-        dbLock.lock()
-        defer { dbLock.unlock() }
+    /// Mark a commitment as closed and record completion in learning system
+    func markCommitmentClosed(hash: String, closureMethod: String = "unknown") {
+        // First, look up commitment details before closing (need counterparty, type, extracted_at)
+        var counterparty = ""
+        var commitmentType = ""
+        var daysOpen = 0
+        var wasOverdue = false
 
+        dbLock.lock()
+        let lookupSql = "SELECT counterparty, commitment_type, extracted_at FROM commitment_extractions WHERE commitment_hash = ?"
+        var lookupStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, lookupSql, -1, &lookupStmt, nil) == SQLITE_OK {
+            bindText(lookupStmt, 1, hash)
+            if sqlite3_step(lookupStmt) == SQLITE_ROW {
+                if let cp = sqlite3_column_text(lookupStmt, 0) {
+                    counterparty = String(cString: cp)
+                }
+                if let ct = sqlite3_column_text(lookupStmt, 1) {
+                    commitmentType = String(cString: ct)
+                }
+                if let ea = sqlite3_column_text(lookupStmt, 2) {
+                    let extractedStr = String(cString: ea)
+                    let formatter = ISO8601DateFormatter()
+                    if let extractedDate = formatter.date(from: extractedStr) {
+                        daysOpen = max(0, Calendar.current.dateComponents([.day], from: extractedDate, to: Date()).day ?? 0)
+                        // Consider overdue if open more than 14 days
+                        wasOverdue = daysOpen > 14
+                    }
+                }
+            }
+        }
+        sqlite3_finalize(lookupStmt)
+
+        // Now mark as closed
         let formatter = ISO8601DateFormatter()
         let now = formatter.string(from: Date())
 
         let sql = "UPDATE commitment_extractions SET was_closed = 1, closed_at = ? WHERE commitment_hash = ?"
 
         var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
-        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            dbLock.unlock()
+            return
+        }
 
         bindText(stmt, 1, now)
         bindText(stmt, 2, hash)
 
         sqlite3_step(stmt)
+        sqlite3_finalize(stmt)
+        dbLock.unlock()
+
+        // Record in learning system (outside lock to avoid deadlock)
+        if !counterparty.isEmpty {
+            WorkflowLearningService.shared.recordCommitmentCompleted(
+                hash: hash,
+                counterparty: counterparty,
+                commitmentType: commitmentType,
+                daysOpen: daysOpen,
+                wasOverdue: wasOverdue,
+                closureMethod: closureMethod
+            )
+        }
     }
 
     /// Reject a closure detection (user says it's not actually closed)

@@ -957,8 +957,8 @@ class HTTPServer {
             )
         }
 
-        // Mark as closed in tracker
-        CommitmentScanTracker.shared.markCommitmentClosed(hash: hash)
+        // Mark as closed in tracker (also records learning event)
+        CommitmentScanTracker.shared.markCommitmentClosed(hash: hash, closureMethod: "user-confirmed")
 
         // Also close in Notion
         do {
@@ -1201,11 +1201,17 @@ class HTTPServer {
 
     private func handleScanTodos() async -> HTTPResponse {
         do {
-            let todos = try await alfredService.scanWhatsAppForTodos()
+            let result = try await alfredService.scanWhatsAppForTodos()
+            let todos = result.createdTodos
 
             return HTTPResponse(
                 statusCode: 200,
                 body: [
+                    "todosFound": result.todosFound,
+                    "todosCreated": result.todosCreated,
+                    "messagesScanned": result.messagesScanned,
+                    "duplicatesSkipped": result.duplicatesSkipped,
+                    "lookbackDays": result.lookbackDays,
                     "todos": todos.map { todo in
                         [
                             "title": todo.title,
@@ -1218,7 +1224,7 @@ class HTTPServer {
                             ]
                         ]
                     },
-                    "count": todos.count
+                    "count": result.todosCreated
                 ]
             )
         } catch {
@@ -1290,7 +1296,7 @@ class HTTPServer {
                 )
             }
 
-            let intentService = IntentRecognitionService(config: config)
+            let intentService = IntentRecognitionService(config: config, conversationContext: ConversationContext.shared)
             let executor = IntentExecutor(orchestrator: orchestrator, config: config)
 
             // Recognize intent with session context

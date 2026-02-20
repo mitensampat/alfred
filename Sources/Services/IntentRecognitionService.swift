@@ -5,9 +5,9 @@ class IntentRecognitionService {
     private let claudeService: ClaudeAIService
     private let conversationContext: ConversationContext
 
-    init(config: AppConfig) {
+    init(config: AppConfig, conversationContext: ConversationContext? = nil) {
         self.claudeService = ClaudeAIService(config: config.ai)
-        self.conversationContext = ConversationContext()
+        self.conversationContext = conversationContext ?? ConversationContext.shared
     }
 
     /// Parse a natural language query into a structured intent (with conversation context)
@@ -16,34 +16,35 @@ class IntentRecognitionService {
         let recentTurns = conversationContext.getRecentContext(for: sessionId, limit: 3)
         let session = conversationContext.getSession(for: sessionId)
 
-        let prompt = buildIntentRecognitionPrompt(query: query, conversationTurns: recentTurns, session: session)
+        let userPrompt = buildIntentRecognitionPrompt(query: query, conversationTurns: recentTurns, session: session)
+        let systemPrompt = getSystemPrompt()
 
-        // Use ClaudeAIService's generateText method
-        let combinedPrompt = """
-        \(getSystemPrompt())
-
-        \(prompt)
-        """
-
-        let response = try await claudeService.generateText(prompt: combinedPrompt, maxTokens: 2048)
+        // Use separate system + user messages for better JSON output
+        let response = try await claudeService.generateText(
+            prompt: userPrompt,
+            system: systemPrompt,
+            maxTokens: 1024
+        )
 
         // Extract JSON from response (handle markdown code blocks)
         let jsonString = extractJSON(from: response)
 
         // Parse Claude's JSON response
         guard let data = jsonString.data(using: String.Encoding.utf8) else {
-            // Create a detailed error with the response
             throw NSError(domain: "IntentRecognition", code: 1,
                          userInfo: [NSLocalizedDescriptionKey: "Failed to parse intent. Response: \(response.prefix(500))"])
         }
 
-        guard let intentResponse = try? JSONDecoder().decode(IntentRecognitionResponse.self, from: data) else {
-            // Create a detailed error with the extracted JSON
+        // Try decoding with detailed error logging
+        do {
+            let intentResponse = try JSONDecoder().decode(IntentRecognitionResponse.self, from: data)
+            return intentResponse
+        } catch {
+            print("⚠️ JSON decode error details: \(error)")
+            print("⚠️ Extracted JSON was: \(jsonString.prefix(800))")
             throw NSError(domain: "IntentRecognition", code: 2,
-                         userInfo: [NSLocalizedDescriptionKey: "Failed to decode JSON. Extracted: \(jsonString.prefix(500))"])
+                         userInfo: [NSLocalizedDescriptionKey: "Failed to decode JSON. Error: \(error.localizedDescription). Extracted: \(jsonString.prefix(500))"])
         }
-
-        return intentResponse
     }
 
     /// Store turn result in conversation context
@@ -67,7 +68,6 @@ class IntentRecognitionService {
         // Try to extract JSON from markdown code blocks
         if let jsonMatch = response.range(of: "```json\\s*([\\s\\S]*?)```", options: .regularExpression) {
             let jsonBlock = String(response[jsonMatch])
-            // Remove the ```json and ``` markers
             return jsonBlock
                 .replacingOccurrences(of: "```json", with: "")
                 .replacingOccurrences(of: "```", with: "")
@@ -94,95 +94,59 @@ class IntentRecognitionService {
 
     private func getSystemPrompt() -> String {
         """
-        You are an intent recognition system for Alfred, an executive assistant app.
+        You are a JSON intent parser. You MUST output ONLY valid JSON matching the exact schema below. No text before or after the JSON. No markdown code fences.
 
-        Your job is to parse natural language queries and extract:
-        1. The action the user wants (generate, scan, analyze, find, summarize, check, list)
-        2. The target entity (briefing, calendar, messages, commitments, todos, drafts, attention)
-        3. Any filters or parameters (contact names, date ranges, platforms, etc.)
-
-        Available actions:
-        - generate: Create a briefing, report, or draft
-        - scan: Scan for commitments or todos in messages
-        - analyze: Deep analysis of messages or calendar patterns
-        - find: Find specific items matching criteria
-        - summarize: Summarize a thread, meeting, or time period
-        - check: Run attention check or check for overdue items
-        - list: List existing items (commitments, drafts, etc.)
-        - update: Update task or commitment status
-        - create: Create new task or commitment
-        - delete: Delete or cancel an item
-        - search: Search across all data
-
-        Available targets:
-        - briefing: Daily briefing with priorities and recommendations
-        - calendar: Calendar events and meeting briefings
-        - messages: Message threads and summaries
-        - commitments: Tracked commitments (I owe / they owe)
-        - todos: Todo items extracted from messages
-        - drafts: Draft messages generated by Alfred
-        - attention: Attention defense report (what to prioritize)
-        - thread: Specific message conversation
-        - meeting: Specific calendar event
-        - tasks: Unified tasks (todos + commitments)
-        - contacts: People and contacts
-        - preferences: User preferences and settings
-
-        Date parsing rules:
-        - "last two weeks" = lookback_days: 14
-        - "next week" = lookforward_days: 7
-        - "today" = specific_date: [today's date]
-        - "this month" = date_range from start to end of current month
-
-        Platform detection:
-        - "WhatsApp", "on WhatsApp" → platform: "whatsapp"
-        - "iMessage", "text messages" → platform: "imessage"
-        - If not specified → platform: null (means all)
-
-        IMPORTANT: You must respond with ONLY valid, complete JSON. Do not truncate the response. Ensure all JSON arrays and objects are properly closed.
-
-        Response format:
+        REQUIRED OUTPUT SCHEMA:
         {
           "intent": {
-            "action": "scan",
-            "target": "commitments",
+            "action": "<ACTION>",
+            "target": "<TARGET>",
             "filters": {
-              "contact_name": "Mona Gandhi",
-              "lookback_days": 14,
-              "platform": "whatsapp"
+              "contact_name": null,
+              "date_range": null,
+              "specific_date": null,
+              "date_description": null,
+              "platform": null,
+              "commitment_type": null,
+              "urgency": null,
+              "lookback_days": null,
+              "lookforward_days": null,
+              "calendar_name": null
             },
             "confidence": 0.95,
-            "original_query": "find my commitments to Mona Gandhi over the last two weeks"
+            "original_query": "<the user query>"
           },
           "clarification_needed": false,
           "clarification_question": null,
-          "suggested_follow_ups": [
-            "Show overdue commitments",
-            "What meetings do I have this week?"
-          ]
+          "suggested_follow_ups": ["suggestion 1", "suggestion 2"]
         }
 
-        Confidence scoring guidelines:
-        - confidence >= 0.9: Very clear intent, all parameters specified
-        - confidence 0.7-0.9: Clear action but some ambiguity in parameters
-        - confidence < 0.7: Ambiguous intent, needs clarification
+        ACTION must be one of: generate, scan, analyze, find, summarize, check, list, update, create, delete, search
+        TARGET must be one of: briefing, calendar, messages, commitments, todos, drafts, attention, thread, meeting, tasks, contacts, preferences
 
-        If confidence < 0.7 OR the query is genuinely ambiguous, set clarification_needed: true and provide a specific clarification_question.
+        CRITICAL RULES:
+        - "action", "target", "filters", "confidence", "original_query" are ALL REQUIRED inside "intent"
+        - "filters" is an object with the keys shown above. Put contact_name, lookback_days etc INSIDE filters, never at the intent level.
+        - "show my commitments with X" -> action:"list", target:"commitments", filters.contact_name:"X"
+        - "scan commitments" -> action:"scan", target:"commitments"
+        - "what's on my calendar" -> action:"list", target:"calendar"
+        - "morning briefing" -> action:"generate", target:"briefing"
+        - "what should I focus on" -> action:"check", target:"attention"
+        - "messages from X" -> action:"find", target:"messages", filters.contact_name:"X"
+        - specific_date format: "YYYY-MM-DD" string
+        - date_range format: {"start":"YYYY-MM-DD","end":"YYYY-MM-DD"}
+        - Use null for unused filter fields
 
-        Be generous with interpreting user intent - err on the side of action rather than asking for clarification, unless truly ambiguous.
+        Output the JSON object now. Nothing else.
         """
     }
 
     private func buildIntentRecognitionPrompt(query: String, conversationTurns: [ConversationTurn], session: ConversationSession) -> String {
-        let today = ISO8601DateFormatter().string(from: Date())
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let today = dateFormatter.string(from: Date())
 
-        var prompt = """
-        Parse this user query into a structured intent:
-
-        Query: "\(query)"
-
-        Today's date: \(today)
-        """
+        var prompt = "Query: \"\(query)\"\nToday: \(today)"
 
         // Add conversation context if available
         if !conversationTurns.isEmpty {
@@ -195,17 +159,6 @@ class IntentRecognitionService {
         if !entityHints.isEmpty {
             prompt += "\n\(entityHints)"
         }
-
-        prompt += """
-
-
-        IMPORTANT: Use conversation context to resolve references like:
-        - "that", "them", "those" → refer to entities from recent turns
-        - "yesterday", "last week" → use actual dates based on today
-        - Pronouns like "he", "she", "they" → refer to recent contacts
-
-        Respond with JSON only, no additional text.
-        """
 
         return prompt
     }

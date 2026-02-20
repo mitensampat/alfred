@@ -275,7 +275,7 @@ class IntentExecutor {
 
                         if closure.autoClose {
                             // High confidence - auto-close
-                            tracker.markCommitmentClosed(hash: closure.commitmentHash)
+                            tracker.markCommitmentClosed(hash: closure.commitmentHash, closureMethod: "auto-closed")
 
                             // Also update in Notion
                             try? await orchestrator.notionServicePublic.closeCommitmentInTasks(

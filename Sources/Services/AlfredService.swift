@@ -138,12 +138,11 @@ class AlfredService: ObservableObject {
 
     // MARK: - Notion Todos
 
-    func scanWhatsAppForTodos() async throws -> [TodoItem] {
+    func scanWhatsAppForTodos() async throws -> TodoScanResult {
         guard let orchestrator = orchestrator else {
             throw ServiceError.notInitialized
         }
-        let result = try await orchestrator.processWhatsAppTodos()
-        return result.createdTodos
+        return try await orchestrator.processWhatsAppTodos()
     }
 
     // MARK: - Recommended Actions
@@ -366,7 +365,7 @@ class AlfredService: ObservableObject {
             do {
                 if let result = try await orchestrator.notionServicePublic.findCommitmentWithStatusByHash(openCommitment.hash) {
                     if result.status.lowercased() == "done" || result.status.lowercased() == "cancelled" {
-                        tracker.markCommitmentClosed(hash: openCommitment.hash)
+                        tracker.markCommitmentClosed(hash: openCommitment.hash, closureMethod: "notion-reverse-sync")
                         reverseSyncCount += 1
                     }
                 }
@@ -414,7 +413,7 @@ class AlfredService: ObservableObject {
 
                         if closure.autoClose {
                             // High confidence (>=0.85) - auto-close
-                            tracker.markCommitmentClosed(hash: closure.commitmentHash)
+                            tracker.markCommitmentClosed(hash: closure.commitmentHash, closureMethod: "auto-closed")
 
                             // Also update in Notion
                             try? await orchestrator.notionServicePublic.closeCommitmentInTasks(
@@ -849,7 +848,7 @@ class AlfredService: ObservableObject {
     }
 
     /// Save approved extracted items to Notion
-    func saveApprovedItems(_ items: [ExtractedItem]) async throws -> (saved: Int, failed: Int) {
+    func saveApprovedItems(_ items: [ExtractedItem]) async throws -> (saved: Int, failed: Int, duplicates: Int) {
         guard let orchestrator = orchestrator else {
             throw ServiceError.notInitialized
         }
@@ -862,7 +861,7 @@ class AlfredService: ObservableObject {
             return false
         }
 
-        let (saved, _) = try await saveApprovedItems([item])
+        let (saved, _, _) = try await saveApprovedItems([item])
         return saved > 0
     }
 }

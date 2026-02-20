@@ -232,44 +232,60 @@ class NotionService {
     // MARK: - Todo Management
 
     func searchExistingTodos(title: String) async throws -> [String] {
-        // Use search API to find existing pages in the database
-        let url = URL(string: "https://api.notion.com/v1/search")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let body: [String: Any] = [
-            "filter": [
-                "property": "object",
-                "value": "page"
-            ],
-            "page_size": 100
-        ]
-
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
-            print("⚠️ Failed to search todos: \(errorBody)")
-            return []
-        }
-
-        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        guard let results = json?["results"] as? [[String: Any]] else {
+        // Query the actual Tasks database for existing task titles
+        // This is more reliable than the generic search API
+        guard let dbId = tasksDatabaseId else {
+            print("⚠️ Tasks database ID not set, falling back to empty dedup set")
             return []
         }
 
         var existingTitles: [String] = []
-        for result in results {
-            // Check if this page belongs to our database
-            if let parent = result["parent"] as? [String: Any],
-               let parentType = parent["type"] as? String,
-               (parentType == "database_id" || parentType == "data_source_id") {
+        var hasMore = true
+        var startCursor: String?
 
+        while hasMore {
+            let url = URL(string: "https://api.notion.com/v1/databases/\(dbId)/query")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+            // Only fetch recent tasks (last 30 days) to keep it fast
+            var body: [String: Any] = [
+                "filter": [
+                    "and": [
+                        [
+                            "timestamp": "created_time",
+                            "created_time": [
+                                "on_or_after": ISO8601DateFormatter().string(from: Calendar.current.date(byAdding: .day, value: -30, to: Date())!)
+                            ]
+                        ]
+                    ]
+                ],
+                "page_size": 100
+            ]
+
+            if let cursor = startCursor {
+                body["start_cursor"] = cursor
+            }
+
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+                print("⚠️ Failed to query Tasks database for dedup: \(errorBody)")
+                return existingTitles
+            }
+
+            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            guard let results = json?["results"] as? [[String: Any]] else {
+                break
+            }
+
+            for result in results {
                 if let properties = result["properties"] as? [String: Any],
                    let taskNameProp = properties["Task name"] as? [String: Any],
                    let titleArray = taskNameProp["title"] as? [[String: Any]],
@@ -279,6 +295,9 @@ class NotionService {
                     existingTitles.append(content)
                 }
             }
+
+            hasMore = json?["has_more"] as? Bool ?? false
+            startCursor = json?["next_cursor"] as? String
         }
 
         return existingTitles

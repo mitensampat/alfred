@@ -60,6 +60,9 @@ launchctl load ~/Library/LaunchAgents/com.msfoundry.alfred.plist
 | `~/.config/alfred/web/index-notion.html` | Live HTML served by the server (hot-reload) |
 | `~/.alfred/scheduler_state.json` | Tracks last briefing/attention run dates |
 | `~/.alfred/agents/` | Agent memory files |
+| `~/.alfred/commitment_scan.db` | Commitment extractions, closure detections, pending confirmations |
+| `~/.alfred/workflow_learning.db` | User feedback on closures, computed signal accuracy patterns |
+| `~/.config/alfred/memory/contacts.json` | Thread classification, extraction acceptance rates |
 | `~/Library/LaunchAgents/com.msfoundry.alfred.plist` | LaunchAgent (auto-start, keep-alive) |
 | `/Applications/Alfred.app/Contents/MacOS/Alfred` | The production binary |
 
@@ -104,10 +107,23 @@ config.json:
 - `GET /api/workflow-patterns/digest` - Generate digest
 - `POST /api/workflow-patterns/send-digest` - Email digest
 - `GET /api/task-lifecycle/stats` - Task lifecycle statistics
+- `GET /api/commitment-tracker/stats` - Tracker stats (open/closed/auto-closed/pending)
+- `GET /api/commitment-tracker/pending-closures` - Pending auto-closure confirmations
+- `POST /api/commitment-tracker/confirm-closure?hash=X` - Confirm an auto-closure
+- `POST /api/commitment-tracker/reject-closure?hash=X` - Reject an auto-closure
 - `GET /api/playbook/status` - Playbook sync status
 - `GET /api/config/notion` - Notion configuration
 
 All endpoints require `?passcode=REDACTED_PASSCODE` query parameter.
+
+## Learning System
+
+Alfred's commitment tracker is self-improving. See `docs/internal/COMMITMENT_LIFECYCLE_LEARNING.md` for the full architecture. Key points:
+- Auto-closure uses confidence thresholds: ≥0.85 auto-closes, 0.6-0.84 asks user, <0.6 ignored
+- User confirm/reject actions are stored in `workflow_learning.db` as training signal
+- Signal accuracy patterns (e.g. "Got it" = 92% reliable) are computed from feedback
+- These patterns are injected into Claude's prompts on future closure detection runs
+- Over time, reliable signals graduate from "pending" to "auto-close" automatically
 
 ## Git State Notes
 

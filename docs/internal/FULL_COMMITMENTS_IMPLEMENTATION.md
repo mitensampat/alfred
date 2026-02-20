@@ -454,6 +454,19 @@ For 1 contact, 14 days, ~50 messages across 3 threads:
 
 ---
 
+## 🔄 AUTO-CLOSURE & LEARNING SYSTEM
+
+The commitment system now includes a self-improving auto-closure mechanism that detects when commitments are fulfilled and learns from user feedback.
+
+**Full documentation:** See `COMMITMENT_LIFECYCLE_LEARNING.md` in this directory.
+
+**Key files added since this doc was written:**
+- `Sources/Services/CommitmentAnalyzer.swift` — closure detection via Claude API (confidence scoring)
+- `Sources/Core/CommitmentScanTracker.swift` — SQLite persistence for closure detections and pending confirmations
+- `Sources/Agents/Learning/WorkflowLearningService.swift` — feedback loop, pattern computation, AI context injection
+
+---
+
 ## 🚀 NEXT STEPS (Optional Enhancements)
 
 ### Phase 1: Polish (1-2 days)

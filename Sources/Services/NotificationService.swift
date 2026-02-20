@@ -36,11 +36,6 @@ class NotificationService {
             }
         }
 
-        if config.slack.enabled {
-            print("  → Sending Slack notification...")
-            try await sendSlackMessage(formatted.markdown)
-            print("  ✓ Slack notification sent")
-        }
     }
 
     func sendAttentionDefenseReport(_ report: AttentionDefenseReport, toAddress: String? = nil) async throws {
@@ -66,9 +61,6 @@ class NotificationService {
             }
         }
 
-        if config.slack.enabled {
-            try await sendSlackMessage(formatted.markdown)
-        }
     }
 
     func sendAgentDigest(_ digest: AgentDigest) async throws {
@@ -100,11 +92,6 @@ class NotificationService {
             }
         }
 
-        if config.slack.enabled {
-            print("  → Sending Slack notification...")
-            try await sendSlackMessage(formatted.markdown)
-            print("  ✓ Slack notification sent")
-        }
     }
 
     func sendLearningDigest(subject: String, body: String) async throws {
@@ -190,31 +177,6 @@ class NotificationService {
         try await UNUserNotificationCenter.current().add(request)
     }
 
-    // MARK: - Slack
-
-    private func sendSlackMessage(_ message: String) async throws {
-        guard let url = URL(string: config.slack.webhookUrl) else {
-            throw NotificationError.invalidConfiguration
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let payload: [String: Any] = [
-            "text": message,
-            "mrkdwn": true
-        ]
-
-        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            throw NotificationError.sendFailed
-        }
-    }
-
     // MARK: - Formatting
 
     private func formatBriefing(_ briefing: DailyBriefing) -> (markdown: String, html: String) {
@@ -255,11 +217,11 @@ class NotificationService {
                 .priority-medium { border-left: 3px solid #f7b955; }
                 .priority-low { border-left: 3px solid #6fcf97; }
                 .coaching-leverage { border-left: 3px solid #2383e2; background: #f0f7ff; }
-                .coaching-relationship { border-left: 3px solid #6fcf97; background: #f0fdf4; }
+                .coaching-relationship { border-left: 3px solid #2d8a56; background: #e8f5e9; }
                 .coaching-avoidance { border-left: 3px solid #f7b955; background: #fffbeb; }
                 .coaching-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
                 .coaching-leverage .coaching-label { color: #2383e2; }
-                .coaching-relationship .coaching-label { color: #27ae60; }
+                .coaching-relationship .coaching-label { color: #2d8a56; }
                 .coaching-avoidance .coaching-label { color: #d4880f; }
                 .event { padding: 10px 14px; border-left: 3px solid #2383e2; background: #f0f7ff; border-radius: 4px; margin-bottom: 8px; }
                 .event-time { font-size: 13px; color: #2383e2; font-weight: 500; }
@@ -451,8 +413,8 @@ class NotificationService {
                 .item-desc { font-size: 14px; color: #37352f; margin-top: 6px; }
                 .priority-high { border-left: 3px solid #eb5757; }
                 .priority-medium { border-left: 3px solid #f7b955; }
-                .can-push { border-left: 3px solid #6fcf97; background: #f0fdf4; }
-                .recommendation { padding: 8px 12px; background: #eff6ff; border-radius: 4px; margin-bottom: 6px; color: #1e40af; }
+                .can-push { border-left: 3px solid #2d8a56; background: #e8f5e9; }
+                .recommendation { padding: 8px 12px; background: #f0f7ff; border-radius: 4px; margin-bottom: 6px; color: #2383e2; font-size: 14px; }
                 .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e9e9e7; font-size: 12px; color: #9b9a97; text-align: center; }
                 .footer .brand { font-size: 14px; font-weight: 500; }
             </style>
@@ -547,7 +509,7 @@ class NotificationService {
                 .item-title { font-weight: 600; color: #37352f; }
                 .item-meta { font-size: 13px; color: #787774; margin-top: 4px; }
                 .overdue { border-left: 3px solid #eb5757; }
-                .recommendation { padding: 8px 12px; background: #eff6ff; border-radius: 4px; margin-bottom: 6px; color: #1e40af; }
+                .recommendation { padding: 8px 12px; background: #f0f7ff; border-radius: 4px; margin-bottom: 6px; color: #2383e2; font-size: 14px; }
                 .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e9e9e7; font-size: 12px; color: #9b9a97; text-align: center; }
                 .footer .brand { font-size: 14px; font-weight: 500; }
             </style>

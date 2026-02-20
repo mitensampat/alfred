@@ -30,9 +30,6 @@ class NotificationService {
             }
         }
 
-        if config.slack.enabled {
-            try await sendSlackMessage(formatted.markdown)
-        }
     }
 
     func sendAttentionDefenseReport(_ report: AttentionDefenseReport, toAddress: String? = nil) async throws {
@@ -57,9 +54,6 @@ class NotificationService {
             }
         }
 
-        if config.slack.enabled {
-            try await sendSlackMessage(formatted.markdown)
-        }
     }
 
     // MARK: - Email
@@ -135,31 +129,6 @@ class NotificationService {
         )
 
         try await UNUserNotificationCenter.current().add(request)
-    }
-
-    // MARK: - Slack
-
-    private func sendSlackMessage(_ message: String) async throws {
-        guard let url = URL(string: config.slack.webhookUrl) else {
-            throw NotificationError.invalidConfiguration
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let payload: [String: Any] = [
-            "text": message,
-            "mrkdwn": true
-        ]
-
-        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
-
-        let (_, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            throw NotificationError.sendFailed
-        }
     }
 
     // MARK: - Formatting

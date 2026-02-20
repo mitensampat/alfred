@@ -69,9 +69,15 @@ class BriefingOrchestrator {
         let messagingSummary = try await fetchAndAnalyzeMessages()
         print("✓ Message analysis complete\n")
 
-        // 2. Fetch calendar for specified date from all calendars
-        let schedule = try await calendarService.fetchEventsFromAllCalendars(for: date, userSettings: config.user)
-        print("")
+        // 2. Fetch calendar for specified date from all calendars (graceful — briefing continues without calendar)
+        var schedule: DailySchedule
+        do {
+            schedule = try await calendarService.fetchEventsFromAllCalendars(for: date, userSettings: config.user)
+            print("")
+        } catch {
+            print("⚠️ Failed to fetch calendar: \(error). Continuing without calendar data.\n")
+            schedule = DailySchedule(date: date, events: [], totalMeetingTime: 0, freeSlots: [], externalMeetings: [])
+        }
 
         // 3. Generate meeting briefings for external meetings - PARALLEL for performance
         var meetingBriefings: [MeetingBriefing] = []
@@ -811,15 +817,27 @@ class BriefingOrchestrator {
         let today = Date()
         let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today)!
 
-        // Step 1: Fetch calendar for today
+        // Step 1: Fetch calendar for today (graceful — alert continues without calendar)
         await sendProgress("calendar_today", "📅 Loading today's calendar...", 10)
-        let todaySchedule = try await calendarService.fetchEventsFromAllCalendars(for: today, userSettings: config.user)
-        print("✓ Loaded \(todaySchedule.events.count) events for today")
+        var todaySchedule: DailySchedule
+        do {
+            todaySchedule = try await calendarService.fetchEventsFromAllCalendars(for: today, userSettings: config.user)
+            print("✓ Loaded \(todaySchedule.events.count) events for today")
+        } catch {
+            print("⚠️ Failed to fetch today's calendar: \(error). Continuing without calendar data.")
+            todaySchedule = DailySchedule(date: today, events: [], totalMeetingTime: 0, freeSlots: [], externalMeetings: [])
+        }
 
-        // Step 2: Fetch calendar for tomorrow
+        // Step 2: Fetch calendar for tomorrow (graceful — alert continues without calendar)
         await sendProgress("calendar_tomorrow", "📅 Loading tomorrow's calendar...", 20)
-        let tomorrowSchedule = try await calendarService.fetchEventsFromAllCalendars(for: tomorrow, userSettings: config.user)
-        print("✓ Loaded \(tomorrowSchedule.events.count) events for tomorrow")
+        var tomorrowSchedule: DailySchedule
+        do {
+            tomorrowSchedule = try await calendarService.fetchEventsFromAllCalendars(for: tomorrow, userSettings: config.user)
+            print("✓ Loaded \(tomorrowSchedule.events.count) events for tomorrow")
+        } catch {
+            print("⚠️ Failed to fetch tomorrow's calendar: \(error). Continuing without calendar data.")
+            tomorrowSchedule = DailySchedule(date: tomorrow, events: [], totalMeetingTime: 0, freeSlots: [], externalMeetings: [])
+        }
 
         // Step 3: Fetch active tasks from Notion (limit to 25 for attention check to keep AI response manageable)
         await sendProgress("tasks", "📓 Fetching tasks from Notion...", 35)
@@ -1267,39 +1285,39 @@ class BriefingOrchestrator {
                 processedCount += 1
                 print("  ↳ Analyzing message \(processedCount): \"\(String(message.content.prefix(50)))\(message.content.count > 50 ? "..." : "")\"")
 
+                // Generate stable hash from original message BEFORE AI extraction
+                // This ensures the same message always produces the same hash,
+                // regardless of how Claude titles it on different runs
+                let messageHash = Self.generateMessageHash(
+                    messageId: message.id,
+                    content: message.content,
+                    platform: "WhatsApp",
+                    threadId: thread.contactIdentifier
+                )
+
+                // Check if this message was already processed (hash exists in Notion)
+                if let existingId = try? await notionService.findTaskByHash(messageHash) {
+                    print("    ⊘ Already processed message (hash match: \(existingId))\n")
+                    skippedDuplicates += 1
+                    continue
+                }
+
                 if let todo = try await aiService.extractTodoFromMessage(message) {
                     print("    ✓ Detected todo: \(todo.title)")
                     allFoundTodos.append(todo)
 
-                    // Check for duplicates using O(1) Set lookup
+                    // Also check by fuzzy title match as a safety net
                     let normalizedTitle = todo.title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-                    let isDuplicate = existingTitlesSet.contains(normalizedTitle)
-
-                    if isDuplicate {
-                        print("    ⚠️  Skipping duplicate todo\n")
+                    if existingTitlesSet.contains(normalizedTitle) {
+                        print("    ⚠️  Skipping duplicate (title match)\n")
                         skippedDuplicates += 1
                         continue
                     }
 
                     // Create in Notion using unified Tasks database
                     do {
-                        // Generate hash for duplicate detection
-                        let hash = Self.generateTaskHash(
-                            title: todo.title,
-                            description: todo.description ?? "",
-                            platform: "WhatsApp",
-                            threadId: thread.contactIdentifier
-                        )
-
-                        // Check if task already exists by hash
-                        if let existingId = try await notionService.findTaskByHash(hash) {
-                            print("    ⚠️  Skipping duplicate (found by hash: \(existingId))\n")
-                            skippedDuplicates += 1
-                            continue
-                        }
-
-                        // Convert TodoItem to TaskItem
-                        let taskItem = TaskItem.fromTodoItem(todo, hash: hash)
+                        // Convert TodoItem to TaskItem with stable message-based hash
+                        let taskItem = TaskItem.fromTodoItem(todo, hash: messageHash)
 
                         // Create task in Notion
                         let pageId = try await notionService.createTask(taskItem)
@@ -1374,6 +1392,7 @@ class BriefingOrchestrator {
 
         var extractedItems: [ExtractedItem] = []
         var processedCount = 0
+        var skippedDuplicates = 0
 
         for thread in selfThreads {
             let outgoingMessages = thread.messages.filter { $0.direction == .outgoing }
@@ -1382,35 +1401,33 @@ class BriefingOrchestrator {
                 processedCount += 1
                 print("  ↳ Analyzing message \(processedCount)...")
 
+                // Generate stable hash from original message BEFORE AI extraction
+                // This ensures the same message always produces the same hash
+                let messageHash = Self.generateMessageHash(
+                    messageId: message.id,
+                    content: message.content,
+                    platform: "WhatsApp",
+                    threadId: thread.contactIdentifier
+                )
+
+                // Check if this message was already processed (hash exists in Notion)
+                if let _ = try? await notionService.findTaskByHash(messageHash) {
+                    print("    ⊘ Already processed message (hash match)")
+                    skippedDuplicates += 1
+                    continue
+                }
+
                 if let todo = try await aiService.extractTodoFromMessage(message) {
-                    // Generate hash for duplicate check
-                    let hash = Self.generateTaskHash(
-                        title: todo.title,
-                        description: todo.description ?? "",
-                        platform: "WhatsApp",
-                        threadId: thread.contactIdentifier
-                    )
-
-                    // Check for duplicates by title using O(1) Set lookup
+                    // Also check by fuzzy title match as a safety net
                     let normalizedTitle = todo.title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-                    let isDuplicateByTitle = existingTitlesSet.contains(normalizedTitle)
-
-                    // Check by hash if not already a duplicate
-                    var isDuplicateByHash = false
-                    if !isDuplicateByTitle {
-                        if let _ = try? await notionService.findTaskByHash(hash) {
-                            isDuplicateByHash = true
-                        }
-                    }
-
-                    if isDuplicateByTitle || isDuplicateByHash {
-                        print("    ⊘ Already exists: \(todo.title)")
+                    if existingTitlesSet.contains(normalizedTitle) {
+                        print("    ⊘ Already exists (title match): \(todo.title)")
                         continue
                     }
 
                     print("    ✓ Found todo: \(todo.title)")
 
-                    // Convert to ExtractedItem
+                    // Convert to ExtractedItem with stable message-based hash
                     let item = ExtractedItem(
                         type: .todo,
                         title: todo.title,
@@ -1423,7 +1440,7 @@ class BriefingOrchestrator {
                             threadId: thread.contactIdentifier
                         ),
                         dueDate: todo.dueDate,
-                        uniqueHash: hash
+                        uniqueHash: messageHash
                     )
                     extractedItems.append(item)
                 } else {
@@ -1432,12 +1449,12 @@ class BriefingOrchestrator {
             }
         }
 
-        print("\n✓ Found \(extractedItems.count) new todo(s) for review\n")
+        print("\n✓ Found \(extractedItems.count) new todo(s) for review, skipped \(skippedDuplicates) duplicate(s)\n")
         return extractedItems
     }
 
     /// Save extracted items to Notion Tasks database
-    func saveExtractedItems(_ items: [ExtractedItem]) async throws -> (saved: Int, failed: Int) {
+    func saveExtractedItems(_ items: [ExtractedItem]) async throws -> (saved: Int, failed: Int, duplicates: Int) {
         var savedCount = 0
         var failedCount = 0
         var duplicateCount = 0
@@ -1460,12 +1477,11 @@ class BriefingOrchestrator {
             }
         }
 
-        // Report duplicates as part of failed count (they weren't newly saved)
         if duplicateCount > 0 {
-            print("  ℹ️ \(duplicateCount) duplicate(s) skipped")
+            print("  ℹ️ \(duplicateCount) duplicate(s) skipped during save")
         }
 
-        return (savedCount, failedCount + duplicateCount)
+        return (savedCount, failedCount, duplicateCount)
     }
 
     // MARK: - Public Helpers for Attention System
@@ -1596,9 +1612,19 @@ class BriefingOrchestrator {
         return false
     }
 
-    /// Generate unique hash for task deduplication
+    /// Generate unique hash for task deduplication (legacy — uses AI-generated title, avoid for new code)
     private static func generateTaskHash(title: String, description: String, platform: String, threadId: String) -> String {
         let combined = "\(title)|\(description)|\(platform)|\(threadId)"
+        let data = Data(combined.utf8)
+        let hash = SHA256.hash(data: data)
+        return hash.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Generate stable hash from original message content (not AI-generated title)
+    /// This ensures the same WhatsApp message always produces the same hash across scans,
+    /// even if Claude generates different titles for it on different runs.
+    private static func generateMessageHash(messageId: String, content: String, platform: String, threadId: String) -> String {
+        let combined = "msg|\(messageId)|\(content.prefix(500))|\(platform)|\(threadId)"
         let data = Data(combined.utf8)
         let hash = SHA256.hash(data: data)
         return hash.compactMap { String(format: "%02x", $0) }.joined()

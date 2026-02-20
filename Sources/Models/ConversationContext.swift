@@ -2,10 +2,13 @@ import Foundation
 
 // MARK: - Conversation Context Management
 
-/// Manages conversation context for multi-turn intent recognition
+/// Manages conversation context for multi-turn intent recognition and general chat
 class ConversationContext {
+    /// Shared singleton — all request handlers use the same context store
+    static let shared = ConversationContext()
+
     private var sessions: [String: ConversationSession] = [:]
-    private let maxSessionAge: TimeInterval = 3600 // 1 hour
+    private let maxSessionAge: TimeInterval = 7200 // 2 hours
 
     /// Get or create a conversation session
     func getSession(for sessionId: String) -> ConversationSession {
@@ -21,16 +24,63 @@ class ConversationContext {
         return newSession
     }
 
-    /// Add a turn to the conversation
+    /// Add a turn to the conversation (intent-matched)
     func addTurn(sessionId: String, query: String, intent: UserIntent, result: IntentExecutionResult?) {
         let session = getSession(for: sessionId)
         session.addTurn(query: query, intent: intent, result: result)
+    }
+
+    /// Add a general chat turn (no intent match — free-form Q&A)
+    func addChatTurn(sessionId: String, userMessage: String, assistantResponse: String) {
+        let session = getSession(for: sessionId)
+        session.addChatTurn(userMessage: userMessage, assistantResponse: assistantResponse)
+    }
+
+    /// Get the full conversation as Claude API messages array (user/assistant pairs)
+    func getMessagesArray(for sessionId: String, limit: Int = 20) -> [[String: String]] {
+        guard let session = sessions[sessionId] else { return [] }
+        return session.buildMessagesArray(limit: limit)
     }
 
     /// Get recent context for a session
     func getRecentContext(for sessionId: String, limit: Int = 3) -> [ConversationTurn] {
         guard let session = sessions[sessionId] else { return [] }
         return session.getRecentTurns(limit: limit)
+    }
+
+    /// Restore a session from persisted conversation history
+    /// Re-injects turns into in-memory context so Claude has full history on resume
+    func restoreSession(id: String, from records: [ConversationTurnRecord]) {
+        // Clear any stale session with this ID
+        sessions.removeValue(forKey: id)
+
+        let session = ConversationSession(id: id)
+
+        // Walk records pairwise: user message + assistant response
+        var i = 0
+        while i < records.count {
+            let record = records[i]
+            if record.role == "user" {
+                // Look for the next assistant response
+                let userMessage = record.content
+                var assistantResponse = ""
+                if i + 1 < records.count && records[i + 1].role == "assistant" {
+                    assistantResponse = records[i + 1].content
+                    i += 2
+                } else {
+                    i += 1
+                }
+                if !assistantResponse.isEmpty {
+                    session.addChatTurn(userMessage: userMessage, assistantResponse: assistantResponse)
+                }
+            } else {
+                // Orphan assistant message — skip
+                i += 1
+            }
+        }
+
+        sessions[id] = session
+        print("🔄 [Context] Restored session \(id) with \(session.turns.count) turns")
     }
 
     /// Clear a specific session
@@ -59,7 +109,7 @@ class ConversationSession: Codable {
     private(set) var turns: [ConversationTurn]
     private(set) var lastActivity: Date
     private(set) var entities: [String: EntityReference]
-    private let maxTurns = 10
+    private let maxTurns = 50
 
     init(id: String) {
         self.id = id
@@ -82,12 +132,43 @@ class ConversationSession: Codable {
         }
     }
 
+    /// Add a general chat turn (no structured intent)
+    func addChatTurn(userMessage: String, assistantResponse: String) {
+        let turn = ConversationTurn(chatQuery: userMessage, chatResponse: assistantResponse)
+        turns.append(turn)
+        lastActivity = Date()
+
+        // Keep only recent turns
+        if turns.count > maxTurns {
+            turns.removeFirst()
+        }
+    }
+
     func getRecentTurns(limit: Int) -> [ConversationTurn] {
         Array(turns.suffix(limit))
     }
 
     func getEntity(key: String) -> EntityReference? {
         entities[key]
+    }
+
+    /// Build a Claude API messages array from conversation history
+    /// Returns alternating user/assistant messages for multi-turn chat
+    func buildMessagesArray(limit: Int) -> [[String: String]] {
+        let recentTurns = Array(turns.suffix(limit))
+        var messages: [[String: String]] = []
+
+        for turn in recentTurns {
+            // User message
+            messages.append(["role": "user", "content": turn.query])
+
+            // Assistant response (from result summary or chat response)
+            if let response = turn.resultSummary, !response.isEmpty {
+                messages.append(["role": "assistant", "content": response])
+            }
+        }
+
+        return messages
     }
 
     private func updateEntities(from intent: UserIntent, result: IntentExecutionResult?) {
@@ -134,15 +215,24 @@ class ConversationSession: Codable {
 /// A single turn in a conversation
 struct ConversationTurn: Codable {
     let query: String
-    let intent: UserIntent
+    let intent: UserIntent?
     let timestamp: Date
     let resultSummary: String?
 
+    /// Init for intent-matched turns
     init(query: String, intent: UserIntent, result: IntentExecutionResult?) {
         self.query = query
         self.intent = intent
         self.timestamp = Date()
         self.resultSummary = result?.conversationalResponse
+    }
+
+    /// Init for general chat turns (no structured intent)
+    init(chatQuery: String, chatResponse: String) {
+        self.query = chatQuery
+        self.intent = nil
+        self.timestamp = Date()
+        self.resultSummary = chatResponse
     }
 }
 
@@ -204,16 +294,21 @@ struct ContextBuilder {
         for (index, turn) in turns.enumerated() {
             let timeAgo = formatTimeAgo(turn.timestamp)
             context += "\n\(index + 1). User: \"\(turn.query)\""
-            let targetStr = turn.intent.target?.rawValue ?? "unknown"
-            context += "\n   Intent: \(turn.intent.action.rawValue) → \(targetStr)"
 
-            if let contactName = turn.intent.filters.contactName {
-                context += " (contact: \(contactName))"
+            if let intent = turn.intent {
+                let targetStr = intent.target?.rawValue ?? "unknown"
+                context += "\n   Intent: \(intent.action.rawValue) → \(targetStr)"
+
+                if let contactName = intent.filters.contactName {
+                    context += " (contact: \(contactName))"
+                }
+            } else {
+                context += "\n   (general chat)"
             }
 
             if let summary = turn.resultSummary {
-                let truncated = String(summary.prefix(100))
-                context += "\n   Result: \(truncated)\(summary.count > 100 ? "..." : "")"
+                let truncated = String(summary.prefix(200))
+                context += "\n   Result: \(truncated)\(summary.count > 200 ? "..." : "")"
             }
 
             context += " (\(timeAgo))"

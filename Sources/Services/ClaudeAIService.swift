@@ -514,18 +514,30 @@ class ClaudeAIService {
         }
 
         // Parse SSE stream from Anthropic
-        var buffer = ""
+        // IMPORTANT: Use a Data buffer for proper UTF-8 multi-byte character handling.
+        // Individual bytes cannot be converted to Characters — multi-byte UTF-8 chars
+        // like em-dash (—, 3 bytes: 0xE2 0x80 0x94) would produce garbage.
+        var rawBuffer = Data()
         for try await byte in bytes {
-            buffer.append(Character(UnicodeScalar(byte)))
+            rawBuffer.append(byte)
 
-            // Process complete lines
-            while let newlineRange = buffer.range(of: "\n") {
-                let line = String(buffer[buffer.startIndex..<newlineRange.lowerBound])
-                buffer = String(buffer[newlineRange.upperBound...])
+            // Only process when we have a newline (complete SSE line)
+            guard byte == UInt8(ascii: "\n") else { continue }
+
+            // Try to decode the accumulated buffer as UTF-8
+            guard let bufferString = String(data: rawBuffer, encoding: .utf8) else {
+                // Incomplete UTF-8 at the boundary — keep accumulating
+                continue
+            }
+
+            // Split into lines and process each complete line
+            let lines = bufferString.components(separatedBy: "\n")
+            for line in lines {
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
 
                 // SSE data lines start with "data: "
-                guard line.hasPrefix("data: ") else { continue }
-                let jsonStr = String(line.dropFirst(6))
+                guard trimmed.hasPrefix("data: ") else { continue }
+                let jsonStr = String(trimmed.dropFirst(6))
 
                 // [DONE] marker or empty
                 if jsonStr == "[DONE]" || jsonStr.isEmpty { continue }
@@ -544,6 +556,85 @@ class ClaudeAIService {
                     onChunk(text)
                 }
             }
+
+            // Clear the buffer after processing
+            rawBuffer = Data()
+        }
+    }
+
+    /// Stream multi-turn chat from Claude API with full conversation history
+    /// messages: array of ["role": "user"/"assistant", "content": "..."] dicts
+    func streamChat(
+        messages: [[String: String]],
+        system: String? = nil,
+        maxTokens: Int = 2048,
+        onChunk: @escaping (String) -> Void
+    ) async throws {
+        guard !messages.isEmpty else { return }
+
+        let url = URL(string: baseURL)!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.timeoutInterval = 120
+
+        var body: [String: Any] = [
+            "model": model,
+            "max_tokens": maxTokens,
+            "stream": true,
+            "messages": messages
+        ]
+
+        if let system = system {
+            body["system"] = system
+        }
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AIError.requestFailed
+        }
+
+        if httpResponse.statusCode != 200 {
+            var errorData = Data()
+            for try await byte in bytes {
+                errorData.append(byte)
+            }
+            if let errorBody = String(data: errorData, encoding: .utf8) {
+                print("ERROR: HTTP \(httpResponse.statusCode): \(errorBody)")
+            }
+            throw AIError.requestFailed
+        }
+
+        // Parse SSE stream — same logic as streamText
+        var rawBuffer = Data()
+        for try await byte in bytes {
+            rawBuffer.append(byte)
+            guard byte == UInt8(ascii: "\n") else { continue }
+            guard let bufferString = String(data: rawBuffer, encoding: .utf8) else { continue }
+
+            let lines = bufferString.components(separatedBy: "\n")
+            for line in lines {
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard trimmed.hasPrefix("data: ") else { continue }
+                let jsonStr = String(trimmed.dropFirst(6))
+                if jsonStr == "[DONE]" || jsonStr.isEmpty { continue }
+
+                guard let jsonData = jsonStr.data(using: .utf8),
+                      let event = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                      let eventType = event["type"] as? String else { continue }
+
+                if eventType == "content_block_delta",
+                   let delta = event["delta"] as? [String: Any],
+                   let text = delta["text"] as? String {
+                    onChunk(text)
+                }
+            }
+            rawBuffer = Data()
         }
     }
 
@@ -554,7 +645,12 @@ class ClaudeAIService {
         return try await sendRequest(prompt: prompt, maxTokens: maxTokens, useModel: useModel)
     }
 
-    private func sendRequest(prompt: String, maxTokens: Int = 4096, useModel: String? = nil) async throws -> String {
+    /// Generate text with separate system prompt (better for structured output like JSON)
+    func generateText(prompt: String, system: String, maxTokens: Int = 4096, useModel: String? = nil) async throws -> String {
+        return try await sendRequest(prompt: prompt, system: system, maxTokens: maxTokens, useModel: useModel)
+    }
+
+    private func sendRequest(prompt: String, system: String? = nil, maxTokens: Int = 4096, useModel: String? = nil) async throws -> String {
         let url = URL(string: baseURL)!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -563,13 +659,17 @@ class ClaudeAIService {
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.timeoutInterval = 120 // 2 minutes for AI calls (default 60s is too short)
 
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "model": useModel ?? model,
             "max_tokens": maxTokens,
             "messages": [
                 ["role": "user", "content": prompt]
             ]
         ]
+
+        if let system = system {
+            body["system"] = system
+        }
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 

@@ -233,8 +233,20 @@ struct TaskItem: Codable {
     func toCommitment() -> Commitment? {
         guard type == .commitment else { return nil }
         guard let direction = commitmentDirection else { return nil }
-        guard let committedBy = committedBy else { return nil }
-        guard let committedTo = committedTo else { return nil }
+
+        // Default the missing party based on commitment direction:
+        // "I Owe" (→): committedBy is the user, committedTo is the counterparty
+        // "They Owe" (←): committedBy is the counterparty, committedTo is the user
+        let resolvedCommittedBy: String
+        let resolvedCommittedTo: String
+        switch direction {
+        case .iOwe:
+            resolvedCommittedBy = committedBy ?? "Me"
+            resolvedCommittedTo = committedTo ?? "Unknown"
+        case .theyOweMe:
+            resolvedCommittedBy = committedBy ?? "Unknown"
+            resolvedCommittedTo = committedTo ?? "Me"
+        }
 
         let commitmentType: Commitment.CommitmentType = direction == .iOwe ? .iOwe : .theyOwe
 
@@ -270,8 +282,8 @@ struct TaskItem: Codable {
             status: commitmentStatus,
             title: title,
             commitmentText: description ?? title,
-            committedBy: committedBy,
-            committedTo: committedTo,
+            committedBy: resolvedCommittedBy,
+            committedTo: resolvedCommittedTo,
             sourcePlatform: platform,
             sourceThread: sourceThread ?? "",
             dueDate: dueDate,

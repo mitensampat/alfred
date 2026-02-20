@@ -63,7 +63,7 @@ class HotReloadManager {
         }
 
         // Copy from source directory
-        let webFiles = ["index-notion.html", "index.html", "index-v2.html"]
+        let webFiles = ["index-notion.html"]
 
         for file in webFiles {
             let source = sourceWebDir.appendingPathComponent(file)

@@ -1350,7 +1350,7 @@ class BriefingOrchestrator {
     }
 
     /// Save extracted items to Notion Tasks database
-    func saveExtractedItems(_ items: [ExtractedItem]) async throws -> (saved: Int, failed: Int) {
+    func saveExtractedItems(_ items: [ExtractedItem]) async throws -> (saved: Int, failed: Int, duplicates: Int) {
         var savedCount = 0
         var failedCount = 0
         var duplicateCount = 0
@@ -1373,12 +1373,11 @@ class BriefingOrchestrator {
             }
         }
 
-        // Report duplicates as part of failed count (they weren't newly saved)
         if duplicateCount > 0 {
-            print("  ℹ️ \(duplicateCount) duplicate(s) skipped")
+            print("  ℹ️ \(duplicateCount) duplicate(s) skipped during save")
         }
 
-        return (savedCount, failedCount + duplicateCount)
+        return (savedCount, failedCount, duplicateCount)
     }
 
     // MARK: - Public Helpers for Attention System

@@ -192,6 +192,22 @@ class QueryCacheService {
         return results
     }
 
+    /// Delete all cache entries for a given endpoint (regardless of params)
+    func deleteByEndpoint(_ endpoint: String) {
+        let query = "DELETE FROM query_cache WHERE endpoint = ?"
+        var statement: OpaquePointer?
+        if sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK {
+            sqlite3_bind_text(statement, 1, (endpoint as NSString).utf8String, -1, nil)
+            if sqlite3_step(statement) == SQLITE_DONE {
+                let deleted = sqlite3_changes(db)
+                if deleted > 0 {
+                    print("🗑️  Cleared \(deleted) cache entries for \(endpoint)")
+                }
+            }
+        }
+        sqlite3_finalize(statement)
+    }
+
     /// Delete a specific cache entry by endpoint and params
     func deleteEntry(endpoint: String, params: [String: String]) -> Bool {
         let cacheKey = generateCacheKey(endpoint: endpoint, params: params)

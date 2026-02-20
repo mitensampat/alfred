@@ -23,6 +23,9 @@ class HTTPServer {
     private let memoryCacheLock = NSLock()
     private let memoryCacheTTL: TimeInterval = 300 // 5 minutes
 
+    // Reusable CoachingEngine (its internal 2h cache is only useful if the instance persists)
+    private var coachingEngine: CoachingEngine?
+
     // Static date formatters (expensive to create, reuse across requests)
     private static let iso8601Formatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
@@ -126,6 +129,27 @@ class HTTPServer {
 
         let expiresAt = Date().addingTimeInterval(ttl ?? memoryCacheTTL)
         memoryCache[key] = MemoryCacheEntry(data: value, expiresAt: expiresAt)
+    }
+
+    /// Remove a specific key from the in-memory cache
+    private func invalidateMemoryCache(_ key: String) {
+        memoryCacheLock.lock()
+        defer { memoryCacheLock.unlock() }
+        memoryCache.removeValue(forKey: key)
+    }
+
+    /// Remove all keys matching a prefix from the in-memory cache
+    private func invalidateMemoryCacheByPrefix(_ prefix: String) {
+        memoryCacheLock.lock()
+        defer { memoryCacheLock.unlock() }
+        memoryCache = memoryCache.filter { !$0.key.hasPrefix(prefix) }
+    }
+
+    /// Clear the entire in-memory cache
+    private func clearAllMemoryCache() {
+        memoryCacheLock.lock()
+        defer { memoryCacheLock.unlock() }
+        memoryCache.removeAll()
     }
 
     // MARK: - Session Management
@@ -232,8 +256,8 @@ class HTTPServer {
             }
 
             // Allow web UI without authentication
-            if request.path == "/" || request.path == "/index.html" || request.path == "/index-v2.html" {
-                let response = handleWebUIv2()
+            if request.path == "/" || request.path == "/index.html" || request.path == "/index-notion.html" {
+                let response = handleNotionUI()
                 try await client.send(response)
                 return
             }
@@ -241,13 +265,6 @@ class HTTPServer {
             // Serve PWA manifest
             if request.path == "/manifest.json" {
                 let response = handleManifestJSON()
-                try await client.send(response)
-                return
-            }
-
-            // Allow notion UI without authentication
-            if request.path == "/index-notion.html" {
-                let response = handleNotionUI()
                 try await client.send(response)
                 return
             }
@@ -432,6 +449,9 @@ class HTTPServer {
         case ("GET", "/api/health"):
             return handleHealth()
 
+        case ("GET", "/api/health/detailed"):
+            return await handleDetailedHealth()
+
         case ("GET", "/api/commitments"):
             return await handleGetCommitments(request)
 
@@ -448,6 +468,12 @@ class HTTPServer {
         // Coaching cards (AI-generated insights)
         case ("GET", "/api/coaching/cards"):
             return await handleCoachingCards()
+
+        case ("GET", "/api/coaching/context"):
+            return handleCoachingContext()
+
+        case ("GET", "/api/coaching/opener"):
+            return await handleCoachingOpener()
 
         case ("GET", "/api/briefing"):
             return await handleGetDailyBriefing(request)
@@ -525,6 +551,16 @@ class HTTPServer {
 
         case ("POST", "/api/playbook/setup"):
             return await handleSetupPlaybook(request)
+
+        // Coaching Context Notion sync endpoints
+        case ("GET", "/api/coaching-context/status"):
+            return handleGetCoachingContextStatus()
+
+        case ("POST", "/api/coaching-context/sync"):
+            return await handleSyncCoachingContext(request)
+
+        case ("POST", "/api/coaching-context/setup"):
+            return await handleSetupCoachingContext(request)
 
         case ("POST", "/api/query"):
             return await handleNaturalLanguageQuery(request)
@@ -680,6 +716,38 @@ class HTTPServer {
         case ("POST", "/api/commitment-tracker/reject-closure"):
             return handleRejectClosure(request)
 
+        // MARK: Cadence Endpoints
+        case ("GET", "/api/cadence/status"):
+            return handleCadenceStatus()
+
+        case ("GET", "/api/cadence/group-suggestions"):
+            return handleGetGroupSuggestions()
+
+        case ("POST", "/api/cadence/run-group-analysis"):
+            return await handleRunGroupAnalysis()
+
+        case ("POST", "/api/cadence/approve-auto-summary"):
+            return handleApproveAutoSummary(request)
+
+        case ("POST", "/api/cadence/config"):
+            return handleUpdateCadenceConfig(request)
+
+        // MARK: Past Conversations Endpoints
+        case ("GET", "/api/conversations"):
+            return handleGetConversations(request)
+
+        case ("GET", "/api/conversations/detail"):
+            return handleGetConversationDetail(request)
+
+        case ("POST", "/api/conversations/close"):
+            return await handleCloseConversation(request)
+
+        case ("DELETE", "/api/conversations"):
+            return handleDeleteConversation(request)
+
+        case ("POST", "/api/conversations/restore"):
+            return handleRestoreConversation(request)
+
         default:
             return HTTPResponse(
                 statusCode: 404,
@@ -689,20 +757,6 @@ class HTTPServer {
     }
 
     // MARK: - API Handlers
-
-    private func handleWebUIv2() -> HTTPResponse {
-        // Use HotReloadManager for hot-reloadable web files
-        if let html = HotReloadManager.shared.getWebFile("index-v2.html") {
-            return HTTPResponse(
-                statusCode: 200,
-                headers: ["Content-Type": "text/html; charset=utf-8"],
-                htmlBody: html
-            )
-        }
-
-        // Fallback to v1
-        return handleWebUI()
-    }
 
     private func handleManifestJSON() -> HTTPResponse {
         if let json = HotReloadManager.shared.getWebFile("manifest.json") {
@@ -725,25 +779,11 @@ class HTTPServer {
             )
         }
 
-        // Fallback to original UI
-        return handleWebUI()
-    }
-
-    private func handleWebUI() -> HTTPResponse {
-        // Use HotReloadManager for hot-reloadable web files
-        if let html = HotReloadManager.shared.getWebFile("index.html") {
-            return HTTPResponse(
-                statusCode: 200,
-                headers: ["Content-Type": "text/html; charset=utf-8"],
-                htmlBody: html
-            )
-        }
-
         // Fallback: simple inline HTML
         let fallbackHTML = """
         <!DOCTYPE html>
-        <html><head><meta charset="UTF-8"><title>Alfred Remote</title></head>
-        <body><h1>Alfred Remote</h1><p>Web UI file not found. API is available at /api endpoints.</p></body></html>
+        <html><head><meta charset="UTF-8"><title>Alfred</title></head>
+        <body><h1>Alfred</h1><p>Web UI file not found. API is available at /api endpoints.</p></body></html>
         """
 
         return HTTPResponse(
@@ -762,6 +802,119 @@ class HTTPServer {
                 "timestamp": Self.iso8601Formatter.string(from: Date())
             ]
         )
+    }
+
+    private func handleDetailedHealth() async -> HTTPResponse {
+        guard let config = alfredService.orchestrator?.config else {
+            return HTTPResponse(statusCode: 503, body: [
+                "status": "error",
+                "error": "Service not initialized"
+            ])
+        }
+
+        var services: [[String: Any]] = []
+        var warnings: [String] = []
+        var overallOk = true
+
+        // 1. Claude API — check key is configured
+        let claudeKeyOk = !config.ai.anthropicApiKey.isEmpty && config.ai.anthropicApiKey != "YOUR_API_KEY"
+        services.append([
+            "name": "Claude API",
+            "status": claudeKeyOk ? "ok" : "error",
+            "detail": claudeKeyOk ? "API key configured (model: \(config.ai.model))" : "API key missing or placeholder"
+        ])
+        if !claudeKeyOk { overallOk = false; warnings.append("Claude API key not configured") }
+
+        // 2. Notion API — check key + database ID
+        let notionKeyOk = !config.notion.apiKey.isEmpty && config.notion.apiKey != "YOUR_NOTION_API_KEY"
+        let notionDbOk = !config.notion.databaseId.isEmpty
+        let notionOk = notionKeyOk && notionDbOk
+        services.append([
+            "name": "Notion",
+            "status": notionOk ? "ok" : "error",
+            "detail": notionOk ? "API key and database configured" : (!notionKeyOk ? "API key missing" : "Database ID missing")
+        ])
+        if !notionOk { overallOk = false; warnings.append("Notion not fully configured") }
+
+        // 3. Google Calendar — check token files exist for each account
+        for account in config.calendar.google {
+            let tokenFilename = "google_tokens_\(account.name).json"
+            let possiblePaths = [
+                (NSString(string: "~/.config/alfred/\(tokenFilename)").expandingTildeInPath),
+                (NSString(string: "~/.config/exec-assistant/\(tokenFilename)").expandingTildeInPath)
+            ]
+            let tokenExists = possiblePaths.contains { FileManager.default.fileExists(atPath: $0) }
+            services.append([
+                "name": "Google Calendar (\(account.name))",
+                "status": tokenExists ? "ok" : "warning",
+                "detail": tokenExists ? "Token file found" : "Token file missing — calendar will fail until re-authed"
+            ])
+            if !tokenExists { warnings.append("Google Calendar token missing for '\(account.name)'") }
+        }
+
+        // 4. iMessage — check chat.db exists
+        if config.messaging.imessage.enabled {
+            let chatDbPath = config.messaging.imessage.expandedPath
+            let chatDbExists = FileManager.default.fileExists(atPath: chatDbPath)
+            services.append([
+                "name": "iMessage",
+                "status": chatDbExists ? "ok" : "warning",
+                "detail": chatDbExists ? "chat.db found (Full Disk Access required for reads)" : "chat.db not found at \(chatDbPath)"
+            ])
+            if !chatDbExists { warnings.append("iMessage chat.db not found") }
+        }
+
+        // 5. WhatsApp — check DB file exists
+        if config.messaging.whatsapp.enabled {
+            let waDbPath = config.messaging.whatsapp.expandedPath
+            let waDbExists = FileManager.default.fileExists(atPath: waDbPath)
+            services.append([
+                "name": "WhatsApp",
+                "status": waDbExists ? "ok" : "warning",
+                "detail": waDbExists ? "Database found" : "Database not found at \(waDbPath)"
+            ])
+            if !waDbExists { warnings.append("WhatsApp database not found") }
+        }
+
+        // 6. Email (SMTP) — check config has non-empty host/port/username
+        let emailConfig = config.notifications.email
+        let smtpOk = emailConfig.enabled && !emailConfig.smtpHost.isEmpty && emailConfig.smtpPort > 0 && !emailConfig.smtpUsername.isEmpty
+        services.append([
+            "name": "Email (SMTP)",
+            "status": emailConfig.enabled ? (smtpOk ? "ok" : "warning") : "disabled",
+            "detail": !emailConfig.enabled ? "Email notifications disabled" : (smtpOk ? "SMTP configured (\(emailConfig.smtpHost):\(emailConfig.smtpPort))" : "SMTP config incomplete")
+        ])
+        if emailConfig.enabled && !smtpOk { warnings.append("SMTP configuration incomplete") }
+
+        // 7. Commitment DB — check file exists
+        let commitmentDbPath = (NSString(string: "~/.alfred/commitment_scan.db").expandingTildeInPath)
+        let commitmentDbExists = FileManager.default.fileExists(atPath: commitmentDbPath)
+        services.append([
+            "name": "Commitment DB",
+            "status": commitmentDbExists ? "ok" : "warning",
+            "detail": commitmentDbExists ? "Database exists" : "Database not initialized — run commitment scan to create"
+        ])
+        if !commitmentDbExists { warnings.append("Commitment database not initialized") }
+
+        // 8. Workflow Learning DB
+        let workflowDbPath = (NSString(string: "~/.alfred/workflow_learning.db").expandingTildeInPath)
+        let workflowDbExists = FileManager.default.fileExists(atPath: workflowDbPath)
+        services.append([
+            "name": "Workflow Learning DB",
+            "status": workflowDbExists ? "ok" : "warning",
+            "detail": workflowDbExists ? "Database exists" : "Database not initialized — will be created on first learning cycle"
+        ])
+        if !workflowDbExists { warnings.append("Workflow learning database not initialized") }
+
+        let result: [String: Any] = [
+            "status": overallOk ? "ok" : "degraded",
+            "version": AlfredApp.version,
+            "timestamp": Self.iso8601Formatter.string(from: Date()),
+            "services": services,
+            "warnings": warnings
+        ]
+
+        return HTTPResponse(statusCode: 200, body: result)
     }
 
     private func handleGetCommitments(_ request: HTTPRequest) async -> HTTPResponse {
@@ -934,6 +1087,11 @@ class HTTPServer {
                 scanMode: scanMode
             )
 
+            // Invalidate affected caches
+            invalidateMemoryCache("tracker_stats")
+            invalidateMemoryCache("home_pulse")
+            cache.deleteByEndpoint("/api/home/pulse")
+
             return HTTPResponse(
                 statusCode: 200,
                 body: [
@@ -1040,6 +1198,20 @@ class HTTPServer {
     // MARK: - Home Pulse (consolidated endpoint for v2)
 
     private func handleHomePulse() async -> HTTPResponse {
+        // Check memory cache (2min TTL)
+        if let cached: [String: Any] = getFromMemoryCache("home_pulse") {
+            return HTTPResponse(statusCode: 200, body: cached)
+        }
+
+        // Check disk cache (10min TTL — survives restarts)
+        if let diskCached = cache.getCached(endpoint: "/api/home/pulse") {
+            if let data = diskCached.data(using: .utf8),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                setInMemoryCache("home_pulse", value: json, ttl: 120)
+                return HTTPResponse(statusCode: 200, body: json)
+            }
+        }
+
         var topGoal: [String: Any]? = nil
         var openTasks = 0
         var overdueCount = 0
@@ -1133,18 +1305,42 @@ class HTTPServer {
             responseBody["topGoal"] = goal
         }
 
+        // Cache in memory (2min) and disk (10min)
+        setInMemoryCache("home_pulse", value: responseBody, ttl: 120)
+        if let jsonData = try? JSONSerialization.data(withJSONObject: responseBody),
+           let jsonString = String(data: jsonData, encoding: .utf8) {
+            cache.cache(endpoint: "/api/home/pulse", response: jsonString, ttl: 600)
+        }
+
         return HTTPResponse(statusCode: 200, body: responseBody)
     }
 
     private func handleCoachingCards() async -> HTTPResponse {
+        // Check memory cache first (2h TTL)
+        if let cached: [String: Any] = getFromMemoryCache("coaching_cards") {
+            return HTTPResponse(statusCode: 200, body: cached)
+        }
+
+        // Check disk cache (2h TTL — survives restarts)
+        if let diskCached = cache.getCached(endpoint: "/api/coaching/cards") {
+            if let data = diskCached.data(using: .utf8),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                setInMemoryCache("coaching_cards", value: json, ttl: 7200)
+                return HTTPResponse(statusCode: 200, body: json)
+            }
+        }
+
         guard let config = AppConfig.load() else {
             return HTTPResponse(statusCode: 500, body: ["error": "Configuration not loaded"])
         }
 
-        let engine = CoachingEngine(config: config, alfredService: alfredService)
+        // Reuse stored CoachingEngine so its internal 2h cache works
+        if coachingEngine == nil {
+            coachingEngine = CoachingEngine(config: config, alfredService: alfredService)
+        }
 
         do {
-            let cards = try await engine.generateCoachingCards()
+            let cards = try await coachingEngine!.generateCoachingCards()
             let cardsArray: [[String: Any]] = cards.map { card in
                 var dict: [String: Any] = [
                     "type": card.type,
@@ -1156,7 +1352,16 @@ class HTTPServer {
                 }
                 return dict
             }
-            return HTTPResponse(statusCode: 200, body: ["cards": cardsArray])
+            let body: [String: Any] = ["cards": cardsArray]
+
+            // Cache in memory (2h) and disk (2h)
+            setInMemoryCache("coaching_cards", value: body, ttl: 7200)
+            if let jsonData = try? JSONSerialization.data(withJSONObject: body),
+               let jsonString = String(data: jsonData, encoding: .utf8) {
+                cache.cache(endpoint: "/api/coaching/cards", response: jsonString, ttl: 7200)
+            }
+
+            return HTTPResponse(statusCode: 200, body: body)
         } catch {
             return HTTPResponse(statusCode: 500, body: ["error": "Failed to generate coaching cards: \(error.localizedDescription)"])
         }
@@ -1368,14 +1573,15 @@ class HTTPServer {
         }
 
         do {
-            let todos = try await alfredService.scanWhatsAppForTodos()
+            let result = try await alfredService.scanWhatsAppForTodos()
+            let todos = result.createdTodos
 
             // Format response
             var formattedResponse = "📝 **Todo Scan Results**\n\n"
-            if todos.isEmpty {
+            if result.todosFound == 0 {
                 formattedResponse += "No todos found in recent WhatsApp messages.\n"
             } else {
-                formattedResponse += "Found \(todos.count) todo(s) from your messages:\n\n"
+                formattedResponse += "Found \(result.todosFound) todo(s), created \(result.todosCreated) new, skipped \(result.duplicatesSkipped) duplicate(s).\n\n"
                 for (index, todo) in todos.enumerated() {
                     formattedResponse += "\(index + 1). \(todo.title)\n"
                     if let description = todo.description, !description.isEmpty {
@@ -1391,6 +1597,11 @@ class HTTPServer {
 
             let responseBody: [String: Any] = [
                 "response": formattedResponse,
+                "todosFound": result.todosFound,
+                "todosCreated": result.todosCreated,
+                "messagesScanned": result.messagesScanned,
+                "duplicatesSkipped": result.duplicatesSkipped,
+                "lookbackDays": result.lookbackDays,
                 "todos": todos.map { todo in
                     [
                         "title": todo.title,
@@ -1403,7 +1614,7 @@ class HTTPServer {
                         ]
                     ]
                 },
-                "count": todos.count
+                "count": result.todosCreated
             ]
 
             // Cache the response (30 min)
@@ -1560,63 +1771,92 @@ The Commitment Check feature requires a properly configured Notion database.
             }
         }
 
+        print("💬 [Messages Summary] Starting for contact: \(contact), platform: \(platform), timeframe: \(timeframe)")
+
+        // Wrap in a timeout to prevent hanging forever
         do {
-            // Get messages summary
-            let summary = try await alfredService.getMessagesSummaryForContact(
-                contact: contact,
-                platform: platform,
-                timeframe: timeframe
-            )
+            let result = try await withThrowingTaskGroup(of: HTTPResponse.self) { group in
+                group.addTask {
+                    // The actual summary work
+                    let summary = try await self.alfredService.getMessagesSummaryForContact(
+                        contact: contact,
+                        platform: platform,
+                        timeframe: timeframe
+                    )
 
-            // Format response
-            var formattedResponse = "💬 **Messages Summary**\n"
-            formattedResponse += "Contact: \(contact)\n"
-            formattedResponse += "Platform: \(platform)\n"
-            formattedResponse += "Period: Last \(timeframe)\n\n"
+                    // Format response
+                    var formattedResponse = "💬 **Messages Summary**\n"
+                    formattedResponse += "Contact: \(contact)\n"
+                    formattedResponse += "Platform: \(platform)\n"
+                    formattedResponse += "Period: Last \(timeframe)\n\n"
 
-            formattedResponse += "**Summary:**\n\(summary.summary)\n\n"
+                    formattedResponse += "**Summary:**\n\(summary.summary)\n\n"
 
-            if !summary.keyPoints.isEmpty {
-                formattedResponse += "**Key Points:**\n"
-                for point in summary.keyPoints {
-                    formattedResponse += "• \(point)\n"
+                    if !summary.keyPoints.isEmpty {
+                        formattedResponse += "**Key Points:**\n"
+                        for point in summary.keyPoints {
+                            formattedResponse += "• \(point)\n"
+                        }
+                        formattedResponse += "\n"
+                    }
+
+                    if summary.needsResponse {
+                        formattedResponse += "⚠️ This conversation may need a response\n"
+                    }
+
+                    let responseBody: [String: Any] = [
+                        "response": formattedResponse,
+                        "contact": contact,
+                        "platform": platform,
+                        "timeframe": timeframe,
+                        "summary": summary.summary,
+                        "keyPoints": summary.keyPoints,
+                        "needsResponse": summary.needsResponse,
+                        "messageCount": summary.messageCount,
+                        "actionItems": summary.actionItems.map { item in
+                            [
+                                "id": UUID().uuidString,
+                                "title": item.item,
+                                "priority": item.priority,
+                                "deadline": item.deadline as Any,
+                                "source": "message",
+                                "category": "task"
+                            ] as [String: Any]
+                        }
+                    ]
+
+                    // Cache (10 min)
+                    if let jsonData = try? JSONSerialization.data(withJSONObject: responseBody),
+                       let jsonString = String(data: jsonData, encoding: .utf8) {
+                        self.cache.cache(endpoint: "/api/messages/summary", params: cacheParams, response: jsonString, ttl: 600)
+                    }
+
+                    print("✅ [Messages Summary] Complete for \(contact): \(summary.messageCount) messages")
+                    return HTTPResponse(statusCode: 200, body: responseBody)
                 }
-                formattedResponse += "\n"
-            }
 
-            if summary.needsResponse {
-                formattedResponse += "⚠️ This conversation may need a response\n"
-            }
-
-            let responseBody: [String: Any] = [
-                "response": formattedResponse,
-                "contact": contact,
-                "platform": platform,
-                "timeframe": timeframe,
-                "summary": summary.summary,
-                "keyPoints": summary.keyPoints,
-                "needsResponse": summary.needsResponse,
-                "messageCount": summary.messageCount,
-                "actionItems": summary.actionItems.map { item in
-                    [
-                        "id": UUID().uuidString,
-                        "title": item.item,
-                        "priority": item.priority,
-                        "deadline": item.deadline as Any,
-                        "source": "message",
-                        "category": "task"
-                    ] as [String: Any]
+                // Timeout task
+                group.addTask {
+                    try await Task.sleep(nanoseconds: 60_000_000_000) // 60 seconds
+                    print("⏰ [Messages Summary] Timed out for \(contact) after 60s")
+                    return HTTPResponse(
+                        statusCode: 504,
+                        body: [
+                            "error": "Summary generation timed out. This typically happens when analyzing large chat groups.",
+                            "contact": contact,
+                            "timeout": true
+                        ]
+                    )
                 }
-            ]
 
-            // Cache (30 min)
-            if let jsonData = try? JSONSerialization.data(withJSONObject: responseBody),
-               let jsonString = String(data: jsonData, encoding: .utf8) {
-                cache.cache(endpoint: "/api/messages/summary", params: cacheParams, response: jsonString, ttl: 600)
+                // Return whichever finishes first
+                let first = try await group.next()!
+                group.cancelAll()
+                return first
             }
-
-            return HTTPResponse(statusCode: 200, body: responseBody)
+            return result
         } catch {
+            print("❌ [Messages Summary] Error for \(contact): \(error.localizedDescription)")
             return HTTPResponse(
                 statusCode: 500,
                 body: ["error": error.localizedDescription]
@@ -1755,6 +1995,11 @@ The Commitment Check feature requires a properly configured Notion database.
     }
 
     private func handleGetNotionConfig() async -> HTTPResponse {
+        // Check memory cache (30min TTL)
+        if let cached: [String: Any] = getFromMemoryCache("config_notion") {
+            return HTTPResponse(statusCode: 200, body: cached)
+        }
+
         // Read from config file
         let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
 
@@ -1795,10 +2040,12 @@ The Commitment Check feature requires a properly configured Notion database.
                 contextDatabases = contextDbs.filter { !$0.isEmpty }
             }
 
-            return HTTPResponse(
-                statusCode: 200,
-                body: ["tasksDatabaseId": tasksDatabaseId as Any, "contextDatabases": contextDatabases]
-            )
+            let body: [String: Any] = ["tasksDatabaseId": tasksDatabaseId as Any, "contextDatabases": contextDatabases]
+
+            // Cache in memory (30min)
+            setInMemoryCache("config_notion", value: body, ttl: 1800)
+
+            return HTTPResponse(statusCode: 200, body: body)
         } catch {
             return HTTPResponse(
                 statusCode: 500,
@@ -1873,6 +2120,9 @@ The Commitment Check feature requires a properly configured Notion database.
             print("⚠️ Failed to update config file: \(error)")
         }
 
+        // Invalidate config cache
+        invalidateMemoryCache("config_notion")
+
         var responseBody: [String: Any] = ["message": "Notion configuration updated successfully"]
         if let tasksDatabaseId = tasksDatabaseId {
             responseBody["tasksDatabaseId"] = tasksDatabaseId
@@ -1936,15 +2186,21 @@ The Commitment Check feature requires a properly configured Notion database.
 
     private func handleClearCache() -> HTTPResponse {
         cache.clearAll()
+        clearAllMemoryCache()
         return HTTPResponse(
             statusCode: 200,
-            body: ["message": "All cache cleared successfully"]
+            body: ["message": "All cache cleared successfully (memory + disk)"]
         )
     }
 
     // MARK: - Scheduled Config Handlers
 
     private func handleGetScheduledConfig() -> HTTPResponse {
+        // Check memory cache (30min TTL)
+        if let cached: [String: Any] = getFromMemoryCache("config_scheduled") {
+            return HTTPResponse(statusCode: 200, body: cached)
+        }
+
         let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
 
         guard FileManager.default.fileExists(atPath: configPath) else {
@@ -1964,13 +2220,18 @@ The Commitment Check feature requires a properly configured Notion database.
             let app = config?["app"] as? [String: Any]
             let scheduled = config?["scheduled"] as? [String: Any]
 
-            return HTTPResponse(statusCode: 200, body: [
+            let body: [String: Any] = [
                 "briefing_time": app?["briefing_time"] as? String ?? "07:00",
                 "attention_alert_time": app?["attention_alert_time"] as? String ?? "15:00",
                 "briefing_enabled": scheduled?["briefing_enabled"] as? Bool ?? true,
                 "attention_enabled": scheduled?["attention_enabled"] as? Bool ?? true,
                 "email_to": scheduled?["email_to"] as? String ?? ""
-            ] as [String: Any])
+            ]
+
+            // Cache in memory (30min)
+            setInMemoryCache("config_scheduled", value: body, ttl: 1800)
+
+            return HTTPResponse(statusCode: 200, body: body)
         } catch {
             return HTTPResponse(statusCode: 500, body: ["error": "Failed to read config: \(error.localizedDescription)"])
         }
@@ -2016,6 +2277,7 @@ The Commitment Check feature requires a properly configured Notion database.
             try updatedData.write(to: URL(fileURLWithPath: configPath))
 
             print("📅 Scheduled config updated successfully")
+            invalidateMemoryCache("config_scheduled")
 
             return HTTPResponse(statusCode: 200, body: ["message": "Schedule settings saved successfully"])
         } catch {
@@ -2026,6 +2288,11 @@ The Commitment Check feature requires a properly configured Notion database.
     // MARK: - Favorites Handlers
 
     private func handleGetFavorites() -> HTTPResponse {
+        // Check memory cache (10min TTL)
+        if let cached: [String: Any] = getFromMemoryCache("favorites") {
+            return HTTPResponse(statusCode: 200, body: cached)
+        }
+
         let favorites = FavoritesService.shared.getFavorites()
 
         let contactsArray = favorites.contacts.map { contact -> [String: Any] in
@@ -2048,10 +2315,15 @@ The Commitment Check feature requires a properly configured Notion database.
             ]
         }
 
-        return HTTPResponse(statusCode: 200, body: [
+        let body: [String: Any] = [
             "contacts": contactsArray,
             "groups": groupsArray
-        ])
+        ]
+
+        // Cache in memory (10min)
+        setInMemoryCache("favorites", value: body, ttl: 600)
+
+        return HTTPResponse(statusCode: 200, body: body)
     }
 
     private func handleAddFavoriteContact(_ request: HTTPRequest) -> HTTPResponse {
@@ -2069,6 +2341,7 @@ The Commitment Check feature requires a properly configured Notion database.
 
         do {
             try FavoritesService.shared.addContact(contact)
+            invalidateMemoryCache("favorites")
             return HTTPResponse(statusCode: 200, body: [
                 "success": true,
                 "message": "Added \(name) to favorites"
@@ -2089,6 +2362,7 @@ The Commitment Check feature requires a properly configured Notion database.
 
         do {
             try FavoritesService.shared.removeContact(name: name)
+            invalidateMemoryCache("favorites")
             return HTTPResponse(statusCode: 200, body: [
                 "success": true,
                 "message": "Removed \(name) from favorites"
@@ -2113,6 +2387,7 @@ The Commitment Check feature requires a properly configured Notion database.
 
         do {
             try FavoritesService.shared.addGroup(group)
+            invalidateMemoryCache("favorites")
             return HTTPResponse(statusCode: 200, body: [
                 "success": true,
                 "message": "Added \(name) to favorite groups"
@@ -2133,6 +2408,7 @@ The Commitment Check feature requires a properly configured Notion database.
 
         do {
             try FavoritesService.shared.removeGroup(name: name)
+            invalidateMemoryCache("favorites")
             return HTTPResponse(statusCode: 200, body: [
                 "success": true,
                 "message": "Removed \(name) from favorite groups"
@@ -2145,6 +2421,11 @@ The Commitment Check feature requires a properly configured Notion database.
     // MARK: - Playbook Handlers
 
     private func handleGetPlaybookStatus() -> HTTPResponse {
+        // Check memory cache (15min TTL)
+        if let cached: [String: Any] = getFromMemoryCache("playbook_status") {
+            return HTTPResponse(statusCode: 200, body: cached)
+        }
+
         let playbookService = PlaybookService.shared
 
         let pageId = playbookService.getPlaybookPageId()
@@ -2165,6 +2446,9 @@ The Commitment Check feature requires a properly configured Notion database.
             response["lastSyncFormatted"] = formatRelativeDate(sync)
         }
 
+        // Cache in memory (15min)
+        setInMemoryCache("playbook_status", value: response, ttl: 900)
+
         return HTTPResponse(statusCode: 200, body: response)
     }
 
@@ -2173,6 +2457,9 @@ The Commitment Check feature requires a properly configured Notion database.
 
         do {
             try await playbookService.syncToNotion()
+
+            // Invalidate playbook status cache
+            invalidateMemoryCache("playbook_status")
 
             let pageId = playbookService.getPlaybookPageId() ?? ""
             return HTTPResponse(statusCode: 200, body: [
@@ -2216,6 +2503,59 @@ The Commitment Check feature requires a properly configured Notion database.
         } catch {
             return HTTPResponse(statusCode: 500, body: [
                 "error": "Failed to setup Playbook: \(error.localizedDescription)"
+            ])
+        }
+    }
+
+    // MARK: - Coaching Context Notion Sync Handlers
+
+    private func handleGetCoachingContextStatus() -> HTTPResponse {
+        let status = CoachingNotionSyncService.shared.getStatus()
+        return HTTPResponse(statusCode: 200, body: status)
+    }
+
+    private func handleSyncCoachingContext(_ request: HTTPRequest) async -> HTTPResponse {
+        let force = request.queryParams["force"] == "true"
+
+        do {
+            try await CoachingNotionSyncService.shared.syncToNotion(force: force)
+
+            let pageId = CoachingNotionSyncService.shared.getPageId() ?? ""
+            return HTTPResponse(statusCode: 200, body: [
+                "success": true,
+                "message": "Coaching context synced to Notion",
+                "pageId": pageId,
+                "notionUrl": "https://notion.so/\(pageId.replacingOccurrences(of: "-", with: ""))"
+            ])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: [
+                "error": "Failed to sync coaching context: \(error.localizedDescription)"
+            ])
+        }
+    }
+
+    private func handleSetupCoachingContext(_ request: HTTPRequest) async -> HTTPResponse {
+        var parentPageId: String?
+        if let bodyData = request.body,
+           let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] {
+            parentPageId = json["parentPageId"] as? String
+        }
+
+        do {
+            let pageId = try await CoachingNotionSyncService.shared.ensurePageExists(parentPageId: parentPageId)
+
+            // Sync initial content
+            try await CoachingNotionSyncService.shared.syncToNotion(force: true)
+
+            return HTTPResponse(statusCode: 200, body: [
+                "success": true,
+                "message": "Coach Alfred Context page created and synced",
+                "pageId": pageId,
+                "notionUrl": "https://notion.so/\(pageId.replacingOccurrences(of: "-", with: ""))"
+            ])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: [
+                "error": "Failed to setup coaching context: \(error.localizedDescription)"
             ])
         }
     }
@@ -2808,7 +3148,7 @@ The Commitment Check feature requires a properly configured Notion database.
                 }
             }
 
-            let (saved, failed) = try await alfredService.saveApprovedItems(items)
+            let (saved, failed, duplicates) = try await alfredService.saveApprovedItems(items)
 
             return HTTPResponse(
                 statusCode: 200,
@@ -2816,6 +3156,7 @@ The Commitment Check feature requires a properly configured Notion database.
                     "success": true,
                     "saved": saved,
                     "failed": failed,
+                    "duplicates": duplicates,
                     "message": "Successfully saved \(saved) item(s) to Notion"
                 ]
             )
@@ -2961,7 +3302,7 @@ The Commitment Check feature requires a properly configured Notion database.
                 )
             }
 
-            let intentService = IntentRecognitionService(config: config)
+            let intentService = IntentRecognitionService(config: config, conversationContext: ConversationContext.shared)
             let executor = IntentExecutor(orchestrator: orchestrator, config: config)
 
             // Recognize intent with session context
@@ -2983,8 +3324,8 @@ The Commitment Check feature requires a properly configured Notion database.
             // Execute intent
             let result = try await executor.execute(intentResponse.intent)
 
-            // Record turn in conversation context
-            intentService.recordTurn(
+            // Record turn in shared conversation context
+            ConversationContext.shared.addTurn(
                 sessionId: sessionId,
                 query: query,
                 intent: intentResponse.intent,
@@ -3035,95 +3376,121 @@ The Commitment Check feature requires a properly configured Notion database.
             return
         }
 
-        // Build rich system prompt with context
+        // Build rich coaching system prompt
         let userName = config.user.name.isEmpty ? "User" : config.user.name
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "EEEE, MMMM d, yyyy 'at' h:mm a"
         let now = dateFormatter.string(from: Date())
 
-        // Gather context asynchronously
-        var contextParts: [String] = []
+        // Gather all context for coaching prompt
+        let coachingContext = CoachingMemoryService.shared.getCoachingContext()
+        let agentMemoryRules = gatherAgentMemoryRules()
+        let liveContext = await gatherLiveContext(config: config)
+        let relationshipData = gatherRelationshipData()
 
-        // Top commitments
-        let trackerStats = CommitmentScanTracker.shared.getStats()
-        contextParts.append("Open commitments: \(trackerStats.openCommitments)")
+        let systemPrompt = CoachingPromptBuilder.build(
+            userName: userName,
+            dateTime: now,
+            coachingContext: coachingContext,
+            agentMemoryRules: agentMemoryRules,
+            liveContext: liveContext,
+            relationshipData: relationshipData
+        )
 
-        // Today's calendar summary
-        do {
-            let calBriefing = try await alfredService.fetchCalendarBriefing(for: Date())
-            let meetingCount = calBriefing.schedule.events.count
-            let nextMeeting = calBriefing.schedule.events.first(where: { $0.startTime > Date() })
-            var calStr = "Today: \(meetingCount) meetings."
-            if let next = nextMeeting {
-                let timeFmt = DateFormatter()
-                timeFmt.dateFormat = "h:mm a"
-                calStr += " Next: \(next.title) at \(timeFmt.string(from: next.startTime))"
-            }
-            contextParts.append(calStr)
-        } catch {
-            // Calendar context not critical
-        }
-
-        // Top priority task
-        if let orchestrator = alfredService.orchestrator {
-            do {
-                if let topTask = try await orchestrator.notionServicePublic.getTopPriorityTask() {
-                    contextParts.append("Top priority task: \(topTask.title) (\(topTask.priority?.rawValue ?? "No priority"))")
-                }
-            } catch {
-                // Not critical
-            }
-        }
-
-        // Reliability score
-        let lifecycleStats = TaskLifecycleTracker.shared.getStats()
-        contextParts.append("Reliability score: \(lifecycleStats.completionRate)%")
-
-        let contextBlock = contextParts.joined(separator: "\n")
-
-        let systemPrompt = """
-        You are Alfred, a personal executive assistant for \(userName). Today is \(now).
-
-        You are inspired by the coaching styles of Bill Campbell (coaching empathy, directness) and Matt Mochary (ruthless prioritization, energy audits). You are opinionated but concise. No fluff, no emojis in coaching. Use plain language.
-
-        Your context:
-        \(contextBlock)
-
-        Guidelines:
-        - Be direct and concise. Aim for 2-4 sentences unless more detail is asked for.
-        - When asked about priorities, reference actual tasks and commitments.
-        - When giving coaching advice, be opinionated — recommend ONE thing, not a list.
-        - If you don't have enough context, say so honestly.
-        - Never use emojis in your coaching responses.
-        - Format with markdown when helpful (bold for emphasis, bullet lists for multiple items).
-        """
+        // Use shared conversation context (persists across requests for same session)
+        let sharedContext = ConversationContext.shared
 
         // Try intent recognition first for structured queries
-        let intentService = IntentRecognitionService(config: config)
+        let intentService = IntentRecognitionService(config: config, conversationContext: sharedContext)
         do {
             let intentResponse = try await intentService.recognizeIntent(query, sessionId: sessionId)
 
             // If high confidence structured intent, execute it and stream the result
             if intentResponse.intent.confidence > 0.8 && !intentResponse.clarificationNeeded {
                 if let orchestrator = alfredService.orchestrator {
+                    let toolName = intentResponse.intent.target?.rawValue ?? "unknown"
+
+                    // Emit tool_start so frontend can show a loading indicator
+                    client.sendSSEJSON(event: "tool_start", json: [
+                        "tool": toolName,
+                        "query": query
+                    ])
+
                     let executor = IntentExecutor(orchestrator: orchestrator, config: config)
                     let result = try await executor.execute(intentResponse.intent)
 
-                    // Record the turn
-                    intentService.recordTurn(sessionId: sessionId, query: query, intent: intentResponse.intent, result: result)
+                    // Record the turn in shared context
+                    sharedContext.addTurn(sessionId: sessionId, query: query, intent: intentResponse.intent, result: result)
 
-                    // Stream the conversational response as chunks for natural feel
-                    let response = result.conversationalResponse
-                    let words = response.split(separator: " ")
-                    var chunk = ""
-                    for (i, word) in words.enumerated() {
-                        chunk += (chunk.isEmpty ? "" : " ") + word
-                        if chunk.count > 20 || i == words.count - 1 {
-                            client.sendSSEJSON(event: "chunk", json: ["text": chunk])
-                            chunk = ""
-                            try? await Task.sleep(nanoseconds: 15_000_000) // 15ms between chunks
+                    // Emit tool_result with structured data for rich rendering
+                    let structuredPayload = serializeToolResult(toolName: toolName, data: result.data)
+                    client.sendSSEJSON(event: "tool_result", json: structuredPayload)
+
+                    // Stream a coaching-flavored response through Claude
+                    // The tool card already shows the raw data — Claude adds the coaching insight
+                    let dataSummary = result.conversationalResponse
+                    let coachingOverlayPrompt = """
+                    The user asked: "\(query)"
+
+                    I just showed them a \(toolName) card with this data:
+                    \(dataSummary)
+
+                    Now respond as Coach Alfred — 2-4 sentences max. Add a coaching observation, a priority call, or a gentle challenge based on what the data shows. Reference specific items (names, times, tasks). Don't repeat the raw data — the card already shows it. If the data suggests something worth flagging (back-to-back meetings, overdue commitments, no focus time), say it directly.
+                    """
+
+                    let claudeService = ClaudeAIService(config: config.ai)
+                    var fullCoachingResponse = ""
+
+                    do {
+                        // Build messages with conversation history for context
+                        var coachingMessages = sharedContext.getMessagesArray(for: sessionId, limit: 10)
+                        coachingMessages.append(["role": "user", "content": coachingOverlayPrompt])
+
+                        try await claudeService.streamChat(
+                            messages: coachingMessages,
+                            system: systemPrompt,
+                            maxTokens: 512,
+                            onChunk: { text in
+                                fullCoachingResponse += text
+                                client.sendSSEJSON(event: "chunk", json: ["text": text])
+                            }
+                        )
+                    } catch {
+                        // Fallback to static response if Claude fails
+                        let words = dataSummary.split(separator: " ", omittingEmptySubsequences: false)
+                        var chunk = ""
+                        var isFirstChunk = true
+                        for (i, word) in words.enumerated() {
+                            chunk += (chunk.isEmpty ? "" : " ") + word
+                            if chunk.count > 20 || i == words.count - 1 {
+                                let textToSend = isFirstChunk ? chunk : " " + chunk
+                                client.sendSSEJSON(event: "chunk", json: ["text": textToSend])
+                                fullCoachingResponse += textToSend
+                                chunk = ""
+                                isFirstChunk = false
+                                try? await Task.sleep(nanoseconds: 15_000_000)
+                            }
                         }
                     }
+
+                    // Record the coaching response (not just the data summary)
+                    let finalResponse = fullCoachingResponse.isEmpty ? dataSummary : fullCoachingResponse
+
+                    // Fire-and-forget: update coaching memory for intent-based exchanges too
+                    let intentQuery = query
+                    let intentResponseText = finalResponse
+                    let intentConfig = config
+                    Task {
+                        await self.updateCoachingMemoryIfNeeded(
+                            userMessage: intentQuery,
+                            assistantResponse: intentResponseText,
+                            config: intentConfig
+                        )
+                    }
+
+                    // Persist turns to conversation history
+                    ConversationHistoryService.shared.addTurn(sessionId: sessionId, role: "user", content: query)
+                    ConversationHistoryService.shared.addTurn(sessionId: sessionId, role: "assistant", content: finalResponse)
 
                     client.sendSSEJSON(event: "done", json: ["sessionId": sessionId])
                     client.endSSE()
@@ -3135,23 +3502,340 @@ The Commitment Check feature requires a properly configured Notion database.
             print("⚠️ Intent recognition failed, falling back to general chat: \(error)")
         }
 
-        // General chat: stream from Claude
+        // General chat: stream from Claude WITH full conversation history
         let claudeService = ClaudeAIService(config: config.ai)
         do {
-            try await claudeService.streamText(
-                prompt: query,
+            // Build messages array from conversation history + current query
+            var messages = sharedContext.getMessagesArray(for: sessionId, limit: 20)
+            messages.append(["role": "user", "content": query])
+
+            // Collect the full response for recording back into context
+            var fullResponse = ""
+
+            try await claudeService.streamChat(
+                messages: messages,
                 system: systemPrompt,
                 maxTokens: 2048,
                 onChunk: { text in
+                    fullResponse += text
                     client.sendSSEJSON(event: "chunk", json: ["text": text])
                 }
             )
+
+            // Record this turn so future messages have context
+            sharedContext.addChatTurn(sessionId: sessionId, userMessage: query, assistantResponse: fullResponse)
+
+            // Persist turns to conversation history
+            ConversationHistoryService.shared.addTurn(sessionId: sessionId, role: "user", content: query)
+            ConversationHistoryService.shared.addTurn(sessionId: sessionId, role: "assistant", content: fullResponse)
+
+            // Fire-and-forget: update coaching memory if this was a coaching exchange
+            let capturedQuery = query
+            let capturedResponse = fullResponse
+            let capturedConfig = config
+            Task {
+                await self.updateCoachingMemoryIfNeeded(
+                    userMessage: capturedQuery,
+                    assistantResponse: capturedResponse,
+                    config: capturedConfig
+                )
+            }
+
             client.sendSSEJSON(event: "done", json: ["sessionId": sessionId])
         } catch {
             client.sendSSEJSON(event: "error", json: ["error": "Failed to generate response: \(error.localizedDescription)"])
         }
 
         client.endSSE()
+    }
+
+    // MARK: - Coaching Endpoint Handlers
+
+    /// Returns the raw coaching context file contents
+    private func handleCoachingContext() -> HTTPResponse {
+        let context = CoachingMemoryService.shared.getCoachingContext()
+        return HTTPResponse(statusCode: 200, body: ["context": context])
+    }
+
+    /// Returns a contextual welcome opener for the Chat tab
+    private var openerCache: (text: String, timestamp: Date)? = nil
+
+    private func handleCoachingOpener() async -> HTTPResponse {
+        // Check 1-hour cache
+        if let cached = openerCache, Date().timeIntervalSince(cached.timestamp) < 3600 {
+            return HTTPResponse(statusCode: 200, body: ["opener": cached.text])
+        }
+
+        guard let config = AppConfig.load() else {
+            return HTTPResponse(statusCode: 200, body: ["opener": "What's on your mind?"])
+        }
+
+        // Gather context for the opener
+        let followups = CoachingMemoryService.shared.getOpenFollowups()
+        let recentSessions = CoachingMemoryService.shared.getRecentSessions(limit: 2)
+        let liveContext = await gatherLiveContext(config: config)
+
+        var contextForOpener = ""
+        if !followups.isEmpty {
+            contextForOpener += "Open follow-ups from past coaching:\n" + followups.map { "- \($0)" }.joined(separator: "\n") + "\n"
+        }
+        if !recentSessions.isEmpty {
+            contextForOpener += "Recent coaching sessions:\n" + recentSessions.joined(separator: "\n") + "\n"
+        }
+        contextForOpener += "Today's context:\n\(liveContext)"
+
+        let prompt = """
+        Generate a brief, contextual greeting for the start of a coaching session. 1-2 sentences max.
+
+        Context:
+        \(contextForOpener)
+
+        Rules:
+        - If there are open follow-ups, reference one naturally ("Last time we talked about X. Did you follow through?")
+        - If no follow-ups, make a sharp observation about their day ("9 meetings today — want to talk about what's actually worth your time?")
+        - Be warm but direct. Like a friend who remembers everything.
+        - Occasionally be funny or playful.
+        - No emojis. No generic greetings like "How can I help?"
+        - Just the greeting text, nothing else.
+        """
+
+        let claudeService = ClaudeAIService(config: config.ai)
+        do {
+            let opener = try await claudeService.generateText(
+                prompt: prompt,
+                system: "You are Coach Alfred, a warm but direct executive coach. Generate a single contextual greeting.",
+                maxTokens: 100
+            )
+            let trimmed = opener.trimmingCharacters(in: .whitespacesAndNewlines)
+            openerCache = (trimmed, Date())
+            return HTTPResponse(statusCode: 200, body: ["opener": trimmed])
+        } catch {
+            return HTTPResponse(statusCode: 200, body: ["opener": "What's on your mind?"])
+        }
+    }
+
+    // MARK: - Coaching Context Helpers
+
+    /// Gather user-taught rules from all agent memory files
+    private func gatherAgentMemoryRules() -> String {
+        let memService = AgentMemoryService.shared
+        var rules: [String] = []
+
+        for agentType in AgentType.allCases {
+            let memory = memService.getMemory(for: agentType)
+            if let taughtRules = memory.sections["User-Taught Rules"],
+               !taughtRules.isEmpty,
+               !taughtRules.contains("_Rules you've explicitly") {
+                // Strip timestamps for brevity, keep the rule text
+                let ruleLines = taughtRules.components(separatedBy: "\n")
+                    .filter { $0.starts(with: "- ") }
+                    .compactMap { line -> String? in
+                        if let bracketEnd = line.range(of: "] ") {
+                            return "- " + String(line[bracketEnd.upperBound...])
+                        }
+                        return line
+                    }
+                if !ruleLines.isEmpty {
+                    rules.append("**\(agentType.displayName):**\n" + ruleLines.joined(separator: "\n"))
+                }
+            }
+        }
+
+        return rules.isEmpty ? "" : rules.joined(separator: "\n")
+    }
+
+    /// Gather expanded live context (tasks, calendar, commitments)
+    private func gatherLiveContext(config: AppConfig) async -> String {
+        var parts: [String] = []
+        let timeFmt = DateFormatter()
+        timeFmt.dateFormat = "h:mm a"
+
+        // Calendar: full event list for today
+        do {
+            let calBriefing = try await alfredService.fetchCalendarBriefing(for: Date())
+            let events = calBriefing.schedule.events
+            let meetingCount = events.count
+            let remaining = events.filter { $0.startTime > Date() }
+
+            var calStr = "Today: \(meetingCount) meetings (\(remaining.count) remaining)."
+            if let next = remaining.first {
+                calStr += " Next: \(next.title) at \(timeFmt.string(from: next.startTime))."
+            }
+            // List today's meetings
+            if !events.isEmpty {
+                let eventList = events.prefix(10).map { event in
+                    "\(timeFmt.string(from: event.startTime)) — \(event.title)"
+                }.joined(separator: "\n  ")
+                calStr += "\n  \(eventList)"
+            }
+            parts.append(calStr)
+        } catch {
+            parts.append("Calendar: unavailable")
+        }
+
+        // Active tasks (top 8 by priority)
+        if let orchestrator = alfredService.orchestrator {
+            do {
+                let allTasks = try await orchestrator.notionServicePublic.queryActiveTasks()
+                let topTasks = Array(allTasks.prefix(8))
+
+                if !topTasks.isEmpty {
+                    let dateFmt = DateFormatter()
+                    dateFmt.dateFormat = "MMM d"
+
+                    var taskStr = "Active tasks (\(allTasks.count) total):"
+                    for task in topTasks {
+                        var line = "  - \(task.title)"
+                        if let priority = task.priority {
+                            line += " [\(priority.rawValue)]"
+                        }
+                        if let due = task.dueDate {
+                            let isOverdue = due < Date()
+                            line += " due \(dateFmt.string(from: due))"
+                            if isOverdue { line += " [OVERDUE]" }
+                        }
+                        taskStr += "\n\(line)"
+                    }
+
+                    // Stale tasks (avoidance signal)
+                    let twoWeeksAgo = Calendar.current.date(byAdding: .day, value: -14, to: Date())!
+                    let staleTasks = allTasks.filter { task in
+                        task.status == .notStarted &&
+                        (task.dueDate == nil || task.dueDate! < Date()) // no due date or overdue
+                    }
+                    if !staleTasks.isEmpty {
+                        taskStr += "\n  ⚠️ Stale/avoided tasks (not started, >14 days or overdue):"
+                        for task in staleTasks.prefix(5) {
+                            taskStr += "\n  - \(task.title)"
+                            if let p = task.priority { taskStr += " [\(p.rawValue)]" }
+                        }
+                    }
+
+                    parts.append(taskStr)
+                }
+            } catch {
+                // Not critical
+            }
+        }
+
+        // Open commitments count
+        let trackerStats = CommitmentScanTracker.shared.getStats()
+        parts.append("Open commitments: \(trackerStats.openCommitments)")
+
+        // Reliability score
+        let lifecycleStats = TaskLifecycleTracker.shared.getStats()
+        parts.append("Reliability score: \(lifecycleStats.completionRate)%")
+
+        return parts.joined(separator: "\n")
+    }
+
+    /// Gather relationship data (counterparty stats)
+    private func gatherRelationshipData() -> String {
+        let counterpartyStats = TaskLifecycleTracker.shared.getStatsByCounterparty()
+
+        if counterpartyStats.isEmpty {
+            return ""
+        }
+
+        var lines: [String] = ["Commitment stats by person:"]
+        for stat in counterpartyStats.prefix(6) {
+            let completionPct = Int(stat.completionRate * 100)
+            let overduePct = Int(stat.overdueRate * 100)
+            lines.append("  - \(stat.name): \(stat.totalTasks) tasks, \(completionPct)% completed, \(overduePct)% overdue")
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    /// Check if a chat exchange was coaching-worthy and update memory if so
+    private func updateCoachingMemoryIfNeeded(
+        userMessage: String,
+        assistantResponse: String,
+        config: AppConfig
+    ) async {
+        // Step 1: Quick keyword heuristic — skip non-coaching queries
+        let coachingSignals = [
+            "avoid", "delegate", "prioritiz", "focus", "relationship", "neglect",
+            "should i", "what am i", "feedback", "hard truth", "procrastinat",
+            "commit", "follow up", "follow-up", "drop", "say no", "leverage",
+            "roast", "truth", "avoiding", "neglecting", "coaching", "reflect"
+        ]
+
+        let combined = (userMessage + " " + assistantResponse).lowercased()
+        let matchesHeuristic = coachingSignals.contains { combined.contains($0) }
+
+        guard matchesHeuristic else {
+            return // Not a coaching exchange, skip
+        }
+
+        // Step 2: Ask Claude (Haiku-tier) to extract a session summary
+        let claudeService = ClaudeAIService(config: config.ai)
+        let extractionPrompt = """
+        Given this coaching exchange, extract a structured summary.
+
+        User: \(userMessage)
+        Coach: \(assistantResponse)
+
+        Return ONLY valid JSON (no markdown fences):
+        {
+            "skip": false,
+            "topic": "2-5 word topic description",
+            "insight": "The key insight or realization from this exchange (1 sentence)",
+            "action": "Any action the user committed to (1 sentence, or empty string if none)",
+            "followUp": "What to check on next time (1 sentence, or empty string if none)",
+            "patternCategory": "leverage|relationship|avoidance|general",
+            "patternObserved": "Any behavioral pattern noticed (1 sentence, or empty string if none)"
+        }
+
+        If this was NOT a coaching conversation (just a factual data query like asking for calendar or commitments), return: {"skip": true}
+        """
+
+        do {
+            let response = try await claudeService.generateText(
+                prompt: extractionPrompt,
+                system: "You are a coaching session analyzer. Extract structured summaries from coaching conversations. Be concise.",
+                maxTokens: 300
+            )
+
+            // Parse the JSON response
+            guard let jsonData = response.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
+                return
+            }
+
+            // Check if we should skip
+            if json["skip"] as? Bool == true {
+                return
+            }
+
+            let topic = json["topic"] as? String ?? "General coaching"
+            let insight = json["insight"] as? String ?? ""
+            let action = json["action"] as? String ?? ""
+            let followUp = json["followUp"] as? String ?? ""
+            let patternCategory = json["patternCategory"] as? String
+            let patternObserved = json["patternObserved"] as? String
+
+            // Record the session
+            CoachingMemoryService.shared.recordSession(
+                topic: topic,
+                insight: insight,
+                action: action.isEmpty ? nil : action,
+                followUp: followUp.isEmpty ? nil : followUp
+            )
+
+            // Update pattern if observed
+            if let category = patternCategory, let pattern = patternObserved,
+               !pattern.isEmpty, category != "general" {
+                CoachingMemoryService.shared.updatePattern(
+                    category: category.capitalized,
+                    observation: pattern
+                )
+            }
+
+            print("📝 [Coaching] Memory updated — topic: \(topic)")
+        } catch {
+            print("⚠️ [Coaching] Memory update failed: \(error)")
+        }
     }
 
     // MARK: - Helpers
@@ -3168,6 +3852,129 @@ The Commitment Check feature requires a properly configured Notion database.
             "sentiment": summary.sentiment,
             "suggestedResponse": summary.suggestedResponse as Any
         ]
+    }
+
+    /// Serialize tool execution data into a JSON-friendly dictionary for chat SSE events
+    private func serializeToolResult(toolName: String, data: Any) -> [String: Any] {
+        let timeFmt = DateFormatter()
+        timeFmt.dateFormat = "h:mm a"
+        let dateFmt = DateFormatter()
+        dateFmt.dateStyle = .medium
+
+        switch toolName {
+        case "calendar":
+            if let cal = data as? CalendarBriefing {
+                let events: [[String: Any]] = cal.schedule.events.map { event in
+                    [
+                        "title": event.title,
+                        "start": timeFmt.string(from: event.startTime),
+                        "end": timeFmt.string(from: event.endTime),
+                        "location": event.location ?? "",
+                        "isAllDay": event.isAllDay,
+                        "attendeeCount": event.attendees.count
+                    ]
+                }
+                return [
+                    "type": "calendar",
+                    "date": dateFmt.string(from: cal.schedule.date),
+                    "eventCount": cal.schedule.events.count,
+                    "focusTime": Int(cal.focusTime / 60),
+                    "events": events
+                ]
+            }
+
+        case "commitments":
+            if let commitments = data as? [Commitment] {
+                let items: [[String: Any]] = commitments.prefix(10).map { c in
+                    [
+                        "title": c.title,
+                        "type": c.type.rawValue,
+                        "status": c.status.rawValue,
+                        "committedBy": c.committedBy,
+                        "committedTo": c.committedTo,
+                        "dueDate": c.dueDate.map { dateFmt.string(from: $0) } ?? "",
+                        "priority": c.priority.rawValue
+                    ]
+                }
+                return [
+                    "type": "commitments",
+                    "count": commitments.count,
+                    "items": items
+                ]
+            }
+            if let result = data as? CommitmentScanResult {
+                return [
+                    "type": "commitment_scan",
+                    "totalFound": result.totalFound,
+                    "saved": result.saved,
+                    "duplicates": result.duplicates,
+                    "autoClosed": result.autoClosed
+                ]
+            }
+
+        case "messages":
+            if let summaries = data as? [MessageSummary] {
+                let items: [[String: Any]] = summaries.prefix(8).map { s in
+                    [
+                        "contact": s.thread.contactName ?? s.thread.contactIdentifier,
+                        "platform": s.thread.platform.rawValue,
+                        "summary": String(s.summary.prefix(120)),
+                        "urgency": s.urgency.rawValue,
+                        "unread": s.thread.unreadCount
+                    ]
+                }
+                return [
+                    "type": "messages",
+                    "count": summaries.count,
+                    "items": items
+                ]
+            }
+
+        case "todos":
+            if let result = data as? TodoScanResult {
+                return [
+                    "type": "todos",
+                    "messagesScanned": result.messagesScanned,
+                    "todosFound": result.todosFound,
+                    "todosCreated": result.todosCreated,
+                    "duplicatesSkipped": result.duplicatesSkipped,
+                    "lookbackDays": result.lookbackDays
+                ]
+            }
+
+        case "attention":
+            if let report = data as? AttentionDefenseReport {
+                let mustDo: [[String: Any]] = report.mustDoToday.prefix(5).map { item in
+                    [
+                        "title": item.title,
+                        "description": item.description,
+                        "priority": item.priority.rawValue
+                    ]
+                }
+                let critical: [[String: Any]] = report.criticalTasks.prefix(3).map { item in
+                    [
+                        "title": item.title,
+                        "description": item.description,
+                        "priority": item.priority.rawValue
+                    ]
+                }
+                return [
+                    "type": "attention",
+                    "mustDoCount": report.mustDoToday.count,
+                    "criticalCount": report.criticalTasks.count,
+                    "recommendations": report.recommendations,
+                    "mustDoToday": mustDo,
+                    "criticalTasks": critical,
+                    "timeAvailable": Int(report.timeAvailable / 60)
+                ]
+            }
+
+        default:
+            break
+        }
+
+        // Fallback: return just the type
+        return ["type": toolName, "rendered": false]
     }
 
     // MARK: - Streaming Handlers (SSE)
@@ -3956,8 +4763,9 @@ class ClientSocket {
             for param in queryString.components(separatedBy: "&") {
                 let keyValue = param.components(separatedBy: "=")
                 if keyValue.count == 2 {
-                    // URL decode the parameter value
-                    let decodedValue = keyValue[1].removingPercentEncoding ?? keyValue[1]
+                    // URL decode the parameter value (+ → space, then percent-decode)
+                    let plusDecoded = keyValue[1].replacingOccurrences(of: "+", with: " ")
+                    let decodedValue = plusDecoded.removingPercentEncoding ?? plusDecoded
                     queryParams[keyValue[0]] = decodedValue
                 }
             }
@@ -4054,15 +4862,19 @@ class ClientSocket {
     func beginSSE() {
         let headers = """
         HTTP/1.1 200 OK\r
-        Content-Type: text/event-stream\r
+        Content-Type: text/event-stream; charset=utf-8\r
         Cache-Control: no-cache\r
         Connection: keep-alive\r
         Access-Control-Allow-Origin: *\r
         \r
 
         """
-        _ = headers.withCString { ptr in
-            Darwin.send(socket, ptr, strlen(ptr), 0)
+        if let data = headers.data(using: .utf8) {
+            data.withUnsafeBytes { rawBuffer in
+                if let ptr = rawBuffer.baseAddress {
+                    _ = Darwin.send(socket, ptr, data.count, 0)
+                }
+            }
         }
     }
 
@@ -4078,8 +4890,13 @@ class ClientSocket {
         }
         message += "\n"
 
-        _ = message.withCString { ptr in
-            Darwin.send(socket, ptr, strlen(ptr), 0)
+        // Use UTF-8 data directly to avoid issues with multi-byte characters
+        if let data = message.data(using: .utf8) {
+            data.withUnsafeBytes { rawBuffer in
+                if let ptr = rawBuffer.baseAddress {
+                    _ = Darwin.send(socket, ptr, data.count, 0)
+                }
+            }
         }
     }
 
@@ -4680,11 +5497,16 @@ extension HTTPServer {
         TaskLifecycleTracker.shared.startScan()
 
         // Start scan in background task and return immediately
+        let server = self
         Task.detached {
             do {
                 let result = try await TaskLifecycleTracker.shared.scan(notionService: notionService)
                 Self.lastScanResult = result
                 Self.lastScanError = nil
+                // Invalidate affected caches after scan completes
+                server.invalidateMemoryCache("lifecycle_stats")
+                server.invalidateMemoryCache("home_pulse")
+                server.cache.deleteByEndpoint("/api/home/pulse")
                 print("✓ Background scan complete: \(result.tasksScanned) tasks")
             } catch {
                 Self.lastScanError = error.localizedDescription
@@ -4739,19 +5561,26 @@ extension HTTPServer {
     }
 
     private func handleTaskLifecycleStats() -> HTTPResponse {
+        // Check memory cache (5min TTL)
+        if let cached: [String: Any] = getFromMemoryCache("lifecycle_stats") {
+            return HTTPResponse(statusCode: 200, body: cached)
+        }
+
         let stats = TaskLifecycleTracker.shared.getStats()
 
-        return HTTPResponse(
-            statusCode: 200,
-            body: [
-                "totalTasks": stats.totalTasks,
-                "totalChanges": stats.totalChanges,
-                "totalCompleted": stats.totalCompleted,
-                "completionRate": Int(stats.completionRate * 100),
-                "overdueRate": Int(stats.overdueRate * 100),
-                "lastScanTime": stats.lastScanTime.map { Self.iso8601Formatter.string(from: $0) } as Any
-            ]
-        )
+        let body: [String: Any] = [
+            "totalTasks": stats.totalTasks,
+            "totalChanges": stats.totalChanges,
+            "totalCompleted": stats.totalCompleted,
+            "completionRate": Int(stats.completionRate * 100),
+            "overdueRate": Int(stats.overdueRate * 100),
+            "lastScanTime": stats.lastScanTime.map { Self.iso8601Formatter.string(from: $0) } as Any
+        ]
+
+        // Cache in memory (5min)
+        setInMemoryCache("lifecycle_stats", value: body, ttl: 300)
+
+        return HTTPResponse(statusCode: 200, body: body)
     }
 
     private func handleTaskLifecycleChanges(_ request: HTTPRequest) -> HTTPResponse {
@@ -4801,6 +5630,11 @@ extension HTTPServer {
     // MARK: - Commitment Tracker Handlers
 
     private func handleGetCommitmentTrackerStats() async -> HTTPResponse {
+        // Check memory cache (5min TTL)
+        if let cached: [String: Any] = getFromMemoryCache("tracker_stats") {
+            return HTTPResponse(statusCode: 200, body: cached)
+        }
+
         let stats = CommitmentScanTracker.shared.getStats()
 
         // Also get actual counts from Notion
@@ -4819,23 +5653,25 @@ extension HTTPServer {
             }
         }
 
-        return HTTPResponse(
-            statusCode: 200,
-            body: [
-                // Notion-based counts (source of truth for open/closed)
-                "openCommitments": notionOpen,
-                "closedCount": notionClosed,
-                "totalCommitments": notionTotal,
-                // Tracker stats
-                "autoClosedCount": stats.autoClosedCount,
-                "pendingClosures": stats.pendingClosures,
-                "totalExtracted": stats.totalExtracted,
-                "threadsTracked": stats.threadsTracked,
-                "favoritesCount": stats.favoritesCount,
-                "activeThreadsCount": stats.activeThreadsCount,
-                "lastScanTime": stats.lastScanTime.map { Self.iso8601Formatter.string(from: $0) } as Any
-            ]
-        )
+        let body: [String: Any] = [
+            // Notion-based counts (source of truth for open/closed)
+            "openCommitments": notionOpen,
+            "closedCount": notionClosed,
+            "totalCommitments": notionTotal,
+            // Tracker stats
+            "autoClosedCount": stats.autoClosedCount,
+            "pendingClosures": stats.pendingClosures,
+            "totalExtracted": stats.totalExtracted,
+            "threadsTracked": stats.threadsTracked,
+            "favoritesCount": stats.favoritesCount,
+            "activeThreadsCount": stats.activeThreadsCount,
+            "lastScanTime": stats.lastScanTime.map { Self.iso8601Formatter.string(from: $0) } as Any
+        ]
+
+        // Cache in memory (5min)
+        setInMemoryCache("tracker_stats", value: body, ttl: 300)
+
+        return HTTPResponse(statusCode: 200, body: body)
     }
 
     private func handleGetPendingClosures() -> HTTPResponse {
@@ -4879,8 +5715,13 @@ extension HTTPServer {
             )
         }
 
-        // Mark as closed in tracker
-        CommitmentScanTracker.shared.markCommitmentClosed(hash: hash)
+        // Mark as closed in tracker (also records learning event)
+        CommitmentScanTracker.shared.markCommitmentClosed(hash: hash, closureMethod: "user-confirmed")
+
+        // Invalidate affected caches
+        invalidateMemoryCache("tracker_stats")
+        invalidateMemoryCache("home_pulse")
+        cache.deleteByEndpoint("/api/home/pulse")
 
         // Also close in Notion via AlfredService
         do {
@@ -4924,10 +5765,369 @@ extension HTTPServer {
         // Mark the closure detection as rejected
         CommitmentScanTracker.shared.rejectClosureDetection(hash: hash)
 
+        // Invalidate affected caches
+        invalidateMemoryCache("tracker_stats")
+
         return HTTPResponse(
             statusCode: 200,
             body: ["success": true, "message": "Closure suggestion rejected"]
         )
+    }
+
+    // MARK: - Cadence Handlers
+
+    private func handleCadenceStatus() -> HTTPResponse {
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        let statePath = "\(homeDir)/.alfred/scheduler_state.json"
+
+        // Read scheduler state
+        var stateInfo: [String: Any] = [:]
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: statePath)),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            stateInfo = json
+        }
+
+        // Read cadence config defaults
+        let config = AppConfig.load()
+        let cadence = config?.cadence
+
+        let status: [String: Any] = [
+            "todoScan": [
+                "enabled": cadence?.todoScanEnabled ?? true,
+                "intervalHours": cadence?.todoScanIntervalHours ?? 3,
+                "lastRun": stateInfo["lastTodoScanTime"] ?? NSNull()
+            ],
+            "commitmentScan": [
+                "enabled": cadence?.commitmentScanEnabled ?? true,
+                "time": cadence?.commitmentScanTime ?? "17:00",
+                "lastRun": stateInfo["lastCommitmentScanDate"] ?? NSNull()
+            ],
+            "patternLearn": [
+                "enabled": cadence?.patternLearnEnabled ?? true,
+                "day": cadence?.patternLearnDay ?? "thursday",
+                "time": cadence?.patternLearnTime ?? "18:00",
+                "lastRun": stateInfo["lastPatternLearnDate"] ?? NSNull()
+            ],
+            "groupAnalysis": [
+                "enabled": cadence?.groupAnalysisEnabled ?? true,
+                "day": cadence?.groupAnalysisDay ?? "monday",
+                "time": cadence?.groupAnalysisTime ?? "09:00",
+                "lastRun": stateInfo["lastGroupAnalysisDate"] ?? NSNull()
+            ],
+            "autoSummary": [
+                "groups": cadence?.autoSummaryGroups ?? [],
+                "time": cadence?.autoSummaryTime ?? "18:00",
+                "lastRun": stateInfo["lastAutoSummaryDate"] ?? NSNull()
+            ]
+        ]
+
+        return HTTPResponse(statusCode: 200, body: status)
+    }
+
+    private func handleGetGroupSuggestions() -> HTTPResponse {
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        let suggestionsPath = "\(homeDir)/.alfred/group_suggestions.json"
+
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: suggestionsPath)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return HTTPResponse(statusCode: 200, body: [
+                "suggestions": [],
+                "message": "No group analysis has run yet. It runs weekly on Monday mornings."
+            ])
+        }
+
+        return HTTPResponse(statusCode: 200, body: json)
+    }
+
+    private func handleRunGroupAnalysis() async -> HTTPResponse {
+        do {
+            guard let config = AppConfig.load() else {
+                return HTTPResponse(statusCode: 500, body: ["error": "Config not available"])
+            }
+
+            // 1. Read WhatsApp threads from last 7 days
+            let whatsappReader = WhatsAppReader(dbPath: config.messaging.whatsapp.dbPath)
+            try whatsappReader.connect()
+            let since = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+            let threads = try whatsappReader.fetchThreads(since: since)
+            whatsappReader.disconnect()
+
+            // 2. Filter for groups and sort by message count
+            let groupThreads = threads
+                .filter { $0.contactIdentifier.contains("@g.us") }
+                .sorted { $0.messages.count > $1.messages.count }
+
+            // 3. Busy groups = 20+ messages/week
+            let busyGroups = groupThreads.filter { $0.messages.count >= 20 }
+
+            // 4. Exclude already-approved auto-summary groups
+            let existingAutoGroups = config.cadence?.autoSummaryGroups ?? []
+            let suggestions = busyGroups
+                .filter { thread in
+                    let name = thread.contactName ?? thread.contactIdentifier
+                    return !existingAutoGroups.contains(where: { $0.lowercased() == name.lowercased() })
+                }
+                .prefix(10)
+                .map { thread -> [String: Any] in
+                    [
+                        "name": thread.contactName ?? thread.contactIdentifier,
+                        "messageCount": thread.messages.count,
+                        "contactId": thread.contactIdentifier
+                    ]
+                }
+
+            // 5. Save suggestions to ~/.alfred/group_suggestions.json
+            let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+            let suggestionsPath = "\(homeDir)/.alfred/group_suggestions.json"
+            let todayDate = {
+                let fmt = DateFormatter()
+                fmt.dateFormat = "yyyy-MM-dd"
+                return fmt.string(from: Date())
+            }()
+            let suggestionsData: [String: Any] = [
+                "generated_at": ISO8601DateFormatter().string(from: Date()),
+                "week_analyzed": todayDate,
+                "suggestions": suggestions,
+                "total_groups_scanned": groupThreads.count,
+                "busy_groups_found": busyGroups.count
+            ]
+            if let jsonData = try? JSONSerialization.data(withJSONObject: suggestionsData, options: [.prettyPrinted, .sortedKeys]) {
+                try jsonData.write(to: URL(fileURLWithPath: suggestionsPath))
+            }
+
+            // 6. Update scheduler state
+            let statePath = "\(homeDir)/.alfred/scheduler_state.json"
+            var stateJson: [String: Any] = [:]
+            if let data = try? Data(contentsOf: URL(fileURLWithPath: statePath)),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                stateJson = json
+            }
+            stateJson["lastGroupAnalysisDate"] = todayDate
+            if let stateData = try? JSONSerialization.data(withJSONObject: stateJson, options: [.prettyPrinted, .sortedKeys]) {
+                try stateData.write(to: URL(fileURLWithPath: statePath))
+            }
+
+            return HTTPResponse(statusCode: 200, body: [
+                "success": true,
+                "totalGroupsScanned": groupThreads.count,
+                "busyGroupsFound": busyGroups.count,
+                "newSuggestions": suggestions.count
+            ])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Group analysis failed: \(error.localizedDescription)"])
+        }
+    }
+
+    private func handleApproveAutoSummary(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let groups = json["groups"] as? [String], !groups.isEmpty else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Missing 'groups' array in request body"]
+            )
+        }
+
+        // Read current config
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        let configPath = "\(homeDir)/.config/alfred/config.json"
+
+        guard let configData = try? Data(contentsOf: URL(fileURLWithPath: configPath)),
+              var configJson = try? JSONSerialization.jsonObject(with: configData) as? [String: Any] else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Could not read config.json"])
+        }
+
+        // Get or create cadence section
+        var cadenceJson = configJson["cadence"] as? [String: Any] ?? [:]
+        var existingGroups = cadenceJson["auto_summary_groups"] as? [String] ?? []
+
+        // Add new groups (avoid duplicates)
+        for group in groups {
+            if !existingGroups.contains(where: { $0.lowercased() == group.lowercased() }) {
+                existingGroups.append(group)
+            }
+        }
+
+        cadenceJson["auto_summary_groups"] = existingGroups
+        configJson["cadence"] = cadenceJson
+
+        // Write back
+        do {
+            let updatedData = try JSONSerialization.data(withJSONObject: configJson, options: [.prettyPrinted, .sortedKeys])
+            try updatedData.write(to: URL(fileURLWithPath: configPath))
+            return HTTPResponse(statusCode: 200, body: [
+                "success": true,
+                "autoSummaryGroups": existingGroups,
+                "message": "Added \(groups.count) group(s) to auto-summary list"
+            ])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to update config: \(error.localizedDescription)"])
+        }
+    }
+
+    private func handleUpdateCadenceConfig(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let updates = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              !updates.isEmpty else {
+            return HTTPResponse(
+                statusCode: 400,
+                body: ["error": "Missing JSON body with cadence config updates"]
+            )
+        }
+
+        // Read current config
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        let configPath = "\(homeDir)/.config/alfred/config.json"
+
+        guard let configData = try? Data(contentsOf: URL(fileURLWithPath: configPath)),
+              var configJson = try? JSONSerialization.jsonObject(with: configData) as? [String: Any] else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Could not read config.json"])
+        }
+
+        var cadenceJson = configJson["cadence"] as? [String: Any] ?? [:]
+
+        // Apply updates (keys like "todo_scan_interval_hours", "commitment_scan_time", "pattern_learn_day", etc.)
+        let allowedKeys: Set<String> = [
+            "todo_scan_enabled", "todo_scan_interval_hours",
+            "commitment_scan_enabled", "commitment_scan_time",
+            "pattern_learn_enabled", "pattern_learn_day", "pattern_learn_time",
+            "group_analysis_enabled", "group_analysis_day", "group_analysis_time",
+            "auto_summary_time"
+        ]
+
+        var appliedCount = 0
+        for (key, value) in updates {
+            if allowedKeys.contains(key) {
+                cadenceJson[key] = value
+                appliedCount += 1
+            }
+        }
+
+        if appliedCount == 0 {
+            return HTTPResponse(statusCode: 400, body: ["error": "No valid cadence config keys found. Allowed: \(allowedKeys.sorted().joined(separator: ", "))"])
+        }
+
+        configJson["cadence"] = cadenceJson
+
+        // Write back
+        do {
+            let updatedData = try JSONSerialization.data(withJSONObject: configJson, options: [.prettyPrinted, .sortedKeys])
+            try updatedData.write(to: URL(fileURLWithPath: configPath))
+            return HTTPResponse(statusCode: 200, body: [
+                "success": true,
+                "updated": appliedCount,
+                "message": "Updated \(appliedCount) cadence setting(s)"
+            ])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to update config: \(error.localizedDescription)"])
+        }
+    }
+
+    // MARK: - Past Conversations Handlers
+
+    private func handleGetConversations(_ request: HTTPRequest) -> HTTPResponse {
+        let limitStr = request.queryParams["limit"] ?? "7"
+        let limit = Int(limitStr) ?? 7
+        let conversations = ConversationHistoryService.shared.getConversations(limit: limit)
+        return HTTPResponse(
+            statusCode: 200,
+            body: ["conversations": conversations, "count": conversations.count]
+        )
+    }
+
+    private func handleGetConversationDetail(_ request: HTTPRequest) -> HTTPResponse {
+        guard let id = request.queryParams["id"], !id.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' parameter"])
+        }
+
+        guard let conversation = ConversationHistoryService.shared.getConversation(id: id) else {
+            return HTTPResponse(statusCode: 404, body: ["error": "Conversation not found"])
+        }
+
+        let turns: [[String: Any]] = conversation.turns.map { turn in
+            [
+                "role": turn.role,
+                "content": turn.content,
+                "timestamp": ISO8601DateFormatter().string(from: turn.timestamp)
+            ]
+        }
+
+        return HTTPResponse(statusCode: 200, body: [
+            "id": conversation.id,
+            "title": conversation.title,
+            "summary": conversation.summary,
+            "createdAt": ISO8601DateFormatter().string(from: conversation.createdAt),
+            "lastActiveAt": ISO8601DateFormatter().string(from: conversation.lastActiveAt),
+            "turnCount": conversation.turnCount,
+            "isClosed": conversation.isClosed,
+            "turns": turns
+        ])
+    }
+
+    private func handleCloseConversation(_ request: HTTPRequest) async -> HTTPResponse {
+        guard let id = request.queryParams["id"], !id.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' parameter"])
+        }
+
+        let config = AppConfig.load()
+        await ConversationHistoryService.shared.closeConversation(id: id, aiConfig: config?.ai)
+
+        return HTTPResponse(statusCode: 200, body: [
+            "success": true,
+            "message": "Conversation closed"
+        ])
+    }
+
+    private func handleDeleteConversation(_ request: HTTPRequest) -> HTTPResponse {
+        guard let id = request.queryParams["id"], !id.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' parameter"])
+        }
+
+        let success = ConversationHistoryService.shared.deleteConversation(id: id)
+        if success {
+            return HTTPResponse(statusCode: 200, body: [
+                "success": true,
+                "message": "Conversation deleted"
+            ])
+        } else {
+            return HTTPResponse(statusCode: 404, body: ["error": "Conversation not found"])
+        }
+    }
+
+    private func handleRestoreConversation(_ request: HTTPRequest) -> HTTPResponse {
+        guard let id = request.queryParams["id"], !id.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' parameter"])
+        }
+
+        // Get persisted turns
+        let turns = ConversationHistoryService.shared.getTurns(for: id)
+        guard !turns.isEmpty else {
+            return HTTPResponse(statusCode: 404, body: ["error": "Conversation not found or has no turns"])
+        }
+
+        // Restore into in-memory ConversationContext for Claude to use
+        ConversationContext.shared.restoreSession(id: id, from: turns)
+
+        // Return the full conversation for frontend rendering
+        guard let conversation = ConversationHistoryService.shared.getConversation(id: id) else {
+            return HTTPResponse(statusCode: 404, body: ["error": "Conversation not found"])
+        }
+
+        let turnData: [[String: Any]] = conversation.turns.map { turn in
+            [
+                "role": turn.role,
+                "content": turn.content,
+                "timestamp": ISO8601DateFormatter().string(from: turn.timestamp)
+            ]
+        }
+
+        return HTTPResponse(statusCode: 200, body: [
+            "id": conversation.id,
+            "title": conversation.title,
+            "summary": conversation.summary,
+            "turnCount": conversation.turnCount,
+            "turns": turnData
+        ])
     }
 
     // MARK: - Simplified Learning Handlers
@@ -4947,6 +6147,9 @@ extension HTTPServer {
         do {
             // Use task agent as the default for user-taught rules
             try memoryService.teach(agentType: .task, rule: rule)
+
+            // Invalidate memory cache
+            invalidateMemoryCache("memory_unified")
 
             return HTTPResponse(
                 statusCode: 200,
@@ -5020,17 +6223,24 @@ extension HTTPServer {
     // MARK: - Workflow Patterns Handlers
 
     private func handleGetWorkflowPatterns() -> HTTPResponse {
+        // Check memory cache (30min TTL)
+        if let cached: [String: Any] = getFromMemoryCache("workflow_patterns") {
+            return HTTPResponse(statusCode: 200, body: cached)
+        }
+
         let learningService = WorkflowLearningService.shared
         let patterns = learningService.getComputedPatterns()
         let summary = learningService.getSummary()
 
-        return HTTPResponse(
-            statusCode: 200,
-            body: [
-                "patterns": patterns,
-                "summary": summary
-            ]
-        )
+        let body: [String: Any] = [
+            "patterns": patterns,
+            "summary": summary
+        ]
+
+        // Cache in memory (30min)
+        setInMemoryCache("workflow_patterns", value: body, ttl: 1800)
+
+        return HTTPResponse(statusCode: 200, body: body)
     }
 
     private func handleComputeWorkflowPatterns() -> HTTPResponse {
@@ -5039,6 +6249,9 @@ extension HTTPServer {
 
         // Wait a moment for async computation to complete
         Thread.sleep(forTimeInterval: 0.5)
+
+        // Invalidate cached patterns
+        invalidateMemoryCache("workflow_patterns")
 
         let patterns = learningService.getComputedPatterns()
         let summary = learningService.getSummary()
@@ -5145,22 +6358,30 @@ extension HTTPServer {
         html = html.replacingOccurrences(of: "\n- ", with: "<br>• ")
         html = html.replacingOccurrences(of: "\n", with: "<br>")
 
-        // Wrap in body
+        // Wrap in body — matching Alfred's Notion-like email design system
         return """
         <!DOCTYPE html>
         <html>
         <head>
+            <meta charset="UTF-8">
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
             <style>
-                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; }
-                h1 { color: #1a1a1a; font-size: 24px; margin-bottom: 8px; }
-                h2 { color: #4a4a4a; font-size: 18px; margin-top: 24px; margin-bottom: 12px; }
-                hr { border: none; border-top: 1px solid #e5e5e5; margin: 20px 0; }
-                strong { color: #1a1a1a; }
-                p { margin: 12px 0; }
+                body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; line-height: 1.6; color: #37352f; max-width: 700px; margin: 0 auto; padding: 20px; background: #ffffff; }
+                .brand { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; }
+                h1 { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-size: 28px; font-weight: 600; margin-bottom: 24px; color: #37352f; }
+                h2 { font-size: 16px; font-weight: 600; color: #787774; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 28px; margin-bottom: 12px; border-bottom: 1px solid #e9e9e7; padding-bottom: 8px; }
+                hr { border: none; border-top: 1px solid #e9e9e7; margin: 24px 0; }
+                strong { color: #37352f; }
+                p { margin: 12px 0; font-size: 14px; }
+                .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e9e9e7; font-size: 12px; color: #9b9a97; text-align: center; }
+                .footer .brand { font-size: 14px; font-weight: 500; }
             </style>
         </head>
         <body>
             <p>\(html)</p>
+            <div class="footer">
+                Generated by <span class="brand">alfred</span> v\(AlfredApp.version) • \(Date().formatted(date: .abbreviated, time: .shortened))
+            </div>
         </body>
         </html>
         """
@@ -5169,6 +6390,11 @@ extension HTTPServer {
     // MARK: - Unified Memory Handlers
 
     private func handleGetUnifiedMemory() -> HTTPResponse {
+        // Check memory cache (10min TTL)
+        if let cached: [String: Any] = getFromMemoryCache("memory_unified") {
+            return HTTPResponse(statusCode: 200, body: cached)
+        }
+
         let memoryService = AgentMemoryService.shared
         let dateFormatter = ISO8601DateFormatter()
 
@@ -5317,22 +6543,24 @@ extension HTTPServer {
         let totalGroups = groupPatterns.keys.count
         let totalLearnings = totalTaught + totalObserved + peoplePatterns.values.reduce(0) { $0 + $1.count } + groupPatterns.values.reduce(0) { $0 + $1.count }
 
-        return HTTPResponse(
-            statusCode: 200,
-            body: [
-                "summary": [
-                    "totalLearnings": totalLearnings,
-                    "taughtCount": totalTaught,
-                    "observedCount": totalObserved,
-                    "peopleCount": totalPeople,
-                    "groupsCount": totalGroups
-                ],
-                "taughtRules": taughtRules,
-                "observedPatterns": observedPatterns,
-                "peoplePatterns": peoplePatterns,
-                "groupPatterns": groupPatterns
-            ]
-        )
+        let body: [String: Any] = [
+            "summary": [
+                "totalLearnings": totalLearnings,
+                "taughtCount": totalTaught,
+                "observedCount": totalObserved,
+                "peopleCount": totalPeople,
+                "groupsCount": totalGroups
+            ],
+            "taughtRules": taughtRules,
+            "observedPatterns": observedPatterns,
+            "peoplePatterns": peoplePatterns,
+            "groupPatterns": groupPatterns
+        ]
+
+        // Cache in memory (10min)
+        setInMemoryCache("memory_unified", value: body, ttl: 600)
+
+        return HTTPResponse(statusCode: 200, body: body)
     }
 
     private func handleMemoryFeedback(_ request: HTTPRequest) -> HTTPResponse {
@@ -5655,6 +6883,14 @@ extension HTTPServer {
                 counterparty: counterparty,
                 daysInPreviousStatus: nil  // Could be computed if we track timestamps
             )
+
+            // Invalidate affected caches
+            invalidateMemoryCache("home_pulse")
+            invalidateMemoryCache("tracker_stats")
+            invalidateMemoryCache("lifecycle_stats")
+            invalidateMemoryCache("coaching_cards")
+            cache.deleteByEndpoint("/api/home/pulse")
+            cache.deleteByEndpoint("/api/coaching/cards")
 
             return HTTPResponse(statusCode: 200, body: ["success": true, "status": status.rawValue])
         } catch {

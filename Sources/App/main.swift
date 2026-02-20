@@ -1429,7 +1429,7 @@ struct AlfredApp {
 
             print("\n📓 Saving \(itemsToSave.count) todo(s) to Notion Tasks...\n")
 
-            let (savedCount, failedCount) = try await orchestrator.saveExtractedItems(itemsToSave)
+            let (savedCount, failedCount, duplicateCount) = try await orchestrator.saveExtractedItems(itemsToSave)
 
             // Final summary
             print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -1437,6 +1437,9 @@ struct AlfredApp {
             print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
             print("Todos found: \(extractedItems.count)")
             print("Todos saved: \(savedCount)")
+            if duplicateCount > 0 {
+                print("Duplicates skipped: \(duplicateCount)")
+            }
             if failedCount > 0 {
                 print("Failed to save: \(failedCount)")
             }
@@ -2496,6 +2499,74 @@ struct AlfredApp {
         let alfredService = AlfredService()
         await alfredService.initialize(config: config, orchestrator: orchestrator)
 
+        // Startup health check — validate service dependencies
+        print("🔍 Running startup health check...")
+        var healthWarnings: [String] = []
+
+        // Claude API
+        if config.ai.anthropicApiKey.isEmpty || config.ai.anthropicApiKey == "YOUR_API_KEY" {
+            healthWarnings.append("❌ Claude API key not configured")
+        } else {
+            print("  ✓ Claude API key configured")
+        }
+
+        // Notion
+        if config.notion.apiKey.isEmpty || config.notion.apiKey == "YOUR_NOTION_API_KEY" {
+            healthWarnings.append("❌ Notion API key not configured")
+        } else if config.notion.databaseId.isEmpty {
+            healthWarnings.append("⚠️ Notion database ID missing")
+        } else {
+            print("  ✓ Notion configured")
+        }
+
+        // Google Calendar tokens
+        for account in config.calendar.google {
+            let tokenFilename = "google_tokens_\(account.name).json"
+            let possiblePaths = [
+                (NSString(string: "~/.config/alfred/\(tokenFilename)").expandingTildeInPath),
+                (NSString(string: "~/.config/exec-assistant/\(tokenFilename)").expandingTildeInPath)
+            ]
+            if possiblePaths.contains(where: { FileManager.default.fileExists(atPath: $0) }) {
+                print("  ✓ Google Calendar token found (\(account.name))")
+            } else {
+                healthWarnings.append("⚠️ Google Calendar token missing for '\(account.name)' — calendar will fail until re-authed")
+            }
+        }
+
+        // iMessage
+        if config.messaging.imessage.enabled {
+            let chatDbPath = config.messaging.imessage.expandedPath
+            if FileManager.default.fileExists(atPath: chatDbPath) {
+                print("  ✓ iMessage chat.db found")
+            } else {
+                healthWarnings.append("⚠️ iMessage chat.db not found — check Full Disk Access")
+            }
+        }
+
+        // SMTP
+        let emailConfig = config.notifications.email
+        if emailConfig.enabled && !emailConfig.smtpHost.isEmpty && emailConfig.smtpPort > 0 {
+            print("  ✓ Email (SMTP) configured")
+        } else if emailConfig.enabled {
+            healthWarnings.append("⚠️ Email enabled but SMTP config incomplete")
+        }
+
+        if healthWarnings.isEmpty {
+            print("✅ All services healthy")
+        } else {
+            print("⚠️ Health check found \(healthWarnings.count) issue(s):")
+            for warning in healthWarnings {
+                print("  \(warning)")
+            }
+        }
+        print("")
+
+        // Auto-initialize core databases on startup (ensures they exist before any scan or API call)
+        let _ = CommitmentScanTracker.shared   // Creates ~/.alfred/commitment_scan.db if missing
+        let _ = WorkflowLearningService.shared // Creates ~/.alfred/workflow_learning.db if missing
+        print("✅ Core databases initialized")
+        print("")
+
         // Load Playbook from Notion (if configured)
         // This runs in background and rate-limits itself
         Task {
@@ -2503,6 +2574,15 @@ struct AlfredApp {
                 try await PlaybookService.shared.loadFromNotion()
             } catch {
                 print("⚠️ Could not load Playbook from Notion: \(error.localizedDescription)")
+            }
+        }
+
+        // Load Coaching Context from Notion (if configured)
+        Task {
+            do {
+                try await CoachingNotionSyncService.shared.loadFromNotion()
+            } catch {
+                print("⚠️ Could not load Coaching Context from Notion: \(error.localizedDescription)")
             }
         }
 
@@ -2896,6 +2976,10 @@ class Scheduler {
     private var lastAttentionDate: String?
     private let stateFilePath: URL
 
+    // Locks to prevent parallel briefing/alert execution
+    private var isBriefingInProgress = false
+    private var isAttentionInProgress = false
+
     // Date formatters
     private let timeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -2966,6 +3050,9 @@ class Scheduler {
 
         // Check immediately on startup for any missed tasks
         await checkForMissedTasks()
+
+        // Pre-warm caches on startup so the UI is ready
+        await prewarmCaches()
 
         // Check every minute if it's time to run tasks
         let timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
@@ -3064,6 +3151,13 @@ class Scheduler {
     }
 
     private func runBriefing(emailTo: String?, today: String) async {
+        guard !isBriefingInProgress else {
+            log("⚠️ Briefing already in progress, skipping")
+            return
+        }
+        isBriefingInProgress = true
+        defer { isBriefingInProgress = false }
+
         log("🚀 Running morning briefing...")
         do {
             let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date())!
@@ -3071,21 +3165,66 @@ class Scheduler {
             lastBriefingDate = today
             saveState()
             log("✅ Morning briefing sent successfully")
+            // Pre-warm caches after briefing so the UI is instant when the user opens it
+            await prewarmCaches()
+        } catch let error as NotificationError {
+            // Briefing was generated but notification failed — still mark as done to avoid duplicate retries
+            lastBriefingDate = today
+            saveState()
+            log("⚠️ Briefing generated but notification failed: \(error). View in app.")
+            await prewarmCaches()
         } catch {
             log("❌ Error generating briefing: \(error)")
         }
     }
 
     private func runAttentionAlert(emailTo: String?, today: String) async {
+        guard !isAttentionInProgress else {
+            log("⚠️ Attention alert already in progress, skipping")
+            return
+        }
+        isAttentionInProgress = true
+        defer { isAttentionInProgress = false }
+
         log("🚀 Running attention defense alert...")
         do {
             _ = try await orchestrator.generateAttentionDefenseAlert(sendNotifications: true, toAddress: emailTo)
             lastAttentionDate = today
             saveState()
             log("✅ Attention defense alert sent successfully")
+            // Pre-warm caches after attention alert
+            await prewarmCaches()
+        } catch let error as NotificationError {
+            // Alert was generated but notification failed — still mark as done
+            lastAttentionDate = today
+            saveState()
+            log("⚠️ Attention alert generated but notification failed: \(error). View in app.")
+            await prewarmCaches()
         } catch {
             log("❌ Error generating alert: \(error)")
         }
+    }
+
+    /// Pre-warm expensive caches so the UI feels instant after scheduled tasks run
+    private func prewarmCaches() async {
+        let config = currentConfig()
+        let port = config.api?.port ?? 8080
+        let pc = config.api?.passcode ?? "REDACTED_PASSCODE"
+        let base = "http://localhost:\(port)"
+
+        log("🔥 Pre-warming caches...")
+
+        // Warm the homepage pulse (most impactful — 5 internal calls)
+        if let url = URL(string: "\(base)/api/home/pulse?passcode=\(pc)") {
+            _ = try? await URLSession.shared.data(from: url)
+        }
+
+        // Warm coaching cards (Claude API call, ~3-5s cold)
+        if let url = URL(string: "\(base)/api/coaching/cards?passcode=\(pc)") {
+            _ = try? await URLSession.shared.data(from: url)
+        }
+
+        log("✅ Cache pre-warming complete")
     }
 
     /// Check for commitments that are due soon or overdue and send reminders
