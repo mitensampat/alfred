@@ -127,8 +127,8 @@ Alfred's commitment tracker is self-improving. See `docs/internal/COMMITMENT_LIF
 
 ## Git State Notes
 
-- Latest release: `v1.7.0` (tag pushed to GitHub with release)
-- Version in code: `1.7.0` (in `main.swift` line 15 — single source of truth)
+- Latest release: `v2.0.1` (tag pushed to GitHub with release)
+- Version in code: `2.0.1` (in `main.swift` line 15 — single source of truth)
 
 ## Debugging Tips
 
