@@ -875,13 +875,11 @@ class HTTPServer {
 
     private func handleScanCommitments(_ request: HTTPRequest) async -> HTTPResponse {
         do {
-            // Parse body
-            guard let body = request.body,
-                  let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
-                return HTTPResponse(
-                    statusCode: 400,
-                    body: ["error": "Invalid JSON body"]
-                )
+            // Parse body (optional — use defaults if no body provided)
+            var json: [String: Any] = [:]
+            if let body = request.body,
+               let parsed = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                json = parsed
             }
 
             let contactName = json["contactName"] as? String

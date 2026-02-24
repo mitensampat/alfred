@@ -7,6 +7,9 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="alfred">
     <title>alfred</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23f7f6f3' stroke='%23e9e9e7' stroke-width='1.5'/%3E%3Ctext x='50' y='64' font-size='54' text-anchor='middle' fill='%2337352f' font-family='Playfair Display,Georgia,serif' font-weight='400'%3Ea%3C/text%3E%3C/svg%3E">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23f7f6f3' stroke='%23e9e9e7' stroke-width='1.5'/%3E%3Ctext x='50' y='64' font-size='54' text-anchor='middle' fill='%2337352f' font-family='Playfair Display,Georgia,serif' font-weight='400'%3Ea%3C/text%3E%3C/svg%3E">
+    <link rel="manifest" href="/manifest.json">
     <!-- Google Fonts - Playfair Display for brand, Inter for body -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -18,17 +21,19 @@
             --font-display: "Playfair Display", Georgia, "Times New Roman", serif;
             --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            --font-mono: "SF Mono", "Menlo", "Monaco", monospace;
 
             /* Colors */
             --bg-primary: #ffffff;
-            --bg-secondary: #f7f6f3;
-            --bg-tertiary: #f1f0ee;
-            --text-primary: #37352f;
+            --bg-secondary: #fafafa;
+            --bg-tertiary: #f5f5f5;
+            --text-primary: #1a1a1a;
             --text-secondary: #787774;
             --text-tertiary: #9b9a97;
-            --border-color: #e9e9e7;
+            --border-color: #f0f0f0;
             --accent-color: #2383e2;
             --accent-hover: #1a73d9;
+            --accent-purple: #8B5CF6;
             --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
             --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
             --radius-sm: 3px;
@@ -44,7 +49,7 @@
 
         body {
             font-family: var(--font-body);
-            background: var(--bg-secondary);
+            background: #ffffff;
             color: var(--text-primary);
             line-height: 1.5;
             -webkit-font-smoothing: antialiased;
@@ -52,9 +57,9 @@
 
         /* Layout */
         .container {
-            max-width: 900px;
+            max-width: 540px;
             margin: 0 auto;
-            padding: 60px 24px 24px 24px;
+            padding: 40px 24px 48px 24px;
             display: flex;
             flex-direction: column;
             min-height: 100vh;
@@ -62,23 +67,22 @@
 
         /* Header */
         .header {
-            text-align: center;
-            margin-bottom: 48px;
+            margin-bottom: 20px;
         }
 
         .header h1 {
             font-family: var(--font-display);
-            font-size: 42px;
-            font-weight: 600;
+            font-size: 18px;
+            font-weight: 400;
             color: var(--text-primary);
-            margin-bottom: 8px;
+            margin-bottom: 2px;
             letter-spacing: -0.01em;
         }
 
         .header p {
             font-family: var(--font-body);
-            font-size: 15px;
-            color: var(--text-secondary);
+            font-size: 11px;
+            color: #ccc;
         }
 
         .header .header-content {
@@ -89,6 +93,20 @@
 
         .header .header-left {
             flex: 1;
+        }
+
+        .header .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header .header-clock {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: #bbb;
+            letter-spacing: 0.02em;
+            white-space: nowrap;
         }
 
         .header .logout-button {
@@ -117,17 +135,27 @@
 
         /* Footer */
         .app-footer {
-            text-align: center;
-            padding: 24px 0;
-            margin-top: auto;
-            border-top: 1px solid var(--border-color);
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            text-align: left;
+            padding: 10px 24px;
+            background: #ffffff;
+            border-top: 1px solid #f0f0f0;
+            z-index: 50;
+        }
+
+        .app-footer .branding-wrapper {
+            max-width: 540px;
+            margin: 0 auto;
         }
 
         .app-footer .branding {
             font-family: var(--font-body);
             font-size: 11px;
-            color: var(--text-tertiary);
-            letter-spacing: 0.5px;
+            color: #bbb;
+            letter-spacing: 0.3px;
         }
 
         .app-footer .branding strong {
@@ -2506,20 +2534,17 @@
         .page-tabs {
             display: flex;
             gap: 0;
-            border-bottom: 1px solid var(--border-color);
+            border-bottom: 1px solid #f0f0f0;
             margin-bottom: 24px;
-            padding: 0 24px;
-            max-width: 700px;
-            margin-left: auto;
-            margin-right: auto;
+            padding: 0;
         }
 
         .page-tab {
-            padding: 10px 20px;
+            padding: 10px 16px 10px 0;
             font-family: var(--font-body);
-            font-size: 14px;
-            font-weight: 500;
-            color: var(--text-tertiary);
+            font-size: 13px;
+            font-weight: 400;
+            color: #999;
             background: transparent;
             border: none;
             border-bottom: 2px solid transparent;
@@ -2536,160 +2561,306 @@
         .page-tab.active {
             color: var(--text-primary);
             border-bottom-color: var(--text-primary);
-            font-weight: 600;
+            font-weight: 500;
         }
 
         /* ===== Coach View (Home Tab) ===== */
         .coach-view {
-            max-width: 700px;
+            max-width: 540px;
             margin: 0 auto;
-            padding: 0 24px;
+            padding: 0;
         }
 
-        .top-goal-card {
-            background: #2c2c2c;
-            color: #fff;
-            border-radius: 12px;
-            padding: 20px 24px;
-            position: relative;
-            margin-bottom: 16px;
+        /* Greeting Hero */
+        .greeting {
+            margin-bottom: 20px;
+            padding-top: 8px;
         }
 
-        .top-goal-label {
+        .greeting-time {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: #bbb;
+            margin-bottom: 12px;
+            letter-spacing: 0.02em;
+        }
+
+        .greeting-text {
+            font-size: 15px;
+            font-weight: 400;
+            line-height: 1.6;
+            color: var(--text-primary);
+            margin-bottom: 12px;
+        }
+
+        .greeting-cta {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--accent-purple);
+            cursor: pointer;
+            display: inline-block;
+        }
+
+        .greeting-cta:hover {
+            text-decoration: underline;
+        }
+
+        /* Focus Card */
+        .focus-card {
+            background: #FAFAFA;
+            border-radius: 14px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+        }
+
+        .focus-label {
             font-size: 11px;
             font-weight: 600;
             text-transform: uppercase;
-            letter-spacing: 1px;
-            opacity: 0.7;
+            letter-spacing: 0.5px;
+            color: #bbb;
             margin-bottom: 8px;
         }
 
-        .top-goal-title {
-            font-family: var(--font-heading);
-            font-size: 18px;
-            font-weight: 600;
-            line-height: 1.3;
-            padding-right: 100px;
+        .focus-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }
 
-        .top-goal-meta {
-            font-size: 13px;
-            opacity: 0.6;
-            margin-top: 6px;
-        }
-
-        .top-goal-done-btn {
-            position: absolute;
-            right: 20px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: rgba(255,255,255,0.15);
-            color: #fff;
-            border: 1px solid rgba(255,255,255,0.25);
-            border-radius: 20px;
-            padding: 8px 16px;
-            font-size: 13px;
+        .focus-title {
+            font-size: 15px;
             font-weight: 500;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-
-        .top-goal-done-btn:hover {
-            background: rgba(255,255,255,0.25);
-        }
-
-        .top-goal-empty {
-            opacity: 0.5;
-            font-style: italic;
-        }
-
-        .pulse-strip {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 12px;
-            margin-bottom: 16px;
-        }
-
-        .pulse-item {
-            background: var(--bg-primary);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 14px 12px;
-            text-align: center;
-        }
-
-        .pulse-value {
-            font-size: 20px;
-            font-weight: 700;
             color: var(--text-primary);
-            line-height: 1;
+            flex: 1;
+            line-height: 1.4;
         }
 
-        .pulse-label {
-            font-size: 10px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.3px;
-            color: var(--text-tertiary);
+        .focus-done {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: 2px solid #ddd;
+            background: transparent;
+            color: #999;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            flex-shrink: 0;
+            margin-left: 12px;
+        }
+
+        .focus-done:hover {
+            border-color: var(--accent-purple);
+            color: var(--accent-purple);
+        }
+
+        .focus-meta {
+            font-size: 11px;
+            color: #999;
             margin-top: 4px;
         }
 
-        .coaching-cards-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 12px;
-            margin-bottom: 24px;
+        .focus-stats {
+            font-size: 11px;
+            color: #999;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #f0f0f0;
         }
 
-        .coaching-card {
-            background: var(--bg-primary);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 16px;
+        /* Insights Carousel */
+        .insights-section {
+            margin-bottom: 20px;
         }
 
-        .coaching-card-type {
+        .insights-carousel {
+            border-radius: 14px;
+        }
+
+        .insights-track {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .insight-slide {
+            padding: 16px 20px;
+            border: 1px solid #f0f0f0;
+            border-radius: 14px;
+            box-sizing: border-box;
+        }
+
+        .insight-label {
             font-size: 11px;
             font-weight: 600;
             text-transform: uppercase;
-            letter-spacing: 0.3px;
-            margin-bottom: 6px;
-            color: var(--text-tertiary);
+            letter-spacing: 0.5px;
+            color: #999;
+            margin-bottom: 8px;
         }
 
-        .coaching-card-text {
+        .insight-label.urgent {
+            color: #e74c3c;
+        }
+
+        .insight-text {
+            font-size: 13px;
+            line-height: 1.6;
+            color: #333;
+        }
+
+        .insight-dots {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            margin-top: 14px;
+        }
+
+        .insight-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 3px;
+            background: #ddd;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .insight-dot.active {
+            width: 18px;
+            background: var(--text-primary);
+        }
+
+        .insights-link {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 11px;
+            color: #999;
+            cursor: pointer;
+        }
+
+        .insights-link:hover {
+            color: #666;
+        }
+
+        /* Weekly Review / Sunday Reflection */
+        .weekly-review-section {
+            margin-bottom: 20px;
+        }
+
+        .weekly-review-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--accent-purple);
+            margin-bottom: 8px;
+        }
+
+        .weekly-review-text {
+            font-size: 13px;
+            line-height: 1.6;
+            color: #333;
+        }
+
+        .weekly-review-narrative {
             font-size: 14px;
-            line-height: 1.5;
-            color: var(--text-primary);
+            line-height: 1.7;
+            color: #333;
         }
 
+        .weekly-review-narrative h2 {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--accent-purple);
+            margin: 20px 0 8px 0;
+        }
+
+        .weekly-review-narrative h2:first-child {
+            margin-top: 0;
+        }
+
+        .weekly-review-narrative p {
+            margin: 0 0 12px 0;
+        }
+
+        .weekly-review-metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .weekly-metric {
+            background: #FAFAFA;
+            border: 1px solid #f0f0f0;
+            border-radius: 10px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .weekly-metric-value {
+            font-size: 22px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .weekly-metric-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #999;
+            margin-top: 2px;
+        }
+
+        /* Home Cadences */
+        .home-cadences {
+            margin-top: 20px;
+        }
+
+        .home-section-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #bbb;
+            margin-bottom: 8px;
+        }
+
+        /* Shimmer loading animation (shared) */
         .coaching-card-loading {
             color: var(--text-tertiary);
             font-style: italic;
+            background: linear-gradient(90deg, #ccc 25%, #999 50%, #ccc 75%);
+            background-size: 200% 100%;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: shimmer 2s ease-in-out infinite;
         }
 
-        .coach-footer {
-            text-align: center;
-            padding: 16px 0 24px;
-            font-size: 12px;
-            color: var(--text-tertiary);
+        @keyframes shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
         }
 
         @media (max-width: 600px) {
-            .coaching-cards-grid {
-                grid-template-columns: 1fr;
+            .greeting-text {
+                font-size: 14px;
             }
-            .pulse-strip {
-                grid-template-columns: repeat(2, 1fr);
+            .focus-card {
+                padding: 14px 16px;
             }
-            .top-goal-title {
-                padding-right: 0;
-            }
-            .top-goal-done-btn {
-                position: static;
-                transform: none;
-                margin-top: 12px;
-                display: inline-block;
+            .insight-slide {
+                padding: 14px 16px;
             }
         }
 
@@ -2697,7 +2868,7 @@
         .chat-view {
             display: flex;
             flex-direction: column;
-            max-width: 700px;
+            max-width: 540px;
             margin: 0 auto;
             height: calc(100vh - 200px);
             height: calc(100dvh - 200px); /* Mobile: accounts for browser chrome */
@@ -2728,7 +2899,7 @@
             flex-wrap: wrap;
             gap: 8px;
             padding: 16px 0;
-            justify-content: center;
+            justify-content: flex-start;
         }
 
         .chat-suggestion-chip {
@@ -2762,12 +2933,12 @@
             min-height: 42px;
             max-height: 200px;
             padding: 10px 12px;
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-md);
+            border: 1px solid #f0f0f0;
+            border-radius: 10px;
             font-size: 15px;
             font-family: inherit;
             color: var(--text-primary);
-            background: var(--bg-secondary);
+            background: #FAFAFA;
             resize: none;
             outline: none;
             transition: border-color 0.15s;
@@ -2786,8 +2957,8 @@
             width: 42px;
             height: 42px;
             border: none;
-            border-radius: var(--radius-md);
-            background: var(--accent-color);
+            border-radius: 10px;
+            background: var(--accent-purple);
             color: white;
             font-size: 18px;
             cursor: pointer;
@@ -2799,7 +2970,7 @@
         }
 
         .chat-send-btn:hover:not(:disabled) {
-            background: var(--accent-hover);
+            background: #7c4fe0;
         }
 
         .chat-send-btn:disabled {
@@ -2932,22 +3103,22 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            align-items: center;
+            align-items: flex-start;
             justify-content: center;
-            text-align: center;
-            padding: 40px 20px;
+            text-align: left;
+            padding: 40px 0;
         }
 
         .chat-welcome h2 {
             font-family: var(--font-display);
-            font-size: 24px;
+            font-size: 20px;
             font-weight: 400;
             color: var(--text-primary);
             margin-bottom: 8px;
         }
 
         .chat-welcome p {
-            font-size: 14px;
+            font-size: 13px;
             color: var(--text-tertiary);
             margin-bottom: 24px;
         }
@@ -3027,8 +3198,8 @@
         }
 
         .quick-prompts-header {
-            font-size: 14px;
-            font-weight: 600;
+            font-size: 12px;
+            font-weight: 500;
             color: var(--text-secondary);
             margin-bottom: 12px;
             text-transform: uppercase;
@@ -3047,8 +3218,8 @@
         }
 
         .recent-activity-header {
-            font-size: 14px;
-            font-weight: 600;
+            font-size: 12px;
+            font-weight: 500;
             color: var(--text-secondary);
             margin-bottom: 12px;
             text-transform: uppercase;
@@ -3057,8 +3228,8 @@
 
         .recent-activity-list {
             background: var(--bg-primary);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-md);
+            border: 1px solid #f0f0f0;
+            border-radius: 14px;
             overflow: hidden;
         }
 
@@ -3259,8 +3430,8 @@
         /* ===== Cadence Items ===== */
         .cadence-list {
             background: var(--bg-primary);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-md, 8px);
+            border: 1px solid #f0f0f0;
+            border-radius: 14px;
             overflow: hidden;
         }
 
@@ -3348,6 +3519,15 @@
             border-color: var(--text-primary);
         }
 
+        /* Coach Tuner — expandable cards */
+        .tuner-card.expanded .tuner-card-context {
+            max-height: 500px !important;
+            border-top-width: 1px !important;
+        }
+        .tuner-card.expanded svg {
+            transform: rotate(180deg);
+        }
+
         .cadence-run-btn:disabled {
             opacity: 0.5;
             cursor: not-allowed;
@@ -3366,8 +3546,8 @@
             left: 50%;
             transform: translate(-50%, -50%);
             background: var(--bg-primary);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
+            border: 1px solid #f0f0f0;
+            border-radius: 14px;
             padding: 20px 24px;
             box-shadow: 0 8px 32px rgba(0,0,0,0.12);
             z-index: 1000;
@@ -3449,15 +3629,15 @@
 
         .quick-prompt {
             padding: 16px;
-            background: var(--bg-primary);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-md);
+            background: #FAFAFA;
+            border: 1px solid #f0f0f0;
+            border-radius: 14px;
             cursor: pointer;
             transition: all 0.15s;
         }
 
         .quick-prompt:hover {
-            border-color: var(--accent-color);
+            border-color: #ddd;
             box-shadow: var(--shadow-sm);
             transform: translateY(-1px);
         }
@@ -3698,15 +3878,15 @@
 
         .settings-section {
             background: var(--bg-primary);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-lg);
+            border: 1px solid #f0f0f0;
+            border-radius: 14px;
             padding: 24px;
             margin-bottom: 16px;
         }
 
         .settings-section-title {
             font-family: var(--font-display);
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 600;
             color: var(--text-primary);
             margin-bottom: 16px;
@@ -3736,9 +3916,9 @@
 
         .settings-current-value {
             padding: 10px 12px;
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-md);
+            background: #FAFAFA;
+            border: 1px solid #f0f0f0;
+            border-radius: 10px;
             font-size: 13px;
             font-family: 'Monaco', 'Courier New', monospace;
             color: var(--text-secondary);
@@ -3755,28 +3935,28 @@
         .settings-input {
             width: 100%;
             padding: 10px 12px;
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-md);
+            border: 1px solid #f0f0f0;
+            border-radius: 10px;
             font-size: 14px;
             font-family: 'Monaco', 'Courier New', monospace;
             color: var(--text-primary);
-            background: var(--bg-secondary);
+            background: #FAFAFA;
             outline: none;
             transition: border-color 0.15s;
         }
 
         .settings-input:focus {
-            border-color: var(--accent-color);
+            border-color: var(--accent-purple);
             background: var(--bg-primary);
         }
 
         .settings-button-save {
             width: 100%;
             padding: 12px;
-            background: var(--accent-color);
+            background: var(--accent-purple);
             color: white;
             border: none;
-            border-radius: var(--radius-md);
+            border-radius: 10px;
             font-size: 15px;
             font-weight: 500;
             cursor: pointer;
@@ -3784,7 +3964,7 @@
         }
 
         .settings-button-save:hover {
-            background: var(--accent-hover);
+            background: #7c4fe0;
         }
 
         .settings-button-danger {
@@ -3793,7 +3973,7 @@
             background: #dc3545;
             color: white;
             border: none;
-            border-radius: var(--radius-md);
+            border-radius: 10px;
             font-size: 15px;
             font-weight: 500;
             cursor: pointer;
@@ -3834,14 +4014,14 @@
             justify-content: space-between;
             align-items: center;
             padding: 12px 16px;
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-md);
+            background: #FAFAFA;
+            border: 1px solid #f0f0f0;
+            border-radius: 12px;
             transition: all 0.15s;
         }
 
         .favorite-item:hover {
-            border-color: var(--accent-color);
+            border-color: #ddd;
             background: var(--bg-tertiary);
         }
 
@@ -3950,8 +4130,8 @@
         }
 
         .toggle-switch input:checked + .toggle-slider {
-            background: var(--accent-color);
-            border-color: var(--accent-color);
+            background: var(--accent-purple);
+            border-color: var(--accent-purple);
         }
 
         .toggle-switch input:checked + .toggle-slider:before {
@@ -3966,16 +4146,16 @@
         }
 
         .agent-card {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-md);
+            background: #FAFAFA;
+            border: 1px solid #f0f0f0;
+            border-radius: 14px;
             padding: 16px;
             cursor: pointer;
             transition: all 0.15s;
         }
 
         .agent-card:hover {
-            border-color: var(--accent-color);
+            border-color: #ddd;
             box-shadow: var(--shadow-sm);
             transform: translateY(-1px);
         }
@@ -4228,16 +4408,16 @@
         /* Form Page */
         .form-page {
             background: var(--bg-primary);
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-lg);
+            border: 1px solid #f0f0f0;
+            border-radius: 14px;
             padding: 32px;
-            box-shadow: var(--shadow-md);
+            box-shadow: none;
             animation: slideIn 0.3s ease-out;
             width: 100%;
         }
 
         .form-page-title {
-            font-size: 24px;
+            font-size: 20px;
             font-weight: 600;
             color: var(--text-primary);
             margin-bottom: 24px;
@@ -4259,7 +4439,7 @@
             flex: 1;
             padding: 12px;
             border: none;
-            border-radius: var(--radius-md);
+            border-radius: 10px;
             font-size: 15px;
             font-weight: 500;
             cursor: pointer;
@@ -4267,12 +4447,12 @@
         }
 
         .form-page-button-primary {
-            background: var(--accent-color);
+            background: var(--accent-purple);
             color: white;
         }
 
         .form-page-button-primary:hover {
-            background: var(--accent-hover);
+            background: #7c4fe0;
         }
 
         .form-page-button-secondary {
@@ -4680,18 +4860,18 @@
 
         .form-input {
             padding: 10px 12px;
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-md);
+            border: 1px solid #f0f0f0;
+            border-radius: 10px;
             font-size: 15px;
             font-family: inherit;
             color: var(--text-primary);
-            background: var(--bg-secondary);
+            background: #FAFAFA;
             outline: none;
             transition: border-color 0.15s;
         }
 
         .form-input:focus {
-            border-color: var(--accent-color);
+            border-color: var(--accent-purple);
             background: var(--bg-primary);
         }
 
@@ -5743,13 +5923,16 @@
                     <h1>alfred</h1>
                     <p>judgement from noise</p>
                 </div>
-                <button id="logoutButton" class="logout-button" onclick="logout()" title="Logout">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                        <polyline points="16 17 21 12 16 7"></polyline>
-                        <line x1="21" y1="12" x2="9" y2="12"></line>
-                    </svg>
-                </button>
+                <div class="header-right">
+                    <div class="header-clock" id="greetingTime"></div>
+                    <button id="logoutButton" class="logout-button" onclick="logout()" title="Logout">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                            <polyline points="16 17 21 12 16 7"></polyline>
+                            <line x1="21" y1="12" x2="9" y2="12"></line>
+                        </svg>
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -5771,60 +5954,46 @@
 
         <!-- Coach View (Home Tab) -->
         <div id="coachView" class="coach-view">
-            <!-- Top Goal Card -->
-            <div id="topGoalCard" class="top-goal-card">
-                <div class="top-goal-label">TODAY'S TOP GOAL</div>
-                <div id="topGoalTitle" class="top-goal-title coaching-card-loading">Loading...</div>
-                <div id="topGoalMeta" class="top-goal-meta hidden"></div>
-                <button id="topGoalDoneBtn" class="top-goal-done-btn hidden" onclick="markTopGoalDone()">Mark Done</button>
+            <!-- Greeting Hero -->
+            <div class="greeting">
+                <div class="greeting-text coaching-card-loading" id="greetingText">Thinking about your day...</div>
+                <div class="greeting-cta" onclick="switchPage('chat')">Talk to coach &rarr;</div>
             </div>
 
-            <!-- Pulse Metrics Strip -->
-            <div class="pulse-strip">
-                <div class="pulse-item">
-                    <div class="pulse-value" id="pulseOpen">--</div>
-                    <div class="pulse-label">Open</div>
+            <!-- Focus Card -->
+            <div class="focus-card">
+                <div class="focus-label">FOCUS</div>
+                <div class="focus-row">
+                    <div class="focus-title coaching-card-loading" id="focusTitle">Finding your focus...</div>
+                    <button class="focus-done hidden" id="focusDone" onclick="markTopGoalDone()">&#10003;</button>
                 </div>
-                <div class="pulse-item">
-                    <div class="pulse-value" id="pulseOverdue">--</div>
-                    <div class="pulse-label">Overdue</div>
-                </div>
-                <div class="pulse-item">
-                    <div class="pulse-value" id="pulseMeetings">--</div>
-                    <div class="pulse-label">Meetings</div>
-                </div>
-                <div class="pulse-item">
-                    <div class="pulse-value" id="pulseReliable">--</div>
-                    <div class="pulse-label">Reliable</div>
-                </div>
+                <div class="focus-meta" id="focusMeta"></div>
+                <div class="focus-stats" id="focusStats">-- open &middot; -- overdue &middot; -- meetings &middot; --% reliable</div>
             </div>
 
-            <!-- Coaching Cards -->
-            <div id="coachingCardsContainer" class="coaching-cards-grid">
-                <div class="coaching-card">
-                    <div class="coaching-card-type">Leverage</div>
-                    <div class="coaching-card-text coaching-card-loading">Loading insights...</div>
+            <!-- Insight Carousel -->
+            <div class="insights-section">
+                <div class="insights-carousel">
+                    <div class="insights-track" id="insightsTrack">
+                        <!-- Loading skeleton -->
+                        <div class="insight-slide">
+                            <div class="insight-label">Leverage</div>
+                            <div class="insight-text coaching-card-loading">Reviewing your leverage...</div>
+                        </div>
+                    </div>
                 </div>
-                <div class="coaching-card">
-                    <div class="coaching-card-type">Relationship</div>
-                    <div class="coaching-card-text coaching-card-loading">Loading insights...</div>
-                </div>
-                <div class="coaching-card">
-                    <div class="coaching-card-type">Avoidance</div>
-                    <div class="coaching-card-text coaching-card-loading">Loading insights...</div>
-                </div>
+                <div class="insight-dots" id="insightDots" style="display:none;"></div>
             </div>
 
-            <div class="coach-footer">✦ powered by your data · updated every 2 hours</div>
+            <!-- Weekly Review (Fri-Sun, injected by JS) -->
+            <div id="weeklyReviewSection" class="weekly-review-section hidden"></div>
+
+            <!-- Cadences moved to Tools tab -->
         </div>
 
         <!-- Chat View (hidden by default) -->
         <div id="chatView" class="chat-view hidden">
             <div id="chatMessageList" class="chat-message-list">
-                <div class="chat-welcome" id="chatWelcome">
-                    <h2>Coach Alfred</h2>
-                    <p id="chatWelcomeSubtitle">What's on your mind?</p>
-                </div>
                 <div class="chat-suggestions" id="chatSuggestions"></div>
                 <div class="past-conversations" id="pastConversationsSection" style="display:none;">
                     <div class="past-conversations-header">
@@ -5907,6 +6076,7 @@
                 <div class="settings-item">
                     <div class="settings-item-label">Tasks Database ID</div>
                     <div class="settings-item-desc">The Notion database ID for your unified Tasks (Todos & Commitments)</div>
+                    <div id="tasksDbNameLabel" style="font-size: 11px; font-weight: 500; color: #8B5CF6; margin-bottom: 3px; display: none;"></div>
                     <div id="currentTasksDatabaseId" class="settings-current-value hidden"></div>
                     <input type="text" id="tasksDatabaseId" class="settings-input" placeholder="Enter new database ID..." />
                 </div>
@@ -5916,25 +6086,33 @@
                     <div class="settings-item-desc">Notion databases Alfred scans for context during Daily Briefing and Attention Check. Paste database URLs or IDs.</div>
 
                     <div id="contextDbsContainer" style="margin-top: 12px;">
-                        <div class="context-db-row" style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center;">
-                            <span style="color: var(--text-tertiary); font-size: 12px; width: 16px;">1.</span>
-                            <input type="text" id="contextDb1" class="settings-input" style="flex: 1; margin: 0;" placeholder="Notion database URL or ID..." />
-                            <span id="contextDb1Status" class="context-db-status"></span>
+                        <div class="context-db-row" style="margin-bottom: 10px;">
+                            <div style="display: flex; align-items: baseline; gap: 6px; margin-bottom: 3px;">
+                                <span style="color: var(--text-tertiary); font-size: 11px;">1.</span>
+                                <span id="contextDb1Status" style="font-size: 11px; font-weight: 500; color: #8B5CF6;"></span>
+                            </div>
+                            <input type="text" id="contextDb1" class="settings-input" style="margin: 0;" placeholder="Notion database URL or ID..." />
                         </div>
-                        <div class="context-db-row" style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center;">
-                            <span style="color: var(--text-tertiary); font-size: 12px; width: 16px;">2.</span>
-                            <input type="text" id="contextDb2" class="settings-input" style="flex: 1; margin: 0;" placeholder="Notion database URL or ID..." />
-                            <span id="contextDb2Status" class="context-db-status"></span>
+                        <div class="context-db-row" style="margin-bottom: 10px;">
+                            <div style="display: flex; align-items: baseline; gap: 6px; margin-bottom: 3px;">
+                                <span style="color: var(--text-tertiary); font-size: 11px;">2.</span>
+                                <span id="contextDb2Status" style="font-size: 11px; font-weight: 500; color: #8B5CF6;"></span>
+                            </div>
+                            <input type="text" id="contextDb2" class="settings-input" style="margin: 0;" placeholder="Notion database URL or ID..." />
                         </div>
-                        <div class="context-db-row" style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center;">
-                            <span style="color: var(--text-tertiary); font-size: 12px; width: 16px;">3.</span>
-                            <input type="text" id="contextDb3" class="settings-input" style="flex: 1; margin: 0;" placeholder="Notion database URL or ID..." />
-                            <span id="contextDb3Status" class="context-db-status"></span>
+                        <div class="context-db-row" style="margin-bottom: 10px;">
+                            <div style="display: flex; align-items: baseline; gap: 6px; margin-bottom: 3px;">
+                                <span style="color: var(--text-tertiary); font-size: 11px;">3.</span>
+                                <span id="contextDb3Status" style="font-size: 11px; font-weight: 500; color: #8B5CF6;"></span>
+                            </div>
+                            <input type="text" id="contextDb3" class="settings-input" style="margin: 0;" placeholder="Notion database URL or ID..." />
                         </div>
-                        <div class="context-db-row" style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center;">
-                            <span style="color: var(--text-tertiary); font-size: 12px; width: 16px;">4.</span>
-                            <input type="text" id="contextDb4" class="settings-input" style="flex: 1; margin: 0;" placeholder="Notion database URL or ID..." />
-                            <span id="contextDb4Status" class="context-db-status"></span>
+                        <div class="context-db-row" style="margin-bottom: 10px;">
+                            <div style="display: flex; align-items: baseline; gap: 6px; margin-bottom: 3px;">
+                                <span style="color: var(--text-tertiary); font-size: 11px;">4.</span>
+                                <span id="contextDb4Status" style="font-size: 11px; font-weight: 500; color: #8B5CF6;"></span>
+                            </div>
+                            <input type="text" id="contextDb4" class="settings-input" style="margin: 0;" placeholder="Notion database URL or ID..." />
                         </div>
                     </div>
                     <div class="settings-item-desc" style="font-size: 11px; color: var(--text-tertiary); margin-top: 4px;">
@@ -6101,9 +6279,49 @@
             </div>
         </div>
 
+        <!-- Coach Tuner View -->
+        <div id="coachTunerView" class="hidden settings-page">
+            <div class="settings-section">
+                <div class="settings-section-title" style="display: flex; align-items: center; justify-content: space-between;">
+                    Coaching Cards
+                    <button class="cadence-run-btn" onclick="refreshCoachingDebug()" style="font-size: 12px;">Refresh</button>
+                </div>
+                <div id="coachDebugCards" style="margin-top: 8px;">
+                    <div style="color: var(--text-secondary); font-size: 13px; padding: 12px 0;">Loading...</div>
+                </div>
+                <div id="coachDebugMeta" style="font-size: 11px; color: var(--text-tertiary); margin-top: 8px;"></div>
+            </div>
+
+            <div class="settings-section" style="margin-top: 24px;">
+                <div class="settings-section-title" style="display: flex; align-items: center; justify-content: space-between;">
+                    Coaching Tenets
+                    <button class="cadence-run-btn" id="openTenetsNotionBtn" onclick="openTenetsInNotion()" style="font-size: 12px; display: none;">
+                        Edit in Notion &rarr;
+                    </button>
+                </div>
+                <div style="font-size: 12px; color: var(--text-tertiary); margin-bottom: 10px;">
+                    These rules shape how Coach Alfred coaches you. Edit them in Notion — changes are picked up automatically within 30 minutes.
+                </div>
+                <div id="tenetsPreview" style="
+                    border: 1px solid var(--border-color);
+                    border-radius: 8px;
+                    padding: 14px 16px;
+                    background: var(--bg-secondary);
+                    font-size: 13px;
+                    line-height: 1.6;
+                    color: var(--text-primary);
+                    max-height: 400px;
+                    overflow-y: auto;
+                    white-space: pre-wrap;
+                    font-family: var(--font-body);
+                ">Loading tenets...</div>
+            </div>
+        </div>
+
         <!-- Quick Actions (shown when empty) -->
         <div id="quickPromptsSection" class="quick-prompts">
-            <div class="quick-prompts-header">Actions</div>
+            <!-- DAILY actions -->
+            <div class="home-section-label" style="margin-bottom: 10px;">DAILY</div>
             <div class="quick-prompts-grid">
                 <div class="quick-prompt" onclick="showBriefingOptions()">
                     <div class="quick-prompt-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
@@ -6120,6 +6338,16 @@
                     <div class="quick-prompt-title">Commitments</div>
                     <div class="quick-prompt-desc">Track promises & check on people</div>
                 </div>
+                <div class="quick-prompt" onclick="callDirectAPI('/api/attention-check', 'Attention Check')">
+                    <div class="quick-prompt-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
+                    <div class="quick-prompt-title">Attention Check</div>
+                    <div class="quick-prompt-desc">What needs focus right now</div>
+                </div>
+            </div>
+
+            <!-- MANAGE actions -->
+            <div class="home-section-label" style="margin-top: 20px; margin-bottom: 10px;">MANAGE</div>
+            <div class="quick-prompts-grid">
                 <div class="quick-prompt" onclick="showMessagesPrompt()">
                     <div class="quick-prompt-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
                     <div class="quick-prompt-title">Messages</div>
@@ -6130,10 +6358,10 @@
                     <div class="quick-prompt-title">Scan Todos</div>
                     <div class="quick-prompt-desc">Extract todos from WhatsApp</div>
                 </div>
-                <div class="quick-prompt" onclick="callDirectAPI('/api/attention-check', 'Attention Check')">
-                    <div class="quick-prompt-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div>
-                    <div class="quick-prompt-title">Attention Check</div>
-                    <div class="quick-prompt-desc">What needs focus right now</div>
+                <div class="quick-prompt" onclick="showCoachTuner()">
+                    <div class="quick-prompt-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m-7-3.5 5.2-3m1.6-1L17 12m-5-7 0 0m0 14 0 0M4.9 4.9l4.2 4.2m5.8 5.8 4.2 4.2M4.9 19.1l4.2-4.2m5.8-5.8 4.2-4.2"/></svg></div>
+                    <div class="quick-prompt-title">Coach Tuner</div>
+                    <div class="quick-prompt-desc">Debug cards & edit tenets</div>
                 </div>
                 <div class="quick-prompt" onclick="showPatternsAndMemory()">
                     <div class="quick-prompt-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></div>
@@ -6151,17 +6379,14 @@
                     <div class="quick-prompt-desc">Notion config, passcode & cache</div>
                 </div>
             </div>
-        </div>
 
-        <!-- Cadences -->
-        <div id="cadenceSection" class="recent-activity">
-            <div class="recent-activity-header">Cadences</div>
-            <div id="cadenceStatusContent" class="cadence-list">
-                <div class="recent-activity-empty">Loading cadences...</div>
-            </div>
-            <div id="groupSuggestionsSection" class="hidden" style="margin-top: 12px;">
-                <div class="recent-activity-header" style="font-size: 11px;">Group Suggestions</div>
-                <div id="groupSuggestionsList" class="cadence-list"></div>
+            <!-- CADENCES (moved from Home) -->
+            <div id="cadenceSection" class="home-cadences" style="margin-top: 20px;">
+                <div class="home-section-label" style="margin-bottom: 10px;">CADENCES</div>
+                <div id="cadenceStatusContent" class="cadence-list">
+                    <div class="recent-activity-empty">Loading cadences...</div>
+                </div>
+                <!-- Group Suggestions moved to Messages tool (Phase 6) -->
             </div>
         </div>
 
@@ -6511,10 +6736,6 @@
             // Reset UI to welcome state (re-create all elements inside scrollable area)
             const list = document.getElementById('chatMessageList');
             list.innerHTML = `
-                <div class="chat-welcome" id="chatWelcome">
-                    <h2>Coach Alfred</h2>
-                    <p id="chatWelcomeSubtitle">What's on your mind?</p>
-                </div>
                 <div class="chat-suggestions" id="chatSuggestions"></div>
                 <div class="past-conversations" id="pastConversationsSection" style="display:none;">
                     <div class="past-conversations-header">
@@ -6732,6 +6953,22 @@
                         </div>`;
                     });
                     if (items.length > 5) cardHtml += `<div style="color: var(--text-tertiary); font-size: 12px; padding-top: 4px;">+${items.length - 5} more</div>`;
+                } else if (data.type === 'task_update') {
+                    const icon = data.success ? '✅' : '❌';
+                    cardHtml = `<div class="chat-tool-card-title">${icon} Task Updated</div>`;
+                    cardHtml += `<div style="padding: 6px 0; font-size: 13px; font-weight: 500;">${escapeHtml(data.taskTitle || '')}</div>`;
+                    if (Array.isArray(data.changes)) {
+                        data.changes.forEach(c => {
+                            cardHtml += `<div style="padding: 3px 0; font-size: 12px; color: var(--text-secondary);">• ${escapeHtml(c)}</div>`;
+                        });
+                    }
+                } else if (data.type === 'disambiguation') {
+                    cardHtml = `<div class="chat-tool-card-title">🔍 Multiple Matches</div>`;
+                    if (Array.isArray(data.matches)) {
+                        data.matches.forEach((m, i) => {
+                            cardHtml += `<div style="padding: 4px 0; font-size: 13px;">${i+1}. ${escapeHtml(m)}</div>`;
+                        });
+                    }
                 } else {
                     // Generic tool result (attention check, etc.) — no card to show
                     // The coaching response will come through text chunks
@@ -7582,9 +7819,16 @@
             document.getElementById('ftueWizard').classList.add('hidden');
             // Start on Home (coach) tab
             switchPage('home');
+            // Start ticking clock
+            startGreetingClock();
             // Load coaching data for Home tab
             loadHomePulse();
             loadCoachingCards();
+            loadGreeting();
+            // On Sundays, load the weekly reflection (replaces daily coaching cards)
+            if (isSunday()) {
+                loadWeeklyReflection();
+            }
             // Pre-load tools tab data
             loadRecentActivity();
             loadCadenceStatus();
@@ -9934,6 +10178,14 @@
         // Show messages prompt
         function showMessagesPrompt() {
             const formHTML = `
+                <!-- Discovery: Active Conversations -->
+                <div id="msgDiscoverySection" class="form-group" style="margin-bottom: 16px;">
+                    <label class="form-label" style="font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-tertiary);">Active Conversations</label>
+                    <div id="msgDiscoveryList" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;">
+                        <span style="font-size: 12px; color: var(--text-tertiary);">Loading...</span>
+                    </div>
+                </div>
+                <div style="border-top: 1px solid var(--border-color); margin-bottom: 16px;"></div>
                 <div class="form-group">
                     <label class="form-label">Contact Name or Group</label>
                     <input type="text" name="contact" class="form-input" placeholder="Enter name..." required autofocus />
@@ -9974,12 +10226,59 @@
                 </div>
             `;
 
-            showFormPage('Messages Summary', formHTML, (data) => {
+            showFormPage('Messages', formHTML, (data) => {
                 if (!data.contact) return;
                 const endpoint = `/api/messages/summary?contact=${encodeURIComponent(data.contact)}&platform=${data.platform}&timeframe=${data.timeframe}`;
                 const title = `Messages: ${data.contact} on ${data.platform} (${data.timeframe})`;
                 callDirectAPI(endpoint, title);
             });
+
+            // Load discovery suggestions asynchronously
+            loadMessageDiscovery();
+        }
+
+        async function loadMessageDiscovery() {
+            try {
+                const response = await authFetch('/api/cadence/group-suggestions');
+                if (!response.ok) return;
+                const data = await response.json();
+                const suggestions = data.suggestions || [];
+
+                const list = document.getElementById('msgDiscoveryList');
+                if (!list) return;
+
+                if (suggestions.length === 0) {
+                    list.innerHTML = '<span style="font-size: 12px; color: var(--text-tertiary);">No active groups found</span>';
+                    return;
+                }
+
+                let html = '';
+                suggestions.forEach(s => {
+                    const name = s.name || 'Unknown';
+                    const count = s.messageCount || 0;
+                    html += `<button onclick="quickSummarize('${escapeHtml(name)}')" style="
+                        display: inline-flex; align-items: center; gap: 4px;
+                        padding: 5px 10px; border-radius: 16px;
+                        border: 1px solid var(--border-color); background: var(--bg-primary);
+                        font-size: 12px; color: var(--text-primary); cursor: pointer;
+                        transition: background 0.15s;
+                    " onmouseover="this.style.background='var(--bg-hover)'" onmouseout="this.style.background='var(--bg-primary)'">
+                        <span>${escapeHtml(name)}</span>
+                        <span style="color: var(--text-tertiary); font-size: 10px;">${count}</span>
+                    </button>`;
+                });
+                list.innerHTML = html;
+            } catch (error) {
+                const list = document.getElementById('msgDiscoveryList');
+                if (list) list.innerHTML = '';
+            }
+        }
+
+        function quickSummarize(groupName) {
+            // Directly trigger summary for the tapped group
+            const endpoint = `/api/messages/summary?contact=${encodeURIComponent(groupName)}&platform=whatsapp&timeframe=7d`;
+            const title = `Messages: ${groupName} on WhatsApp (7d)`;
+            callDirectAPI(endpoint, title);
         }
 
         // ===== EXTRACTION AND APPROVAL FLOW =====
@@ -10559,12 +10858,13 @@
             // Clear chat container (for tool/action results)
             document.getElementById('chatContainer').innerHTML = '';
 
-            // Hide form view, settings, agents, and favorites views
+            // Hide form view, settings, agents, favorites, and tuner views
             document.getElementById('formView').classList.add('hidden');
             document.getElementById('settingsView').classList.add('hidden');
             document.getElementById('agentsView').classList.add('hidden');
             document.getElementById('agentDetailView').classList.add('hidden');
             document.getElementById('favoritesView').classList.add('hidden');
+            document.getElementById('coachTunerView').classList.add('hidden');
 
             // Show quick prompts
             document.getElementById('quickPromptsSection').classList.remove('hidden');
@@ -10648,36 +10948,36 @@
 
         // Render pulse data into the DOM (shared by live + cached paths)
         function renderPulseData(data, staleLabel) {
-            const goalTitle = document.getElementById('topGoalTitle');
-            const goalMeta = document.getElementById('topGoalMeta');
-            const goalBtn = document.getElementById('topGoalDoneBtn');
+            const focusTitle = document.getElementById('focusTitle');
+            const focusMeta = document.getElementById('focusMeta');
+            const focusDone = document.getElementById('focusDone');
+            const focusStats = document.getElementById('focusStats');
 
             if (data.topGoal && data.topGoal.title) {
-                goalTitle.textContent = data.topGoal.title;
-                goalTitle.classList.remove('coaching-card-loading', 'top-goal-empty');
+                focusTitle.textContent = data.topGoal.title;
+                focusTitle.classList.remove('coaching-card-loading');
                 if (data.topGoal.dueDate) {
-                    goalMeta.textContent = 'Due: ' + data.topGoal.dueDate + (staleLabel ? '  · cached ' + staleLabel : '');
-                    goalMeta.classList.remove('hidden');
+                    focusMeta.textContent = 'Due: ' + data.topGoal.dueDate + (staleLabel ? '  · cached ' + staleLabel : '');
                 } else if (staleLabel) {
-                    goalMeta.textContent = 'cached ' + staleLabel;
-                    goalMeta.classList.remove('hidden');
+                    focusMeta.textContent = 'cached ' + staleLabel;
                 }
                 if (data.topGoal.notionId) {
-                    goalBtn.dataset.notionId = data.topGoal.notionId;
-                    goalBtn.classList.remove('hidden');
+                    focusDone.dataset.notionId = data.topGoal.notionId;
+                    focusDone.classList.remove('hidden');
                 }
             } else {
-                goalTitle.textContent = 'No top goal set — add one in Notion';
-                goalTitle.classList.remove('coaching-card-loading');
-                goalTitle.classList.add('top-goal-empty');
+                focusTitle.textContent = 'No active goal — add one in Notion';
+                focusTitle.classList.remove('coaching-card-loading');
+                focusTitle.style.opacity = '0.5';
             }
 
             const m = data.metrics || {};
-            document.getElementById('pulseOpen').textContent = m.openTasks || 0;
-            document.getElementById('pulseOverdue').textContent = m.overdueCount || 0;
-            document.getElementById('pulseMeetings').textContent = m.meetingsToday || 0;
+            const open = m.openTasks || 0;
+            const overdue = m.overdueCount || 0;
+            const meetings = m.meetingsToday || 0;
             const rel = m.reliabilityScore || 0;
-            document.getElementById('pulseReliable').textContent = (rel > 1 ? rel : Math.round(rel * 100)) + '%';
+            const relPct = (rel > 1 ? rel : Math.round(rel * 100)) + '%';
+            focusStats.textContent = open + ' open \u00B7 ' + overdue + ' overdue \u00B7 ' + meetings + ' meetings \u00B7 ' + relPct + ' reliable';
         }
 
         async function checkHealthStatus() {
@@ -10709,20 +11009,24 @@
                 renderPulseData(cached.data, formatCacheAge('pulse'));
             }
 
-            // Then try live fetch to get fresh data
+            // Then try live fetch to get fresh data (3s timeout so the page never stalls)
+            const pulseAbort = new AbortController();
+            const pulseTimeout = setTimeout(() => pulseAbort.abort(), 3000);
             try {
-                const response = await authFetch('/api/home/pulse');
+                const response = await authFetch('/api/home/pulse', { signal: pulseAbort.signal });
+                clearTimeout(pulseTimeout);
                 if (!response.ok) throw new Error('Pulse API failed: ' + response.status);
                 const data = await response.json();
 
                 cacheSet('pulse', data);
                 renderPulseData(data, null); // fresh — no stale label
             } catch (err) {
+                clearTimeout(pulseTimeout);
                 console.error('Failed to load pulse:', err);
                 // If we already rendered cache above, we're fine. If not, show error.
                 if (!cached || !cached.data) {
-                    document.getElementById('topGoalTitle').textContent = 'Could not load — tap to retry';
-                    document.getElementById('topGoalTitle').classList.remove('coaching-card-loading');
+                    document.getElementById('focusTitle').textContent = 'Couldn\'t reach Alfred — pull down to refresh';
+                    document.getElementById('focusTitle').classList.remove('coaching-card-loading');
                 }
                 // Silent retry after 15 seconds
                 setTimeout(() => { loadHomePulse(); }, 15000);
@@ -10730,31 +11034,80 @@
         }
 
         // Render coaching cards into the DOM (shared by live + cached paths)
+        // Carousel state
+        let _insightSlideIndex = 0;
+        let _insightSlideCount = 0;
+
         function renderCoachingCardsData(cards, staleLabel) {
-            const container = document.getElementById('coachingCardsContainer');
-            container.innerHTML = '';
+            const track = document.getElementById('insightsTrack');
+            const dotsContainer = document.getElementById('insightDots');
+            const weeklySection = document.getElementById('weeklyReviewSection');
+            track.innerHTML = '';
+            dotsContainer.innerHTML = '';
 
             if (!cards || cards.length === 0) {
-                container.innerHTML = '<div class="coaching-card"><div class="coaching-card-type">Coach</div><div class="coaching-card-text coaching-card-loading">Generating insights...</div></div>';
+                track.innerHTML = '<div class="insight-slide"><div class="insight-label">Coach</div><div class="insight-text coaching-card-loading">Thinking about your day...</div></div>';
                 return;
             }
 
+            // Separate weekly review from regular insight cards
+            const insightCards = [];
+            let weeklyReviewCard = null;
             cards.forEach(card => {
-                const el = document.createElement('div');
-                el.className = 'coaching-card';
-                const label = card.label || card.type || 'Insight';
-                el.innerHTML = '<div class="coaching-card-type">' + escapeHtml(label) + '</div>'
-                    + '<div class="coaching-card-text">' + escapeHtml(card.insight || '') + '</div>';
-                container.appendChild(el);
+                if (card.type === 'weekly_review') {
+                    weeklyReviewCard = card;
+                } else {
+                    insightCards.push(card);
+                }
             });
 
+            // Build cards as a vertical list
+            insightCards.forEach(card => {
+                const slide = document.createElement('div');
+                slide.className = 'insight-slide';
+                const label = card.label || card.type || 'Insight';
+                const isUrgent = card.type === 'avoidance' && (card.insight || '').includes('week');
+                slide.innerHTML = '<div class="insight-label' + (isUrgent ? ' urgent' : '') + '">' + escapeHtml(label) + '</div>'
+                    + '<div class="insight-text">' + escapeHtml(card.insight || '') + '</div>';
+                track.appendChild(slide);
+            });
+
+            // Render weekly review if present
+            if (weeklyReviewCard) {
+                weeklySection.innerHTML = '<div class="weekly-review-label">WEEKLY REVIEW</div>'
+                    + '<div class="weekly-review-text">' + escapeHtml(weeklyReviewCard.insight || '') + '</div>';
+                weeklySection.classList.remove('hidden');
+            } else {
+                weeklySection.classList.add('hidden');
+            }
+
+            // Stale label — remove any previous one first to prevent stacking
+            const existingStale = document.getElementById('insightsStaleLabel');
+            if (existingStale) existingStale.remove();
             if (staleLabel) {
                 const staleEl = document.createElement('div');
-                staleEl.className = 'coaching-cards-stale';
-                staleEl.style.cssText = 'text-align:center;font-size:11px;color:#999;margin-top:6px;';
-                staleEl.textContent = 'cached ' + staleLabel + ' · refreshing...';
-                container.appendChild(staleEl);
+                staleEl.id = 'insightsStaleLabel';
+                staleEl.style.cssText = 'text-align:center;font-size:11px;color:#bbb;margin-top:6px;';
+                staleEl.textContent = 'cached ' + staleLabel + ' \u00B7 refreshing...';
+                dotsContainer.parentNode.insertBefore(staleEl, dotsContainer.nextSibling);
             }
+        }
+
+        function advanceInsightSlide() {
+            if (_insightSlideCount <= 1) return;
+            goToInsightSlide((_insightSlideIndex + 1) % _insightSlideCount);
+        }
+
+        function goToInsightSlide(idx) {
+            _insightSlideIndex = idx;
+            const track = document.getElementById('insightsTrack');
+            track.style.transform = 'translateX(-' + (idx * 100) + '%)';
+
+            // Update dots
+            const dots = document.querySelectorAll('#insightDots .insight-dot');
+            dots.forEach(function(dot, i) {
+                dot.classList.toggle('active', i === idx);
+            });
         }
 
         async function loadCoachingCards() {
@@ -10764,9 +11117,12 @@
                 renderCoachingCardsData(cached.data, formatCacheAge('coaching_cards'));
             }
 
-            // Then try live fetch
+            // Then try live fetch (3s timeout so the page never stalls)
+            const cardsAbort = new AbortController();
+            const cardsTimeout = setTimeout(() => cardsAbort.abort(), 3000);
             try {
-                const response = await authFetch('/api/coaching/cards');
+                const response = await authFetch('/api/coaching/cards', { signal: cardsAbort.signal });
+                clearTimeout(cardsTimeout);
                 if (!response.ok) throw new Error('Coaching API failed: ' + response.status);
                 const data = await response.json();
                 const cards = data.cards || [];
@@ -10774,22 +11130,126 @@
                 cacheSet('coaching_cards', cards);
                 renderCoachingCardsData(cards, null); // fresh — no stale label
             } catch (err) {
+                clearTimeout(cardsTimeout);
                 console.error('Failed to load coaching cards:', err);
                 // If cache was rendered, that's fine. Otherwise leave skeleton.
                 if (!cached || !cached.data) {
                     // skeleton already in place from HTML
                 }
-                // Silent retry
+                // Silent retry after 15 seconds
                 setTimeout(() => { loadCoachingCards(); }, 15000);
             }
         }
 
+        function isSunday() {
+            return new Date().getDay() === 0;
+        }
+
+        async function loadWeeklyReflection() {
+            const section = document.getElementById('weeklyReviewSection');
+            if (!section) return;
+
+            // Show loading state
+            section.classList.remove('hidden');
+            section.innerHTML = '<div class="home-section-label">WEEKLY REFLECTION</div>'
+                + '<div class="greeting-text coaching-card-loading" style="margin-top:12px;">Reflecting on your week...</div>';
+
+            // Hide daily coaching cards section on Sunday
+            const insightsSection = document.querySelector('.insights-section');
+            if (insightsSection) insightsSection.style.display = 'none';
+
+            try {
+                // Weekly reflection gathers data from multiple sources + AI generation — allow 2 minutes
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 120000);
+                const response = await authFetch('/api/weekly-reflection', { signal: controller.signal });
+                clearTimeout(timeout);
+                if (!response.ok) throw new Error('Weekly reflection API failed');
+                const data = await response.json();
+
+                const metrics = data.metrics || {};
+                const narrative = data.narrative || '';
+
+                // Build metrics grid
+                let metricsHtml = '<div class="weekly-review-metrics">';
+                metricsHtml += `<div class="weekly-metric"><div class="weekly-metric-value">${metrics.tasksCompleted || 0}</div><div class="weekly-metric-label">Completed</div></div>`;
+                metricsHtml += `<div class="weekly-metric"><div class="weekly-metric-value">${metrics.tasksOverdue || 0}</div><div class="weekly-metric-label">Overdue</div></div>`;
+                metricsHtml += `<div class="weekly-metric"><div class="weekly-metric-value">${metrics.completionRate || 0}%</div><div class="weekly-metric-label">Completion</div></div>`;
+                metricsHtml += `<div class="weekly-metric"><div class="weekly-metric-value">${metrics.meetingsToday || metrics.meetingsThisWeek || 0}</div><div class="weekly-metric-label">Meetings</div></div>`;
+                metricsHtml += `<div class="weekly-metric"><div class="weekly-metric-value">${metrics.commitmentsOpen || 0}</div><div class="weekly-metric-label">Open Commits</div></div>`;
+                if (metrics.messagesInbound) {
+                    const ratio = metrics.messagesOutbound > 0 ? (metrics.messagesInbound / metrics.messagesOutbound).toFixed(1) : '∞';
+                    metricsHtml += `<div class="weekly-metric"><div class="weekly-metric-value">${ratio}:1</div><div class="weekly-metric-label">In/Out Ratio</div></div>`;
+                }
+                metricsHtml += '</div>';
+
+                // Parse narrative: convert ## headers to <h2> and paragraphs
+                const narrativeHtml = narrative
+                    .replace(/## (.*?)$/gm, '<h2>$1</h2>')
+                    .replace(/\n\n/g, '</p><p>')
+                    .replace(/^(?!<h2|<\/p>)(.+)$/gm, '<p>$1</p>')
+                    .replace(/<p><\/p>/g, '');
+
+                section.innerHTML = '<div class="home-section-label">WEEKLY REFLECTION</div>'
+                    + metricsHtml
+                    + '<div class="weekly-review-narrative">' + narrativeHtml + '</div>';
+
+            } catch (err) {
+                console.error('Weekly reflection failed:', err);
+                section.innerHTML = '<div class="home-section-label">WEEKLY REFLECTION</div>'
+                    + '<div class="greeting-text" style="margin-top:12px;">Unable to generate reflection. Try refreshing.</div>';
+            }
+        }
+
+        async function loadGreeting() {
+            const textEl = document.getElementById('greetingText');
+            if (!textEl) return;
+
+            try {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 10000);
+                const response = await authFetch('/api/coaching/opener', { signal: controller.signal });
+                clearTimeout(timeout);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.opener && data.opener.trim()) {
+                        textEl.textContent = data.opener;
+                        textEl.classList.remove('coaching-card-loading');
+                    } else {
+                        textEl.textContent = 'Ready when you are.';
+                        textEl.classList.remove('coaching-card-loading');
+                    }
+                }
+            } catch (e) {
+                textEl.textContent = 'Ready when you are.';
+                textEl.classList.remove('coaching-card-loading');
+            }
+        }
+
+        function startGreetingClock() {
+            function update() {
+                const now = new Date();
+                const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+                const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                const day = days[now.getDay()];
+                const month = months[now.getMonth()];
+                const date = now.getDate();
+                const h = String(now.getHours()).padStart(2, '0');
+                const m = String(now.getMinutes()).padStart(2, '0');
+                const s = String(now.getSeconds()).padStart(2, '0');
+                const el = document.getElementById('greetingTime');
+                if (el) el.textContent = day + ', ' + month + ' ' + date + '  ' + h + ':' + m + ':' + s;
+            }
+            update();
+            setInterval(update, 1000);
+        }
+
         async function markTopGoalDone() {
-            const btn = document.getElementById('topGoalDoneBtn');
+            const btn = document.getElementById('focusDone');
             const notionId = btn.dataset.notionId;
             if (!notionId) return;
 
-            btn.textContent = 'Updating...';
+            btn.textContent = '...';
             btn.disabled = true;
 
             try {
@@ -10797,18 +11257,20 @@
                     method: 'POST'
                 });
                 if (response.ok) {
-                    btn.textContent = '✓ Done';
-                    document.getElementById('topGoalTitle').style.textDecoration = 'line-through';
-                    document.getElementById('topGoalTitle').style.opacity = '0.5';
+                    btn.textContent = '\u2713';
+                    btn.style.borderColor = '#8B5CF6';
+                    btn.style.color = '#8B5CF6';
+                    document.getElementById('focusTitle').style.textDecoration = 'line-through';
+                    document.getElementById('focusTitle').style.opacity = '0.5';
                     // Refresh pulse after a moment
                     setTimeout(() => loadHomePulse(), 2000);
                 } else {
-                    btn.textContent = 'Mark Done';
+                    btn.textContent = '\u2713';
                     btn.disabled = false;
                 }
             } catch (err) {
                 console.error('Failed to mark done:', err);
-                btn.textContent = 'Mark Done';
+                btn.textContent = '\u2713';
                 btn.disabled = false;
             }
         }
@@ -10912,10 +11374,26 @@
                 cacheSet('cadence_status', data);
                 renderCadenceData(data);
 
-                await loadGroupSuggestions();
+                // Group suggestions now load inside Messages tool (Phase 6)
             } catch (error) {
                 console.warn('Failed to load cadence status:', error);
                 // Cache already rendered — page isn't broken
+            }
+        }
+
+        function cadenceResultSummary(key, data) {
+            if (!data) return '';
+            switch (key) {
+                case 'commitmentScan':
+                    return data.found ? `${data.found} found, ${data.saved} saved` : 'No new commitments';
+                case 'todoScan':
+                    return data.todosCreated ? `${data.todosCreated} created` : 'No new todos';
+                case 'patternLearn':
+                    const cnt = data.summary?.computedPatternsCount;
+                    return cnt ? `${cnt} patterns` : 'Patterns updated';
+                case 'groupAnalysis':
+                    return data.newSuggestions ? `${data.newSuggestions} suggestions` : `${data.totalGroupsScanned || 0} groups scanned`;
+                default: return '';
             }
         }
 
@@ -10926,33 +11404,61 @@
             const btn = document.getElementById('cadenceRun_' + key);
             if (!btn || btn.disabled) return;
 
+            // Find the "last ran" span (sibling before the button)
+            const lastRunSpan = btn.previousElementSibling;
+
             btn.disabled = true;
             btn.textContent = '...';
             btn.classList.add('running');
 
+            // Use AbortController with 120s timeout (commitment scans can take 60s+)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 120000);
+
             try {
-                const response = await authFetch(def.triggerAPI, { method: def.triggerMethod || 'POST' });
+                const response = await authFetch(def.triggerAPI, {
+                    method: def.triggerMethod || 'POST',
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
                 if (response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    const summary = cadenceResultSummary(key, data);
+
                     btn.textContent = '✓';
+                    btn.classList.remove('running');
+                    btn.classList.add('success');
+                    // Show result in last-ran column
+                    if (lastRunSpan && summary) {
+                        lastRunSpan.textContent = summary;
+                        lastRunSpan.style.color = 'var(--text-secondary)';
+                    }
                     setTimeout(() => {
                         btn.textContent = 'Run';
                         btn.disabled = false;
-                        btn.classList.remove('running');
-                        loadCadenceStatus(); // Refresh
-                    }, 2000);
+                        btn.classList.remove('success');
+                        if (lastRunSpan) lastRunSpan.style.color = '';
+                        loadCadenceStatus(); // Refresh last-ran times
+                    }, 3000);
                 } else {
+                    const errData = await response.json().catch(() => ({}));
+                    console.error('Cadence error:', key, response.status, errData);
                     btn.textContent = 'Error';
+                    btn.classList.remove('running');
                     setTimeout(() => {
                         btn.textContent = 'Run';
                         btn.disabled = false;
-                        btn.classList.remove('running');
-                    }, 2000);
+                    }, 3000);
                 }
             } catch (err) {
-                console.error('Cadence trigger failed:', err);
-                btn.textContent = 'Run';
-                btn.disabled = false;
+                clearTimeout(timeoutId);
+                console.error('Cadence trigger failed:', key, err);
+                btn.textContent = err.name === 'AbortError' ? 'Timeout' : 'Error';
                 btn.classList.remove('running');
+                setTimeout(() => {
+                    btn.textContent = 'Run';
+                    btn.disabled = false;
+                }, 3000);
             }
         }
 
@@ -11073,6 +11579,7 @@
 
                 const section = document.getElementById('groupSuggestionsSection');
                 const list = document.getElementById('groupSuggestionsList');
+                if (!section || !list) return; // Elements may not be in DOM yet (Phase 6 migration)
                 section.classList.remove('hidden');
 
                 let html = '';
@@ -11273,6 +11780,7 @@
             document.getElementById('chatContainer').innerHTML = '';
             document.getElementById('formView').classList.add('hidden');
             document.getElementById('favoritesView').classList.add('hidden');
+            document.getElementById('coachTunerView').classList.add('hidden');
             document.getElementById('backHomeButton').classList.remove('hidden');
             document.getElementById('pageTabs').classList.add('hidden');
 
@@ -11282,6 +11790,129 @@
             // Load current config
             loadSettings();
         }
+
+        // ============================================
+        // COACH TUNER
+        // ============================================
+
+        function showCoachTuner() {
+            // Hide everything else
+            document.getElementById('quickPromptsSection').classList.add('hidden');
+            document.getElementById('recentActivitySection').classList.add('hidden');
+            document.getElementById('chatContainer').innerHTML = '';
+            document.getElementById('formView').classList.add('hidden');
+            document.getElementById('favoritesView').classList.add('hidden');
+            document.getElementById('settingsView').classList.add('hidden');
+            document.getElementById('agentsView').classList.add('hidden');
+            document.getElementById('backHomeButton').classList.remove('hidden');
+            document.getElementById('pageTabs').classList.add('hidden');
+
+            // Show coach tuner view
+            document.getElementById('coachTunerView').classList.remove('hidden');
+
+            // Load data
+            loadCoachingDebug();
+            loadCoachingTenets();
+        }
+
+        async function loadCoachingDebug(force = false) {
+            const container = document.getElementById('coachDebugCards');
+            const meta = document.getElementById('coachDebugMeta');
+            try {
+                const url = force ? '/api/coaching/debug?force=true' : '/api/coaching/debug';
+                const resp = await authFetch(url);
+                const data = await resp.json();
+
+                if (!data.cards || data.cards.length === 0) {
+                    container.innerHTML = '<div style="color: var(--text-secondary); font-size: 13px; padding: 12px 0;">No coaching cards generated yet.</div>';
+                    return;
+                }
+
+                container.innerHTML = data.cards.map(card => {
+                    const ctx = (card.context || []).map(line =>
+                        `<div style="font-size: 12px; color: var(--text-secondary); padding: 1px 0; white-space: pre-wrap;">${escapeHtml(line)}</div>`
+                    ).join('');
+
+                    return `
+                        <div class="tuner-card" style="border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 10px; overflow: hidden;">
+                            <div onclick="this.parentElement.classList.toggle('expanded')" style="
+                                display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer;
+                                background: var(--bg-secondary);
+                            ">
+                                <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-tertiary); min-width: 80px;">${escapeHtml(card.label)}</span>
+                                <span style="font-size: 13px; color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(card.insight)}</span>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; opacity: 0.4; transition: transform 0.2s;"><polyline points="6 9 12 15 18 9"/></svg>
+                            </div>
+                            <div class="tuner-card-context" style="
+                                max-height: 0; overflow: hidden; transition: max-height 0.3s ease;
+                                padding: 0 12px; border-top: 0px solid var(--border-color);
+                            ">
+                                <div style="padding: 10px 0;">
+                                    <div style="font-size: 11px; font-weight: 600; color: var(--text-tertiary); margin-bottom: 6px; text-transform: uppercase;">Context Data</div>
+                                    ${ctx || '<div style="font-size: 12px; color: var(--text-tertiary);">No context captured</div>'}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                // Cache age
+                if (data.cacheAge) {
+                    meta.textContent = `Generated ${data.cacheAge}`;
+                }
+            } catch (err) {
+                container.innerHTML = `<div style="color: var(--text-secondary); font-size: 13px;">Failed to load: ${err.message}</div>`;
+            }
+        }
+
+        async function refreshCoachingDebug() {
+            document.getElementById('coachDebugCards').innerHTML = '<div style="color: var(--text-secondary); font-size: 13px; padding: 12px 0;">Regenerating cards...</div>';
+            document.getElementById('coachDebugMeta').textContent = '';
+            loadCoachingDebug(true);
+        }
+
+        var tenetsNotionUrl = null;
+
+        async function loadCoachingTenets() {
+            try {
+                const resp = await authFetch('/api/coaching/tenets');
+                const data = await resp.json();
+                const content = data.content || '';
+
+                // Render tenets as formatted read-only preview
+                const preview = document.getElementById('tenetsPreview');
+                preview.innerHTML = renderTenetsPreview(content);
+
+                // Show "Edit in Notion" button if URL available
+                if (data.notionUrl) {
+                    tenetsNotionUrl = data.notionUrl;
+                    document.getElementById('openTenetsNotionBtn').style.display = '';
+                }
+            } catch (err) {
+                document.getElementById('tenetsPreview').innerHTML =
+                    '<span style="color: var(--text-tertiary);">Failed to load tenets</span>';
+            }
+        }
+
+        function renderTenetsPreview(md) {
+            return md.split('\n').map(line => {
+                if (line.startsWith('# ')) return `<div style="font-size: 15px; font-weight: 700; margin: 12px 0 6px 0;">${escapeHtml(line.slice(2))}</div>`;
+                if (line.startsWith('## ')) return `<div style="font-size: 13px; font-weight: 600; margin: 10px 0 4px 0; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">${escapeHtml(line.slice(3))}</div>`;
+                if (line.startsWith('### ')) return `<div style="font-size: 13px; font-weight: 600; margin: 8px 0 4px 0;">${escapeHtml(line.slice(4))}</div>`;
+                if (line.startsWith('- ')) return `<div style="padding-left: 12px; margin: 2px 0;">\u2022 ${escapeHtml(line.slice(2))}</div>`;
+                if (line.startsWith('---')) return `<hr style="border: none; border-top: 1px solid var(--border-color); margin: 8px 0;">`;
+                if (line.trim() === '') return '<div style="height: 6px;"></div>';
+                return `<div>${escapeHtml(line)}</div>`;
+            }).join('');
+        }
+
+        function openTenetsInNotion() {
+            if (tenetsNotionUrl) {
+                window.open(tenetsNotionUrl, '_blank');
+            }
+        }
+
+        // resetTenetsToDefault removed — user edits tenets in Notion now
 
         // ============================================
         // FAVORITES
@@ -11295,6 +11926,7 @@
             document.getElementById('formView').classList.add('hidden');
             document.getElementById('settingsView').classList.add('hidden');
             document.getElementById('agentsView').classList.add('hidden');
+            document.getElementById('coachTunerView').classList.add('hidden');
             document.getElementById('backHomeButton').classList.remove('hidden');
             document.getElementById('pageTabs').classList.add('hidden');
 
@@ -11523,12 +12155,27 @@
                     currentValueEl.classList.add('hidden');
                 }
 
-                // Load context databases
+                // Load context databases with names
                 const contextDbs = data.contextDatabases || [];
+                const dbNames = data.contextDatabaseNames || {};
                 for (let i = 0; i < 4; i++) {
                     const input = document.getElementById(`contextDb${i + 1}`);
+                    const statusEl = document.getElementById(`contextDb${i + 1}Status`);
                     if (input && contextDbs[i]) {
                         input.value = contextDbs[i];
+                        // Show resolved name on the left label
+                        if (statusEl && dbNames[contextDbs[i]]) {
+                            statusEl.textContent = dbNames[contextDbs[i]];
+                        }
+                    }
+                }
+
+                // Show tasks database name on the left label
+                if (data.tasksDatabaseId && dbNames[data.tasksDatabaseId]) {
+                    const tasksNameLabel = document.getElementById('tasksDbNameLabel');
+                    if (tasksNameLabel) {
+                        tasksNameLabel.textContent = dbNames[data.tasksDatabaseId];
+                        tasksNameLabel.style.display = 'block';
                     }
                 }
             } catch (error) {
@@ -13938,7 +14585,9 @@
 
     <!-- Footer -->
     <footer class="app-footer">
-        <div class="branding"><span id="appVersion"></span> · crafted by ms foundry</div>
+        <div class="branding-wrapper">
+            <div class="branding"><span id="appVersion"></span> · built by ms foundry</div>
+        </div>
     </footer>
 </body>
 </html>

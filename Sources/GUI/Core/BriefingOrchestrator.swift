@@ -107,29 +107,39 @@ class BriefingOrchestrator {
             recommendations: generateScheduleRecommendations(schedule)
         )
 
-        // 4. Query Notion for context (if configured) - PARALLEL for performance
+        // 4. Query Notion for context - PARALLEL across ALL context databases
         var notionNotes: [NotionNote] = []
         var notionTasks: [NotionTask] = []
 
-        if let briefingSources = config.notion.briefingSources {
-            let notesDatabaseId = briefingSources.notesDatabaseId
-            let tasksDbId = config.notion.tasksDatabaseId ?? briefingSources.tasksDatabaseId
+        do {
+            let briefingContext = self.generateBriefingContext(messagingSummary: messagingSummary, schedule: schedule)
+            let tasksDbId = config.notion.tasksDatabaseId ?? config.notion.briefingSources?.tasksDatabaseId
 
-            // Run both queries in parallel using async let
+            var notesDbIds: [String] = config.notion.contextDatabases ?? []
+            if notesDbIds.isEmpty, let singleDbId = config.notion.briefingSources?.notesDatabaseId,
+               singleDbId != "YOUR_NOTES_DATABASE_ID" {
+                notesDbIds = [singleDbId]
+            }
+            notesDbIds = notesDbIds.filter { !$0.isEmpty && $0 != "YOUR_NOTES_DATABASE_ID" }
+
             async let notesTask: [NotionNote] = {
-                guard let dbId = notesDatabaseId, dbId != "YOUR_NOTES_DATABASE_ID" else {
-                    return []
+                guard !notesDbIds.isEmpty else { return [] }
+                print("📓 Querying \(notesDbIds.count) Notion database(s) for context...")
+                var allNotes: [NotionNote] = []
+                await withTaskGroup(of: [NotionNote].self) { group in
+                    for dbId in notesDbIds {
+                        group.addTask {
+                            (try? await self.notionService.queryRelevantNotes(context: briefingContext, databaseId: dbId)) ?? []
+                        }
+                    }
+                    for await notes in group {
+                        allNotes.append(contentsOf: notes)
+                    }
                 }
-                print("📓 Querying Notion notes for context...")
-                do {
-                    let context = self.generateBriefingContext(messagingSummary: messagingSummary, schedule: schedule)
-                    let notes = try await self.notionService.queryRelevantNotes(context: context, databaseId: dbId)
-                    print("✓ Found \(notes.count) relevant note(s)\n")
-                    return notes
-                } catch {
-                    print("⚠️  Failed to query notes: \(error)\n")
-                    return []
-                }
+                var seenIds = Set<String>()
+                let deduped = allNotes.filter { seenIds.insert($0.id).inserted }
+                print("✓ Found \(deduped.count) relevant note(s) across \(notesDbIds.count) database(s)\n")
+                return Array(deduped.prefix(8))
             }()
 
             async let tasksTask: [NotionTask] = {
@@ -147,7 +157,6 @@ class BriefingOrchestrator {
                 }
             }()
 
-            // Wait for both to complete (parallel execution)
             notionNotes = await notesTask
             notionTasks = await tasksTask
         }
@@ -222,29 +231,39 @@ class BriefingOrchestrator {
         let schedule = try await calendarService.fetchEvents(for: date, userSettings: config.user, calendarFilter: calendar)
         print("")
 
-        // Query Notion for context (if configured) - PARALLEL for performance
+        // Query Notion for context - PARALLEL across ALL context databases
         var notionNotes: [NotionNote] = []
         var notionTasks: [NotionTask] = []
 
-        if let briefingSources = config.notion.briefingSources {
-            let notesDatabaseId = briefingSources.notesDatabaseId
-            let tasksDbId = config.notion.tasksDatabaseId ?? briefingSources.tasksDatabaseId
+        do {
+            let calContext = self.generateCalendarContext(schedule: schedule)
+            let tasksDbId = config.notion.tasksDatabaseId ?? config.notion.briefingSources?.tasksDatabaseId
 
-            // Run both queries in parallel using async let
+            var notesDbIds: [String] = config.notion.contextDatabases ?? []
+            if notesDbIds.isEmpty, let singleDbId = config.notion.briefingSources?.notesDatabaseId,
+               singleDbId != "YOUR_NOTES_DATABASE_ID" {
+                notesDbIds = [singleDbId]
+            }
+            notesDbIds = notesDbIds.filter { !$0.isEmpty && $0 != "YOUR_NOTES_DATABASE_ID" }
+
             async let notesTask: [NotionNote] = {
-                guard let dbId = notesDatabaseId, dbId != "YOUR_NOTES_DATABASE_ID" else {
-                    return []
+                guard !notesDbIds.isEmpty else { return [] }
+                print("📓 Querying \(notesDbIds.count) Notion database(s) for calendar context...")
+                var allNotes: [NotionNote] = []
+                await withTaskGroup(of: [NotionNote].self) { group in
+                    for dbId in notesDbIds {
+                        group.addTask {
+                            (try? await self.notionService.queryRelevantNotes(context: calContext, databaseId: dbId)) ?? []
+                        }
+                    }
+                    for await notes in group {
+                        allNotes.append(contentsOf: notes)
+                    }
                 }
-                print("📓 Querying Notion notes for context...")
-                do {
-                    let context = self.generateCalendarContext(schedule: schedule)
-                    let notes = try await self.notionService.queryRelevantNotes(context: context, databaseId: dbId)
-                    print("✓ Found \(notes.count) relevant note(s)\n")
-                    return notes
-                } catch {
-                    print("⚠️  Failed to query notes: \(error)\n")
-                    return []
-                }
+                var seenIds = Set<String>()
+                let deduped = allNotes.filter { seenIds.insert($0.id).inserted }
+                print("✓ Found \(deduped.count) relevant note(s) across \(notesDbIds.count) database(s)\n")
+                return Array(deduped.prefix(8))
             }()
 
             async let tasksTask: [NotionTask] = {
@@ -262,7 +281,6 @@ class BriefingOrchestrator {
                 }
             }()
 
-            // Wait for both to complete (parallel execution)
             notionNotes = await notesTask
             notionTasks = await tasksTask
         }
@@ -995,6 +1013,13 @@ class BriefingOrchestrator {
             context += "- Attendee emails: \(Array(Set(attendeeEmails)).joined(separator: ", "))\n"
         }
 
+        // Include meeting descriptions (rich context for keyword extraction)
+        for event in schedule.events {
+            if let desc = event.description, !desc.isEmpty {
+                context += "- Meeting description (\(event.title)): \(String(desc.prefix(200)))\n"
+            }
+        }
+
         // Include message contact names
         var messageContacts: [String] = []
         for summary in messagingSummary.keyInteractions {
@@ -1009,6 +1034,13 @@ class BriefingOrchestrator {
         }
         if !messageContacts.isEmpty {
             context += "- Message contacts: \(Array(Set(messageContacts)).joined(separator: ", "))\n"
+        }
+
+        // Include key interaction topics for richer keyword extraction
+        for summary in messagingSummary.keyInteractions.prefix(5) {
+            if !summary.summary.isEmpty {
+                context += "- Key topic: \(String(summary.summary.prefix(100)))\n"
+            }
         }
 
         return context

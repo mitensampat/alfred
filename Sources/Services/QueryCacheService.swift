@@ -6,6 +6,7 @@ class QueryCacheService {
     private var db: OpaquePointer?
     private let dbPath: String
     private let cacheDuration: TimeInterval = 86400 // 24 hours default
+    private let lock = NSLock()
 
     init() {
         // Store cache in persistent ~/.alfred directory (survives reboots)
@@ -82,6 +83,9 @@ class QueryCacheService {
         WHERE cache_key = ? AND expires_at > ?
         """
 
+        lock.lock()
+        defer { lock.unlock() }
+
         var statement: OpaquePointer?
         var result: String?
 
@@ -118,6 +122,9 @@ class QueryCacheService {
         VALUES (?, ?, ?, ?, ?, ?)
         """
 
+        lock.lock()
+        defer { lock.unlock() }
+
         var statement: OpaquePointer?
 
         if sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK {
@@ -141,6 +148,9 @@ class QueryCacheService {
         let now = Date().timeIntervalSince1970
         let query = "DELETE FROM query_cache WHERE expires_at <= ?"
 
+        lock.lock()
+        defer { lock.unlock() }
+
         var statement: OpaquePointer?
         if sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK {
             sqlite3_bind_double(statement, 1, now)
@@ -157,6 +167,10 @@ class QueryCacheService {
     /// Clear all cache
     func clearAll() {
         let query = "DELETE FROM query_cache"
+
+        lock.lock()
+        defer { lock.unlock() }
+
         var statement: OpaquePointer?
         if sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK {
             sqlite3_step(statement)
@@ -173,6 +187,9 @@ class QueryCacheService {
         ORDER BY created_at DESC
         LIMIT ?
         """
+
+        lock.lock()
+        defer { lock.unlock() }
 
         var results: [(String, String, Date)] = []
         var statement: OpaquePointer?
@@ -195,6 +212,10 @@ class QueryCacheService {
     /// Delete all cache entries for a given endpoint (regardless of params)
     func deleteByEndpoint(_ endpoint: String) {
         let query = "DELETE FROM query_cache WHERE endpoint = ?"
+
+        lock.lock()
+        defer { lock.unlock() }
+
         var statement: OpaquePointer?
         if sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK {
             sqlite3_bind_text(statement, 1, (endpoint as NSString).utf8String, -1, nil)
@@ -213,6 +234,10 @@ class QueryCacheService {
         let cacheKey = generateCacheKey(endpoint: endpoint, params: params)
 
         let query = "DELETE FROM query_cache WHERE cache_key = ?"
+
+        lock.lock()
+        defer { lock.unlock() }
+
         var statement: OpaquePointer?
 
         if sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK {

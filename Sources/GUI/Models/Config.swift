@@ -12,6 +12,7 @@ struct AppConfig: Codable {
     let commitments: CommitmentsConfig?
     let api: APIConfig?
     let scheduled: ScheduledConfig?
+    let cadence: CadenceConfig?
 
     static func load(from path: String? = nil) -> AppConfig? {
         // Try multiple config locations in order of preference
@@ -120,7 +121,10 @@ struct NotionConfig: Codable {
     let apiKey: String
     let databaseId: String
     let tasksDatabaseId: String?
+    let reflectionsDatabaseId: String?
+    let tenetsPageId: String?
     let briefingSources: BriefingSources?
+    let contextDatabases: [String]?
 
     struct BriefingSources: Codable {
         let tasksDatabaseId: String?
@@ -136,7 +140,10 @@ struct NotionConfig: Codable {
         case apiKey = "api_key"
         case databaseId = "database_id"
         case tasksDatabaseId = "tasks_database_id"
+        case reflectionsDatabaseId = "reflections_database_id"
+        case tenetsPageId = "tenets_page_id"
         case briefingSources = "briefing_sources"
+        case contextDatabases = "context_databases"
     }
 }
 
@@ -252,6 +259,42 @@ struct CommitmentsConfig: Codable {
         case autoScanOnBriefing = "auto_scan_on_briefing"
         case autoScanContacts = "auto_scan_contacts"
         case defaultLookbackDays = "default_lookback_days"
+    }
+}
+
+struct CadenceConfig: Codable {
+    let todoScanEnabled: Bool?           // default true
+    let todoScanIntervalHours: Int?      // default 3
+    let commitmentScanEnabled: Bool?     // default true
+    let commitmentScanTime: String?      // default "17:00"
+    let patternLearnEnabled: Bool?       // default true
+    let patternLearnDay: String?         // default "thursday"
+    let patternLearnTime: String?        // default "18:00"
+    let groupAnalysisEnabled: Bool?      // default true
+    let groupAnalysisDay: String?        // default "monday"
+    let groupAnalysisTime: String?       // default "09:00"
+    var autoSummaryGroups: [String]?     // user-approved groups for daily auto-summary
+    let autoSummaryTime: String?         // default "18:00"
+    let weeklyReviewEnabled: Bool?       // default true
+    let weeklyReviewDay: String?         // default "friday"
+    let weeklyReviewTime: String?        // default "17:00"
+
+    enum CodingKeys: String, CodingKey {
+        case todoScanEnabled = "todo_scan_enabled"
+        case todoScanIntervalHours = "todo_scan_interval_hours"
+        case commitmentScanEnabled = "commitment_scan_enabled"
+        case commitmentScanTime = "commitment_scan_time"
+        case patternLearnEnabled = "pattern_learn_enabled"
+        case patternLearnDay = "pattern_learn_day"
+        case patternLearnTime = "pattern_learn_time"
+        case groupAnalysisEnabled = "group_analysis_enabled"
+        case groupAnalysisDay = "group_analysis_day"
+        case groupAnalysisTime = "group_analysis_time"
+        case autoSummaryGroups = "auto_summary_groups"
+        case autoSummaryTime = "auto_summary_time"
+        case weeklyReviewEnabled = "weekly_review_enabled"
+        case weeklyReviewDay = "weekly_review_day"
+        case weeklyReviewTime = "weekly_review_time"
     }
 }
 

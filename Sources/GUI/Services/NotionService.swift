@@ -468,7 +468,7 @@ class NotionService {
         var seenIds = Set<String>()
 
         // Search for each keyword
-        for keyword in keywords.prefix(5) { // Limit to top 5 keywords
+        for keyword in keywords.prefix(8) { // Limit to top 8 keywords
             let notes = try await searchNotesWithKeyword(keyword, databaseId: databaseId)
             for note in notes where !seenIds.contains(note.id) {
                 seenIds.insert(note.id)
@@ -491,23 +491,40 @@ class NotionService {
         // Rank notes by relevance to context
         let rankedNotes = rankNotesByRelevance(notes: notesWithContent, keywords: keywords)
 
-        return Array(rankedNotes.prefix(5)) // Return top 5 most relevant
+        return Array(rankedNotes.prefix(8)) // Return top 8 most relevant
     }
 
     /// Extract search keywords from briefing context
     private func extractSearchKeywords(from context: String) -> [String] {
         var keywords: [String] = []
 
-        // Extract names (look for capitalized words that could be names/companies)
+        let commonWords: Set<String> = [
+            "Meeting", "Calendar", "Meetings", "Today", "Tomorrow",
+            "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December",
+            "External", "Internal", "Critical", "Messages", "Total", "Focus",
+            "Briefing", "Context", "Attendee", "Description", "Notes", "Tasks",
+            "Review", "Update", "Summary", "Action", "Items", "Priority",
+            "Status", "Agenda", "Schedule", "Weekly", "Daily", "Monthly"
+        ]
+
+        // Extract names and multi-word terms (capitalized words/phrases)
         let namePattern = try? NSRegularExpression(pattern: "\\b[A-Z][a-z]+(?:\\s+[A-Z][a-z]+)*\\b", options: [])
         if let matches = namePattern?.matches(in: context, options: [], range: NSRange(context.startIndex..., in: context)) {
             for match in matches {
                 if let range = Range(match.range, in: context) {
                     let name = String(context[range])
-                    // Filter out common words
-                    let commonWords = ["Meeting", "Calendar", "Meetings", "Today", "Tomorrow", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December", "External", "Internal", "Critical", "Messages", "Total", "Focus"]
-                    if !commonWords.contains(name) && name.count >= 3 {
-                        keywords.append(name)
+                    let words = name.components(separatedBy: " ")
+                    if words.count > 1 {
+                        let hasNonCommon = words.contains { !commonWords.contains($0) }
+                        if hasNonCommon && name.count >= 3 {
+                            keywords.append(name)
+                        }
+                    } else {
+                        if !commonWords.contains(name) && name.count >= 3 {
+                            keywords.append(name)
+                        }
                     }
                 }
             }
@@ -521,6 +538,19 @@ class NotionService {
                     let domain = String(context[range])
                     if domain.count >= 3 {
                         keywords.append(domain.capitalized)
+                    }
+                }
+            }
+        }
+
+        // Extract quoted terms or key phrases from meeting descriptions
+        let quotedPattern = try? NSRegularExpression(pattern: "\"([^\"]+)\"", options: [])
+        if let matches = quotedPattern?.matches(in: context, options: [], range: NSRange(context.startIndex..., in: context)) {
+            for match in matches {
+                if let range = Range(match.range(at: 1), in: context) {
+                    let quoted = String(context[range])
+                    if quoted.count >= 3 && quoted.count <= 50 {
+                        keywords.append(quoted)
                     }
                 }
             }
@@ -635,7 +665,7 @@ class NotionService {
         // Return first 1000 characters to keep context manageable
         let fullContent = contentParts.joined(separator: "\n")
         if fullContent.count > 1000 {
-            return String(fullContent.prefix(1000)) + "..."
+            return String(fullContent.prefix(1500)) + "..."
         }
         return fullContent
     }

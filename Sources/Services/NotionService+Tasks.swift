@@ -299,6 +299,125 @@ extension NotionService {
         }
     }
 
+    // MARK: - Task Property Updates (Coach Chat → Notion)
+
+    /// Grouped property update request for a single PATCH call
+    struct TaskPropertyUpdate {
+        var status: TaskItem.TaskStatus?
+        var priority: TaskItem.Priority?
+        var dueDate: Date?
+        var appendDescription: String?  // appended to existing description, not replaced
+    }
+
+    /// Update multiple task properties in a single Notion API call.
+    /// For appendDescription, reads the current description first and appends.
+    func updateTaskProperties(notionId: String, updates: TaskPropertyUpdate) async throws {
+        var properties: [String: Any] = [:]
+
+        if let status = updates.status {
+            properties["Status"] = ["status": ["name": status.rawValue]]
+        }
+        if let priority = updates.priority {
+            properties["Priority"] = ["select": ["name": priority.rawValue]]
+        }
+        if let dueDate = updates.dueDate {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withFullDate]
+            properties["Due Date"] = ["date": ["start": formatter.string(from: dueDate)]]
+        }
+
+        // Handle description append (read-modify-write)
+        if let appendText = updates.appendDescription {
+            // GET current page to read existing description
+            let getUrl = URL(string: "https://api.notion.com/v1/pages/\(notionId)")!
+            var getRequest = URLRequest(url: getUrl)
+            getRequest.httpMethod = "GET"
+            getRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            getRequest.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+
+            var existingDescription = ""
+            if let (getData, getResponse) = try? await URLSession.shared.data(for: getRequest),
+               let getHttp = getResponse as? HTTPURLResponse,
+               (200...299).contains(getHttp.statusCode),
+               let json = try? JSONSerialization.jsonObject(with: getData) as? [String: Any],
+               let props = json["properties"] as? [String: Any],
+               let descProp = props["Description"] as? [String: Any],
+               let richTextArray = descProp["rich_text"] as? [[String: Any]] {
+                existingDescription = richTextArray.compactMap { $0["plain_text"] as? String }.joined()
+            }
+
+            let newDescription = existingDescription.isEmpty ? appendText : existingDescription + "\n\n" + appendText
+            properties["Description"] = [
+                "rich_text": [[
+                    "text": ["content": String(newDescription.prefix(2000))]
+                ]]
+            ]
+        }
+
+        guard !properties.isEmpty else { return }
+
+        let url = URL(string: "https://api.notion.com/v1/pages/\(notionId)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = ["properties": properties]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw NSError(domain: "NotionService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to update task properties"])
+        }
+    }
+
+    /// Search for active tasks by fuzzy title match (case-insensitive substring)
+    func findTasksByFuzzyTitle(_ searchTerm: String) async throws -> [TaskItem] {
+        guard let dbId = tasksDatabaseId else {
+            throw NSError(domain: "NotionService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Tasks database ID not set"])
+        }
+
+        let url = URL(string: "https://api.notion.com/v1/databases/\(dbId)/query")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "filter": [
+                "and": [
+                    ["property": "Title", "title": ["contains": searchTerm]],
+                    ["property": "Status", "status": ["does_not_equal": "Done"]],
+                    ["property": "Status", "status": ["does_not_equal": "Cancelled"]]
+                ]
+            ],
+            "sorts": [
+                ["property": "Due Date", "direction": "ascending"]
+            ],
+            "page_size": 10
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw NSError(domain: "NotionService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to search tasks"])
+        }
+
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard let results = json?["results"] as? [[String: Any]] else {
+            return []
+        }
+
+        return results.compactMap { parseTaskFromNotionPage($0) }
+    }
+
     /// Find task by hash
     func findTaskByHash(_ hash: String) async throws -> String? {
         guard let dbId = tasksDatabaseId else {

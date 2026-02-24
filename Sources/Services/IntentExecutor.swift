@@ -66,6 +66,10 @@ class IntentExecutor {
             let result = try await orchestrator.processWhatsAppTodos(lookbackDays: lookbackDays)
             return formatTodoScanResponse(result, query: intent.originalQuery)
 
+        // MARK: - Task Update Actions
+        case (.update, .tasks):
+            return try await handleTaskUpdate(intent: intent)
+
         // MARK: - Attention Check
         case (.check, .attention), (.generate, .attention):
             let report = try await orchestrator.generateAttentionDefenseAlert(sendNotifications: false)
@@ -542,6 +546,117 @@ class IntentExecutor {
     private func formatDraftsResponse(_ drafts: [MessageDraft], query: String) -> IntentExecutionResult {
         return IntentExecutionResult(data: drafts, conversationalResponse: "Found \(drafts.count) drafts", structuredData: nil)
     }
+
+    // MARK: - Task Update Handler
+
+    private func handleTaskUpdate(intent: UserIntent) async throws -> IntentExecutionResult {
+        let filters = intent.filters
+
+        // Step 1: Resolve which task the user means
+        guard let searchTerm = filters.taskSearchTerm, !searchTerm.isEmpty else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "Which task would you like me to update? Give me a name or keyword.",
+                structuredData: nil
+            )
+        }
+
+        let matchingTasks = try await orchestrator.notionServicePublic.findTasksByFuzzyTitle(searchTerm)
+
+        guard !matchingTasks.isEmpty else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "I couldn't find an active task matching '\(searchTerm)'. Could you be more specific?",
+                structuredData: nil
+            )
+        }
+
+        // If too many matches, ask the user to be specific
+        if matchingTasks.count > 3 {
+            let taskNames = matchingTasks.prefix(5).map { $0.title }
+            return IntentExecutionResult(
+                data: ["type": "disambiguation", "matches": taskNames] as [String: Any],
+                conversationalResponse: "I found \(matchingTasks.count) tasks matching '\(searchTerm)'. Which one?\n" + taskNames.enumerated().map { "  \($0.offset + 1). \($0.element)" }.joined(separator: "\n"),
+                structuredData: ["type": "disambiguation", "matches": taskNames]
+            )
+        }
+
+        // Use the best match (first result — sorted by due date)
+        let task = matchingTasks[0]
+        let notionId = task.notionId
+
+        // Step 2: Build the property update
+        var updates = NotionService.TaskPropertyUpdate()
+        var changeDescriptions: [String] = []
+
+        if let newStatusStr = filters.newStatus,
+           let newStatus = TaskItem.TaskStatus(rawValue: newStatusStr) {
+            updates.status = newStatus
+            changeDescriptions.append("status → \(newStatus.rawValue)")
+        }
+
+        if let newPriorityStr = filters.newPriority,
+           let newPriority = TaskItem.Priority(rawValue: newPriorityStr) {
+            updates.priority = newPriority
+            changeDescriptions.append("priority → \(newPriority.rawValue)")
+        }
+
+        if let newDueDate = filters.newDueDate {
+            updates.dueDate = newDueDate
+            let fmt = DateFormatter()
+            fmt.dateStyle = .medium
+            changeDescriptions.append("due date → \(fmt.string(from: newDueDate))")
+        }
+
+        if let note = filters.noteToAdd, !note.isEmpty {
+            let dateFmt = DateFormatter()
+            dateFmt.dateFormat = "yyyy-MM-dd HH:mm"
+            let auditNote = "[\(dateFmt.string(from: Date()))] Coach Alfred: \(note)"
+            updates.appendDescription = auditNote
+            changeDescriptions.append("added note")
+        }
+
+        // If no note was added but we have other changes, add audit trail
+        if updates.appendDescription == nil && !changeDescriptions.isEmpty {
+            let dateFmt = DateFormatter()
+            dateFmt.dateFormat = "yyyy-MM-dd HH:mm"
+            let auditLine = "[\(dateFmt.string(from: Date()))] Updated by Coach Alfred: \(changeDescriptions.joined(separator: ", "))"
+            updates.appendDescription = auditLine
+        }
+
+        guard !changeDescriptions.isEmpty else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "I found '\(task.title)' but I'm not sure what to change. You can update the status, priority, due date, or add a note.",
+                structuredData: nil
+            )
+        }
+
+        // Step 3: Execute the update
+        try await orchestrator.notionServicePublic.updateTaskProperties(notionId: notionId, updates: updates)
+
+        let summary = "Updated '\(task.title)': \(changeDescriptions.joined(separator: ", "))"
+        print("✅ \(summary)")
+
+        let result = TaskUpdateResult(
+            taskTitle: task.title,
+            notionId: notionId,
+            changes: changeDescriptions,
+            success: true
+        )
+
+        return IntentExecutionResult(
+            data: result,
+            conversationalResponse: summary,
+            structuredData: [
+                "type": "task_update",
+                "taskTitle": task.title,
+                "notionId": notionId,
+                "changes": changeDescriptions,
+                "success": true
+            ]
+        )
+    }
 }
 
 // MARK: - Execution Result
@@ -558,6 +673,13 @@ struct CommitmentScanResult {
     let duplicates: Int
     var autoClosed: Int = 0
     var pendingClosures: Int = 0
+}
+
+struct TaskUpdateResult {
+    let taskTitle: String
+    let notionId: String
+    let changes: [String]
+    let success: Bool
 }
 
 // MARK: - Errors

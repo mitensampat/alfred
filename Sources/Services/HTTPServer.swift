@@ -475,6 +475,18 @@ class HTTPServer {
         case ("GET", "/api/coaching/opener"):
             return await handleCoachingOpener()
 
+        case ("GET", "/api/coaching/debug"):
+            return await handleCoachingDebug(request)
+
+        case ("GET", "/api/coaching/tenets"):
+            return handleGetCoachingTenets()
+
+        case ("PUT", "/api/coaching/tenets"):
+            return handlePutCoachingTenets(request)
+
+        case ("GET", "/api/weekly-reflection"):
+            return await handleWeeklyReflection()
+
         case ("GET", "/api/briefing"):
             return await handleGetDailyBriefing(request)
 
@@ -1068,13 +1080,11 @@ class HTTPServer {
 
     private func handleScanCommitments(_ request: HTTPRequest) async -> HTTPResponse {
         do {
-            // Parse body
-            guard let body = request.body,
-                  let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
-                return HTTPResponse(
-                    statusCode: 400,
-                    body: ["error": "Invalid JSON body"]
-                )
+            // Parse body (optional — use defaults if no body provided)
+            var json: [String: Any] = [:]
+            if let body = request.body,
+               let parsed = try? JSONSerialization.jsonObject(with: body) as? [String: Any] {
+                json = parsed
             }
 
             let contactName = json["contactName"] as? String
@@ -1091,6 +1101,15 @@ class HTTPServer {
             invalidateMemoryCache("tracker_stats")
             invalidateMemoryCache("home_pulse")
             cache.deleteByEndpoint("/api/home/pulse")
+
+            // Update scheduler state: date key for scheduler, timestamp key for UI
+            let fmt = DateFormatter()
+            fmt.dateFormat = "yyyy-MM-dd"
+            let now = Date()
+            updateSchedulerState([
+                "lastCommitmentScanDate": fmt.string(from: now),
+                "lastCommitmentScanTimestamp": ISO8601DateFormatter().string(from: now)
+            ])
 
             return HTTPResponse(
                 statusCode: 200,
@@ -1313,6 +1332,302 @@ class HTTPServer {
         }
 
         return HTTPResponse(statusCode: 200, body: responseBody)
+    }
+
+    // MARK: - Weekly Reflection
+
+    private func handleWeeklyReflection() async -> HTTPResponse {
+        guard let config = alfredService.orchestrator?.config else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Config not available"])
+        }
+
+        var contextParts: [String] = []
+        var metrics: [String: Any] = [:]
+        let calendar = Calendar.current
+        let today = Date()
+
+        print("📊 Weekly reflection: starting data gathering...")
+
+        // 1. Task metrics
+        print("📊 Weekly reflection: fetching tasks...")
+        if let orchestrator = alfredService.orchestrator {
+            do {
+                let allTasks = try await orchestrator.notionServicePublic.queryActiveTasks()
+                let completed = allTasks.filter { $0.status == .done }
+                let open = allTasks.filter { $0.status != .done }
+                let overdue = open.filter { $0.isOverdue }
+                let fourteenDaysAgo = calendar.date(byAdding: .day, value: -14, to: today)!
+                let stale = open.filter { $0.status == .notStarted && $0.createdDate < fourteenDaysAgo }
+
+                metrics["tasksCompleted"] = completed.count
+                metrics["tasksOpen"] = open.count
+                metrics["tasksOverdue"] = overdue.count
+                metrics["tasksStale"] = stale.count
+
+                contextParts.append("TASK SUMMARY:")
+                contextParts.append("- Completed: \(completed.count)")
+                contextParts.append("- Open: \(open.count)")
+                contextParts.append("- Overdue: \(overdue.count)")
+                contextParts.append("- Stale (14+ days, not started): \(stale.count)")
+
+                if !completed.isEmpty {
+                    contextParts.append("\nCOMPLETED THIS PERIOD:")
+                    for task in completed.prefix(15) {
+                        contextParts.append("- \(task.title) [\(task.priority?.rawValue ?? "none")]")
+                    }
+                }
+
+                if !overdue.isEmpty {
+                    contextParts.append("\nOVERDUE:")
+                    let dateFormatter = DateFormatter()
+                    dateFormatter.dateFormat = "MMM d"
+                    for task in overdue.prefix(8) {
+                        let daysOverdue = task.dueDate.map { calendar.dateComponents([.day], from: $0, to: today).day ?? 0 } ?? 0
+                        contextParts.append("- \(task.title) (\(daysOverdue) days overdue)")
+                    }
+                }
+
+                if !stale.isEmpty {
+                    contextParts.append("\nSTALE / AVOIDED:")
+                    for task in stale.prefix(5) {
+                        let age = calendar.dateComponents([.day], from: task.createdDate, to: today).day ?? 0
+                        contextParts.append("- \(task.title) (untouched \(age) days)")
+                    }
+                }
+            } catch {
+                contextParts.append("Tasks: unavailable")
+            }
+        }
+
+        // 2. Commitment stats
+        print("📊 Weekly reflection: fetching commitment stats...")
+        let commitStats = CommitmentScanTracker.shared.getStats()
+        metrics["commitmentsOpen"] = commitStats.openCommitments
+        metrics["commitmentsClosed"] = commitStats.closedCount
+        contextParts.append("\nCOMMITMENTS: \(commitStats.openCommitments) open, \(commitStats.closedCount) closed")
+
+        let counterpartyStats = TaskLifecycleTracker.shared.getStatsByCounterparty()
+        if !counterpartyStats.isEmpty {
+            contextParts.append("\nRELATIONSHIP HEALTH:")
+            for stat in counterpartyStats.prefix(8) {
+                contextParts.append("- \(stat.name): \(stat.completedTasks)/\(stat.totalTasks) done, \(Int(stat.overdueRate * 100))% overdue")
+            }
+        }
+
+        // 3. Overall lifecycle stats
+        let lifecycleStats = TaskLifecycleTracker.shared.getStats()
+        let completionRate = Int(lifecycleStats.completionRate * 100)
+        let overdueRate = Int(lifecycleStats.overdueRate * 100)
+        metrics["completionRate"] = completionRate
+        metrics["overdueRate"] = overdueRate
+        contextParts.append("\nOVERALL: \(completionRate)% completion rate, \(overdueRate)% overdue rate")
+
+        // 4. Calendar snapshot (today only — lightweight, uses 10min cache)
+        print("📊 Weekly reflection: fetching today's calendar...")
+        do {
+            let todayBriefing = try await alfredService.fetchCalendarBriefing(for: today)
+            let todayMeetings = todayBriefing.schedule.events.filter { !$0.isAllDay }.count
+            let totalHours = todayBriefing.schedule.events.filter { !$0.isAllDay }.reduce(0.0) { $0 + $1.duration } / 3600.0
+            metrics["meetingsToday"] = todayMeetings
+            metrics["meetingHoursToday"] = String(format: "%.1f", totalHours)
+            contextParts.append("\nCALENDAR TODAY: \(todayMeetings) meetings (\(String(format: "%.1f", totalHours))h)")
+
+            // List today's meetings for context
+            for event in todayBriefing.schedule.events.filter({ !$0.isAllDay }).prefix(8) {
+                let timeFormatter = DateFormatter()
+                timeFormatter.dateFormat = "HH:mm"
+                contextParts.append("- \(timeFormatter.string(from: event.startTime)): \(event.title)")
+            }
+        } catch {
+            contextParts.append("\nCALENDAR: unavailable")
+        }
+        print("📊 Weekly reflection: calendar done")
+
+        // 5. Recent coaching themes
+        print("📊 Weekly reflection: fetching coaching themes...")
+        let sessions = CoachingMemoryService.shared.getRecentSessions(limit: 5)
+        if !sessions.isEmpty {
+            contextParts.append("\nRECENT COACHING THEMES:")
+            for session in sessions {
+                let firstLine = session.components(separatedBy: "\n").first ?? session
+                contextParts.append("- \(String(firstLine.prefix(150)))")
+            }
+        }
+
+        // 6. Messaging velocity for attention patterns
+        print("📊 Weekly reflection: fetching messaging velocity...")
+        if let msgConfig = alfredService.orchestrator?.config {
+            do {
+                let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: today)!
+                let reader = WhatsAppReader(dbPath: msgConfig.messaging.whatsapp.dbPath)
+                try reader.connect()
+                let threads = try reader.fetchThreads(since: sevenDaysAgo)
+                let totalIncoming = threads.flatMap { $0.messages }.filter { $0.direction == .incoming }.count
+                let totalOutgoing = threads.flatMap { $0.messages }.filter { $0.direction == .outgoing }.count
+                let ratio = totalOutgoing > 0 ? String(format: "%.1f", Double(totalIncoming) / Double(totalOutgoing)) : "∞"
+                metrics["messagesInbound"] = totalIncoming
+                metrics["messagesOutbound"] = totalOutgoing
+                contextParts.append("\nMESSAGING: \(totalIncoming) inbound, \(totalOutgoing) outbound (ratio: \(ratio):1)")
+                reader.disconnect()
+            } catch { }
+        }
+
+        // Generate AI narrative
+        print("📊 Weekly reflection: generating AI narrative...")
+        let claudeService = ClaudeAIService(config: config.ai)
+        let prompt = """
+        You are Coach Alfred writing a comprehensive weekly reflection. This is a Sunday morning review — the founder's chance to step back and see the week clearly before planning the next one.
+
+        Context:
+        \(contextParts.joined(separator: "\n"))
+
+        Write a weekly reflection covering these dimensions:
+
+        ## WINS
+        What was accomplished this week? Name specific completed tasks. Acknowledge real progress — even small wins matter.
+
+        ## ACCOUNTABILITY
+        What was supposed to happen but didn't? Name specific overdue tasks. Don't be harsh, but be honest: "The portfolio update for Sid was due Tuesday and it's still open. What got in the way?" Frame as curiosity, not judgment.
+
+        ## PATTERNS
+        Based on the data, what patterns are emerging? Are they operating in their Zone of Genius or grinding? Which relationships need investment? What keeps getting avoided?
+
+        ## THIS WEEK
+        ONE clear priority for the coming week. Be specific — name the task, the person, or the decision. End with a motivating challenge.
+
+        Style:
+        - Write in second person ("You completed...", "Your overdue rate...")
+        - Be direct and warm. Like a friend who remembers everything.
+        - Each section: 2-3 sentences, with specific names and numbers
+        - Total: ~250 words
+        - No emojis. Use ## headers for sections. Plain prose.
+
+        Respond with ONLY the review text.
+        """
+
+        do {
+            let narrative = try await claudeService.generateText(
+                prompt: prompt,
+                maxTokens: 600
+            )
+
+            let trimmedNarrative = narrative.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Save to Notion Reflections database (fire-and-forget)
+            if let reflectionsDbId = config.notion.reflectionsDatabaseId, !reflectionsDbId.isEmpty {
+                Task {
+                    await self.saveReflectionToNotion(
+                        dbId: reflectionsDbId,
+                        apiKey: config.notion.apiKey,
+                        narrative: trimmedNarrative,
+                        metrics: metrics,
+                        date: today
+                    )
+                }
+            }
+
+            let responseBody: [String: Any] = [
+                "metrics": metrics,
+                "narrative": trimmedNarrative,
+                "generatedAt": Self.iso8601Formatter.string(from: Date())
+            ]
+
+            return HTTPResponse(statusCode: 200, body: responseBody)
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to generate weekly reflection: \(error.localizedDescription)"])
+        }
+    }
+
+    /// Save weekly reflection to Notion's Weekly Reflections database
+    private func saveReflectionToNotion(dbId: String, apiKey: String, narrative: String, metrics: [String: Any], date: Date) async {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateStr = dateFormatter.string(from: date)
+
+        // Week label: "Week of Feb 24, 2026"
+        let weekFormatter = DateFormatter()
+        weekFormatter.dateFormat = "MMM d, yyyy"
+        let weekLabel = "Week of \(weekFormatter.string(from: date))"
+
+        // Determine mood based on metrics
+        let overdue = (metrics["tasksOverdue"] as? Int) ?? 0
+        let completionRate = (metrics["completionRate"] as? Int) ?? 0
+        let mood: String
+        if completionRate >= 85 && overdue <= 3 {
+            mood = "Strong"
+        } else if completionRate >= 70 && overdue <= 6 {
+            mood = "Steady"
+        } else if overdue > 8 || completionRate < 50 {
+            mood = "Overwhelmed"
+        } else {
+            mood = "Struggling"
+        }
+
+        // Build In/Out ratio string
+        let inbound = (metrics["messagesInbound"] as? Int) ?? 0
+        let outbound = (metrics["messagesOutbound"] as? Int) ?? 0
+        let ratioStr = outbound > 0 ? String(format: "%.1f:1", Double(inbound) / Double(outbound)) : "N/A"
+
+        // Build Notion API request
+        let url = URL(string: "https://api.notion.com/v1/pages")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "parent": ["database_id": dbId],
+            "properties": [
+                "Week": ["title": [["text": ["content": weekLabel]]]],
+                "Date": ["date": ["start": dateStr]],
+                "Tasks Completed": ["number": (metrics["tasksCompleted"] as? Int) ?? 0],
+                "Tasks Overdue": ["number": overdue],
+                "Completion Rate": ["number": Double(completionRate) / 100.0],
+                "Meetings": ["number": (metrics["meetingsToday"] as? Int) ?? 0],
+                "Open Commitments": ["number": (metrics["commitmentsOpen"] as? Int) ?? 0],
+                "In/Out Ratio": ["rich_text": [["text": ["content": ratioStr]]]],
+                "Mood": ["select": ["name": mood]]
+            ],
+            "children": narrative.components(separatedBy: "\n").prefix(90).map { line -> [String: Any] in
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("## ") {
+                    return [
+                        "object": "block",
+                        "type": "heading_2",
+                        "heading_2": [
+                            "rich_text": [["type": "text", "text": ["content": String(trimmed.dropFirst(3))]]]
+                        ]
+                    ]
+                } else if trimmed.isEmpty {
+                    return [
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": ["rich_text": [] as [[String: Any]]]
+                    ]
+                } else {
+                    return [
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": [
+                            "rich_text": [["type": "text", "text": ["content": trimmed]]]
+                        ]
+                    ]
+                }
+            }
+        ]
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                print("📊 Weekly reflection saved to Notion")
+            } else {
+                print("⚠️ Failed to save reflection to Notion: HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+            }
+        } catch {
+            print("⚠️ Failed to save reflection to Notion: \(error)")
+        }
     }
 
     private func handleCoachingCards() async -> HTTPResponse {
@@ -1622,6 +1937,9 @@ class HTTPServer {
                let jsonString = String(data: jsonData, encoding: .utf8) {
                 cache.cache(endpoint: "/api/todos/scan", response: jsonString, ttl: 600)
             }
+
+            // Update scheduler state (todoScan already uses ISO timestamp)
+            updateSchedulerState(["lastTodoScanTime": ISO8601DateFormatter().string(from: Date())])
 
             return HTTPResponse(statusCode: 200, body: responseBody)
         } catch {
@@ -2006,19 +2324,19 @@ The Commitment Check feature requires a properly configured Notion database.
         guard FileManager.default.fileExists(atPath: configPath) else {
             return HTTPResponse(
                 statusCode: 200,
-                body: ["tasksDatabaseId": NSNull(), "contextDatabases": []]
+                body: ["tasksDatabaseId": NSNull(), "contextDatabases": [], "contextDatabaseNames": [:] as [String: String]]
             )
         }
 
         do {
             let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
-            let config = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let fileConfig = try JSONSerialization.jsonObject(with: data) as? [String: Any]
 
             // Try to find tasks_database_id - check top-level first, then briefing_sources as fallback
             var tasksDatabaseId: String?
 
             // Check notion.tasks_database_id first (top-level takes priority)
-            if let notion = config?["notion"] as? [String: Any],
+            if let notion = fileConfig?["notion"] as? [String: Any],
                let dbId = notion["tasks_database_id"] as? String,
                dbId != "YOUR_TASKS_DATABASE_ID" {
                 tasksDatabaseId = dbId
@@ -2026,7 +2344,7 @@ The Commitment Check feature requires a properly configured Notion database.
 
             // Fallback to notion.briefing_sources.tasks_database_id
             if tasksDatabaseId == nil,
-               let notion = config?["notion"] as? [String: Any],
+               let notion = fileConfig?["notion"] as? [String: Any],
                let briefingSources = notion["briefing_sources"] as? [String: Any],
                let dbId = briefingSources["tasks_database_id"] as? String,
                dbId != "YOUR_TASKS_DATABASE_ID" {
@@ -2035,12 +2353,36 @@ The Commitment Check feature requires a properly configured Notion database.
 
             // Get context databases
             var contextDatabases: [String] = []
-            if let notion = config?["notion"] as? [String: Any],
+            if let notion = fileConfig?["notion"] as? [String: Any],
                let contextDbs = notion["context_databases"] as? [String] {
                 contextDatabases = contextDbs.filter { !$0.isEmpty }
             }
 
-            let body: [String: Any] = ["tasksDatabaseId": tasksDatabaseId as Any, "contextDatabases": contextDatabases]
+            // Resolve database names from Notion API
+            var contextDatabaseNames: [String: String] = [:]
+            let apiKey: String = {
+                if let notion = fileConfig?["notion"] as? [String: Any],
+                   let key = notion["api_key"] as? String { return key }
+                return ""
+            }()
+            if !apiKey.isEmpty && apiKey != "YOUR_NOTION_API_KEY" {
+                for dbId in contextDatabases {
+                    if let name = await fetchNotionDatabaseTitle(dbId: dbId, apiKey: apiKey) {
+                        contextDatabaseNames[dbId] = name
+                    }
+                }
+                // Also resolve tasks database name
+                if let tasksId = tasksDatabaseId,
+                   let name = await fetchNotionDatabaseTitle(dbId: tasksId, apiKey: apiKey) {
+                    contextDatabaseNames[tasksId] = name
+                }
+            }
+
+            let body: [String: Any] = [
+                "tasksDatabaseId": tasksDatabaseId as Any,
+                "contextDatabases": contextDatabases,
+                "contextDatabaseNames": contextDatabaseNames
+            ]
 
             // Cache in memory (30min)
             setInMemoryCache("config_notion", value: body, ttl: 1800)
@@ -2052,6 +2394,29 @@ The Commitment Check feature requires a properly configured Notion database.
                 body: ["error": "Failed to read config: \(error.localizedDescription)"]
             )
         }
+    }
+
+    /// Fetch a Notion database title by ID
+    private func fetchNotionDatabaseTitle(dbId: String, apiKey: String) async -> String? {
+        guard let url = URL(string: "https://api.notion.com/v1/databases/\(dbId)") else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2025-09-03", forHTTPHeaderField: "Notion-Version")
+        request.timeoutInterval = 5
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else { return nil }
+            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            if let titleArray = json?["title"] as? [[String: Any]],
+               let firstTitle = titleArray.first,
+               let plainText = firstTitle["plain_text"] as? String {
+                return plainText
+            }
+        } catch {
+            // Silently fail — name resolution is best-effort
+        }
+        return nil
     }
 
     private func handleUpdateNotionConfig(_ request: HTTPRequest) async -> HTTPResponse {
@@ -3386,7 +3751,7 @@ The Commitment Check feature requires a properly configured Notion database.
         let coachingContext = CoachingMemoryService.shared.getCoachingContext()
         let agentMemoryRules = gatherAgentMemoryRules()
         let liveContext = await gatherLiveContext(config: config)
-        let relationshipData = gatherRelationshipData()
+        let relationshipData = gatherRelationshipData(config: config)
 
         let systemPrompt = CoachingPromptBuilder.build(
             userName: userName,
@@ -3557,6 +3922,104 @@ The Commitment Check feature requires a properly configured Notion database.
         return HTTPResponse(statusCode: 200, body: ["context": context])
     }
 
+    /// Returns debug info: each coaching card with the context data that drove it
+    private func handleCoachingDebug(_ request: HTTPRequest) async -> HTTPResponse {
+        guard let config = AppConfig.load() else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Configuration not loaded"])
+        }
+
+        // Ensure coaching engine exists (reuse or create)
+        if coachingEngine == nil {
+            coachingEngine = CoachingEngine(config: config, alfredService: alfredService)
+        }
+
+        guard let engine = coachingEngine else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Coaching engine unavailable"])
+        }
+
+        // Check if caller wants to force-refresh (bust the 2h cache)
+        let forceRefresh = request.queryParams["force"] == "true"
+
+        // Generate cards (uses 2h cache unless force-refreshed)
+        let cards: [CoachingEngine.CoachingCard]
+        do {
+            cards = try await engine.generateCoachingCards(forceRefresh: forceRefresh)
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to generate cards: \(error.localizedDescription)"])
+        }
+
+        // Build debug response with per-card context
+        let debugCards: [[String: Any]] = cards.map { card in
+            var entry: [String: Any] = [
+                "type": card.type,
+                "label": card.label,
+                "insight": card.insight
+            ]
+            // Attach the raw context data that was gathered for this card type
+            if let ctx = engine.lastDebugContext[card.type] {
+                entry["context"] = ctx
+            }
+            return entry
+        }
+
+        var response: [String: Any] = ["cards": debugCards]
+
+        // Cache age
+        if let generatedAt = engine.lastGeneratedAt {
+            response["generatedAt"] = ISO8601DateFormatter().string(from: generatedAt)
+            let formatter = RelativeDateTimeFormatter()
+            formatter.unitsStyle = .full
+            response["cacheAge"] = formatter.localizedString(for: generatedAt, relativeTo: Date())
+        }
+
+        return HTTPResponse(statusCode: 200, body: response)
+    }
+
+    /// Returns the coaching tenets content + Notion URL for editing
+    private func handleGetCoachingTenets() -> HTTPResponse {
+        let tenetsPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".alfred/coaching_tenets.md").path
+
+        let content: String
+        if let fileContent = try? String(contentsOfFile: tenetsPath, encoding: .utf8) {
+            content = fileContent
+        } else {
+            content = CoachingPromptBuilder.defaultTenets
+        }
+
+        var response: [String: Any] = ["content": content]
+
+        // Include Notion URL if configured
+        if let config = AppConfig.load(),
+           let pageId = config.notion.tenetsPageId, !pageId.isEmpty {
+            response["notionUrl"] = "https://www.notion.so/\(pageId.replacingOccurrences(of: "-", with: ""))"
+            response["notionPageId"] = pageId
+        }
+
+        return HTTPResponse(statusCode: 200, body: response)
+    }
+
+    /// Saves updated coaching tenets to disk and busts Notion cache
+    private func handlePutCoachingTenets(_ request: HTTPRequest) -> HTTPResponse {
+        guard let body = request.body,
+              let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let content = json["content"] as? String else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'content' in request body"])
+        }
+
+        let tenetsPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".alfred/coaching_tenets.md").path
+
+        do {
+            try content.write(toFile: tenetsPath, atomically: true, encoding: .utf8)
+            // Bust the Notion cache so next coaching prompt picks up local changes
+            CoachingPromptBuilder.invalidateNotionTenetsCache()
+            return HTTPResponse(statusCode: 200, body: ["saved": true])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to save: \(error.localizedDescription)"])
+        }
+    }
+
     /// Returns a contextual welcome opener for the Chat tab
     private var openerCache: (text: String, timestamp: Date)? = nil
 
@@ -3585,26 +4048,30 @@ The Commitment Check feature requires a properly configured Notion database.
         contextForOpener += "Today's context:\n\(liveContext)"
 
         let prompt = """
-        Generate a brief, contextual greeting for the start of a coaching session. 1-2 sentences max.
+        Generate a brief, sharp coaching observation about this person's day. This is the first thing they see when they open Alfred — make it count. 1-2 sentences max.
 
         Context:
         \(contextForOpener)
 
         Rules:
         - If there are open follow-ups, reference one naturally ("Last time we talked about X. Did you follow through?")
-        - If no follow-ups, make a sharp observation about their day ("9 meetings today — want to talk about what's actually worth your time?")
-        - Be warm but direct. Like a friend who remembers everything.
-        - Occasionally be funny or playful.
-        - No emojis. No generic greetings like "How can I help?"
-        - Just the greeting text, nothing else.
+        - Otherwise, be a Day Lens — tell them what their calendar and task data reveals that they might not see themselves:
+          • If back-to-back chains exist, name the cost ("4 back-to-backs from 10-2 means zero thinking time before your 3pm board prep")
+          • If there are no free blocks, say it directly ("Your calendar has no gaps. When are you actually going to think today?")
+          • If overdue tasks conflict with a packed calendar, name the collision ("The portfolio update for Sid is 3 days overdue but you're in meetings all day — when exactly do you plan to do it?")
+          • If the day is light, frame it as opportunity ("3 meetings, big gaps. This is your zone-of-genius day. What's the ONE thing you'll ship?")
+        - Channel Matt Mochary: energy awareness, zone of genius vs. grinding, radical prioritization
+        - Be warm but direct. Like a friend who remembers everything and isn't afraid to say it.
+        - No emojis. No generic greetings like "How can I help?" or "Good morning!"
+        - Just the observation text, nothing else.
         """
 
         let claudeService = ClaudeAIService(config: config.ai)
         do {
             let opener = try await claudeService.generateText(
                 prompt: prompt,
-                system: "You are Coach Alfred, a warm but direct executive coach. Generate a single contextual greeting.",
-                maxTokens: 100
+                system: "You are Coach Alfred, a warm but direct executive coach. You see the shape of someone's day and tell them what they're not seeing. Generate a single sharp coaching observation.",
+                maxTokens: 150
             )
             let trimmed = opener.trimmingCharacters(in: .whitespacesAndNewlines)
             openerCache = (trimmed, Date())
@@ -3650,24 +4117,88 @@ The Commitment Check feature requires a properly configured Notion database.
         let timeFmt = DateFormatter()
         timeFmt.dateFormat = "h:mm a"
 
-        // Calendar: full event list for today
+        // Calendar: full event list + structural analysis for Day Lens
         do {
             let calBriefing = try await alfredService.fetchCalendarBriefing(for: Date())
             let events = calBriefing.schedule.events
-            let meetingCount = events.count
-            let remaining = events.filter { $0.startTime > Date() }
+            let timedEvents = events.filter { !$0.isAllDay }
+            let meetingCount = timedEvents.count
+            let remaining = timedEvents.filter { $0.startTime > Date() }
 
             var calStr = "Today: \(meetingCount) meetings (\(remaining.count) remaining)."
             if let next = remaining.first {
                 calStr += " Next: \(next.title) at \(timeFmt.string(from: next.startTime))."
             }
             // List today's meetings
-            if !events.isEmpty {
-                let eventList = events.prefix(10).map { event in
-                    "\(timeFmt.string(from: event.startTime)) — \(event.title)"
+            if !timedEvents.isEmpty {
+                let eventList = timedEvents.prefix(10).map { event in
+                    "\(timeFmt.string(from: event.startTime))-\(timeFmt.string(from: event.endTime)) — \(event.title)"
                 }.joined(separator: "\n  ")
                 calStr += "\n  \(eventList)"
             }
+
+            // Calendar structural analysis (Day Lens)
+            if !timedEvents.isEmpty {
+                let sorted = timedEvents.sorted { $0.startTime < $1.startTime }
+
+                // Total meeting hours
+                var totalMinutes = 0
+                for event in sorted {
+                    totalMinutes += Int(event.endTime.timeIntervalSince(event.startTime) / 60)
+                }
+                let hours = totalMinutes / 60
+                let mins = totalMinutes % 60
+                calStr += "\n  Time in meetings: \(hours)h \(mins)m"
+
+                // Back-to-back detection (< 15 min gap)
+                var backToBackChains: [[String]] = []
+                var currentChain: [String] = [sorted[0].title]
+                for i in 1..<sorted.count {
+                    let gap = sorted[i].startTime.timeIntervalSince(sorted[i-1].endTime)
+                    if gap < 900 { // < 15 min
+                        currentChain.append(sorted[i].title)
+                    } else {
+                        if currentChain.count > 1 { backToBackChains.append(currentChain) }
+                        currentChain = [sorted[i].title]
+                    }
+                }
+                if currentChain.count > 1 { backToBackChains.append(currentChain) }
+
+                if !backToBackChains.isEmpty {
+                    let longest = backToBackChains.max(by: { $0.count < $1.count })!
+                    calStr += "\n  Back-to-back chains: \(backToBackChains.count) (longest: \(longest.count) meetings in a row)"
+                }
+
+                // Free blocks > 30 min
+                let calendar = Calendar.current
+                let workStart = calendar.date(bySettingHour: 9, minute: 0, second: 0, of: Date())!
+                let workEnd = calendar.date(bySettingHour: 18, minute: 0, second: 0, of: Date())!
+                var freeBlocks: [(start: Date, duration: Int)] = []
+                var cursor = workStart
+                for event in sorted {
+                    if event.startTime > cursor {
+                        let gap = Int(event.startTime.timeIntervalSince(cursor) / 60)
+                        if gap >= 30 {
+                            freeBlocks.append((start: cursor, duration: gap))
+                        }
+                    }
+                    cursor = max(cursor, event.endTime)
+                }
+                if cursor < workEnd {
+                    let gap = Int(workEnd.timeIntervalSince(cursor) / 60)
+                    if gap >= 30 {
+                        freeBlocks.append((start: cursor, duration: gap))
+                    }
+                }
+
+                if freeBlocks.isEmpty {
+                    calStr += "\n  ⚠️ No free blocks (30+ min) — zero deep work time today"
+                } else {
+                    let blockDescs = freeBlocks.map { "\(timeFmt.string(from: $0.start)) (\($0.duration)m)" }
+                    calStr += "\n  Free blocks (30+ min): \(blockDescs.joined(separator: ", "))"
+                }
+            }
+
             parts.append(calStr)
         } catch {
             parts.append("Calendar: unavailable")
@@ -3729,19 +4260,40 @@ The Commitment Check feature requires a properly configured Notion database.
         return parts.joined(separator: "\n")
     }
 
-    /// Gather relationship data (counterparty stats)
-    private func gatherRelationshipData() -> String {
-        let counterpartyStats = TaskLifecycleTracker.shared.getStatsByCounterparty()
+    /// Gather relationship data (counterparty stats + recent message interactions)
+    private func gatherRelationshipData(config: AppConfig) -> String {
+        var lines: [String] = []
 
-        if counterpartyStats.isEmpty {
-            return ""
+        // Commitment stats by counterparty
+        let counterpartyStats = TaskLifecycleTracker.shared.getStatsByCounterparty()
+        if !counterpartyStats.isEmpty {
+            lines.append("Commitment stats by person:")
+            for stat in counterpartyStats.prefix(6) {
+                let completionPct = Int(stat.completionRate * 100)
+                let overduePct = Int(stat.overdueRate * 100)
+                lines.append("  - \(stat.name): \(stat.totalTasks) tasks, \(completionPct)% completed, \(overduePct)% overdue")
+            }
         }
 
-        var lines: [String] = ["Commitment stats by person:"]
-        for stat in counterpartyStats.prefix(6) {
-            let completionPct = Int(stat.completionRate * 100)
-            let overduePct = Int(stat.overdueRate * 100)
-            lines.append("  - \(stat.name): \(stat.totalTasks) tasks, \(completionPct)% completed, \(overduePct)% overdue")
+        // Recent message interactions (WhatsApp) — so Coach doesn't nudge about recently-contacted people
+        do {
+            let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+            let reader = WhatsAppReader(dbPath: config.messaging.whatsapp.dbPath)
+            try reader.connect()
+            let threads = try reader.fetchThreads(since: sevenDaysAgo)
+
+            if !threads.isEmpty {
+                let formatter = RelativeDateTimeFormatter()
+                formatter.unitsStyle = .full
+                lines.append("\nRecent message interactions (last 7 days):")
+                for thread in threads.sorted(by: { $0.lastMessageDate > $1.lastMessageDate }).prefix(10) {
+                    let name = thread.contactName ?? thread.contactIdentifier
+                    let ago = formatter.localizedString(for: thread.lastMessageDate, relativeTo: Date())
+                    lines.append("  - \(name): last message \(ago) (WhatsApp)")
+                }
+            }
+        } catch {
+            // Non-fatal — message data is supplementary
         }
 
         return lines.joined(separator: "\n")
@@ -3940,6 +4492,20 @@ The Commitment Check feature requires a properly configured Notion database.
                     "duplicatesSkipped": result.duplicatesSkipped,
                     "lookbackDays": result.lookbackDays
                 ]
+            }
+
+        case "tasks":
+            if let result = data as? TaskUpdateResult {
+                return [
+                    "type": "task_update",
+                    "taskTitle": result.taskTitle,
+                    "changes": result.changes,
+                    "success": result.success
+                ]
+            }
+            // Disambiguation case — data is already a dict
+            if let dict = data as? [String: Any], let type = dict["type"] as? String, type == "disambiguation" {
+                return dict
             }
 
         case "attention":
@@ -5774,6 +6340,25 @@ extension HTTPServer {
         )
     }
 
+    // MARK: - Cadence Helpers
+
+    /// Update keys in ~/.alfred/scheduler_state.json (used by cadence handlers to record last-run time)
+    private func updateSchedulerState(_ updates: [String: String]) {
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        let statePath = "\(homeDir)/.alfred/scheduler_state.json"
+        var stateJson: [String: Any] = [:]
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: statePath)),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            stateJson = json
+        }
+        for (key, value) in updates {
+            stateJson[key] = value
+        }
+        if let stateData = try? JSONSerialization.data(withJSONObject: stateJson, options: [.prettyPrinted, .sortedKeys]) {
+            try? stateData.write(to: URL(fileURLWithPath: statePath))
+        }
+    }
+
     // MARK: - Cadence Handlers
 
     private func handleCadenceStatus() -> HTTPResponse {
@@ -5791,6 +6376,7 @@ extension HTTPServer {
         let config = AppConfig.load()
         let cadence = config?.cadence
 
+        // Prefer precise timestamps (written by HTTP handlers) over date-only keys (written by scheduler)
         let status: [String: Any] = [
             "todoScan": [
                 "enabled": cadence?.todoScanEnabled ?? true,
@@ -5800,24 +6386,24 @@ extension HTTPServer {
             "commitmentScan": [
                 "enabled": cadence?.commitmentScanEnabled ?? true,
                 "time": cadence?.commitmentScanTime ?? "17:00",
-                "lastRun": stateInfo["lastCommitmentScanDate"] ?? NSNull()
+                "lastRun": stateInfo["lastCommitmentScanTimestamp"] ?? stateInfo["lastCommitmentScanDate"] ?? NSNull()
             ],
             "patternLearn": [
                 "enabled": cadence?.patternLearnEnabled ?? true,
                 "day": cadence?.patternLearnDay ?? "thursday",
                 "time": cadence?.patternLearnTime ?? "18:00",
-                "lastRun": stateInfo["lastPatternLearnDate"] ?? NSNull()
+                "lastRun": stateInfo["lastPatternLearnTimestamp"] ?? stateInfo["lastPatternLearnDate"] ?? NSNull()
             ],
             "groupAnalysis": [
                 "enabled": cadence?.groupAnalysisEnabled ?? true,
                 "day": cadence?.groupAnalysisDay ?? "monday",
                 "time": cadence?.groupAnalysisTime ?? "09:00",
-                "lastRun": stateInfo["lastGroupAnalysisDate"] ?? NSNull()
+                "lastRun": stateInfo["lastGroupAnalysisTimestamp"] ?? stateInfo["lastGroupAnalysisDate"] ?? NSNull()
             ],
             "autoSummary": [
                 "groups": cadence?.autoSummaryGroups ?? [],
                 "time": cadence?.autoSummaryTime ?? "18:00",
-                "lastRun": stateInfo["lastAutoSummaryDate"] ?? NSNull()
+                "lastRun": stateInfo["lastAutoSummaryTimestamp"] ?? stateInfo["lastAutoSummaryDate"] ?? NSNull()
             ]
         ]
 
@@ -5895,17 +6481,11 @@ extension HTTPServer {
                 try jsonData.write(to: URL(fileURLWithPath: suggestionsPath))
             }
 
-            // 6. Update scheduler state
-            let statePath = "\(homeDir)/.alfred/scheduler_state.json"
-            var stateJson: [String: Any] = [:]
-            if let data = try? Data(contentsOf: URL(fileURLWithPath: statePath)),
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                stateJson = json
-            }
-            stateJson["lastGroupAnalysisDate"] = todayDate
-            if let stateData = try? JSONSerialization.data(withJSONObject: stateJson, options: [.prettyPrinted, .sortedKeys]) {
-                try stateData.write(to: URL(fileURLWithPath: statePath))
-            }
+            // 6. Update scheduler state: date key for scheduler, timestamp key for UI
+            updateSchedulerState([
+                "lastGroupAnalysisDate": todayDate,
+                "lastGroupAnalysisTimestamp": ISO8601DateFormatter().string(from: Date())
+            ])
 
             return HTTPResponse(statusCode: 200, body: [
                 "success": true,
@@ -6255,6 +6835,15 @@ extension HTTPServer {
 
         let patterns = learningService.getComputedPatterns()
         let summary = learningService.getSummary()
+
+        // Update scheduler state: date key for scheduler, timestamp key for UI
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let now = Date()
+        updateSchedulerState([
+            "lastPatternLearnDate": fmt.string(from: now),
+            "lastPatternLearnTimestamp": ISO8601DateFormatter().string(from: now)
+        ])
 
         return HTTPResponse(
             statusCode: 200,

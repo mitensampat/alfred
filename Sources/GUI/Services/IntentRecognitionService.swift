@@ -177,7 +177,12 @@ class IntentRecognitionService {
             "filters": {
               "contact_name": "Mona Gandhi",
               "lookback_days": 14,
-              "platform": "whatsapp"
+              "platform": "whatsapp",
+              "task_search_term": null,
+              "new_status": null,
+              "new_priority": null,
+              "new_due_date": null,
+              "note_to_add": null
             },
             "confidence": 0.95,
             "original_query": "find my commitments to Mona Gandhi over the last two weeks"
@@ -189,6 +194,19 @@ class IntentRecognitionService {
             "Scan for new commitments from this week"
           ]
         }
+
+        TASK UPDATE RULES:
+        - "mark the RCA task as done" -> action:"update", target:"tasks", filters.task_search_term:"RCA", filters.new_status:"Done"
+        - "set priority on Jira migration to high" -> action:"update", target:"tasks", filters.task_search_term:"Jira migration", filters.new_priority:"High"
+        - "move the dentist appointment to Friday" -> action:"update", target:"tasks", filters.task_search_term:"dentist", filters.new_due_date:"YYYY-MM-DD" (compute actual Friday date)
+        - "add a note to the budget review: waiting on finance" -> action:"update", target:"tasks", filters.task_search_term:"budget review", filters.note_to_add:"Waiting on finance"
+        - "complete the follow-up with Sarah" -> action:"update", target:"tasks", filters.task_search_term:"Sarah", filters.new_status:"Done"
+        - "my top goal is done" or "mark that task done" -> resolve from conversation context, put task keywords in task_search_term, filters.new_status:"Done"
+        - new_status valid values: "Done", "In Progress", "Not Started", "Blocked", "Cancelled"
+        - new_priority valid values: "Critical", "High", "Medium", "Low"
+        - new_due_date format: "YYYY-MM-DD" — compute the actual calendar date from natural language
+        - task_search_term: extract the MOST specific identifying keywords from the user's message
+        - Multiple updates in one request are supported: "mark the RCA as high priority and due Monday" -> set both new_priority and new_due_date
 
         Confidence scoring guidelines:
         - confidence >= 0.9: Very clear intent, all parameters specified

@@ -294,11 +294,16 @@ class ClaudeAIService {
             """
         }.joined(separator: "\n\n")
 
-        // Build Notion context section
+        // Build Notion context section — include full note content for richer briefings
         var notionContext = ""
         if !notionNotes.isEmpty {
             notionContext += "\n\nRelevant Notion Notes:\n"
-            notionContext += notionNotes.prefix(3).map { "- \($0.title)" }.joined(separator: "\n")
+            for note in notionNotes.prefix(5) {
+                notionContext += "\n### \(note.title)\n"
+                if !note.content.isEmpty {
+                    notionContext += String(note.content.prefix(800)) + "\n"
+                }
+            }
         }
         if !notionTasks.isEmpty {
             notionContext += "\n\nActive Tasks:\n"
@@ -321,9 +326,9 @@ class ClaudeAIService {
         \(notionContext)
 
         Provide:
-        1. Context: What is this meeting about and why it matters (2-3 sentences). If relevant Notion notes or tasks are provided, reference them to show connections.
-        2. Key preparation points: What should I review or prepare before this meeting. Include any relevant tasks or notes from Notion.
-        3. Suggested topics: 3-4 topics that should be discussed
+        1. Context: What is this meeting about and why it matters (2-3 sentences). Use the Notion notes content to provide specific, contextual preparation. Reference specific details from notes — names, decisions, action items mentioned.
+        2. Key preparation points: What should I review or prepare before this meeting. Reference specific content from Notion notes and active tasks.
+        3. Suggested topics: 3-4 topics that should be discussed, informed by the notes and task context.
         4. Quick takes on each attendee: Most relevant facts I should remember
 
         Format as JSON:

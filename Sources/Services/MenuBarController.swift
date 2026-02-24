@@ -22,6 +22,7 @@ class MenuBarController: NSObject, NSMenuDelegate {
     private var lastPatternLearnRun: String = ""
     private var lastGroupAnalysisRun: String = ""
     private var lastAutoSummaryRun: String = ""
+    private var lastWeeklyReviewRun: String = ""
 
     // Persistent storage for last run dates (to support catch-up after app restart)
     private var schedulerStatePath: String {
@@ -353,9 +354,15 @@ class MenuBarController: NSObject, NSMenuDelegate {
         // Cadence loop state
         var lastTodoScanTime: String?        // ISO timestamp (interval-based)
         var lastCommitmentScanDate: String?  // date string (daily)
+        var lastCommitmentScanTimestamp: String?  // ISO timestamp for UI display
         var lastPatternLearnDate: String?    // date string (weekly)
+        var lastPatternLearnTimestamp: String? // ISO timestamp for UI display
         var lastGroupAnalysisDate: String?   // date string (weekly)
+        var lastGroupAnalysisTimestamp: String? // ISO timestamp for UI display
         var lastAutoSummaryDate: String?     // date string (daily)
+        var lastAutoSummaryTimestamp: String? // ISO timestamp for UI display
+        var lastWeeklyReviewDate: String?    // date string (weekly)
+        var lastWeeklyReviewTimestamp: String? // ISO timestamp for UI display
     }
 
     private func loadSchedulerState() -> SchedulerState {
@@ -557,6 +564,18 @@ class MenuBarController: NSObject, NSMenuDelegate {
             lastAutoSummaryRun = currentTime
             await runCadenceAutoSummaries(groups: autoSummaryGroups, state: &state, todayDate: todayDate, logPath: logPath, emailTo: emailTo)
         }
+
+        // 6. Weekly Review: on configured day (default Friday=6) at configured time (default 17:00)
+        let weeklyReviewEnabled = cadence?.weeklyReviewEnabled ?? true
+        let weeklyReviewDay = cadence?.weeklyReviewDay?.lowercased() ?? "sunday"
+        let weeklyReviewTime = cadence?.weeklyReviewTime ?? "08:00"
+        let targetReviewDay = dayNameToWeekday(weeklyReviewDay)
+        if weeklyReviewEnabled && weekday == targetReviewDay && currentTime == weeklyReviewTime
+            && state.lastWeeklyReviewDate != todayDate
+            && lastWeeklyReviewRun != currentTime {
+            lastWeeklyReviewRun = currentTime
+            await runCadenceWeeklyReview(state: &state, todayDate: todayDate, logPath: logPath, config: config, emailTo: emailTo)
+        }
     }
 
     // MARK: - Cadence Runner Methods
@@ -589,6 +608,7 @@ class MenuBarController: NSObject, NSMenuDelegate {
         do {
             let result = try await alfredService.scanCommitments(contactName: nil, lookbackDays: 1, scanMode: "all")
             state.lastCommitmentScanDate = todayDate
+            state.lastCommitmentScanTimestamp = ISO8601DateFormatter().string(from: Date())
             saveSchedulerState(state)
             logToFile("✅ [Cadence] Commitment scan: \(result.totalFound) found, \(result.saved) saved", path: logPath)
             if result.totalFound > 0 {
@@ -622,6 +642,7 @@ class MenuBarController: NSObject, NSMenuDelegate {
             logToFile("  ✓ Coaching context synced to Notion", path: logPath)
 
             state.lastPatternLearnDate = todayDate
+            state.lastPatternLearnTimestamp = ISO8601DateFormatter().string(from: Date())
             saveSchedulerState(state)
             logToFile("✅ [Cadence] Pattern learning complete", path: logPath)
             showNotification(title: "Alfred: Patterns Updated", body: "Weekly learning digest generated and playbook synced")
@@ -685,6 +706,7 @@ class MenuBarController: NSObject, NSMenuDelegate {
             }
 
             state.lastGroupAnalysisDate = todayDate
+            state.lastGroupAnalysisTimestamp = ISO8601DateFormatter().string(from: Date())
             saveSchedulerState(state)
             logToFile("✅ [Cadence] Group analysis: \(groupThreads.count) groups scanned, \(busyGroups.count) busy, \(suggestions.count) new suggestions", path: logPath)
             if !suggestions.isEmpty {
@@ -732,8 +754,278 @@ class MenuBarController: NSObject, NSMenuDelegate {
         }
 
         state.lastAutoSummaryDate = todayDate
+        state.lastAutoSummaryTimestamp = ISO8601DateFormatter().string(from: Date())
         saveSchedulerState(state)
         logToFile("✅ [Cadence] Auto-summaries: \(successCount)/\(groups.count) sent", path: logPath)
+    }
+
+    private func runCadenceWeeklyReview(state: inout SchedulerState, todayDate: String, logPath: String, config: AppConfig, emailTo: String?) async {
+        logToFile("📋 [Cadence] Running weekly review...", path: logPath)
+        guard let alfredService = alfredService else {
+            logToFile("⚠️ [Cadence] AlfredService not available for weekly review", path: logPath)
+            return
+        }
+
+        do {
+            // Generate a detailed weekly review (longer than card version)
+            var contextParts: [String] = []
+            var metrics: [String: Any] = [:]
+            let calendar = Calendar.current
+            let today = Date()
+
+            if let orchestrator = orchestrator {
+                let allTasks = try await orchestrator.notionServicePublic.queryActiveTasks()
+                let completed = allTasks.filter { $0.status == .done }
+                let open = allTasks.filter { $0.status != .done }
+                let overdue = open.filter { $0.isOverdue }
+                let fourteenDaysAgo = calendar.date(byAdding: .day, value: -14, to: today)!
+                let stale = open.filter { $0.status == .notStarted && $0.createdDate < fourteenDaysAgo }
+
+                metrics["tasksCompleted"] = completed.count
+                metrics["tasksOpen"] = open.count
+                metrics["tasksOverdue"] = overdue.count
+
+                contextParts.append("TASK SUMMARY:")
+                contextParts.append("- Completed: \(completed.count)")
+                contextParts.append("- Open: \(open.count)")
+                contextParts.append("- Overdue: \(overdue.count)")
+                contextParts.append("- Stale (14+ days, not started): \(stale.count)")
+
+                if !completed.isEmpty {
+                    contextParts.append("\nCOMPLETED THIS PERIOD:")
+                    for task in completed.prefix(15) {
+                        contextParts.append("- \(task.title) [\(task.priority?.rawValue ?? "none")]")
+                    }
+                }
+
+                if !overdue.isEmpty {
+                    contextParts.append("\nOVERDUE:")
+                    let dateFormatter = DateFormatter()
+                    dateFormatter.dateFormat = "MMM d"
+                    for task in overdue.prefix(8) {
+                        let daysOverdue = task.dueDate.map { calendar.dateComponents([.day], from: $0, to: today).day ?? 0 } ?? 0
+                        contextParts.append("- \(task.title) (\(daysOverdue) days overdue)")
+                    }
+                }
+
+                if !stale.isEmpty {
+                    contextParts.append("\nSTALE / AVOIDED:")
+                    for task in stale.prefix(5) {
+                        let age = calendar.dateComponents([.day], from: task.createdDate, to: today).day ?? 0
+                        contextParts.append("- \(task.title) (untouched \(age) days)")
+                    }
+                }
+            }
+
+            // Commitment stats
+            let commitStats = CommitmentScanTracker.shared.getStats()
+            metrics["commitmentsOpen"] = commitStats.openCommitments
+            metrics["commitmentsClosed"] = commitStats.closedCount
+            contextParts.append("\nCOMMITMENTS: \(commitStats.openCommitments) open, \(commitStats.closedCount) closed")
+
+            let counterpartyStats = TaskLifecycleTracker.shared.getStatsByCounterparty()
+            if !counterpartyStats.isEmpty {
+                contextParts.append("\nRELATIONSHIP HEALTH:")
+                for stat in counterpartyStats.prefix(8) {
+                    contextParts.append("- \(stat.name): \(stat.completedTasks)/\(stat.totalTasks) done, \(Int(stat.overdueRate * 100))% overdue")
+                }
+            }
+
+            // Lifecycle stats
+            let lifecycleStats = TaskLifecycleTracker.shared.getStats()
+            let completionRate = Int(lifecycleStats.completionRate * 100)
+            metrics["completionRate"] = completionRate
+            contextParts.append("\nOVERALL: \(completionRate)% completion rate, \(Int(lifecycleStats.overdueRate * 100))% overdue rate")
+
+            // Messaging velocity
+            do {
+                let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: today)!
+                let reader = WhatsAppReader(dbPath: config.messaging.whatsapp.dbPath)
+                try reader.connect()
+                let threads = try reader.fetchThreads(since: sevenDaysAgo)
+                let totalIn = threads.flatMap { $0.messages }.filter { $0.direction == .incoming }.count
+                let totalOut = threads.flatMap { $0.messages }.filter { $0.direction == .outgoing }.count
+                let ratio = totalOut > 0 ? String(format: "%.1f", Double(totalIn) / Double(totalOut)) : "∞"
+                metrics["messagesInbound"] = totalIn
+                metrics["messagesOutbound"] = totalOut
+                contextParts.append("\nMESSAGING: \(totalIn) inbound, \(totalOut) outbound (ratio: \(ratio):1)")
+                reader.disconnect()
+            } catch { }
+
+            // Recent coaching themes
+            let sessions = CoachingMemoryService.shared.getRecentSessions(limit: 5)
+            if !sessions.isEmpty {
+                contextParts.append("\nRECENT COACHING THEMES:")
+                for session in sessions {
+                    let firstLine = session.components(separatedBy: "\n").first ?? session
+                    contextParts.append("- \(String(firstLine.prefix(150)))")
+                }
+            }
+
+            let claudeService = ClaudeAIService(config: config.ai)
+            let prompt = """
+            You are Coach Alfred writing a comprehensive weekly reflection email. This is a Sunday morning review — the founder's chance to step back and see the week clearly before planning the next one.
+
+            Context:
+            \(contextParts.joined(separator: "\n"))
+
+            Write a weekly reflection covering these dimensions:
+
+            ## WINS
+            What was accomplished this week? Name specific completed tasks. Acknowledge real progress — even small wins matter.
+
+            ## ACCOUNTABILITY
+            What was supposed to happen but didn't? Name specific overdue tasks. Don't be harsh, but be honest. Frame as curiosity, not judgment.
+
+            ## PATTERNS
+            Based on the data, what patterns are emerging? Are they operating in their Zone of Genius or grinding? Which relationships need investment? What keeps getting avoided? Reference messaging velocity if relevant.
+
+            ## THIS WEEK
+            ONE clear priority for the coming week. Be specific — name the task, the person, or the decision. End with a motivating challenge.
+
+            Style:
+            - Write in second person ("You completed...", "Your overdue rate...")
+            - Be direct and warm. Like a friend who remembers everything.
+            - Each section: 2-3 sentences, with specific names and numbers
+            - Total: ~300 words
+            - No emojis. Use ## headers for sections. Plain prose.
+
+            Respond with ONLY the review text.
+            """
+
+            let reviewText = try await claudeService.generateText(
+                prompt: prompt,
+                maxTokens: 500
+            )
+
+            // Format as HTML email
+            let formattedBody = reviewText.trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "## WINS", with: "<h3 style='color: #6b4c9a; margin-top: 20px; font-size: 14px; letter-spacing: 1px;'>WINS</h3>")
+                .replacingOccurrences(of: "## ACCOUNTABILITY", with: "<h3 style='color: #6b4c9a; margin-top: 20px; font-size: 14px; letter-spacing: 1px;'>ACCOUNTABILITY</h3>")
+                .replacingOccurrences(of: "## PATTERNS", with: "<h3 style='color: #6b4c9a; margin-top: 20px; font-size: 14px; letter-spacing: 1px;'>PATTERNS</h3>")
+                .replacingOccurrences(of: "## THIS WEEK", with: "<h3 style='color: #6b4c9a; margin-top: 20px; font-size: 14px; letter-spacing: 1px;'>THIS WEEK</h3>")
+                .replacingOccurrences(of: "\n\n", with: "</p><p style='line-height: 1.6; margin: 8px 0;'>")
+
+            let htmlBody = """
+            <html>
+            <body style="font-family: -apple-system, system-ui, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #333; background: #fafafa;">
+            <div style="background: white; padding: 24px; border-radius: 8px;">
+            <h2 style="color: #2c3e50; font-family: Georgia, serif; font-weight: 400; margin-bottom: 4px;">Weekly Reflection</h2>
+            <p style="color: #999; font-size: 12px; margin-top: 0;">\(todayDate) · from Alfred</p>
+            <div style="font-size: 14px;">
+            <p style='line-height: 1.6; margin: 8px 0;'>\(formattedBody)</p>
+            </div>
+            </div>
+            <p style="font-size: 11px; color: #bbb; text-align: center; margin-top: 16px;">Open Alfred to see your full dashboard →</p>
+            </body>
+            </html>
+            """
+
+            let notifService = NotificationService(config: config.notifications)
+            try await notifService.sendLearningDigest(
+                subject: "Alfred: Weekly Reflection — \(todayDate)",
+                body: htmlBody
+            )
+            logToFile("  ✓ Weekly reflection email sent", path: logPath)
+
+            // Save to Notion Reflections database
+            if let reflectionsDbId = config.notion.reflectionsDatabaseId, !reflectionsDbId.isEmpty {
+                await saveReflectionToNotion(
+                    dbId: reflectionsDbId,
+                    apiKey: config.notion.apiKey,
+                    narrative: reviewText.trimmingCharacters(in: .whitespacesAndNewlines),
+                    metrics: metrics,
+                    date: today,
+                    logPath: logPath
+                )
+            }
+
+            state.lastWeeklyReviewDate = todayDate
+            state.lastWeeklyReviewTimestamp = ISO8601DateFormatter().string(from: Date())
+            saveSchedulerState(state)
+            logToFile("✅ [Cadence] Weekly reflection complete", path: logPath)
+            showNotification(title: "Alfred: Weekly Reflection", body: "Your Sunday reflection has been emailed")
+        } catch {
+            logToFile("❌ [Cadence] Weekly review failed: \(error)", path: logPath)
+        }
+    }
+
+    private func saveReflectionToNotion(dbId: String, apiKey: String, narrative: String, metrics: [String: Any], date: Date, logPath: String) async {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateStr = dateFormatter.string(from: date)
+
+        let weekFormatter = DateFormatter()
+        weekFormatter.dateFormat = "MMM d, yyyy"
+        let weekLabel = "Week of \(weekFormatter.string(from: date))"
+
+        let overdue = (metrics["tasksOverdue"] as? Int) ?? 0
+        let completionRate = (metrics["completionRate"] as? Int) ?? 0
+        let mood: String
+        if completionRate >= 85 && overdue <= 3 { mood = "Strong" }
+        else if completionRate >= 70 && overdue <= 6 { mood = "Steady" }
+        else if overdue > 8 || completionRate < 50 { mood = "Overwhelmed" }
+        else { mood = "Struggling" }
+
+        let inbound = (metrics["messagesInbound"] as? Int) ?? 0
+        let outbound = (metrics["messagesOutbound"] as? Int) ?? 0
+        let ratioStr = outbound > 0 ? String(format: "%.1f:1", Double(inbound) / Double(outbound)) : "N/A"
+
+        let url = URL(string: "https://api.notion.com/v1/pages")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "parent": ["database_id": dbId],
+            "properties": [
+                "Week": ["title": [["text": ["content": weekLabel]]]],
+                "Date": ["date": ["start": dateStr]],
+                "Tasks Completed": ["number": (metrics["tasksCompleted"] as? Int) ?? 0],
+                "Tasks Overdue": ["number": overdue],
+                "Completion Rate": ["number": Double(completionRate) / 100.0],
+                "Meetings": ["number": (metrics["meetingsToday"] as? Int) ?? 0],
+                "Open Commitments": ["number": (metrics["commitmentsOpen"] as? Int) ?? 0],
+                "In/Out Ratio": ["rich_text": [["text": ["content": ratioStr]]]],
+                "Mood": ["select": ["name": mood]]
+            ],
+            "children": narrative.components(separatedBy: "\n").prefix(90).map { line -> [String: Any] in
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("## ") {
+                    return [
+                        "object": "block",
+                        "type": "heading_2",
+                        "heading_2": ["rich_text": [["type": "text", "text": ["content": String(trimmed.dropFirst(3))]]]]
+                    ]
+                } else if trimmed.isEmpty {
+                    return [
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": ["rich_text": [] as [[String: Any]]]
+                    ]
+                } else {
+                    return [
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": ["rich_text": [["type": "text", "text": ["content": trimmed]]]]
+                    ]
+                }
+            }
+        ]
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                logToFile("  ✓ Weekly reflection saved to Notion", path: logPath)
+            } else {
+                logToFile("  ⚠️ Notion save failed: HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)", path: logPath)
+            }
+        } catch {
+            logToFile("  ⚠️ Notion save error: \(error)", path: logPath)
+        }
     }
 
     private func dayNameToWeekday(_ name: String) -> Int {

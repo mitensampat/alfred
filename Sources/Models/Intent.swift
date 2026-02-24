@@ -103,6 +103,13 @@ struct UserIntent: Codable {
         // Calendar filters
         let calendarName: String?
 
+        // Task update filters (used when action is "update" and target is "tasks")
+        let taskSearchTerm: String?    // fuzzy task name keywords ("RCA", "dentist appointment")
+        let newStatus: String?         // "Done", "In Progress", "Not Started", "Blocked", "Cancelled"
+        let newPriority: String?       // "Critical", "High", "Medium", "Low"
+        let newDueDate: Date?          // new due date for the task
+        let noteToAdd: String?         // text to append to Description
+
         enum CodingKeys: String, CodingKey {
             case contactName = "contact_name"
             case dateRange = "date_range"
@@ -114,6 +121,11 @@ struct UserIntent: Codable {
             case lookbackDays = "lookback_days"
             case lookforwardDays = "lookforward_days"
             case calendarName = "calendar_name"
+            case taskSearchTerm = "task_search_term"
+            case newStatus = "new_status"
+            case newPriority = "new_priority"
+            case newDueDate = "new_due_date"
+            case noteToAdd = "note_to_add"
         }
 
         struct DateRange: Codable {
@@ -174,6 +186,19 @@ struct UserIntent: Codable {
             platform = try? container.decodeIfPresent(MessagePlatform.self, forKey: .platform)
             commitmentType = try? container.decodeIfPresent(CommitmentType.self, forKey: .commitmentType)
             urgency = try? container.decodeIfPresent(UrgencyLevel.self, forKey: .urgency)
+
+            // Task update fields
+            taskSearchTerm = try container.decodeIfPresent(String.self, forKey: .taskSearchTerm)
+            newStatus = try container.decodeIfPresent(String.self, forKey: .newStatus)
+            newPriority = try container.decodeIfPresent(String.self, forKey: .newPriority)
+            noteToAdd = try container.decodeIfPresent(String.self, forKey: .noteToAdd)
+
+            // Decode newDueDate from flexible date string
+            if let dateString = try container.decodeIfPresent(String.self, forKey: .newDueDate) {
+                newDueDate = IntentFilters.parseFlexibleDate(dateString)
+            } else {
+                newDueDate = nil
+            }
         }
 
         /// Parse date strings in multiple formats that Claude might produce
@@ -216,6 +241,11 @@ struct UserIntent: Codable {
             self.lookbackDays = nil
             self.lookforwardDays = nil
             self.calendarName = nil
+            self.taskSearchTerm = nil
+            self.newStatus = nil
+            self.newPriority = nil
+            self.newDueDate = nil
+            self.noteToAdd = nil
         }
 
         // Manual init for programmatic construction
@@ -229,7 +259,12 @@ struct UserIntent: Codable {
             urgency: UrgencyLevel? = nil,
             lookbackDays: Int? = nil,
             lookforwardDays: Int? = nil,
-            calendarName: String? = nil
+            calendarName: String? = nil,
+            taskSearchTerm: String? = nil,
+            newStatus: String? = nil,
+            newPriority: String? = nil,
+            newDueDate: Date? = nil,
+            noteToAdd: String? = nil
         ) {
             self.contactName = contactName
             self.dateRange = dateRange
@@ -241,6 +276,11 @@ struct UserIntent: Codable {
             self.lookbackDays = lookbackDays
             self.lookforwardDays = lookforwardDays
             self.calendarName = calendarName
+            self.taskSearchTerm = taskSearchTerm
+            self.newStatus = newStatus
+            self.newPriority = newPriority
+            self.newDueDate = newDueDate
+            self.noteToAdd = noteToAdd
         }
     }
 }

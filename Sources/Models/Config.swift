@@ -88,6 +88,9 @@ struct CadenceConfig: Codable {
     let groupAnalysisTime: String?       // default "09:00"
     var autoSummaryGroups: [String]?     // user-approved groups for daily auto-summary
     let autoSummaryTime: String?         // default "18:00"
+    let weeklyReviewEnabled: Bool?       // default true
+    let weeklyReviewDay: String?         // default "friday"
+    let weeklyReviewTime: String?        // default "17:00"
 
     enum CodingKeys: String, CodingKey {
         case todoScanEnabled = "todo_scan_enabled"
@@ -102,6 +105,9 @@ struct CadenceConfig: Codable {
         case groupAnalysisTime = "group_analysis_time"
         case autoSummaryGroups = "auto_summary_groups"
         case autoSummaryTime = "auto_summary_time"
+        case weeklyReviewEnabled = "weekly_review_enabled"
+        case weeklyReviewDay = "weekly_review_day"
+        case weeklyReviewTime = "weekly_review_time"
     }
 }
 
@@ -163,8 +169,11 @@ struct NotionConfig: Codable {
     let apiKey: String
     let databaseId: String
     let tasksDatabaseId: String?
+    let reflectionsDatabaseId: String?
+    let tenetsPageId: String?
     let briefingSources: BriefingSources?
     let playbookPageId: String?
+    let contextDatabases: [String]?
 
     struct BriefingSources: Codable {
         let tasksDatabaseId: String?
@@ -180,8 +189,11 @@ struct NotionConfig: Codable {
         case apiKey = "api_key"
         case databaseId = "database_id"
         case tasksDatabaseId = "tasks_database_id"
+        case reflectionsDatabaseId = "reflections_database_id"
+        case tenetsPageId = "tenets_page_id"
         case briefingSources = "briefing_sources"
         case playbookPageId = "playbook_page_id"
+        case contextDatabases = "context_databases"
     }
 }
 

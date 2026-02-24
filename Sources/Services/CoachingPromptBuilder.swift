@@ -4,6 +4,11 @@ import Foundation
 /// Token budget: ~2000-2800 tokens total (expanded for deep personality)
 struct CoachingPromptBuilder {
 
+    // MARK: - Notion Tenets Cache (30-minute TTL)
+    private static var cachedNotionTenets: String?
+    private static var notionTenetsCacheTimestamp: Date?
+    private static let notionTenetsCacheTTL: TimeInterval = 1800  // 30 minutes
+
     /// Build the full system prompt for Coach Alfred
     static func build(
         userName: String,
@@ -79,38 +84,169 @@ struct CoachingPromptBuilder {
             """
         }
 
-        // DIRECTIVES (~350 tokens — framework-informed coaching rules)
+        // DIRECTIVES — loaded from ~/.alfred/coaching_tenets.md (hot-reload, no restart needed)
+        let tenetsContent = loadCoachingTenets()
         prompt += """
 
         ## HOW TO COACH
 
-        **Campbell Rules:**
-        - Lead with the person, not the problem. Ask how they're doing before diving into tasks.
-        - Build trust by remembering: reference past conversations, commitments, patterns. This compounds.
-        - Give feedback in the moment, not later. If something is off, say it now.
-        - Never embarrass publicly. In private, be as blunt as needed.
-        - If they're not being honest with themselves, call it out warmly but firmly.
-        - "Are you coachable right now?" — if they're defensive, name it and move on.
-
-        **Mochary Rules:**
-        - Ask "What is your ONE top goal right now?" — force prioritization, reject multi-tasking fantasy.
-        - Apply the Energy Audit: if they're spending time on Zone 3 work (competent but draining), push them to delegate or drop it.
-        - When they're avoiding something, go straight to fear: "What are you actually afraid of here?" Fear gives bad advice — name it to defuse it.
-        - Hold them to Impeccable Agreements: did they do what they said? If not, why? No judgment, just clarity.
-        - Stale tasks are avoidance signals. Overdue commitments are relationship debt. Name both.
-
-        **Alfred Rules:**
-        - ONE recommendation per response. Not a list. One clear thing to do next.
-        - Reference specific tasks, people, dates from your context. Never be vague.
-        - If there are open follow-ups from past sessions, check on them early.
-        - First message of a new conversation: open with something contextual and specific — never generic.
-        - If asked to roast or go hard, use real data. Be playful, not mean.
-        - If you lack context, say so. Never make things up.
-        - No emojis. Markdown (bold, italics) sparingly.
+        \(tenetsContent)
         """
 
         return prompt
     }
+
+    /// Load coaching tenets: Notion page (cached 30 min) → local file → hardcoded defaults
+    private static func loadCoachingTenets() -> String {
+        // 1. Check Notion cache
+        if let cached = cachedNotionTenets, let ts = notionTenetsCacheTimestamp,
+           Date().timeIntervalSince(ts) < notionTenetsCacheTTL {
+            return cached
+        }
+
+        // 2. Try Notion fetch (synchronous wrapper — acceptable since prompt building is already sync)
+        if let config = AppConfig.load(),
+           let pageId = config.notion.tenetsPageId, !pageId.isEmpty {
+            let notionContent = fetchTenetsFromNotionSync(pageId: pageId, apiKey: config.notion.apiKey)
+            if let content = notionContent, !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                cachedNotionTenets = content
+                notionTenetsCacheTimestamp = Date()
+                // Also sync to local file as backup
+                let localPath = FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent(".alfred/coaching_tenets.md").path
+                try? content.write(toFile: localPath, atomically: true, encoding: .utf8)
+                return content
+            }
+        }
+
+        // 3. Fall back to local file
+        let tenetsPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".alfred/coaching_tenets.md").path
+        if let content = try? String(contentsOfFile: tenetsPath, encoding: .utf8),
+           !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return content
+        }
+
+        // 4. Hardcoded defaults
+        return defaultTenets
+    }
+
+    /// Fetch page content from Notion API (blocks → markdown text)
+    private static func fetchTenetsFromNotionSync(pageId: String, apiKey: String) -> String? {
+        let semaphore = DispatchSemaphore(value: 0)
+        var result: String?
+
+        let urlString = "https://api.notion.com/v1/blocks/\(pageId)/children?page_size=100"
+        guard let url = URL(string: urlString) else { return nil }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.timeoutInterval = 10
+
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+            defer { semaphore.signal() }
+            guard let data = data, error == nil,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let blocks = json["results"] as? [[String: Any]] else {
+                return
+            }
+            result = Self.blocksToMarkdown(blocks)
+        }
+        task.resume()
+        _ = semaphore.wait(timeout: .now() + 10)
+        return result
+    }
+
+    /// Convert Notion blocks to plain markdown text
+    private static func blocksToMarkdown(_ blocks: [[String: Any]]) -> String {
+        var lines: [String] = []
+        for block in blocks {
+            guard let type = block["type"] as? String else { continue }
+            switch type {
+            case "heading_1":
+                if let text = extractRichText(from: block, type: type) {
+                    lines.append("# \(text)")
+                }
+            case "heading_2":
+                if let text = extractRichText(from: block, type: type) {
+                    lines.append("## \(text)")
+                }
+            case "heading_3":
+                if let text = extractRichText(from: block, type: type) {
+                    lines.append("### \(text)")
+                }
+            case "paragraph":
+                if let text = extractRichText(from: block, type: type) {
+                    lines.append(text)
+                } else {
+                    lines.append("")  // Empty paragraph = blank line
+                }
+            case "bulleted_list_item":
+                if let text = extractRichText(from: block, type: type) {
+                    lines.append("- \(text)")
+                }
+            case "numbered_list_item":
+                if let text = extractRichText(from: block, type: type) {
+                    lines.append("- \(text)")  // Treat as bullet for prompt purposes
+                }
+            case "divider":
+                lines.append("---")
+            case "toggle":
+                if let text = extractRichText(from: block, type: type) {
+                    lines.append("**\(text)**")
+                }
+            default:
+                // Skip unsupported block types (callout, image, etc.)
+                break
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Extract plain text from a Notion rich_text array inside a block
+    private static func extractRichText(from block: [String: Any], type: String) -> String? {
+        guard let typeData = block[type] as? [String: Any],
+              let richText = typeData["rich_text"] as? [[String: Any]] else {
+            return nil
+        }
+        let text = richText.compactMap { $0["plain_text"] as? String }.joined()
+        return text.isEmpty ? nil : text
+    }
+
+    /// Bust the Notion tenets cache (e.g., after user edits via API)
+    static func invalidateNotionTenetsCache() {
+        cachedNotionTenets = nil
+        notionTenetsCacheTimestamp = nil
+    }
+
+    /// Default tenets used when ~/.alfred/coaching_tenets.md doesn't exist or is empty
+    static let defaultTenets = """
+    **Campbell Rules:**
+    - Lead with the person, not the problem. Ask how they're doing before diving into tasks.
+    - Build trust by remembering: reference past conversations, commitments, patterns. This compounds.
+    - Give feedback in the moment, not later. If something is off, say it now.
+    - Never embarrass publicly. In private, be as blunt as needed.
+    - If they're not being honest with themselves, call it out warmly but firmly.
+    - "Are you coachable right now?" — if they're defensive, name it and move on.
+
+    **Mochary Rules:**
+    - Ask "What is your ONE top goal right now?" — force prioritization, reject multi-tasking fantasy.
+    - Apply the Energy Audit: if they're spending time on Zone 3 work (competent but draining), push them to delegate or drop it.
+    - When they're avoiding something, go straight to fear: "What are you actually afraid of here?" Fear gives bad advice — name it to defuse it.
+    - Hold them to Impeccable Agreements: did they do what they said? If not, why? No judgment, just clarity.
+    - Stale tasks are avoidance signals. Overdue commitments are relationship debt. Name both.
+
+    **Alfred Rules:**
+    - ONE recommendation per response. Not a list. One clear thing to do next.
+    - Reference specific tasks, people, dates from your context. Never be vague.
+    - If there are open follow-ups from past sessions, check on them early.
+    - First message of a new conversation: open with something contextual and specific — never generic.
+    - If asked to roast or go hard, use real data. Be playful, not mean.
+    - If you lack context, say so. Never make things up.
+    - No emojis. Markdown (bold, italics) sparingly.
+    """
 
     /// Truncate coaching context to fit token budget while preserving the most useful parts
     private static func truncateCoachingContext(_ context: String, maxChars: Int) -> String {
