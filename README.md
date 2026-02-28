@@ -13,7 +13,7 @@ Most productivity tools make you do the organizing. Alfred flips that. It runs s
 
 1. **A morning briefing email** that opens with coaching — not noise
 2. **A mobile-first dashboard** you can glance at between meetings
-3. **An AI chat** grounded in your actual day — not generic advice
+3. **An AI chat** that can read your data, take actions, and coach you in context
 
 The coaching layer is inspired by two frameworks:
 - **Bill Campbell** — the Silicon Valley coach who asked "what's the one thing?" before every meeting
@@ -38,8 +38,8 @@ Sent automatically at your configured time. Layout:
 
 ```
 🧭 Your Coach Says
-   🎯 Leverage — "Close the Ribbit deck today — it's blocking three downstream decisions."
-   👤 Relationship — "You have 4 overdue commitments to Janani. High-trust people notice first."
+   🎯 Leverage — "Close the deal deck today — it's blocking three downstream decisions."
+   👤 Relationship — "You have 4 overdue commitments to Alice. High-trust people notice first."
    🪞 Avoidance — "The compliance audit has been 'Not Started' for 22 days. Spend 15 minutes today."
 
 📅 Today's Schedule
@@ -55,20 +55,30 @@ Sent automatically at your configured time. Layout:
 ```
 
 ### Mobile dashboard
-A PWA that works on any device. Three tabs:
+A single-page PWA that works on any device:
 
-- **Home** — Focus Card (top task + Mark Done), Pulse metrics (tasks/overdue/meetings/reliability), Coaching Cards
-- **Tools** — Calendar, Message Tracker, Commitment Scanner, Todo Extractor, Task Stats
-- **Chat** — Streaming AI conversation grounded in your real data
+- **Focus Card** — Your top task with Mark Done action
+- **Attention Card** — Pending actions and items that need your response
+- **Coaching Insights** — Stacked Leverage / Relationship / Avoidance cards
+- **Inline Chat** — Dashboard collapses, streaming AI chat appears in-place
+- **Fixed Bottom Bar** — Quick-action chips (Briefing, Calendar, Todos, Commitments) + text input, always visible
+- **⋯ Drawer** — All tools accessible from a bottom sheet (Calendar, Messages, Commitments, Settings, Memory, and more)
+
+### Calendar event creation
+Create events directly from chat:
+- *"Schedule a call with Alice tomorrow at 3pm about the product roadmap"*
+- Alfred creates the Google Calendar event, returns a shareable link, and offers a Copy Invite button
+- Events are titled in the format: `Adam <> Alice : Topic`
+- OAuth re-authentication is handled seamlessly when write scope is needed
 
 ### Commitment tracking
-Alfred scans your conversations and extracts commitments — things you owe others and things they owe you. These feed into the Relationship coaching card and get stored in Notion for follow-through.
+Alfred scans your conversations and extracts commitments — things you owe others and things they owe you. These feed into the Relationship coaching card and get stored in Notion for follow-through. The tracker is self-improving: auto-closure confidence thresholds adjust over time based on your confirm/reject feedback.
 
 ### Attention defense
 A 3PM check-in that asks: given what's left today, what must get done and what can wait? Prevents end-of-day panic.
 
 ### Agent memory
-Alfred learns your preferences over time. Teach it rules ("always be brief with Kunal"), and it remembers across sessions. Memory is stored as transparent, editable files.
+Alfred learns your preferences over time. Teach it rules ("always be brief with Bob"), and it remembers across sessions. Memory is stored as transparent, editable files.
 
 ---
 
@@ -78,7 +88,7 @@ Alfred is a single Swift binary that runs as a macOS LaunchAgent. One process, o
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│                     Alfred v2.0                          │
+│                   Coach Alfred v2.0                       │
 │                                                          │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────┐ │
 │  │ Coaching  │  │ Briefing │  │  Agent   │  │  Chat   │ │
@@ -104,6 +114,7 @@ Alfred is a single Swift binary that runs as a macOS LaunchAgent. One process, o
 4. Coaching Engine takes the assembled data and generates Leverage/Relationship/Avoidance insights
 5. Email is sent with coaching first, schedule second, messages third
 6. Same data powers the web dashboard and chat
+7. Chat can also take actions — create calendar events, scan commitments, extract todos
 
 ---
 
@@ -138,6 +149,8 @@ codesign --force --sign - --identifier com.msfoundry.alfred \
 launchctl load ~/Library/LaunchAgents/com.msfoundry.alfred.plist
 ```
 
+**Important:** After every build, re-grant Full Disk Access to `/Applications/Alfred.app` in System Settings → Privacy & Security, then restart via `launchctl unload/load`.
+
 ### Access
 
 ```
@@ -146,36 +159,6 @@ http://localhost:8080/index-notion.html?passcode=YOUR_PASSCODE
 
 # Health check
 curl "http://localhost:8080/api/health?passcode=YOUR_PASSCODE"
-```
-
----
-
-## CLI
-
-```bash
-# Morning briefing (add --notify to send email)
-alfred briefing
-alfred briefing tomorrow --notify
-
-# Calendar
-alfred calendar today
-alfred calendar work tomorrow
-
-# Messages
-alfred messages all 24h
-alfred messages whatsapp "Contact Name" 7d
-
-# Commitments
-alfred commitments scan 7d
-alfred commitments check "Person Name"
-
-# Attention defense
-alfred attention
-
-# Agent memory
-alfred teach communication "Always be concise with John"
-alfred agents memory communication
-alfred agents status
 ```
 
 ---
@@ -189,7 +172,7 @@ See [SETUP.md](SETUP.md) for the full guide.
 | Setting | Purpose |
 |---------|---------|
 | `ai.anthropic_api_key` | Claude AI for analysis and coaching |
-| `calendar.google` | Google Calendar OAuth |
+| `calendar.google` | Google Calendar OAuth (read + write) |
 | `app.passcode` | Web access security |
 | `user.name` / `user.email` | Your identity |
 
@@ -218,7 +201,7 @@ See [SETUP.md](SETUP.md) for the full guide.
 
 - [Swift](https://swift.org/) — single binary, no dependencies beyond Foundation
 - [Anthropic Claude](https://www.anthropic.com/) — AI analysis, coaching, and chat
-- [Google Calendar API](https://developers.google.com/calendar) — schedule data
+- [Google Calendar API](https://developers.google.com/calendar) — schedule data + event creation
 - [Notion API](https://developers.notion.com/) — task and knowledge management
 
 ---
