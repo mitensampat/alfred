@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import SQLite3
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -484,6 +485,16 @@ class HTTPServer {
         case ("PUT", "/api/coaching/tenets"):
             return handlePutCoachingTenets(request)
 
+        // Focus Pin (user's #1 goal)
+        case ("POST", "/api/focus-pin"):
+            return await handlePinFocus(request)
+
+        case ("DELETE", "/api/focus-pin"):
+            return handleUnpinFocus()
+
+        case ("GET", "/api/focus-pin/suggestions"):
+            return await handleFocusPinSuggestions()
+
         case ("GET", "/api/weekly-reflection"):
             return await handleWeeklyReflection()
 
@@ -864,16 +875,44 @@ class HTTPServer {
             if !tokenExists { warnings.append("Google Calendar token missing for '\(account.name)'") }
         }
 
-        // 4. iMessage — check chat.db exists
+        // 4. iMessage — check chat.db exists AND is readable (Full Disk Access)
         if config.messaging.imessage.enabled {
             let chatDbPath = config.messaging.imessage.expandedPath
             let chatDbExists = FileManager.default.fileExists(atPath: chatDbPath)
+            var imsgStatus = "warning"
+            var imsgDetail = "chat.db not found at \(chatDbPath)"
+            if chatDbExists {
+                // Actually try to open the database — this is the real FDA test
+                var testDb: OpaquePointer?
+                let rc = sqlite3_open_v2(chatDbPath, &testDb, SQLITE_OPEN_READONLY, nil)
+                if rc == SQLITE_OK {
+                    // Try a trivial query to confirm read access
+                    var stmt: OpaquePointer?
+                    let queryRc = sqlite3_prepare_v2(testDb, "SELECT COUNT(*) FROM message LIMIT 1", -1, &stmt, nil)
+                    if queryRc == SQLITE_OK {
+                        imsgStatus = "ok"
+                        imsgDetail = "chat.db readable (Full Disk Access verified)"
+                    } else {
+                        imsgStatus = "error"
+                        imsgDetail = "chat.db found but query failed (error \(queryRc)) — Full Disk Access may be revoked"
+                        warnings.append("iMessage: Full Disk Access appears revoked — re-grant to /Applications/Alfred.app in System Settings → Privacy & Security")
+                    }
+                    sqlite3_finalize(stmt)
+                    sqlite3_close(testDb)
+                } else {
+                    imsgStatus = "error"
+                    imsgDetail = "chat.db found but can't open (error \(rc)) — Full Disk Access revoked"
+                    warnings.append("iMessage: Full Disk Access revoked — re-grant to /Applications/Alfred.app in System Settings → Privacy & Security")
+                    sqlite3_close(testDb)
+                }
+            } else {
+                warnings.append("iMessage chat.db not found")
+            }
             services.append([
                 "name": "iMessage",
-                "status": chatDbExists ? "ok" : "warning",
-                "detail": chatDbExists ? "chat.db found (Full Disk Access required for reads)" : "chat.db not found at \(chatDbPath)"
+                "status": imsgStatus,
+                "detail": imsgDetail
             ])
-            if !chatDbExists { warnings.append("iMessage chat.db not found") }
         }
 
         // 5. WhatsApp — check DB file exists
@@ -1238,24 +1277,60 @@ class HTTPServer {
         var reliabilityScore = 0
         var pendingActions: [[String: Any]] = []
 
-        // 1. Top Goal from Notion
+        // 1. Top Goal — check for user-pinned goal first, fall back to algorithmic
         if let orchestrator = alfredService.orchestrator {
-            do {
-                if let task = try await orchestrator.notionServicePublic.getTopPriorityTask() {
-                    var goalDict: [String: Any] = [
-                        "title": task.title,
-                        "priority": task.priority?.rawValue ?? "None"
-                    ]
-                    if !task.notionId.isEmpty {
-                        goalDict["notionId"] = task.notionId
+            // Check if user has pinned a focus goal
+            let stateInfo = loadSchedulerStateRaw()
+            if let pinnedId = stateInfo["pinnedGoalNotionId"] as? String, !pinnedId.isEmpty {
+                do {
+                    if let task = try await orchestrator.notionServicePublic.fetchTaskById(notionId: pinnedId) {
+                        // Auto-clear if task is done or cancelled
+                        if task.status == .done || task.status == .cancelled {
+                            updateSchedulerState(["pinnedGoalNotionId": "", "pinnedGoalAt": ""])
+                            // Fall through to algorithmic top-priority
+                        } else {
+                            var goalDict: [String: Any] = [
+                                "title": task.title,
+                                "priority": task.priority?.rawValue ?? "None",
+                                "pinned": true
+                            ]
+                            if !task.notionId.isEmpty {
+                                goalDict["notionId"] = task.notionId
+                            }
+                            if let dueDate = task.dueDate {
+                                goalDict["dueDate"] = Self.simpleDateFormatter.string(from: dueDate)
+                            }
+                            topGoal = goalDict
+                        }
+                    } else {
+                        // Pinned task no longer exists — clear pin
+                        updateSchedulerState(["pinnedGoalNotionId": "", "pinnedGoalAt": ""])
                     }
-                    if let dueDate = task.dueDate {
-                        goalDict["dueDate"] = Self.simpleDateFormatter.string(from: dueDate)
-                    }
-                    topGoal = goalDict
+                } catch {
+                    print("⚠️ Home pulse: failed to fetch pinned task: \(error)")
                 }
-            } catch {
-                print("⚠️ Home pulse: failed to get top priority task: \(error)")
+            }
+
+            // Fall back to algorithmic top-priority if no pin (or pin was cleared)
+            if topGoal == nil {
+                do {
+                    if let task = try await orchestrator.notionServicePublic.getTopPriorityTask() {
+                        var goalDict: [String: Any] = [
+                            "title": task.title,
+                            "priority": task.priority?.rawValue ?? "None",
+                            "pinned": false
+                        ]
+                        if !task.notionId.isEmpty {
+                            goalDict["notionId"] = task.notionId
+                        }
+                        if let dueDate = task.dueDate {
+                            goalDict["dueDate"] = Self.simpleDateFormatter.string(from: dueDate)
+                        }
+                        topGoal = goalDict
+                    }
+                } catch {
+                    print("⚠️ Home pulse: failed to get top priority task: \(error)")
+                }
             }
         }
 
@@ -1332,6 +1407,195 @@ class HTTPServer {
         }
 
         return HTTPResponse(statusCode: 200, body: responseBody)
+    }
+
+    // MARK: - Focus Pin
+
+    /// Pin a task as the user's #1 focus goal
+    private func handlePinFocus(_ request: HTTPRequest) async -> HTTPResponse {
+        guard let body = request.body,
+              let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let notionId = json["notionId"] as? String, !notionId.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'notionId' in request body"])
+        }
+
+        // Validate task exists and is active
+        guard let orchestrator = alfredService.orchestrator else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Service unavailable"])
+        }
+
+        do {
+            guard let task = try await orchestrator.notionServicePublic.fetchTaskById(notionId: notionId) else {
+                return HTTPResponse(statusCode: 404, body: ["error": "Task not found"])
+            }
+
+            guard task.status != .done && task.status != .cancelled else {
+                return HTTPResponse(statusCode: 400, body: ["error": "Cannot pin a completed or cancelled task"])
+            }
+
+            // Save pin state
+            updateSchedulerState([
+                "pinnedGoalNotionId": notionId,
+                "pinnedGoalAt": ISO8601DateFormatter().string(from: Date())
+            ])
+
+            // Bust pulse cache so Home refreshes immediately
+            invalidateMemoryCache("home_pulse")
+            cache.deleteByEndpoint("/api/home/pulse")
+
+            var taskDict: [String: Any] = [
+                "title": task.title,
+                "priority": task.priority?.rawValue ?? "None",
+                "notionId": task.notionId
+            ]
+            if let dueDate = task.dueDate {
+                taskDict["dueDate"] = Self.simpleDateFormatter.string(from: dueDate)
+            }
+
+            return HTTPResponse(statusCode: 200, body: ["pinned": true, "task": taskDict])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to fetch task: \(error.localizedDescription)"])
+        }
+    }
+
+    /// Unpin the current focus goal
+    private func handleUnpinFocus() -> HTTPResponse {
+        updateSchedulerState(["pinnedGoalNotionId": "", "pinnedGoalAt": ""])
+
+        // Bust pulse cache
+        invalidateMemoryCache("home_pulse")
+        cache.deleteByEndpoint("/api/home/pulse")
+
+        return HTTPResponse(statusCode: 200, body: ["unpinned": true])
+    }
+
+    /// Generate ranked suggestions for what to pin as #1
+    private func handleFocusPinSuggestions() async -> HTTPResponse {
+        guard let orchestrator = alfredService.orchestrator else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Service unavailable"])
+        }
+
+        let calendar = Calendar.current
+        let now = Date()
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "MMM d"
+
+        do {
+            let tasks = try await orchestrator.notionServicePublic.queryActiveTasks()
+
+            // Score each task
+            var scored: [(task: TaskItem, score: Int, reason: String)] = []
+
+            for task in tasks {
+                guard task.status != .done && task.status != .cancelled else { continue }
+
+                var score = 0
+                var reason = ""
+                let age = calendar.dateComponents([.day], from: task.createdDate, to: now).day ?? 0
+                let daysOverdue = task.dueDate.flatMap { calendar.dateComponents([.day], from: $0, to: now).day } ?? 0
+
+                // Overdue + someone waiting (I Owe commitment)
+                if task.isOverdue && task.commitmentDirection == .iOwe {
+                    let person = task.committedTo ?? "someone"
+                    score += 100
+                    reason = "\(person) waiting — \(daysOverdue)d overdue"
+                }
+
+                // Critical priority
+                if task.priority == .critical {
+                    score += 80
+                    if reason.isEmpty {
+                        let due = task.dueDate.map { dateFormatter.string(from: $0) } ?? "no deadline"
+                        reason = "Critical — due \(due)"
+                    }
+                }
+
+                // High priority + due within 3 days
+                if task.priority == .high, let dueDate = task.dueDate {
+                    let daysUntilDue = calendar.dateComponents([.day], from: now, to: dueDate).day ?? 999
+                    if daysUntilDue <= 3 && daysUntilDue >= 0 {
+                        score += 70
+                        if reason.isEmpty {
+                            reason = "Due \(dateFormatter.string(from: dueDate)) — high priority"
+                        }
+                    }
+                }
+
+                // Escalated avoidance (21+ days stale, not started)
+                if task.status == .notStarted && age > 21 {
+                    score += 60
+                    if reason.isEmpty {
+                        reason = "Untouched \(age) days — decide: do or drop"
+                    }
+                }
+
+                // Stale avoidance (14+ days, not started)
+                if task.status == .notStarted && age > 14 && age <= 21 {
+                    score += 40
+                    if reason.isEmpty {
+                        reason = "Sitting for \(age) days — avoidance signal"
+                    }
+                }
+
+                // Any overdue task
+                if task.isOverdue && daysOverdue > 0 {
+                    score += 30
+                    if reason.isEmpty {
+                        reason = "\(daysOverdue)d overdue"
+                    }
+                    // Overdue bonus: +5 per day
+                    score += min(daysOverdue * 5, 50)
+                }
+
+                // High priority (no imminent deadline)
+                if task.priority == .high {
+                    score += 20
+                    if reason.isEmpty {
+                        reason = "High priority"
+                    }
+                }
+
+                if score > 0 {
+                    scored.append((task: task, score: score, reason: reason))
+                }
+            }
+
+            // Sort by score descending, take top 5
+            let top = scored.sorted { $0.score > $1.score }.prefix(5)
+
+            let suggestions: [[String: Any]] = top.map { item in
+                var dict: [String: Any] = [
+                    "notionId": item.task.notionId,
+                    "title": item.task.title,
+                    "priority": item.task.priority?.rawValue ?? "None",
+                    "reason": item.reason,
+                    "score": item.score
+                ]
+                if let dueDate = item.task.dueDate {
+                    dict["dueDate"] = dateFormatter.string(from: dueDate)
+                }
+                if let person = item.task.committedTo ?? item.task.committedBy {
+                    dict["person"] = person
+                }
+                return dict
+            }
+
+            // Include current pin if any
+            var response: [String: Any] = ["suggestions": suggestions]
+            let stateInfo = loadSchedulerStateRaw()
+            if let pinnedId = stateInfo["pinnedGoalNotionId"] as? String, !pinnedId.isEmpty {
+                if let pinnedTask = try? await orchestrator.notionServicePublic.fetchTaskById(notionId: pinnedId) {
+                    response["currentPin"] = [
+                        "notionId": pinnedTask.notionId,
+                        "title": pinnedTask.title
+                    ]
+                }
+            }
+
+            return HTTPResponse(statusCode: 200, body: response)
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to generate suggestions: \(error.localizedDescription)"])
+        }
     }
 
     // MARK: - Weekly Reflection
@@ -3791,37 +4055,18 @@ The Commitment Check feature requires a properly configured Notion database.
                     let structuredPayload = serializeToolResult(toolName: toolName, data: result.data)
                     client.sendSSEJSON(event: "tool_result", json: structuredPayload)
 
-                    // Stream a coaching-flavored response through Claude
-                    // The tool card already shows the raw data — Claude adds the coaching insight
                     let dataSummary = result.conversationalResponse
-                    let coachingOverlayPrompt = """
-                    The user asked: "\(query)"
-
-                    I just showed them a \(toolName) card with this data:
-                    \(dataSummary)
-
-                    Now respond as Coach Alfred — 2-4 sentences max. Add a coaching observation, a priority call, or a gentle challenge based on what the data shows. Reference specific items (names, times, tasks). Don't repeat the raw data — the card already shows it. If the data suggests something worth flagging (back-to-back meetings, overdue commitments, no focus time), say it directly.
-                    """
-
-                    let claudeService = ClaudeAIService(config: config.ai)
                     var fullCoachingResponse = ""
 
-                    do {
-                        // Build messages with conversation history for context
-                        var coachingMessages = sharedContext.getMessagesArray(for: sessionId, limit: 10)
-                        coachingMessages.append(["role": "user", "content": coachingOverlayPrompt])
+                    // For create actions, the card has all the info — no text response needed
+                    // For update actions, stream the confirmation directly (no coaching overlay)
+                    let skipCoaching = intentResponse.intent.action == .create || intentResponse.intent.action == .update
 
-                        try await claudeService.streamChat(
-                            messages: coachingMessages,
-                            system: systemPrompt,
-                            maxTokens: 512,
-                            onChunk: { text in
-                                fullCoachingResponse += text
-                                client.sendSSEJSON(event: "chunk", json: ["text": text])
-                            }
-                        )
-                    } catch {
-                        // Fallback to static response if Claude fails
+                    if intentResponse.intent.action == .create {
+                        // Card-only — no text streamed, just record internally
+                        fullCoachingResponse = dataSummary
+                    } else if skipCoaching {
+                        // Stream the conversationalResponse directly as chunks
                         let words = dataSummary.split(separator: " ", omittingEmptySubsequences: false)
                         var chunk = ""
                         var isFirstChunk = true
@@ -3836,9 +4081,54 @@ The Commitment Check feature requires a properly configured Notion database.
                                 try? await Task.sleep(nanoseconds: 15_000_000)
                             }
                         }
+                    } else {
+                        // Stream a coaching-flavored response through Claude
+                        // The tool card already shows the raw data — Claude adds the coaching insight
+                        let coachingOverlayPrompt = """
+                        The user asked: "\(query)"
+
+                        I just showed them a \(toolName) card with this data:
+                        \(dataSummary)
+
+                        Now respond as Coach Alfred — 2-4 sentences max. Add a coaching observation, a priority call, or a gentle challenge based on what the data shows. Reference specific items (names, times, tasks). Don't repeat the raw data — the card already shows it. If the data suggests something worth flagging (back-to-back meetings, overdue commitments, no focus time), say it directly.
+                        """
+
+                        let claudeService = ClaudeAIService(config: config.ai)
+
+                        do {
+                            // Build messages with conversation history for context
+                            var coachingMessages = sharedContext.getMessagesArray(for: sessionId, limit: 10)
+                            coachingMessages.append(["role": "user", "content": coachingOverlayPrompt])
+
+                            try await claudeService.streamChat(
+                                messages: coachingMessages,
+                                system: systemPrompt,
+                                maxTokens: 512,
+                                onChunk: { text in
+                                    fullCoachingResponse += text
+                                    client.sendSSEJSON(event: "chunk", json: ["text": text])
+                                }
+                            )
+                        } catch {
+                            // Fallback to static response if Claude fails
+                            let words = dataSummary.split(separator: " ", omittingEmptySubsequences: false)
+                            var chunk = ""
+                            var isFirstChunk = true
+                            for (i, word) in words.enumerated() {
+                                chunk += (chunk.isEmpty ? "" : " ") + word
+                                if chunk.count > 20 || i == words.count - 1 {
+                                    let textToSend = isFirstChunk ? chunk : " " + chunk
+                                    client.sendSSEJSON(event: "chunk", json: ["text": textToSend])
+                                    fullCoachingResponse += textToSend
+                                    chunk = ""
+                                    isFirstChunk = false
+                                    try? await Task.sleep(nanoseconds: 15_000_000)
+                                }
+                            }
+                        }
                     }
 
-                    // Record the coaching response (not just the data summary)
+                    // Record the response
                     let finalResponse = fullCoachingResponse.isEmpty ? dataSummary : fullCoachingResponse
 
                     // Fire-and-forget: update coaching memory for intent-based exchanges too
@@ -4116,6 +4406,29 @@ The Commitment Check feature requires a properly configured Notion database.
         var parts: [String] = []
         let timeFmt = DateFormatter()
         timeFmt.dateFormat = "h:mm a"
+
+        // Pinned goal: user's declared #1 focus
+        let stateRaw = loadSchedulerStateRaw()
+        if let pinnedId = stateRaw["pinnedGoalNotionId"] as? String, !pinnedId.isEmpty,
+           let pinnedAtStr = stateRaw["pinnedGoalAt"] as? String {
+            // Fetch task title from Notion (best-effort)
+            var pinnedTitle = "their pinned task"
+            if let orchestrator = alfredService.orchestrator,
+               let task = try? await orchestrator.notionServicePublic.fetchTaskById(notionId: pinnedId) {
+                pinnedTitle = task.title
+            }
+            // Calculate time since pinned
+            let isoFmt = ISO8601DateFormatter()
+            isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let timeAgo: String
+            if let pinnedDate = isoFmt.date(from: pinnedAtStr) {
+                let interval = Date().timeIntervalSince(pinnedDate)
+                if interval < 3600 { timeAgo = "\(Int(interval / 60))m ago" }
+                else if interval < 86400 { timeAgo = "\(Int(interval / 3600))h ago" }
+                else { timeAgo = "\(Int(interval / 86400))d ago" }
+            } else { timeAgo = "recently" }
+            parts.append("USER'S DECLARED #1 FOCUS: \"\(pinnedTitle)\" (pinned \(timeAgo)). This is their deliberate choice — reference it when relevant. If they seem distracted from it, gently redirect. If they've been ignoring it, ask why.")
+        }
 
         // Calendar: full event list + structural analysis for Day Lens
         do {
@@ -4415,6 +4728,18 @@ The Commitment Check feature requires a properly configured Notion database.
 
         switch toolName {
         case "calendar":
+            if let created = data as? CreatedEvent {
+                return [
+                    "type": "calendar_create",
+                    "title": created.title,
+                    "date": dateFmt.string(from: created.startTime),
+                    "timeRange": "\(timeFmt.string(from: created.startTime)) – \(timeFmt.string(from: created.endTime))",
+                    "location": created.location ?? "",
+                    "shareableLink": created.shareableLink,
+                    "htmlLink": created.htmlLink,
+                    "success": true
+                ]
+            }
             if let cal = data as? CalendarBriefing {
                 let events: [[String: Any]] = cal.schedule.events.map { event in
                     [
@@ -6357,6 +6682,17 @@ extension HTTPServer {
         if let stateData = try? JSONSerialization.data(withJSONObject: stateJson, options: [.prettyPrinted, .sortedKeys]) {
             try? stateData.write(to: URL(fileURLWithPath: statePath))
         }
+    }
+
+    /// Read scheduler state as raw dictionary (no struct decoding, preserves all keys)
+    private func loadSchedulerStateRaw() -> [String: Any] {
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        let statePath = "\(homeDir)/.alfred/scheduler_state.json"
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: statePath)),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return [:]
+        }
+        return json
     }
 
     // MARK: - Cadence Handlers

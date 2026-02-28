@@ -140,11 +140,16 @@ class WhatsAppReader {
         }
 
         // First, find the chat session that matches the search name
+        // Prefer exact matches, then 1-on-1 chats, then shorter names
         let sessionQuery = """
         SELECT ZCONTACTJID, ZPARTNERNAME
         FROM ZWACHATSESSION
         WHERE ZSESSIONTYPE IN (0, 1)
         AND ZPARTNERNAME LIKE ?
+        ORDER BY
+            CASE WHEN ZPARTNERNAME = ? THEN 0 ELSE 1 END,
+            ZSESSIONTYPE ASC,
+            LENGTH(ZPARTNERNAME) ASC
         LIMIT 1
         """
 
@@ -159,6 +164,7 @@ class WhatsAppReader {
 
         if sqlite3_prepare_v2(db, sessionQuery, -1, &sessionStatement, nil) == SQLITE_OK {
             sqlite3_bind_text(sessionStatement, 1, (searchPattern as NSString).utf8String, -1, nil)
+            sqlite3_bind_text(sessionStatement, 2, (searchName as NSString).utf8String, -1, nil)
 
             if sqlite3_step(sessionStatement) == SQLITE_ROW {
                 matchedContactJid = sqlite3_column_text(sessionStatement, 0).flatMap { String(cString: $0) }

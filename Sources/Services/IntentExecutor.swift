@@ -66,6 +66,10 @@ class IntentExecutor {
             let result = try await orchestrator.processWhatsAppTodos(lookbackDays: lookbackDays)
             return formatTodoScanResponse(result, query: intent.originalQuery)
 
+        // MARK: - Calendar Event Creation
+        case (.create, .calendar):
+            return try await handleCreateCalendarEvent(intent: intent)
+
         // MARK: - Task Update Actions
         case (.update, .tasks):
             return try await handleTaskUpdate(intent: intent)
@@ -653,6 +657,92 @@ class IntentExecutor {
                 "taskTitle": task.title,
                 "notionId": notionId,
                 "changes": changeDescriptions,
+                "success": true
+            ]
+        )
+    }
+
+    // MARK: - Calendar Event Creation Handler
+
+    private func handleCreateCalendarEvent(intent: UserIntent) async throws -> IntentExecutionResult {
+        let filters = intent.filters
+
+        // Parse event time from ISO8601 string
+        guard let eventTimeStr = filters.eventTime,
+              let startTime = UserIntent.IntentFilters.parseFlexibleDate(eventTimeStr) else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "I need a time to create the event. When should it be?",
+                structuredData: nil
+            )
+        }
+
+        let durationMinutes = filters.eventDurationMinutes ?? 30
+        let endTime = startTime.addingTimeInterval(Double(durationMinutes) * 60)
+
+        // Build title: "Miten <> Mona : Coffee-time" format
+        let title: String
+        if let explicit = filters.eventTitle, !explicit.isEmpty {
+            title = explicit
+        } else {
+            let firstName = config.user.name.split(separator: " ").first.map(String.init) ?? "Me"
+            let attendeeStr = filters.eventAttendees?.joined(separator: ", ")
+            let topic = filters.eventDescription
+
+            if let attendee = attendeeStr, let topic = topic {
+                title = "\(firstName) <> \(attendee) : \(topic)"
+            } else if let attendee = attendeeStr {
+                title = "\(firstName) <> \(attendee)"
+            } else if let topic = topic {
+                title = topic
+            } else {
+                title = "Blocked time"
+            }
+        }
+
+        // Get the primary calendar service
+        guard let calendarService = orchestrator.calendarServicePublic.getService(named: "primary") else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "Primary calendar is not configured. Please set up Google Calendar first.",
+                structuredData: nil
+            )
+        }
+
+        // Create the event
+        let createdEvent = try await calendarService.createEvent(
+            title: title,
+            startTime: startTime,
+            endTime: endTime,
+            location: filters.eventLocation,
+            description: filters.eventDescription
+        )
+
+        // Format times for display
+        let timeFmt = DateFormatter()
+        timeFmt.dateFormat = "h:mm a"
+        let dateFmt = DateFormatter()
+        dateFmt.dateFormat = "EEE, MMM d"
+
+        let timeRange = "\(timeFmt.string(from: startTime)) – \(timeFmt.string(from: endTime))"
+        let dateStr = dateFmt.string(from: startTime)
+
+        var summary = "Created '\(title)' on \(dateStr), \(timeRange)"
+        if let loc = filters.eventLocation { summary += " at \(loc)" }
+        summary += "."
+        summary += "\n\nShare this link so others can add it to their calendar:\n\(createdEvent.shareableLink)"
+
+        return IntentExecutionResult(
+            data: createdEvent,
+            conversationalResponse: summary,
+            structuredData: [
+                "type": "calendar_create",
+                "title": title,
+                "date": dateStr,
+                "timeRange": timeRange,
+                "location": filters.eventLocation ?? "",
+                "shareableLink": createdEvent.shareableLink,
+                "htmlLink": createdEvent.htmlLink,
                 "success": true
             ]
         )

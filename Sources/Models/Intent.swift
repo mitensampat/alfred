@@ -110,6 +110,14 @@ struct UserIntent: Codable {
         let newDueDate: Date?          // new due date for the task
         let noteToAdd: String?         // text to append to Description
 
+        // Calendar event creation filters (used when action is "create" and target is "calendar")
+        let eventTitle: String?           // "Meeting with Mona about finance"
+        let eventTime: String?            // ISO8601 datetime computed from natural language
+        let eventDurationMinutes: Int?    // 30 (default)
+        let eventLocation: String?        // "Home", "Office", etc.
+        let eventAttendees: [String]?     // ["Mona", "Nikhil"] — contact names
+        let eventDescription: String?     // topic/agenda
+
         enum CodingKeys: String, CodingKey {
             case contactName = "contact_name"
             case dateRange = "date_range"
@@ -126,6 +134,12 @@ struct UserIntent: Codable {
             case newPriority = "new_priority"
             case newDueDate = "new_due_date"
             case noteToAdd = "note_to_add"
+            case eventTitle = "event_title"
+            case eventTime = "event_time"
+            case eventDurationMinutes = "event_duration_minutes"
+            case eventLocation = "event_location"
+            case eventAttendees = "event_attendees"
+            case eventDescription = "event_description"
         }
 
         struct DateRange: Codable {
@@ -199,6 +213,14 @@ struct UserIntent: Codable {
             } else {
                 newDueDate = nil
             }
+
+            // Calendar event creation fields
+            eventTitle = try container.decodeIfPresent(String.self, forKey: .eventTitle)
+            eventTime = try container.decodeIfPresent(String.self, forKey: .eventTime)
+            eventDurationMinutes = try container.decodeIfPresent(Int.self, forKey: .eventDurationMinutes)
+            eventLocation = try container.decodeIfPresent(String.self, forKey: .eventLocation)
+            eventAttendees = try container.decodeIfPresent([String].self, forKey: .eventAttendees)
+            eventDescription = try container.decodeIfPresent(String.self, forKey: .eventDescription)
         }
 
         /// Parse date strings in multiple formats that Claude might produce
@@ -246,6 +268,12 @@ struct UserIntent: Codable {
             self.newPriority = nil
             self.newDueDate = nil
             self.noteToAdd = nil
+            self.eventTitle = nil
+            self.eventTime = nil
+            self.eventDurationMinutes = nil
+            self.eventLocation = nil
+            self.eventAttendees = nil
+            self.eventDescription = nil
         }
 
         // Manual init for programmatic construction
@@ -264,7 +292,13 @@ struct UserIntent: Codable {
             newStatus: String? = nil,
             newPriority: String? = nil,
             newDueDate: Date? = nil,
-            noteToAdd: String? = nil
+            noteToAdd: String? = nil,
+            eventTitle: String? = nil,
+            eventTime: String? = nil,
+            eventDurationMinutes: Int? = nil,
+            eventLocation: String? = nil,
+            eventAttendees: [String]? = nil,
+            eventDescription: String? = nil
         ) {
             self.contactName = contactName
             self.dateRange = dateRange
@@ -281,6 +315,12 @@ struct UserIntent: Codable {
             self.newPriority = newPriority
             self.newDueDate = newDueDate
             self.noteToAdd = noteToAdd
+            self.eventTitle = eventTitle
+            self.eventTime = eventTime
+            self.eventDurationMinutes = eventDurationMinutes
+            self.eventLocation = eventLocation
+            self.eventAttendees = eventAttendees
+            self.eventDescription = eventDescription
         }
     }
 }

@@ -19,6 +19,7 @@ class BriefingOrchestrator {
     var notionServicePublic: NotionService { notionService }
     var aiServicePublic: ClaudeAIService { aiService }
     var whatsAppReaderPublic: WhatsAppReader { whatsappReader }
+    var calendarServicePublic: MultiCalendarService { calendarService }
 
     init(config: AppConfig) {
         self.config = config
@@ -285,18 +286,38 @@ class BriefingOrchestrator {
             task.status.lowercased().contains("not started") || task.status.lowercased().contains("to do")
         }
 
+        // Build rich message interaction context (prevents hallucinating contact names)
+        let interactionSummary = messagingSummary.keyInteractions.prefix(7).map { msg in
+            let contact = msg.thread.contactName ?? msg.thread.contactIdentifier
+            let urgency = msg.urgency.rawValue
+            let snippet = String(msg.summary.prefix(120))
+            return "- \(contact) [\(urgency)]: \(snippet)"
+        }.joined(separator: "\n")
+
+        // Build action items with counterparties
+        let actionItemSummary = actionItems.prefix(7).map { item in
+            let priority = item.priority.rawValue
+            let desc = String(item.description.prefix(100))
+            return "- [\(priority)] \(item.title): \(desc)"
+        }.joined(separator: "\n")
+
         let prompt = """
         You are a world-class executive coach inspired by Bill Campbell and Matt Mochary. Generate exactly 3 coaching insights based on this person's current state. Be specific, name names and tasks, and give ONE concrete action per card.
+
+        CRITICAL: ONLY mention people and tasks listed below. Never invent or guess names.
 
         CONTEXT:
         Active tasks (\(tasks.count) total, \(criticalCount) critical, \(highCount) high priority):
         \(taskSummary.isEmpty ? "No active tasks" : taskSummary)
 
         Today's calendar: \(meetingCount) meetings (\(externalCount) external)
-        Messages needing response: \(responseNeeded)
         Stale tasks (not started): \(staleTasks.count)
 
-        ACTION ITEMS: \(actionItems.count) total (\(criticalCount) critical, \(highCount) high)
+        Recent message interactions (\(responseNeeded) threads needing response):
+        \(interactionSummary.isEmpty ? "No recent interactions" : interactionSummary)
+
+        Action items (\(actionItems.count) total):
+        \(actionItemSummary.isEmpty ? "No action items" : actionItemSummary)
 
         Respond ONLY with valid JSON — no markdown fences, no commentary:
         [
@@ -309,7 +330,7 @@ class BriefingOrchestrator {
         do {
             let response = try await aiService.generateText(
                 prompt: prompt,
-                maxTokens: 500
+                maxTokens: 600
             )
 
             // Parse JSON response
@@ -919,24 +940,29 @@ class BriefingOrchestrator {
 
         // Fetch from all enabled messaging platforms
         if config.messaging.imessage.enabled {
+            print("  ↳ Reading iMessage database...")
             do {
                 try imessageReader.connect()
                 let threads = try imessageReader.fetchThreads(since: yesterday)
                 messagingThreads.append(contentsOf: threads)
                 imessageReader.disconnect()
+                let namedCount = threads.filter { $0.contactName != nil }.count
+                print("  ✅ iMessage: \(threads.count) thread(s), \(namedCount) with resolved names")
             } catch {
-                print("Warning: Failed to fetch iMessages: \(error)")
+                print("  ❌ iMessage fetch failed: \(error)")
             }
         }
 
         if config.messaging.whatsapp.enabled {
+            print("  ↳ Reading WhatsApp database...")
             do {
                 try whatsappReader.connect()
                 let threads = try whatsappReader.fetchThreads(since: yesterday)
                 messagingThreads.append(contentsOf: threads)
                 whatsappReader.disconnect()
+                print("  ✅ WhatsApp: \(threads.count) thread(s)")
             } catch {
-                print("Warning: Failed to fetch WhatsApp messages: \(error)")
+                print("  ❌ WhatsApp fetch failed: \(error)")
             }
         }
 

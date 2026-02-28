@@ -363,6 +363,9 @@ class MenuBarController: NSObject, NSMenuDelegate {
         var lastAutoSummaryTimestamp: String? // ISO timestamp for UI display
         var lastWeeklyReviewDate: String?    // date string (weekly)
         var lastWeeklyReviewTimestamp: String? // ISO timestamp for UI display
+        // Pin It: user's declared #1 focus goal
+        var pinnedGoalNotionId: String?
+        var pinnedGoalAt: String?             // ISO timestamp when pinned
     }
 
     private func loadSchedulerState() -> SchedulerState {

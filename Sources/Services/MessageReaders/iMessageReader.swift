@@ -1,9 +1,11 @@
 import Foundation
 import SQLite3
+import Contacts
 
 class iMessageReader {
     private let dbPath: String
     private var db: OpaquePointer?
+    private var contactNameCache: [String: String] = [:]
 
     init(dbPath: String) {
         self.dbPath = dbPath
@@ -130,20 +132,91 @@ class iMessageReader {
     private func groupMessagesIntoThreads(_ messages: [Message]) -> [MessageThread] {
         let grouped = Dictionary(grouping: messages, by: { $0.chatId })
 
+        // Resolve phone numbers/emails to contact names via macOS Contacts
+        let identifiers = Set(grouped.keys)
+        let nameMap = resolveContactNames(for: identifiers)
+
         return grouped.map { chatId, messages in
             let sortedMessages = messages.sorted { $0.timestamp > $1.timestamp }
             let unreadCount = messages.filter { $0.direction == .incoming && !$0.isRead }.count
             let lastMessage = sortedMessages.first!
 
+            // Priority: resolved Contacts name → chat display_name → raw identifier
+            let resolvedName = nameMap[chatId] ?? lastMessage.senderName
+
             return MessageThread(
                 contactIdentifier: chatId,
-                contactName: lastMessage.senderName,
+                contactName: resolvedName,
                 platform: .imessage,
                 messages: sortedMessages,
                 unreadCount: unreadCount,
                 lastMessageDate: lastMessage.timestamp
             )
         }.sorted { $0.lastMessageDate > $1.lastMessageDate }
+    }
+
+    // MARK: - Contact Name Resolution
+
+    /// Resolve iMessage chat identifiers (phone numbers, emails) to human-readable names
+    /// using the macOS Contacts framework. Results are cached for the session.
+    private func resolveContactNames(for identifiers: Set<String>) -> [String: String] {
+        let store = CNContactStore()
+        var nameMap: [String: String] = [:]
+        let keysToFetch: [CNKeyDescriptor] = [CNContactGivenNameKey as CNKeyDescriptor, CNContactFamilyNameKey as CNKeyDescriptor]
+
+        for identifier in identifiers {
+            // Check cache first
+            if let cached = contactNameCache[identifier] {
+                nameMap[identifier] = cached
+                continue
+            }
+
+            // Strip iMessage chat_identifier prefixes
+            // Format is typically: "+919876543210" or "email@example.com" or "chat123456789"
+            let cleaned = identifier
+                .replacingOccurrences(of: "iMessage;-;", with: "")
+                .replacingOccurrences(of: "iMessage;+;", with: "")
+                .replacingOccurrences(of: "SMS;-;", with: "")
+                .replacingOccurrences(of: "SMS;+;", with: "")
+
+            // Skip group chat identifiers (they use display_name from the DB)
+            if cleaned.hasPrefix("chat") { continue }
+
+            do {
+                let contacts: [CNContact]
+                if cleaned.contains("@") {
+                    contacts = try store.unifiedContacts(
+                        matching: CNContact.predicateForContacts(matchingEmailAddress: cleaned),
+                        keysToFetch: keysToFetch
+                    )
+                } else {
+                    // Phone number — extract digits
+                    let digits = cleaned.filter { $0.isNumber || $0 == "+" }
+                    guard !digits.isEmpty else { continue }
+                    contacts = try store.unifiedContacts(
+                        matching: CNContact.predicateForContacts(matching: CNPhoneNumber(stringValue: digits)),
+                        keysToFetch: keysToFetch
+                    )
+                }
+
+                if let contact = contacts.first {
+                    let name = "\(contact.givenName) \(contact.familyName)".trimmingCharacters(in: .whitespaces)
+                    if !name.isEmpty {
+                        nameMap[identifier] = name
+                        contactNameCache[identifier] = name
+                    }
+                }
+            } catch {
+                // Contacts access denied or query failed — skip silently
+                // Threads will fall back to phone number display
+            }
+        }
+
+        if !nameMap.isEmpty {
+            print("  📇 Resolved \(nameMap.count)/\(identifiers.count) iMessage contacts to names")
+        }
+
+        return nameMap
     }
 }
 

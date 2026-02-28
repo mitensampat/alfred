@@ -61,7 +61,7 @@ class GoogleCalendarService {
             URLQueryItem(name: "client_id", value: config.clientId),
             URLQueryItem(name: "redirect_uri", value: config.redirectUri),
             URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "scope", value: "https://www.googleapis.com/auth/calendar.readonly"),
+            URLQueryItem(name: "scope", value: "https://www.googleapis.com/auth/calendar"),
             URLQueryItem(name: "access_type", value: "offline"),
             URLQueryItem(name: "prompt", value: "consent")
         ]
@@ -182,6 +182,101 @@ class GoogleCalendarService {
             freeSlots: freeSlots,
             externalMeetings: externalMeetings
         )
+    }
+
+    // MARK: - Event Creation
+
+    func createEvent(
+        title: String,
+        startTime: Date,
+        endTime: Date,
+        location: String?,
+        description: String?
+    ) async throws -> CreatedEvent {
+        guard let accessToken = accessToken else {
+            throw CalendarError.notAuthenticated
+        }
+
+        let encodedCalendarId = calendarId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? calendarId
+        let url = URL(string: "https://www.googleapis.com/calendar/v3/calendars/\(encodedCalendarId)/events")!
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime]
+
+        var eventBody: [String: Any] = [
+            "summary": title,
+            "start": ["dateTime": isoFormatter.string(from: startTime), "timeZone": TimeZone.current.identifier],
+            "end": ["dateTime": isoFormatter.string(from: endTime), "timeZone": TimeZone.current.identifier]
+        ]
+        if let location = location { eventBody["location"] = location }
+        if let description = description { eventBody["description"] = description }
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: eventBody)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 401 {
+            try await refreshAccessToken()
+            return try await createEvent(title: title, startTime: startTime, endTime: endTime, location: location, description: description)
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "unknown"
+            print("⚠️ Calendar create failed: \(errorBody)")
+            throw CalendarError.createFailed
+        }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let eventId = json["id"] as? String,
+              let htmlLink = json["htmlLink"] as? String else {
+            throw CalendarError.invalidResponse
+        }
+
+        print("✅ Created calendar event: \(title) (\(eventId))")
+
+        return CreatedEvent(
+            id: eventId,
+            title: title,
+            startTime: startTime,
+            endTime: endTime,
+            location: location,
+            description: description,
+            htmlLink: htmlLink,
+            shareableLink: Self.makeShareableLink(title: title, startTime: startTime, endTime: endTime, location: location, description: description)
+        )
+    }
+
+    /// Generate a Google Calendar template URL that anyone can use to add the event to their own calendar
+    static func makeShareableLink(
+        title: String,
+        startTime: Date,
+        endTime: Date,
+        location: String?,
+        description: String?
+    ) -> String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyyMMdd'T'HHmmss"
+        fmt.timeZone = TimeZone.current
+
+        let dates = "\(fmt.string(from: startTime))/\(fmt.string(from: endTime))"
+
+        var components = URLComponents(string: "https://calendar.google.com/calendar/render")!
+        var queryItems = [
+            URLQueryItem(name: "action", value: "TEMPLATE"),
+            URLQueryItem(name: "text", value: title),
+            URLQueryItem(name: "dates", value: dates),
+            URLQueryItem(name: "ctz", value: TimeZone.current.identifier)
+        ]
+        if let location = location { queryItems.append(URLQueryItem(name: "location", value: location)) }
+        if let description = description { queryItems.append(URLQueryItem(name: "details", value: description)) }
+        components.queryItems = queryItems
+
+        return components.url?.absoluteString ?? ""
     }
 
     private func calculateFreeSlots(events: [CalendarEvent], date: Date) -> [DailySchedule.TimeSlot] {
@@ -310,6 +405,7 @@ enum CalendarError: Error, LocalizedError {
     case notAuthenticated
     case fetchFailed
     case invalidResponse
+    case createFailed
 
     var errorDescription: String? {
         switch self {
@@ -319,6 +415,8 @@ enum CalendarError: Error, LocalizedError {
             return "Failed to fetch calendar events"
         case .invalidResponse:
             return "Invalid response from Google Calendar API"
+        case .createFailed:
+            return "Failed to create calendar event"
         }
     }
 }

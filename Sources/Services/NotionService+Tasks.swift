@@ -517,6 +517,30 @@ extension NotionService {
         return sorted.first
     }
 
+    // MARK: - Fetch Single Task by ID
+
+    /// Fetch a specific task by its Notion page ID
+    func fetchTaskById(notionId: String) async throws -> TaskItem? {
+        let url = URL(string: "https://api.notion.com/v1/pages/\(notionId)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.timeoutInterval = 10
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            return nil
+        }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+
+        return parseTaskFromNotionPage(json)
+    }
+
     // MARK: - Commitment Compatibility Methods (use unified Tasks database)
 
     /// Query active commitments from the unified Tasks database

@@ -1,6 +1,8 @@
 import Foundation
 import UserNotifications
 import AppKit
+import SQLite3
+import Contacts
 
 // Main entry point - using Task with explicit exit
 Task {
@@ -12,7 +14,7 @@ Task {
 RunLoop.main.run()
 
 struct AlfredApp {
-    static let version = "2.0.2"
+    static let version = "2.0.3"
     static var menuBarController: MenuBarController?  // Keep reference to prevent deallocation
 
     static func main() async {
@@ -2533,13 +2535,49 @@ struct AlfredApp {
             }
         }
 
-        // iMessage
+        // iMessage — actually try to open DB (real Full Disk Access test)
         if config.messaging.imessage.enabled {
             let chatDbPath = config.messaging.imessage.expandedPath
             if FileManager.default.fileExists(atPath: chatDbPath) {
-                print("  ✓ iMessage chat.db found")
+                var testDb: OpaquePointer?
+                let rc = sqlite3_open_v2(chatDbPath, &testDb, SQLITE_OPEN_READONLY, nil)
+                if rc == SQLITE_OK {
+                    var stmt: OpaquePointer?
+                    let qrc = sqlite3_prepare_v2(testDb, "SELECT COUNT(*) FROM message LIMIT 1", -1, &stmt, nil)
+                    if qrc == SQLITE_OK {
+                        print("  ✓ iMessage chat.db readable (Full Disk Access OK)")
+                    } else {
+                        healthWarnings.append("⚠️ iMessage chat.db found but query denied (error \(qrc)) — re-grant Full Disk Access to /Applications/Alfred.app")
+                    }
+                    sqlite3_finalize(stmt)
+                    sqlite3_close(testDb)
+                } else {
+                    healthWarnings.append("⚠️ iMessage chat.db found but can't open (error \(rc)) — Full Disk Access revoked. Re-grant to /Applications/Alfred.app")
+                    sqlite3_close(testDb)
+                }
             } else {
                 healthWarnings.append("⚠️ iMessage chat.db not found — check Full Disk Access")
+            }
+        }
+
+        // Contacts (for iMessage name resolution)
+        if config.messaging.imessage.enabled {
+            let contactStore = CNContactStore()
+            let authStatus = CNContactStore.authorizationStatus(for: .contacts)
+            switch authStatus {
+            case .authorized:
+                print("  ✓ Contacts access granted (iMessage name resolution)")
+            case .notDetermined:
+                // Request access asynchronously — will prompt user
+                contactStore.requestAccess(for: .contacts) { granted, _ in
+                    if granted {
+                        print("  ✓ Contacts access granted (iMessage name resolution)")
+                    } else {
+                        print("  ⚠️ Contacts access denied — iMessage threads will show phone numbers only")
+                    }
+                }
+            default:
+                print("  ⚠️ Contacts access denied — iMessage threads will show phone numbers only")
             }
         }
 

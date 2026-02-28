@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="alfred">
-    <title>alfred</title>
+    <meta name="apple-mobile-web-app-title" content="coach alfred">
+    <title>coach alfred</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23f7f6f3' stroke='%23e9e9e7' stroke-width='1.5'/%3E%3Ctext x='50' y='64' font-size='54' text-anchor='middle' fill='%2337352f' font-family='Playfair Display,Georgia,serif' font-weight='400'%3Ea%3C/text%3E%3C/svg%3E">
     <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%23f7f6f3' stroke='%23e9e9e7' stroke-width='1.5'/%3E%3Ctext x='50' y='64' font-size='54' text-anchor='middle' fill='%2337352f' font-family='Playfair Display,Georgia,serif' font-weight='400'%3Ea%3C/text%3E%3C/svg%3E">
     <link rel="manifest" href="/manifest.json">
@@ -59,15 +59,20 @@
         .container {
             max-width: 540px;
             margin: 0 auto;
-            padding: 40px 24px 48px 24px;
+            padding: 20px 24px 24px 24px;
             display: flex;
             flex-direction: column;
             min-height: 100vh;
         }
 
-        /* Header */
+        /* Header — sticky so user always sees "coach alfred" */
         .header {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            background: #fff;
             margin-bottom: 20px;
+            padding-top: 12px;
         }
 
         .header h1 {
@@ -135,6 +140,7 @@
 
         /* Footer */
         .app-footer {
+            display: none; /* Hidden — replaced by unified bottom bar */
             position: fixed;
             bottom: 0;
             left: 0;
@@ -2671,6 +2677,133 @@
             padding-top: 12px;
             border-top: 1px solid #f0f0f0;
         }
+
+        /* Pin It: pinned state */
+        .focus-card.pinned .focus-label {
+            color: var(--accent-purple);
+        }
+        .focus-pin-icon {
+            margin-right: 4px;
+            font-size: 12px;
+        }
+        .focus-change-btn {
+            font-size: 11px;
+            color: #999;
+            cursor: pointer;
+            background: none;
+            border: none;
+            padding: 0;
+            margin-left: 8px;
+            flex-shrink: 0;
+        }
+        .focus-change-btn:hover { color: var(--accent-purple); }
+
+        /* Pin It: suggestion sheet */
+        .pin-suggestions-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 1000;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .pin-suggestions-overlay.visible { opacity: 1; }
+        .pin-suggestions-sheet {
+            background: #fff;
+            border-radius: 16px 16px 0 0;
+            padding: 24px 20px 32px;
+            width: 100%;
+            max-width: 600px;
+            max-height: 70vh;
+            overflow-y: auto;
+            transform: translateY(100%);
+            transition: transform 0.3s ease;
+        }
+        .pin-suggestions-overlay.visible .pin-suggestions-sheet {
+            transform: translateY(0);
+        }
+        .pin-sheet-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .pin-sheet-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .pin-sheet-close {
+            font-size: 20px;
+            color: #999;
+            cursor: pointer;
+            background: none;
+            border: none;
+            padding: 0 4px;
+            line-height: 1;
+        }
+        .pin-sheet-close:hover { color: var(--text-primary); }
+        .pin-suggestion-row {
+            display: flex;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #f0f0f0;
+            cursor: pointer;
+        }
+        .pin-suggestion-row:last-child { border-bottom: none; }
+        .pin-suggestion-row:hover { background: #fafafa; margin: 0 -20px; padding: 12px 20px; }
+        .pin-suggestion-info { flex: 1; min-width: 0; }
+        .pin-suggestion-title {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .pin-suggestion-reason {
+            font-size: 11px;
+            color: #999;
+            margin-top: 2px;
+        }
+        .pin-suggestion-action {
+            font-size: 11px;
+            color: var(--accent-purple);
+            font-weight: 600;
+            flex-shrink: 0;
+            margin-left: 12px;
+        }
+        .pin-unpin-row {
+            padding: 12px 0;
+            border-bottom: 1px solid #f0f0f0;
+            margin-bottom: 4px;
+        }
+        .pin-unpin-btn {
+            font-size: 13px;
+            color: #e55;
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 0;
+            font-weight: 500;
+        }
+        .pin-unpin-btn:hover { text-decoration: underline; }
+        .pin-suggestions-loading {
+            text-align: center;
+            color: #999;
+            font-size: 13px;
+            padding: 24px 0;
+        }
+        .focus-set-prompt {
+            font-size: 13px;
+            color: var(--accent-purple);
+            cursor: pointer;
+            margin-top: 6px;
+        }
+        .focus-set-prompt:hover { text-decoration: underline; }
 
         /* Insights Carousel */
         .insights-section {
@@ -5881,14 +6014,343 @@
                 width: 100%;
             }
         }
+
+        /* ═══════════════════════════════════════════════
+           UNIFIED NAVIGATION — Single Page Hybrid
+           ═══════════════════════════════════════════════ */
+
+        /* Hide old tab system */
+        .page-tabs { display: none !important; }
+
+        /* Header adjustments for unified view */
+        .header .header-right {
+            gap: 8px;
+        }
+        .unified-home-btn {
+            display: none;
+            align-items: center;
+            gap: 5px;
+            padding: 6px 12px;
+            border: 1px solid var(--border-color, #f0f0f0);
+            border-radius: 6px;
+            background: transparent;
+            font-size: 13px;
+            font-family: var(--font-body);
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .unified-home-btn:hover { background: var(--bg-secondary); }
+        .unified-home-btn.visible { display: flex; }
+
+        .gear-btn {
+            width: 34px;
+            height: 34px;
+            border: 1px solid var(--border-color, #f0f0f0);
+            border-radius: 6px;
+            background: transparent;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-tertiary);
+            font-size: 16px;
+            transition: all 0.2s;
+        }
+        .gear-btn:hover { background: var(--bg-secondary); }
+
+        /* Dashboard wrapper — collapsible */
+        #unifiedDashboard {
+            padding: 0;
+            transition: max-height 0.35s ease, opacity 0.25s ease, padding 0.35s ease;
+            overflow: hidden;
+        }
+        #unifiedDashboard.collapsed {
+            max-height: 0 !important;
+            opacity: 0;
+            padding-top: 0;
+            padding-bottom: 0;
+            pointer-events: none;
+        }
+
+        /* Attention Card */
+        .unified-attention-card {
+            background: #fff;
+            border: 1px solid var(--border-color, #f0f0f0);
+            border-left: 3px solid #dc2626;
+            border-radius: 8px;
+            padding: 14px 16px;
+            margin-bottom: 12px;
+        }
+        .unified-attention-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #dc2626;
+            margin-bottom: 8px;
+        }
+        .unified-attention-item {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            padding: 4px 0;
+            font-size: 13px;
+        }
+        .unified-attention-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #dc2626;
+            flex-shrink: 0;
+            margin-top: 6px;
+        }
+        .unified-attention-text { color: var(--text-primary); }
+        .unified-attention-sub { color: var(--text-tertiary); font-size: 11px; }
+        .unified-attention-action {
+            margin-top: 8px;
+            text-align: right;
+        }
+        .unified-attention-action button {
+            font-size: 12px;
+            color: var(--accent-color, #2383e2);
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            font-family: var(--font-body);
+        }
+
+        /* Stacked Insight Cards */
+        .unified-insights {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .unified-insight-card {
+            background: #fff;
+            border: 1px solid var(--border-color, #f0f0f0);
+            border-radius: 8px;
+            padding: 14px 16px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+        }
+        .unified-insight-type {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 6px;
+        }
+        .unified-insight-type.leverage { color: #16a34a; }
+        .unified-insight-type.attention-type { color: #ea580c; }
+        .unified-insight-type.relationship { color: #7c3aed; }
+        .unified-insight-type.avoidance { color: #dc2626; }
+        .unified-insight-text {
+            font-size: 13px;
+            line-height: 1.5;
+            color: var(--text-primary);
+        }
+
+        /* Unified Chat Area */
+        #unifiedChatArea {
+            display: none;
+            flex-direction: column;
+            gap: 0;
+            padding: 0 24px 160px;
+            min-height: 300px;
+        }
+        #unifiedChatArea.active {
+            display: flex;
+        }
+
+        /* Unified Fixed Bottom Bar — grounded container feel */
+        .unified-bottom-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #fff;
+            border-top: 1.5px solid #d0d0d0;
+            box-shadow: 0 -3px 12px rgba(0,0,0,0.08);
+            padding: 12px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+            z-index: 100;
+            max-width: 540px;
+            margin: 0 auto;
+        }
+        .unified-chips-row {
+            display: flex;
+            gap: 7px;
+            margin-bottom: 8px;
+            overflow-x: auto;
+            scrollbar-width: none;
+            -webkit-overflow-scrolling: touch;
+        }
+        .unified-chips-row::-webkit-scrollbar { display: none; }
+        .unified-chip {
+            padding: 6px 14px;
+            border-radius: 20px;
+            border: 1px solid var(--border-color, #f0f0f0);
+            background: #fff;
+            font-size: 13px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            cursor: pointer;
+            font-family: var(--font-body);
+            transition: all 0.15s;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+        }
+        .unified-chip:hover {
+            border-color: var(--accent-color, #2383e2);
+            color: var(--accent-color, #2383e2);
+        }
+        .unified-chip.more-chip {
+            font-weight: 600;
+            letter-spacing: 2px;
+            padding: 6px 12px;
+        }
+        .unified-input-row {
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
+        }
+        .unified-input-row textarea {
+            flex: 1;
+            padding: 10px 14px;
+            border: 1px solid var(--border-color, #f0f0f0);
+            border-radius: 12px;
+            font-size: 14px;
+            font-family: var(--font-body);
+            resize: none;
+            outline: none;
+            background: #fff;
+            color: var(--text-primary);
+            min-height: 42px;
+            max-height: 120px;
+            line-height: 1.4;
+            transition: border-color 0.2s;
+        }
+        .unified-input-row textarea:focus {
+            border-color: var(--accent-color, #2383e2);
+        }
+        .unified-input-row textarea::placeholder {
+            color: var(--text-tertiary);
+        }
+        .unified-send-btn {
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            border: none;
+            background: var(--accent-color, #2383e2);
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: opacity 0.2s;
+        }
+        .unified-send-btn:hover { opacity: 0.85; }
+        .unified-send-btn:disabled { opacity: 0.4; cursor: default; }
+
+        /* Drawer Overlay */
+        .unified-drawer-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.25);
+            z-index: 200;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s;
+        }
+        .unified-drawer-overlay.open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .unified-drawer-sheet {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            background: #fff;
+            border-radius: 20px 20px 0 0;
+            padding: 12px 20px calc(24px + env(safe-area-inset-bottom, 0px));
+            max-height: 60vh;
+            transform: translateY(100%);
+            transition: transform 0.3s ease;
+            z-index: 201;
+            max-width: 540px;
+            margin: 0 auto;
+            overflow-y: auto;
+        }
+        .unified-drawer-overlay.open .unified-drawer-sheet {
+            transform: translateY(0);
+        }
+        .unified-drawer-handle {
+            width: 36px;
+            height: 4px;
+            background: var(--border-color, #f0f0f0);
+            border-radius: 2px;
+            margin: 0 auto 14px;
+        }
+        .unified-drawer-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-tertiary);
+            margin-bottom: 10px;
+            margin-top: 8px;
+        }
+        .unified-drawer-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+        .unified-drawer-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 14px;
+            border-radius: 8px;
+            background: var(--bg-secondary, #fafafa);
+            border: 1px solid var(--border-color, #f0f0f0);
+            cursor: pointer;
+            transition: all 0.15s;
+            font-family: var(--font-body);
+            font-size: 13px;
+            color: var(--text-primary);
+        }
+        .unified-drawer-item:hover {
+            background: var(--bg-tertiary, #f5f5f5);
+            border-color: var(--accent-color, #2383e2);
+        }
+        .unified-drawer-icon { font-size: 16px; }
+
+        /* Bottom spacer for fixed bar */
+        .unified-bottom-spacer {
+            height: 150px;
+        }
+
+        /* Mobile responsive for unified layout */
+        @media (max-width: 640px) {
+            .unified-bottom-bar { max-width: 100%; }
+            .unified-drawer-sheet { max-width: 100%; }
+            #unifiedChatArea { padding: 0 16px 160px; }
+        }
+
+        @media (max-width: 375px) {
+            .unified-bottom-bar { padding: 6px 12px calc(6px + env(safe-area-inset-bottom, 0px)); }
+            #unifiedChatArea { padding: 0 12px 160px; }
+        }
+
     </style>
 </head>
 <body>
     <!-- Auth Screen -->
     <div id="authScreen" class="auth-screen">
         <div class="auth-card">
-            <div class="auth-logo">alfred</div>
-            <div class="auth-subtitle">judgement from noise</div>
+            <div class="auth-logo">coach alfred</div>
+            <div class="auth-subtitle"></div>
             <input type="password" id="passcodeInput" class="auth-input" placeholder="enter passcode"
                    onkeypress="if(event.key==='Enter')authenticate()" autofocus />
             <button class="auth-button" onclick="authenticate()">let's go</button>
@@ -5914,24 +6376,18 @@
 
     <!-- Main App -->
     <div id="appContainer" class="container hidden">
-        <!-- Back Home Button -->
+        <!-- Back Home Button (legacy, hidden) -->
         <button id="backHomeButton" class="back-home-button hidden" onclick="goBackHome()">Back Home</button>
 
         <div class="header">
             <div class="header-content">
                 <div class="header-left">
-                    <h1>alfred</h1>
-                    <p>judgement from noise</p>
+                    <h1>coach alfred</h1>
                 </div>
                 <div class="header-right">
+                    <button class="unified-home-btn" id="unifiedHomeBtn" onclick="unifiedReturnToHome()">← Home</button>
                     <div class="header-clock" id="greetingTime"></div>
-                    <button id="logoutButton" class="logout-button" onclick="logout()" title="Logout">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                            <polyline points="16 17 21 12 16 7"></polyline>
-                            <line x1="21" y1="12" x2="9" y2="12"></line>
-                        </svg>
-                    </button>
+                    <button class="gear-btn" id="gearBtn" onclick="unifiedOpenSettings()" title="Settings">&#9881;</button>
                 </div>
             </div>
         </div>
@@ -5952,47 +6408,69 @@
             <div id="healthWarningList" style="font-size: 12px; color: #d4a017; padding-left: 26px;"></div>
         </div>
 
-        <!-- Coach View (Home Tab) -->
-        <div id="coachView" class="coach-view">
-            <!-- Greeting Hero -->
-            <div class="greeting">
-                <div class="greeting-text coaching-card-loading" id="greetingText">Thinking about your day...</div>
-                <div class="greeting-cta" onclick="switchPage('chat')">Talk to coach &rarr;</div>
-            </div>
+        <!-- Unified Dashboard (replaces old Coach View / Home Tab) -->
+        <div id="unifiedDashboard">
+            <div id="coachView" class="coach-view">
 
             <!-- Focus Card -->
-            <div class="focus-card">
-                <div class="focus-label">FOCUS</div>
+            <div class="focus-card" id="focusCard">
+                <div class="focus-label" id="focusLabel">FOCUS</div>
                 <div class="focus-row">
                     <div class="focus-title coaching-card-loading" id="focusTitle">Finding your focus...</div>
                     <button class="focus-done hidden" id="focusDone" onclick="markTopGoalDone()">&#10003;</button>
+                    <button class="focus-change-btn hidden" id="focusChangeBtn" onclick="openPinSuggestions()">Change</button>
                 </div>
                 <div class="focus-meta" id="focusMeta"></div>
+                <div class="focus-set-prompt hidden" id="focusSetPrompt" onclick="openPinSuggestions()">Set your #1 focus &rarr;</div>
                 <div class="focus-stats" id="focusStats">-- open &middot; -- overdue &middot; -- meetings &middot; --% reliable</div>
             </div>
 
-            <!-- Insight Carousel -->
-            <div class="insights-section">
-                <div class="insights-carousel">
-                    <div class="insights-track" id="insightsTrack">
-                        <!-- Loading skeleton -->
-                        <div class="insight-slide">
-                            <div class="insight-label">Leverage</div>
-                            <div class="insight-text coaching-card-loading">Reviewing your leverage...</div>
-                        </div>
+            <!-- Pin Suggestions Sheet (overlay) -->
+            <div class="pin-suggestions-overlay hidden" id="pinSuggestionsOverlay" onclick="closePinSuggestions(event)">
+                <div class="pin-suggestions-sheet" onclick="event.stopPropagation()">
+                    <div class="pin-sheet-header">
+                        <div class="pin-sheet-title">What's your #1 today?</div>
+                        <button class="pin-sheet-close" onclick="closePinSuggestions()">&times;</button>
+                    </div>
+                    <div id="pinSuggestionsContent">
+                        <div class="pin-suggestions-loading">Loading suggestions...</div>
                     </div>
                 </div>
-                <div class="insight-dots" id="insightDots" style="display:none;"></div>
+            </div>
+
+            <!-- Attention Card (populated by pulse pendingActions) -->
+            <div class="unified-attention-card" id="unifiedAttentionCard" style="display:none;">
+                <div class="unified-attention-label" id="unifiedAttentionLabel">Items need you</div>
+                <div id="unifiedAttentionItems"></div>
+                <div class="unified-attention-action">
+                    <button onclick="unifiedSendChat('Show my overdue commitments')">Review all →</button>
+                </div>
+            </div>
+
+            <!-- Stacked Insight Cards (populated by coaching cards API) -->
+            <div class="unified-insights" id="unifiedInsights">
+                <!-- Loading skeleton -->
+                <div class="unified-insight-card">
+                    <div class="unified-insight-type leverage">Leverage</div>
+                    <div class="unified-insight-text coaching-card-loading">Reviewing your leverage...</div>
+                </div>
             </div>
 
             <!-- Weekly Review (Fri-Sun, injected by JS) -->
             <div id="weeklyReviewSection" class="weekly-review-section hidden"></div>
 
-            <!-- Cadences moved to Tools tab -->
+            </div>
         </div>
 
-        <!-- Chat View (hidden by default) -->
-        <div id="chatView" class="chat-view hidden">
+        <!-- Unified Chat Area (hidden until first message) -->
+        <div id="unifiedChatArea">
+            <div id="unifiedMessageList"></div>
+        </div>
+
+        <div class="unified-bottom-spacer"></div>
+
+        <!-- Chat View (OLD — hidden, superseded by unifiedChatArea) -->
+        <div id="chatView" class="chat-view hidden" style="display:none !important;">
             <div id="chatMessageList" class="chat-message-list">
                 <div class="chat-suggestions" id="chatSuggestions"></div>
                 <div class="past-conversations" id="pastConversationsSection" style="display:none;">
@@ -6013,8 +6491,11 @@
             </div>
         </div>
 
-        <!-- Tools Content Wrapper (everything that belongs to Tools page) -->
+        <!-- Tools Content Wrapper (shown as overlay in unified nav) -->
         <div id="homeContent" class="hidden">
+
+        <!-- Overlay Back Button (for unified nav) -->
+        <button id="overlayBackBtn" onclick="goBackHome()" style="display:flex; align-items:center; gap:6px; padding:8px 14px; margin-bottom:16px; border:1px solid var(--border-color, #f0f0f0); border-radius:6px; background:transparent; font-size:13px; font-family:var(--font-body); color:var(--text-secondary); cursor:pointer;">&#8592; Back</button>
 
         <!-- Form View (for parameterized actions) -->
         <div id="formView" class="hidden" style="width: 100%; max-width: 600px; margin: 0 auto;">
@@ -6416,6 +6897,66 @@
         </div>
 
         </div><!-- /homeContent -->
+
+        <!-- ═══ Unified Fixed Bottom Bar ═══ -->
+        <div class="unified-bottom-bar" id="unifiedBottomBar">
+            <div class="unified-chips-row" id="unifiedChipsRow">
+                <button class="unified-chip" onclick="unifiedSendChat('Show me today\'s briefing')">Briefing</button>
+                <button class="unified-chip" onclick="unifiedOpenCalendar()">Calendar</button>
+                <button class="unified-chip" onclick="unifiedSendChat('Scan my todos')">Todos</button>
+                <button class="unified-chip" onclick="unifiedOpenCommitments()">Commitments</button>
+                <button class="unified-chip more-chip" onclick="unifiedToggleDrawer()">&#8943;</button>
+            </div>
+            <div class="unified-input-row">
+                <textarea id="unifiedInput" placeholder="Ask Alfred..." rows="1"
+                          onkeydown="unifiedHandleKey(event)" oninput="unifiedAutoResize(this)"></textarea>
+                <button class="unified-send-btn" id="unifiedSendBtn" onclick="unifiedSendChat()">&#8593;</button>
+            </div>
+        </div>
+
+    </div><!-- /appContainer -->
+
+    <!-- ═══ Drawer Overlay (outside appContainer for z-index) ═══ -->
+    <div class="unified-drawer-overlay" id="unifiedDrawerOverlay" onclick="unifiedToggleDrawer()">
+        <div class="unified-drawer-sheet" onclick="event.stopPropagation()">
+            <div class="unified-drawer-handle"></div>
+            <div class="unified-drawer-label">Daily</div>
+            <div class="unified-drawer-grid">
+                <button class="unified-drawer-item" onclick="unifiedSendChat('Show me today\'s briefing'); unifiedToggleDrawer();">
+                    <span class="unified-drawer-icon">&#128203;</span> Briefing
+                </button>
+                <button class="unified-drawer-item" onclick="unifiedToggleDrawer(); unifiedOpenCalendar();">
+                    <span class="unified-drawer-icon">&#128197;</span> Calendar
+                </button>
+                <button class="unified-drawer-item" onclick="unifiedToggleDrawer(); unifiedOpenCommitments();">
+                    <span class="unified-drawer-icon">&#129309;</span> Commitments
+                </button>
+                <button class="unified-drawer-item" onclick="unifiedSendChat('Run attention check'); unifiedToggleDrawer();">
+                    <span class="unified-drawer-icon">&#128276;</span> Attention
+                </button>
+            </div>
+            <div class="unified-drawer-label">Manage</div>
+            <div class="unified-drawer-grid">
+                <button class="unified-drawer-item" onclick="unifiedToggleDrawer(); unifiedOpenMessages();">
+                    <span class="unified-drawer-icon">&#128172;</span> Messages
+                </button>
+                <button class="unified-drawer-item" onclick="unifiedSendChat('Scan my todos'); unifiedToggleDrawer();">
+                    <span class="unified-drawer-icon">&#128221;</span> Scan Todos
+                </button>
+                <button class="unified-drawer-item" onclick="unifiedToggleDrawer(); showFavorites(); unifiedShowToolOverlay();">
+                    <span class="unified-drawer-icon">&#11088;</span> Favorites
+                </button>
+                <button class="unified-drawer-item" onclick="unifiedToggleDrawer(); showPatternsAndMemory(); unifiedShowToolOverlay();">
+                    <span class="unified-drawer-icon">&#129504;</span> Memory
+                </button>
+                <button class="unified-drawer-item" onclick="unifiedToggleDrawer(); showCoachTuner(); unifiedShowToolOverlay();">
+                    <span class="unified-drawer-icon">&#127899;</span> Coach Tuner
+                </button>
+                <button class="unified-drawer-item" onclick="unifiedToggleDrawer(); unifiedOpenSettings();">
+                    <span class="unified-drawer-icon">&#9881;</span> Settings
+                </button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -6450,6 +6991,10 @@
                 const parsed = JSON.parse(raw);
                 return parsed;
             } catch (e) { return null; }
+        }
+
+        function cacheDelete(key) {
+            try { localStorage.removeItem(CACHE_PREFIX + key); } catch (e) { /* ignore */ }
         }
 
         function cacheAge(key) {
@@ -6827,7 +7372,8 @@
         }
 
         function addChatBubble(sender, content) {
-            const list = document.getElementById('chatMessageList');
+            // Target unified message list (falls back to old for compatibility)
+            const list = document.getElementById('unifiedMessageList') || document.getElementById('chatMessageList');
             // Remove welcome message on first bubble
             const welcome = document.getElementById('chatWelcome');
             if (welcome) welcome.remove();
@@ -6854,7 +7400,8 @@
         }
 
         function createStreamingBubble() {
-            const list = document.getElementById('chatMessageList');
+            // Target unified message list (falls back to old for compatibility)
+            const list = document.getElementById('unifiedMessageList') || document.getElementById('chatMessageList');
             const welcome = document.getElementById('chatWelcome');
             if (welcome) welcome.remove();
 
@@ -6962,6 +7509,18 @@
                             cardHtml += `<div style="padding: 3px 0; font-size: 12px; color: var(--text-secondary);">• ${escapeHtml(c)}</div>`;
                         });
                     }
+                } else if (data.type === 'calendar_create') {
+                    const icon = data.success ? '✅' : '❌';
+                    cardHtml = `<div class="chat-tool-card-title">${icon} Event Created</div>`;
+                    cardHtml += `<div style="padding: 6px 0; font-size: 14px; font-weight: 500;">${escapeHtml(data.title || '')}</div>`;
+                    cardHtml += `<div style="padding: 2px 0; font-size: 12px; color: var(--text-secondary);">📅 ${escapeHtml(data.date || '')} · ${escapeHtml(data.timeRange || '')}</div>`;
+                    if (data.location) cardHtml += `<div style="padding: 2px 0; font-size: 12px; color: var(--text-secondary);">📍 ${escapeHtml(data.location)}</div>`;
+                    if (data.shareableLink) {
+                        cardHtml += `<div style="margin-top: 10px; display: flex; gap: 8px;">
+                            <button onclick="navigator.clipboard.writeText('${data.shareableLink.replace(/'/g, "\\'")}').then(() => { this.textContent = 'Copied!'; setTimeout(() => { this.textContent = '📋 Copy Invite Link'; }, 2000); })" style="flex: 1; padding: 8px 12px; background: var(--accent-color, #B8860B); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500;">📋 Copy Invite Link</button>
+                            <a href="${escapeHtml(data.htmlLink || data.shareableLink)}" target="_blank" style="padding: 8px 12px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 6px; text-decoration: none; font-size: 13px; color: var(--text-primary);">Open</a>
+                        </div>`;
+                    }
                 } else if (data.type === 'disambiguation') {
                     cardHtml = `<div class="chat-tool-card-title">🔍 Multiple Matches</div>`;
                     if (Array.isArray(data.matches)) {
@@ -7017,8 +7576,10 @@
         }
 
         async function sendChatMessage(prefilled = null) {
-            const input = document.getElementById('chatInput');
-            const query = prefilled || input.value.trim();
+            // Use unified input as the primary source
+            const unifiedInput = document.getElementById('unifiedInput');
+            const oldInput = document.getElementById('chatInput');
+            const query = prefilled || (unifiedInput ? unifiedInput.value.trim() : '') || (oldInput ? oldInput.value.trim() : '');
             if (!query) return;
 
             // Hide suggestions and past conversations after first message
@@ -7030,12 +7591,15 @@
 
             // Clear input
             if (!prefilled) {
-                input.value = '';
-                input.style.height = 'auto';
+                if (unifiedInput) { unifiedInput.value = ''; unifiedInput.style.height = 'auto'; }
+                if (oldInput) { oldInput.value = ''; oldInput.style.height = 'auto'; }
             }
 
-            // Disable send button
-            document.getElementById('chatSendBtn').disabled = true;
+            // Disable send buttons
+            const unifiedSendBtn = document.getElementById('unifiedSendBtn');
+            const oldSendBtn = document.getElementById('chatSendBtn');
+            if (unifiedSendBtn) unifiedSendBtn.disabled = true;
+            if (oldSendBtn) oldSendBtn.disabled = true;
 
             // Add user bubble
             addChatBubble('user', query);
@@ -7139,8 +7703,14 @@
                     console.error('[Chat SSE Error]', err);
                 }
             } finally {
-                document.getElementById('chatSendBtn').disabled = false;
-                input.focus();
+                // Re-enable send buttons
+                const ub = document.getElementById('unifiedSendBtn');
+                const ob = document.getElementById('chatSendBtn');
+                if (ub) ub.disabled = false;
+                if (ob) ob.disabled = false;
+                // Focus the unified input
+                const ui = document.getElementById('unifiedInput');
+                if (ui) ui.focus();
             }
         }
 
@@ -7817,19 +8387,19 @@
             document.getElementById('authScreen').classList.add('hidden');
             document.getElementById('appContainer').classList.remove('hidden');
             document.getElementById('ftueWizard').classList.add('hidden');
-            // Start on Home (coach) tab
-            switchPage('home');
+            // Unified nav: show dashboard (no tab switching needed)
+            document.getElementById('unifiedDashboard').classList.remove('collapsed');
+            document.getElementById('coachView').classList.remove('hidden');
             // Start ticking clock
             startGreetingClock();
-            // Load coaching data for Home tab
+            // Load coaching data for dashboard
             loadHomePulse();
             loadCoachingCards();
-            loadGreeting();
             // On Sundays, load the weekly reflection (replaces daily coaching cards)
             if (isSunday()) {
                 loadWeeklyReflection();
             }
-            // Pre-load tools tab data
+            // Pre-load tools data (for when overlays are opened)
             loadRecentActivity();
             loadCadenceStatus();
         }
@@ -8972,12 +9542,14 @@
 
         // Form page helper functions
         function showFormPage(title, formHTML, onSubmit, hideActions) {
-            // Hide everything else
+            // Hide everything else inside homeContent
             document.getElementById('quickPromptsSection').classList.add('hidden');
             document.getElementById('recentActivitySection').classList.add('hidden');
             document.getElementById('chatContainer').innerHTML = '';
-            document.getElementById('backHomeButton').classList.remove('hidden');
-            document.getElementById('pageTabs').classList.add('hidden');
+            // Show the unified tool overlay (makes homeContent visible)
+            if (typeof unifiedShowToolOverlay === 'function') {
+                unifiedShowToolOverlay();
+            }
 
             // Show form view
             const formView = document.getElementById('formView');
@@ -10853,45 +11425,36 @@
 
         // ===== END EXTRACTION AND APPROVAL FLOW =====
 
-        // Go back to Tools tab - clear chat and show quick prompts
+        // Go back — close tool overlay and return to unified view
         function goBackHome() {
             // Clear chat container (for tool/action results)
             document.getElementById('chatContainer').innerHTML = '';
 
             // Hide form view, settings, agents, favorites, and tuner views
             document.getElementById('formView').classList.add('hidden');
-            document.getElementById('settingsView').classList.add('hidden');
-            document.getElementById('agentsView').classList.add('hidden');
-            document.getElementById('agentDetailView').classList.add('hidden');
-            document.getElementById('favoritesView').classList.add('hidden');
-            document.getElementById('coachTunerView').classList.add('hidden');
+            const settingsView = document.getElementById('settingsView');
+            if (settingsView) settingsView.classList.add('hidden');
+            const agentsView = document.getElementById('agentsView');
+            if (agentsView) agentsView.classList.add('hidden');
+            const agentDetailView = document.getElementById('agentDetailView');
+            if (agentDetailView) agentDetailView.classList.add('hidden');
+            const favoritesView = document.getElementById('favoritesView');
+            if (favoritesView) favoritesView.classList.add('hidden');
+            const coachTunerView = document.getElementById('coachTunerView');
+            if (coachTunerView) coachTunerView.classList.add('hidden');
 
-            // Show quick prompts
+            // Show quick prompts (for backward compat when homeContent is opened)
             document.getElementById('quickPromptsSection').classList.remove('hidden');
-
-            // Show recent activity
             document.getElementById('recentActivitySection').classList.remove('hidden');
 
-            // Hide back home button
+            // Hide back home button (legacy)
             document.getElementById('backHomeButton').classList.add('hidden');
 
-            // Go to Tools tab (where action cards live)
-            switchPage('tools');
-
-            // Show page tabs
-            document.getElementById('pageTabs').classList.remove('hidden');
-
-            // Clear and focus input
-            const input = document.getElementById('queryInput');
-            input.value = '';
-            input.style.height = 'auto';
+            // Close the unified tool overlay
+            unifiedCloseToolOverlay();
 
             // Clear any pending callbacks
             currentModalCallback = null;
-
-            // Reload recent activity and cadence status
-            loadRecentActivity();
-            loadCadenceStatus();
         }
 
         // Render recent activity list (shared by live + cached paths)
@@ -10948,27 +11511,58 @@
 
         // Render pulse data into the DOM (shared by live + cached paths)
         function renderPulseData(data, staleLabel) {
+            const focusCard = document.getElementById('focusCard');
+            const focusLabel = document.getElementById('focusLabel');
             const focusTitle = document.getElementById('focusTitle');
             const focusMeta = document.getElementById('focusMeta');
             const focusDone = document.getElementById('focusDone');
+            const focusChangeBtn = document.getElementById('focusChangeBtn');
+            const focusSetPrompt = document.getElementById('focusSetPrompt');
             const focusStats = document.getElementById('focusStats');
+
+            // Reset states
+            focusTitle.style.textDecoration = '';
+            focusTitle.style.opacity = '';
+            focusCard.classList.remove('pinned');
+            focusChangeBtn.classList.add('hidden');
+            focusSetPrompt.classList.add('hidden');
+            focusDone.classList.add('hidden');
+
+            const isPinned = data.topGoal && data.topGoal.pinned === true;
 
             if (data.topGoal && data.topGoal.title) {
                 focusTitle.textContent = data.topGoal.title;
                 focusTitle.classList.remove('coaching-card-loading');
+
+                if (isPinned) {
+                    // Pinned state: YOUR #1 label, pin icon, Change button
+                    focusLabel.innerHTML = '<span class="focus-pin-icon">&#128204;</span> YOUR #1';
+                    focusCard.classList.add('pinned');
+                    focusChangeBtn.classList.remove('hidden');
+                } else {
+                    // Algorithmic state: FOCUS label, Set prompt
+                    focusLabel.textContent = 'FOCUS';
+                    focusSetPrompt.classList.remove('hidden');
+                }
+
                 if (data.topGoal.dueDate) {
-                    focusMeta.textContent = 'Due: ' + data.topGoal.dueDate + (staleLabel ? '  · cached ' + staleLabel : '');
+                    focusMeta.textContent = 'Due: ' + data.topGoal.dueDate + (staleLabel ? '  \u00B7 cached ' + staleLabel : '');
                 } else if (staleLabel) {
                     focusMeta.textContent = 'cached ' + staleLabel;
+                } else {
+                    focusMeta.textContent = '';
                 }
+
                 if (data.topGoal.notionId) {
                     focusDone.dataset.notionId = data.topGoal.notionId;
                     focusDone.classList.remove('hidden');
                 }
             } else {
-                focusTitle.textContent = 'No active goal — add one in Notion';
+                focusLabel.textContent = 'FOCUS';
+                focusTitle.textContent = 'No active goal';
                 focusTitle.classList.remove('coaching-card-loading');
                 focusTitle.style.opacity = '0.5';
+                focusSetPrompt.classList.remove('hidden');
             }
 
             const m = data.metrics || {};
@@ -10978,6 +11572,11 @@
             const rel = m.reliabilityScore || 0;
             const relPct = (rel > 1 ? rel : Math.round(rel * 100)) + '%';
             focusStats.textContent = open + ' open \u00B7 ' + overdue + ' overdue \u00B7 ' + meetings + ' meetings \u00B7 ' + relPct + ' reliable';
+
+            // Also render attention card in unified dashboard
+            if (typeof unifiedRenderAttentionCard === 'function') {
+                unifiedRenderAttentionCard(data);
+            }
         }
 
         async function checkHealthStatus() {
@@ -11039,14 +11638,19 @@
         let _insightSlideCount = 0;
 
         function renderCoachingCardsData(cards, staleLabel) {
+            // Also render into the unified stacked insight cards
+            if (typeof unifiedRenderInsightCards === 'function') {
+                unifiedRenderInsightCards(cards);
+            }
+
             const track = document.getElementById('insightsTrack');
             const dotsContainer = document.getElementById('insightDots');
             const weeklySection = document.getElementById('weeklyReviewSection');
-            track.innerHTML = '';
-            dotsContainer.innerHTML = '';
+            if (track) track.innerHTML = '';
+            if (dotsContainer) dotsContainer.innerHTML = '';
 
             if (!cards || cards.length === 0) {
-                track.innerHTML = '<div class="insight-slide"><div class="insight-label">Coach</div><div class="insight-text coaching-card-loading">Thinking about your day...</div></div>';
+                if (track) track.innerHTML = '<div class="insight-slide"><div class="insight-label">Coach</div><div class="insight-text coaching-card-loading">Thinking about your day...</div></div>';
                 return;
             }
 
@@ -11061,16 +11665,18 @@
                 }
             });
 
-            // Build cards as a vertical list
-            insightCards.forEach(card => {
-                const slide = document.createElement('div');
-                slide.className = 'insight-slide';
-                const label = card.label || card.type || 'Insight';
-                const isUrgent = card.type === 'avoidance' && (card.insight || '').includes('week');
-                slide.innerHTML = '<div class="insight-label' + (isUrgent ? ' urgent' : '') + '">' + escapeHtml(label) + '</div>'
-                    + '<div class="insight-text">' + escapeHtml(card.insight || '') + '</div>';
-                track.appendChild(slide);
-            });
+            // Build cards as a vertical list (old carousel track — kept for backward compat)
+            if (track) {
+                insightCards.forEach(card => {
+                    const slide = document.createElement('div');
+                    slide.className = 'insight-slide';
+                    const label = card.label || card.type || 'Insight';
+                    const isUrgent = card.type === 'avoidance' && (card.insight || '').includes('week');
+                    slide.innerHTML = '<div class="insight-label' + (isUrgent ? ' urgent' : '') + '">' + escapeHtml(label) + '</div>'
+                        + '<div class="insight-text">' + escapeHtml(card.insight || '') + '</div>';
+                    track.appendChild(slide);
+                });
+            }
 
             // Render weekly review if present
             if (weeklyReviewCard) {
@@ -11101,7 +11707,7 @@
         function goToInsightSlide(idx) {
             _insightSlideIndex = idx;
             const track = document.getElementById('insightsTrack');
-            track.style.transform = 'translateX(-' + (idx * 100) + '%)';
+            if (track) track.style.transform = 'translateX(-' + (idx * 100) + '%)';
 
             // Update dots
             const dots = document.querySelectorAll('#insightDots .insight-dot');
@@ -11253,8 +11859,10 @@
             btn.disabled = true;
 
             try {
-                const response = await authFetch('/api/tasks/' + notionId + '/complete', {
-                    method: 'POST'
+                const response = await authFetch('/api/tasks/status', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ notionId: notionId, status: 'Done' })
                 });
                 if (response.ok) {
                     btn.textContent = '\u2713';
@@ -11262,7 +11870,8 @@
                     btn.style.color = '#8B5CF6';
                     document.getElementById('focusTitle').style.textDecoration = 'line-through';
                     document.getElementById('focusTitle').style.opacity = '0.5';
-                    // Refresh pulse after a moment
+                    // Refresh pulse after a moment (clear cache so pin auto-clears)
+                    cacheDelete('pulse');
                     setTimeout(() => loadHomePulse(), 2000);
                 } else {
                     btn.textContent = '\u2713';
@@ -11272,6 +11881,97 @@
                 console.error('Failed to mark done:', err);
                 btn.textContent = '\u2713';
                 btn.disabled = false;
+            }
+        }
+
+        // ===== Pin It: Focus Pin Functions =====
+
+        async function openPinSuggestions() {
+            const overlay = document.getElementById('pinSuggestionsOverlay');
+            const content = document.getElementById('pinSuggestionsContent');
+            content.innerHTML = '<div class="pin-suggestions-loading">Loading suggestions...</div>';
+            overlay.classList.remove('hidden');
+            requestAnimationFrame(() => overlay.classList.add('visible'));
+
+            try {
+                const response = await authFetch('/api/focus-pin/suggestions');
+                if (!response.ok) throw new Error('Failed to load suggestions');
+                const data = await response.json();
+
+                let html = '';
+
+                // Unpin button if currently pinned
+                if (data.currentPin && data.currentPin.notionId) {
+                    html += '<div class="pin-unpin-row"><button class="pin-unpin-btn" onclick="unpinFocus()">Unpin current: ' + escapeHtml(data.currentPin.title) + '</button></div>';
+                }
+
+                // Suggestion rows
+                const suggestions = data.suggestions || [];
+                if (suggestions.length === 0) {
+                    html += '<div class="pin-suggestions-loading">No active tasks to suggest</div>';
+                } else {
+                    suggestions.forEach(s => {
+                        html += '<div class="pin-suggestion-row" onclick="pinFocus(\'' + s.notionId + '\')">';
+                        html += '<div class="pin-suggestion-info">';
+                        html += '<div class="pin-suggestion-title">' + escapeHtml(s.title) + '</div>';
+                        html += '<div class="pin-suggestion-reason">' + escapeHtml(s.reason) + '</div>';
+                        html += '</div>';
+                        html += '<div class="pin-suggestion-action">Pin</div>';
+                        html += '</div>';
+                    });
+                }
+
+                content.innerHTML = html;
+            } catch (err) {
+                console.error('Failed to load pin suggestions:', err);
+                content.innerHTML = '<div class="pin-suggestions-loading">Couldn\'t load suggestions</div>';
+            }
+        }
+
+        function closePinSuggestions(event) {
+            if (event && event.target !== event.currentTarget) return;
+            const overlay = document.getElementById('pinSuggestionsOverlay');
+            overlay.classList.remove('visible');
+            setTimeout(() => overlay.classList.add('hidden'), 300);
+        }
+
+        async function pinFocus(notionId) {
+            closePinSuggestions();
+            const focusTitle = document.getElementById('focusTitle');
+            focusTitle.textContent = 'Pinning...';
+            focusTitle.classList.add('coaching-card-loading');
+
+            try {
+                const response = await authFetch('/api/focus-pin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ notionId: notionId })
+                });
+                if (!response.ok) throw new Error('Pin failed');
+                // Clear pulse cache and reload
+                cacheDelete('pulse');
+                await loadHomePulse();
+            } catch (err) {
+                console.error('Failed to pin focus:', err);
+                focusTitle.textContent = 'Pin failed — try again';
+                focusTitle.classList.remove('coaching-card-loading');
+            }
+        }
+
+        async function unpinFocus() {
+            closePinSuggestions();
+            const focusTitle = document.getElementById('focusTitle');
+            focusTitle.textContent = 'Unpinning...';
+
+            try {
+                const response = await authFetch('/api/focus-pin', { method: 'DELETE' });
+                if (!response.ok) throw new Error('Unpin failed');
+                cacheDelete('pulse');
+                await loadHomePulse();
+            } catch (err) {
+                console.error('Failed to unpin focus:', err);
+                cacheDelete('pulse');
+                await loadHomePulse();
             }
         }
 
@@ -11774,15 +12474,19 @@
 
         // Show settings page
         function showSettings() {
-            // Hide everything else
+            // Hide everything else inside homeContent
             document.getElementById('quickPromptsSection').classList.add('hidden');
             document.getElementById('recentActivitySection').classList.add('hidden');
             document.getElementById('chatContainer').innerHTML = '';
             document.getElementById('formView').classList.add('hidden');
             document.getElementById('favoritesView').classList.add('hidden');
-            document.getElementById('coachTunerView').classList.add('hidden');
-            document.getElementById('backHomeButton').classList.remove('hidden');
-            document.getElementById('pageTabs').classList.add('hidden');
+            const tunerView = document.getElementById('coachTunerView');
+            if (tunerView) tunerView.classList.add('hidden');
+
+            // Show the unified tool overlay
+            if (typeof unifiedShowToolOverlay === 'function') {
+                unifiedShowToolOverlay();
+            }
 
             // Show settings view
             document.getElementById('settingsView').classList.remove('hidden');
@@ -11796,16 +12500,20 @@
         // ============================================
 
         function showCoachTuner() {
-            // Hide everything else
+            // Hide everything else inside homeContent
             document.getElementById('quickPromptsSection').classList.add('hidden');
             document.getElementById('recentActivitySection').classList.add('hidden');
             document.getElementById('chatContainer').innerHTML = '';
             document.getElementById('formView').classList.add('hidden');
             document.getElementById('favoritesView').classList.add('hidden');
             document.getElementById('settingsView').classList.add('hidden');
-            document.getElementById('agentsView').classList.add('hidden');
-            document.getElementById('backHomeButton').classList.remove('hidden');
-            document.getElementById('pageTabs').classList.add('hidden');
+            const agentsView = document.getElementById('agentsView');
+            if (agentsView) agentsView.classList.add('hidden');
+
+            // Show the unified tool overlay
+            if (typeof unifiedShowToolOverlay === 'function') {
+                unifiedShowToolOverlay();
+            }
 
             // Show coach tuner view
             document.getElementById('coachTunerView').classList.remove('hidden');
@@ -11919,16 +12627,21 @@
         // ============================================
 
         function showFavorites() {
-            // Hide everything else
+            // Hide everything else inside homeContent
             document.getElementById('quickPromptsSection').classList.add('hidden');
             document.getElementById('recentActivitySection').classList.add('hidden');
             document.getElementById('chatContainer').innerHTML = '';
             document.getElementById('formView').classList.add('hidden');
             document.getElementById('settingsView').classList.add('hidden');
-            document.getElementById('agentsView').classList.add('hidden');
-            document.getElementById('coachTunerView').classList.add('hidden');
-            document.getElementById('backHomeButton').classList.remove('hidden');
-            document.getElementById('pageTabs').classList.add('hidden');
+            const agentsView = document.getElementById('agentsView');
+            if (agentsView) agentsView.classList.add('hidden');
+            const tunerView = document.getElementById('coachTunerView');
+            if (tunerView) tunerView.classList.add('hidden');
+
+            // Show the unified tool overlay
+            if (typeof unifiedShowToolOverlay === 'function') {
+                unifiedShowToolOverlay();
+            }
 
             // Show favorites view
             document.getElementById('favoritesView').classList.remove('hidden');
@@ -14581,6 +15294,201 @@
                 }
             });
         });
+
+        // ═══════════════════════════════════════════════
+        // UNIFIED NAVIGATION — Single Page Hybrid
+        // ═══════════════════════════════════════════════
+
+        let _unifiedInChat = false;
+
+        // ── Mode Management ──
+
+        function unifiedEnterChatMode() {
+            if (_unifiedInChat) return;
+            _unifiedInChat = true;
+            document.getElementById('unifiedDashboard').classList.add('collapsed');
+            document.getElementById('unifiedChatArea').classList.add('active');
+            document.getElementById('unifiedHomeBtn').classList.add('visible');
+        }
+
+        function unifiedReturnToHome() {
+            _unifiedInChat = false;
+            document.getElementById('unifiedDashboard').classList.remove('collapsed');
+            document.getElementById('unifiedChatArea').classList.remove('active');
+            document.getElementById('unifiedHomeBtn').classList.remove('visible');
+            // Also close any tool overlay that might be open
+            unifiedCloseToolOverlay();
+            document.getElementById('unifiedInput').focus();
+        }
+
+        // ── Unified Chat ──
+
+        function unifiedSendChat(prefilled) {
+            const input = document.getElementById('unifiedInput');
+            const text = prefilled || input.value.trim();
+            if (!text) return;
+
+            // Enter chat mode (collapse dashboard)
+            unifiedEnterChatMode();
+
+            // Clear unified input
+            if (!prefilled) {
+                input.value = '';
+                unifiedAutoResize(input);
+            }
+
+            // Use the existing SSE chat pipeline
+            sendChatMessage(text);
+        }
+
+        function unifiedHandleKey(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                unifiedSendChat();
+            }
+        }
+
+        function unifiedAutoResize(el) {
+            el.style.height = 'auto';
+            el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+        }
+
+        // ── Drawer ──
+
+        function unifiedToggleDrawer() {
+            document.getElementById('unifiedDrawerOverlay').classList.toggle('open');
+        }
+
+        // ── Tool Overlays ──
+        // Shows #homeContent as a full-screen overlay for form-based tools
+
+        function unifiedShowToolOverlay() {
+            const homeContent = document.getElementById('homeContent');
+            homeContent.classList.remove('hidden');
+            homeContent.style.position = 'fixed';
+            homeContent.style.top = '0';
+            homeContent.style.left = '0';
+            homeContent.style.right = '0';
+            homeContent.style.bottom = '0';
+            homeContent.style.zIndex = '150';
+            homeContent.style.background = '#fff';
+            homeContent.style.overflowY = 'auto';
+            homeContent.style.maxWidth = '540px';
+            homeContent.style.margin = '0 auto';
+            homeContent.style.padding = '20px 24px';
+            // Hide bottom bar while overlay is showing
+            document.getElementById('unifiedBottomBar').style.display = 'none';
+        }
+
+        function unifiedCloseToolOverlay() {
+            const homeContent = document.getElementById('homeContent');
+            homeContent.classList.add('hidden');
+            homeContent.style.position = '';
+            homeContent.style.top = '';
+            homeContent.style.left = '';
+            homeContent.style.right = '';
+            homeContent.style.bottom = '';
+            homeContent.style.zIndex = '';
+            homeContent.style.background = '';
+            homeContent.style.overflowY = '';
+            homeContent.style.maxWidth = '';
+            homeContent.style.margin = '';
+            homeContent.style.padding = '';
+            // Show bottom bar again
+            document.getElementById('unifiedBottomBar').style.display = '';
+        }
+
+        function unifiedOpenCalendar() {
+            unifiedShowToolOverlay();
+            showCalendarOptions();
+        }
+
+        function unifiedOpenCommitments() {
+            unifiedShowToolOverlay();
+            showCommitmentsOptions();
+        }
+
+        function unifiedOpenMessages() {
+            unifiedShowToolOverlay();
+            showMessagesPrompt();
+        }
+
+        function unifiedOpenSettings() {
+            unifiedShowToolOverlay();
+            showSettings();
+        }
+
+        // ── Render Attention Card from Pulse Data ──
+
+        function unifiedRenderAttentionCard(pulseData) {
+            const card = document.getElementById('unifiedAttentionCard');
+            const itemsEl = document.getElementById('unifiedAttentionItems');
+            const labelEl = document.getElementById('unifiedAttentionLabel');
+
+            const pendingActions = pulseData.pendingActions || [];
+            if (pendingActions.length === 0) {
+                card.style.display = 'none';
+                return;
+            }
+
+            card.style.display = '';
+            labelEl.textContent = pendingActions.length + ' item' + (pendingActions.length > 1 ? 's' : '') + ' need you';
+
+            let html = '';
+            pendingActions.forEach(action => {
+                const text = action.title || action.description || action.text || '';
+                const sub = action.dueDate || action.age || '';
+                html += `<div class="unified-attention-item">
+                    <div class="unified-attention-dot"></div>
+                    <div>
+                        <div class="unified-attention-text">${escapeHtml(text)}</div>
+                        ${sub ? '<div class="unified-attention-sub">' + escapeHtml(sub) + '</div>' : ''}
+                    </div>
+                </div>`;
+            });
+            itemsEl.innerHTML = html;
+        }
+
+        // ── Render Stacked Insight Cards ──
+
+        function unifiedRenderInsightCards(cards) {
+            const container = document.getElementById('unifiedInsights');
+            if (!container) return;
+
+            if (!cards || cards.length === 0) {
+                container.innerHTML = '<div class="unified-insight-card"><div class="unified-insight-type leverage">Coach</div><div class="unified-insight-text coaching-card-loading">Thinking about your day...</div></div>';
+                return;
+            }
+
+            const weeklySection = document.getElementById('weeklyReviewSection');
+            let html = '';
+            cards.forEach(card => {
+                if (card.type === 'weekly_review') {
+                    // Render weekly review separately
+                    if (weeklySection) {
+                        weeklySection.innerHTML = '<div class="weekly-review-label">WEEKLY REVIEW</div>'
+                            + '<div class="weekly-review-text">' + escapeHtml(card.insight || '') + '</div>';
+                        weeklySection.classList.remove('hidden');
+                    }
+                    return;
+                }
+                const label = card.label || card.type || 'Insight';
+                const typeClass = (card.type || '').toLowerCase();
+                // Map type to CSS class
+                let cssClass = 'leverage';
+                if (typeClass.includes('attention')) cssClass = 'attention-type';
+                else if (typeClass.includes('relationship')) cssClass = 'relationship';
+                else if (typeClass.includes('avoidance')) cssClass = 'avoidance';
+                else if (typeClass.includes('leverage')) cssClass = 'leverage';
+
+                html += `<div class="unified-insight-card">
+                    <div class="unified-insight-type ${cssClass}">${escapeHtml(label)}</div>
+                    <div class="unified-insight-text">${escapeHtml(card.insight || '')}</div>
+                </div>`;
+            });
+            container.innerHTML = html || '<div class="unified-insight-card"><div class="unified-insight-type leverage">Coach</div><div class="unified-insight-text">No insights yet today.</div></div>';
+        }
+
     </script>
 
     <!-- Footer -->

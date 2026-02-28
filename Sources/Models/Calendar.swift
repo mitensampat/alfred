@@ -57,6 +57,17 @@ struct DailySchedule: Codable {
     }
 }
 
+struct CreatedEvent: Codable {
+    let id: String
+    let title: String
+    let startTime: Date
+    let endTime: Date
+    let location: String?
+    let description: String?
+    let htmlLink: String       // Direct link to the event on Google Calendar
+    let shareableLink: String  // Template URL anyone can use to add to their calendar
+}
+
 struct MeetingBriefing: Codable {
     let event: CalendarEvent
     let attendeeBriefings: [AttendeeBriefing]

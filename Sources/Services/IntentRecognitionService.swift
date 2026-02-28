@@ -155,6 +155,17 @@ class IntentRecognitionService {
         - task_search_term: extract the MOST specific identifying keywords from the user's message (task title words, person name, topic). Use conversation context to resolve "that task", "it", "my top goal".
         - Multiple updates in one request are supported: "mark the RCA as high priority and due Monday" -> set both new_priority and new_due_date
 
+        CALENDAR EVENT CREATION RULES:
+        - "block 4PM tomorrow with Mona for 30 minutes at Home, topic is finance" -> action:"create", target:"calendar"
+        - "schedule a meeting with Nikhil at 2PM on Friday for 1 hour" -> action:"create", target:"calendar"
+        - "set up a call with Kunal tomorrow morning" -> action:"create", target:"calendar"
+        - event_title: auto-generate from attendees + topic (e.g. "Meeting with Mona — Finance")
+        - event_time: MUST be an ISO8601 datetime string (e.g. "2026-02-28T16:00:00+05:30"). Compute the ACTUAL date from relative terms like "tomorrow", "Friday", "next Monday". Use the user's timezone (Asia/Kolkata, +05:30).
+        - event_duration_minutes: integer, default 30 if not specified. "1 hour" = 60, "45 min" = 45
+        - event_location: extract if mentioned ("at Home", "at Office", "at Starbucks"), null if not specified
+        - event_attendees: list of person names mentioned (["Mona"], ["Nikhil", "Kunal"]), null if no one mentioned
+        - event_description: topic or agenda if mentioned, null otherwise
+
         Output the JSON object now. Nothing else.
         """
     }
