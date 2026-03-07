@@ -688,54 +688,73 @@ extension NotionService {
             return (0, 0, 0)
         }
 
-        let url = URL(string: "https://api.notion.com/v1/databases/\(databaseId)/query")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        // Filter for commitments only (Type = "Commitment")
-        let body: [String: Any] = [
-            "filter": [
-                "property": "Type",
-                "select": [
-                    "equals": "Commitment"
-                ]
-            ],
-            "page_size": 100
-        ]
-
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            return (0, 0, 0)
-        }
-
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let results = json["results"] as? [[String: Any]] else {
-            return (0, 0, 0)
-        }
-
         var openCount = 0
         var closedCount = 0
+        var totalCount = 0
+        var startCursor: String? = nil
+        var hasMore = true
 
-        for page in results {
-            if let properties = page["properties"] as? [String: Any],
-               let status = properties["Status"] as? [String: Any],
-               let statusObj = status["status"] as? [String: Any],
-               let statusName = statusObj["name"] as? String {
-                if statusName == "Done" {
-                    closedCount += 1
-                } else {
-                    openCount += 1
+        // Paginate through all commitment pages in Notion
+        while hasMore {
+            let url = URL(string: "https://api.notion.com/v1/databases/\(databaseId)/query")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+            // Filter for commitments only (Type = "Commitment")
+            var body: [String: Any] = [
+                "filter": [
+                    "property": "Type",
+                    "select": [
+                        "equals": "Commitment"
+                    ]
+                ],
+                "page_size": 100
+            ]
+
+            if let cursor = startCursor {
+                body["start_cursor"] = cursor
+            }
+
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                break
+            }
+
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let results = json["results"] as? [[String: Any]] else {
+                break
+            }
+
+            for page in results {
+                if let properties = page["properties"] as? [String: Any],
+                   let status = properties["Status"] as? [String: Any],
+                   let statusObj = status["status"] as? [String: Any],
+                   let statusName = statusObj["name"] as? String {
+                    if statusName == "Done" || statusName == "Cancelled" {
+                        closedCount += 1
+                    } else {
+                        openCount += 1
+                    }
                 }
             }
+
+            totalCount += results.count
+
+            // Check for more pages
+            hasMore = (json["has_more"] as? Bool) ?? false
+            startCursor = json["next_cursor"] as? String
+
+            // Safety cap: don't paginate endlessly
+            if totalCount >= 2000 { break }
         }
 
-        return (openCount, closedCount, results.count)
+        return (openCount, closedCount, totalCount)
     }
 
     // MARK: - Parsing

@@ -201,12 +201,17 @@ struct AIConfig: Codable {
     let anthropicApiKey: String
     let model: String
     let messageAnalysisModel: String?
+    let coachingModel: String?
     let maxThreadsToAnalyze: Int?
     let maxEmailThreadsToAnalyze: Int?
     let baseUrl: String?
 
     var effectiveMessageModel: String {
         messageAnalysisModel ?? "claude-haiku-4-5-20251001"
+    }
+
+    var effectiveCoachingModel: String {
+        coachingModel ?? model
     }
 
     var effectiveMaxThreads: Int {
@@ -225,6 +230,7 @@ struct AIConfig: Codable {
         case anthropicApiKey = "anthropic_api_key"
         case model
         case messageAnalysisModel = "message_analysis_model"
+        case coachingModel = "coaching_model"
         case maxThreadsToAnalyze = "max_threads_to_analyze"
         case maxEmailThreadsToAnalyze = "max_email_threads_to_analyze"
         case baseUrl = "base_url"

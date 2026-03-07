@@ -14,17 +14,35 @@ Task {
 RunLoop.main.run()
 
 struct AlfredApp {
-    static let version = "2.0.3"
+    static let version = "2.0.4"
     static var menuBarController: MenuBarController?  // Keep reference to prevent deallocation
 
     static func main() async {
         print("alfred v\(version) starting...")
 
-        // Load configuration (user's ~/.config/alfred/config.json takes priority)
-        guard let config = AppConfig.load() else {
-            print("Error: Failed to load configuration")
-            print("Please create ~/.config/alfred/config.json with your credentials")
-            print("Or copy Config/config.example.json to Config/config.json")
+        // Install LaunchAgent if not present (for DMG installs)
+        installLaunchAgentIfNeeded()
+
+        // Load configuration — or boot into setup mode if first run
+        var isSetupMode = false
+        let config: AppConfig
+
+        if let loaded = AppConfig.load() {
+            config = loaded
+        } else {
+            print("🚀 First run — creating minimal config and starting setup wizard...")
+            SetupStatusService.shared.ensureMinimalConfig()
+            guard let minimal = AppConfig.load() else {
+                print("Error: Could not create minimal config")
+                return
+            }
+            config = minimal
+            isSetupMode = true
+        }
+
+        // In setup mode: start HTTP server only, open browser to FTUE, skip everything else
+        if isSetupMode {
+            await runSetupMode(config)
             return
         }
 
@@ -2650,6 +2668,94 @@ struct AlfredApp {
         // Keep the async context alive for HTTP server operations
         // The HTTP server runs on its own threads and doesn't need MainActor
         try? await Task.sleep(nanoseconds: UInt64.max)
+    }
+
+    // MARK: - Setup Mode (FTUE)
+
+    /// Runs Alfred in setup-only mode: HTTP server + auto-open browser to FTUE wizard.
+    /// No orchestrator, no scheduler, no coaching — just the setup APIs.
+    static func runSetupMode(_ config: AppConfig) async {
+        print("")
+        print("🧙 Alfred First-Time Setup")
+        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        print("")
+
+        let port = config.api?.port ?? 8080
+        let passcode = config.api?.passcode ?? "setup"
+
+        // Start a minimal Alfred service (no orchestrator)
+        let alfredService = AlfredService()
+
+        do {
+            let server = HTTPServer(port: port, passcode: passcode, alfredService: alfredService)
+            try server.start()
+
+            print("🌐 Setup wizard running at:")
+            print("   http://localhost:\(port)/index-notion.html?passcode=\(passcode)")
+            print("")
+            print("Opening browser...")
+            print("")
+
+            // Auto-open browser to the FTUE wizard
+            let url = URL(string: "http://localhost:\(port)/index-notion.html?passcode=\(passcode)")!
+            NSWorkspace.shared.open(url)
+
+            // Keep alive
+            try await Task.sleep(nanoseconds: UInt64.max)
+        } catch {
+            print("❌ Failed to start setup server: \(error)")
+        }
+    }
+
+    /// Install LaunchAgent plist if it doesn't exist yet (for DMG installs).
+    /// Creates ~/Library/LaunchAgents/com.msfoundry.alfred.plist from a template.
+    static func installLaunchAgentIfNeeded() {
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        let plistPath = "\(homeDir)/Library/LaunchAgents/com.msfoundry.alfred.plist"
+
+        guard !FileManager.default.fileExists(atPath: plistPath) else {
+            return  // Already installed
+        }
+
+        let launchAgentsDir = "\(homeDir)/Library/LaunchAgents"
+        try? FileManager.default.createDirectory(atPath: launchAgentsDir, withIntermediateDirectories: true)
+
+        let plistContent = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>Label</key>
+            <string>com.msfoundry.alfred</string>
+            <key>ProgramArguments</key>
+            <array>
+                <string>/Applications/Alfred.app/Contents/MacOS/Alfred</string>
+            </array>
+            <key>RunAtLoad</key>
+            <true/>
+            <key>KeepAlive</key>
+            <true/>
+            <key>StandardOutPath</key>
+            <string>\(homeDir)/.alfred/alfred.log</string>
+            <key>StandardErrorPath</key>
+            <string>\(homeDir)/.alfred/alfred.log</string>
+            <key>WorkingDirectory</key>
+            <string>\(homeDir)</string>
+        </dict>
+        </plist>
+        """
+
+        do {
+            // Ensure ~/.alfred/ exists for log file
+            try FileManager.default.createDirectory(
+                atPath: "\(homeDir)/.alfred",
+                withIntermediateDirectories: true
+            )
+            try plistContent.write(toFile: plistPath, atomically: true, encoding: .utf8)
+            print("✅ LaunchAgent installed at \(plistPath)")
+        } catch {
+            print("⚠️ Could not install LaunchAgent: \(error)")
+        }
     }
 
     static func runInstall() {

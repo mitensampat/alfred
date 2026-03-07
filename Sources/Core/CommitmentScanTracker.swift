@@ -492,8 +492,8 @@ class CommitmentScanTracker {
             stmt = nil
         }
 
-        // Auto-closed
-        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM closure_detections WHERE auto_closed = 1", -1, &stmt, nil) == SQLITE_OK {
+        // Auto-closed (unique commitments, not duplicate detections)
+        if sqlite3_prepare_v2(db, "SELECT COUNT(DISTINCT commitment_hash) FROM closure_detections WHERE auto_closed = 1", -1, &stmt, nil) == SQLITE_OK {
             if sqlite3_step(stmt) == SQLITE_ROW {
                 stats.autoClosedCount = Int(sqlite3_column_int(stmt, 0))
             }
@@ -501,9 +501,9 @@ class CommitmentScanTracker {
             stmt = nil
         }
 
-        // Pending closures (need user confirmation)
+        // Pending closures (need user confirmation) — count unique commitments, not duplicate detections
         let pendingQuery = """
-        SELECT COUNT(*) FROM closure_detections cd
+        SELECT COUNT(DISTINCT cd.commitment_hash) FROM closure_detections cd
         JOIN commitment_extractions ce ON cd.commitment_hash = ce.commitment_hash
         WHERE cd.auto_closed = 0 AND cd.user_confirmed IS NULL AND ce.was_closed = 0
         """

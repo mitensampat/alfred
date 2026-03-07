@@ -27,6 +27,9 @@ class HTTPServer {
     // Reusable CoachingEngine (its internal 2h cache is only useful if the instance persists)
     private var coachingEngine: CoachingEngine?
 
+    // CadenceRunner for manual cadence execution via API
+    private var cadenceRunner: CadenceRunner?
+
     // Static date formatters (expensive to create, reuse across requests)
     private static let iso8601Formatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
@@ -59,10 +62,11 @@ class HTTPServer {
         let expiresAt: Date
     }
 
-    init(port: Int, passcode: String, alfredService: AlfredService) {
+    init(port: Int, passcode: String, alfredService: AlfredService, cadenceRunner: CadenceRunner? = nil) {
         self.port = port
         self.passcode = passcode
         self.alfredService = alfredService
+        self.cadenceRunner = cadenceRunner
         self.cache = QueryCacheService()
 
         // Setup sessions file path
@@ -284,6 +288,13 @@ class HTTPServer {
                 return
             }
 
+            // Allow Google OAuth flow without authentication (redirect from Google)
+            if request.path == "/auth/google" || request.path == "/auth/callback" {
+                let response = await handleGoogleOAuth(request)
+                try await client.send(response)
+                return
+            }
+
             // Allow FTUE setup endpoints without authentication (needed before setup is complete)
             if request.path.hasPrefix("/api/setup/") {
                 let response = await route(request)
@@ -425,6 +436,111 @@ class HTTPServer {
         return HTTPResponse(statusCode: 200, body: ["success": true])
     }
 
+    // MARK: - Google OAuth Flow
+
+    private func handleGoogleOAuth(_ request: HTTPRequest) async -> HTTPResponse {
+        switch request.path {
+        case "/auth/google":
+            return handleGoogleAuthRedirect(request)
+        case "/auth/callback":
+            return await handleGoogleAuthCallback(request)
+        default:
+            return HTTPResponse(statusCode: 404, body: ["error": "Not found"])
+        }
+    }
+
+    /// GET /auth/google — Redirects user to Google OAuth consent screen
+    private func handleGoogleAuthRedirect(_ request: HTTPRequest) -> HTTPResponse {
+        guard let config = AppConfig.load() else {
+            return HTTPResponse(statusCode: 500, headers: ["Content-Type": "text/html; charset=utf-8"],
+                htmlBody: "<html><body><h2>Error</h2><p>Configuration not loaded. Please complete the FTUE setup first.</p></body></html>")
+        }
+
+        guard let googleConfig = config.calendar.google.first,
+              !googleConfig.clientId.isEmpty else {
+            return HTTPResponse(statusCode: 400, headers: ["Content-Type": "text/html; charset=utf-8"],
+                htmlBody: """
+                <html><body style="font-family: system-ui; max-width: 500px; margin: 60px auto; text-align: center;">
+                <h2>Google Not Configured</h2>
+                <p>Please enter your Google client ID and secret in the setup wizard first.</p>
+                <button onclick="window.close()">Close</button>
+                </body></html>
+                """)
+        }
+
+        let calService = GoogleCalendarService(config: googleConfig, accountName: "primary")
+        let authURL = calService.getAuthorizationURL()
+
+        // 302 redirect to Google
+        return HTTPResponse(
+            statusCode: 302,
+            headers: [
+                "Location": authURL.absoluteString,
+                "Content-Type": "text/html; charset=utf-8"
+            ],
+            htmlBody: "<html><body>Redirecting to Google...</body></html>"
+        )
+    }
+
+    /// GET /auth/callback?code=X — Handles Google OAuth callback, exchanges code for tokens
+    private func handleGoogleAuthCallback(_ request: HTTPRequest) async -> HTTPResponse {
+        guard let code = request.queryParams["code"], !code.isEmpty else {
+            let error = request.queryParams["error"] ?? "No authorization code received"
+            return HTTPResponse(statusCode: 400, headers: ["Content-Type": "text/html; charset=utf-8"],
+                htmlBody: """
+                <html><body style="font-family: system-ui; max-width: 500px; margin: 60px auto; text-align: center;">
+                <h2>Authorization Failed</h2>
+                <p>\(error)</p>
+                <button onclick="window.close()">Close</button>
+                </body></html>
+                """)
+        }
+
+        guard let config = AppConfig.load(),
+              let googleConfig = config.calendar.google.first else {
+            return HTTPResponse(statusCode: 500, headers: ["Content-Type": "text/html; charset=utf-8"],
+                htmlBody: "<html><body><h2>Error</h2><p>Configuration not loaded.</p></body></html>")
+        }
+
+        let calService = GoogleCalendarService(config: googleConfig, accountName: "primary")
+
+        do {
+            try await calService.exchangeCodeForToken(code: code)
+
+            // Mark Google OAuth as complete in setup status
+            SetupStatusService.shared.markStepComplete("googleOauth")
+
+            return HTTPResponse(statusCode: 200, headers: ["Content-Type": "text/html; charset=utf-8"],
+                htmlBody: """
+                <html>
+                <body style="font-family: system-ui; max-width: 500px; margin: 60px auto; text-align: center;">
+                <h2 style="color: #16a34a;">✓ Google Calendar Connected</h2>
+                <p>Authorization successful. You can close this window and return to the setup wizard.</p>
+                <script>
+                    // Signal the parent window that OAuth is complete
+                    if (window.opener) {
+                        window.opener.postMessage({ type: 'google-oauth-complete' }, '*');
+                    }
+                    setTimeout(() => window.close(), 3000);
+                </script>
+                </body>
+                </html>
+                """)
+        } catch {
+            return HTTPResponse(statusCode: 500, headers: ["Content-Type": "text/html; charset=utf-8"],
+                htmlBody: """
+                <html>
+                <body style="font-family: system-ui; max-width: 500px; margin: 60px auto; text-align: center;">
+                <h2 style="color: #dc2626;">Token Exchange Failed</h2>
+                <p>\(error.localizedDescription)</p>
+                <p>Please try again from the setup wizard.</p>
+                <button onclick="window.close()">Close</button>
+                </body>
+                </html>
+                """)
+        }
+    }
+
     private func handleValidateSession(_ request: HTTPRequest) -> HTTPResponse {
         // Check Authorization header
         guard let authHeader = request.headers["authorization"] else {
@@ -484,6 +600,15 @@ class HTTPServer {
 
         case ("PUT", "/api/coaching/tenets"):
             return handlePutCoachingTenets(request)
+
+        case ("GET", "/api/coaching/tenets/sections"):
+            return handleGetTenetSections()
+
+        case ("POST", "/api/coaching/tenets/sections/toggle"):
+            return handleToggleTenetSection(request)
+
+        case ("POST", "/api/coaching/debug/refresh"):
+            return await handleRefreshSingleSkill(request)
 
         // Focus Pin (user's #1 goal)
         case ("POST", "/api/focus-pin"):
@@ -739,7 +864,26 @@ class HTTPServer {
         case ("POST", "/api/commitment-tracker/reject-closure"):
             return handleRejectClosure(request)
 
-        // MARK: Cadence Endpoints
+        // MARK: Cadence CRUD Endpoints (new)
+        case ("GET", "/api/cadences"):
+            return handleGetCadences()
+
+        case ("GET", "/api/cadences/catalog"):
+            return handleGetToolCatalog()
+
+        case ("POST", "/api/cadences"):
+            return handleCreateCadence(request)
+
+        case ("PUT", "/api/cadences"):
+            return handleUpdateCadence(request)
+
+        case ("DELETE", "/api/cadences"):
+            return handleDeleteCadence(request)
+
+        case ("POST", "/api/cadences/run"):
+            return handleRunCadence(request)
+
+        // MARK: Legacy Cadence Endpoints (backward compat)
         case ("GET", "/api/cadence/status"):
             return handleCadenceStatus()
 
@@ -754,6 +898,35 @@ class HTTPServer {
 
         case ("POST", "/api/cadence/config"):
             return handleUpdateCadenceConfig(request)
+
+        // MARK: Custom Coaching Skills
+        case ("GET", "/api/skills"):
+            return handleGetSkills()
+
+        case ("GET", "/api/skills/detail"):
+            return handleGetSkillDetail(request)
+
+        case ("POST", "/api/skills"):
+            return handleCreateSkill(request)
+
+        case ("PUT", "/api/skills"):
+            return handleUpdateSkill(request)
+
+        case ("DELETE", "/api/skills"):
+            return handleDeleteSkill(request)
+
+        case ("POST", "/api/skills/toggle"):
+            return handleToggleSkill(request)
+
+        case ("POST", "/api/skills/rename"):
+            return handleRenameSkill(request)
+
+        // MARK: Skill Library
+        case ("GET", "/api/skills/library"):
+            return handleGetSkillLibrary()
+
+        case ("POST", "/api/skills/library/install"):
+            return handleInstallLibrarySkill(request)
 
         // MARK: Past Conversations Endpoints
         case ("GET", "/api/conversations"):
@@ -4011,11 +4184,29 @@ The Commitment Check feature requires a properly configured Notion database.
         dateFormatter.dateFormat = "EEEE, MMMM d, yyyy 'at' h:mm a"
         let now = dateFormatter.string(from: Date())
 
-        // Gather all context for coaching prompt
+        // Ensure coaching engine exists for cached card reads (lazy init — doesn't generate cards)
+        if coachingEngine == nil {
+            coachingEngine = CoachingEngine(config: config, alfredService: alfredService)
+        }
+
+        // Gather base context for coaching prompt
         let coachingContext = CoachingMemoryService.shared.getCoachingContext()
         let agentMemoryRules = gatherAgentMemoryRules()
         let liveContext = await gatherLiveContext(config: config)
         let relationshipData = gatherRelationshipData(config: config)
+
+        // Always-on enrichment: coaching insights + follow-ups
+        let coachingInsights = gatherAllCoachingInsights()
+        let unifiedFollowups = gatherUnifiedFollowups()
+
+        // On-demand: detailed commitments (only when topic/person is relevant)
+        let knownContacts = getKnownContactNames()
+        let (needsCommitments, mentionedPerson) = ChatContextRouter.detectCommitmentContext(
+            query: query, knownContacts: knownContacts
+        )
+        let detailedCommitments = needsCommitments
+            ? gatherDetailedCommitments(mentionedPerson: mentionedPerson)
+            : ""
 
         let systemPrompt = CoachingPromptBuilder.build(
             userName: userName,
@@ -4023,7 +4214,10 @@ The Commitment Check feature requires a properly configured Notion database.
             coachingContext: coachingContext,
             agentMemoryRules: agentMemoryRules,
             liveContext: liveContext,
-            relationshipData: relationshipData
+            relationshipData: relationshipData,
+            coachingInsights: coachingInsights,
+            detailedCommitments: detailedCommitments,
+            unifiedFollowups: unifiedFollowups
         )
 
         // Use shared conversation context (persists across requests for same session)
@@ -4084,14 +4278,24 @@ The Commitment Check feature requires a properly configured Notion database.
                     } else {
                         // Stream a coaching-flavored response through Claude
                         // The tool card already shows the raw data — Claude adds the coaching insight
-                        let coachingOverlayPrompt = """
-                        The user asked: "\(query)"
+                        // Route coaching posture based on intent (reflection vs prioritization vs etc.)
+                        let posture = IntentCoachingRouter.posture(
+                            for: intentResponse.intent.action,
+                            target: intentResponse.intent.target
+                        )
+                        let relevantSkillIds = IntentCoachingRouter.relevantSkillIds(for: posture)
+                        let relevantTenets = SkillLoader.shared.getEnabledSkills()
+                            .filter { relevantSkillIds.contains($0.id) }
+                            .map { "[\($0.effectiveName)]: \($0.tenets)" }
+                            .joined(separator: "\n")
 
-                        I just showed them a \(toolName) card with this data:
-                        \(dataSummary)
-
-                        Now respond as Coach Alfred — 2-4 sentences max. Add a coaching observation, a priority call, or a gentle challenge based on what the data shows. Reference specific items (names, times, tasks). Don't repeat the raw data — the card already shows it. If the data suggests something worth flagging (back-to-back meetings, overdue commitments, no focus time), say it directly.
-                        """
+                        let coachingOverlayPrompt = IntentCoachingRouter.buildCoachingOverlay(
+                            posture: posture,
+                            query: query,
+                            toolName: toolName,
+                            dataSummary: dataSummary,
+                            relevantTenets: relevantTenets
+                        )
 
                         let claudeService = ClaudeAIService(config: config.ai)
 
@@ -4104,6 +4308,7 @@ The Commitment Check feature requires a properly configured Notion database.
                                 messages: coachingMessages,
                                 system: systemPrompt,
                                 maxTokens: 512,
+                                useModel: config.ai.effectiveCoachingModel,
                                 onChunk: { text in
                                     fullCoachingResponse += text
                                     client.sendSSEJSON(event: "chunk", json: ["text": text])
@@ -4158,19 +4363,58 @@ The Commitment Check feature requires a properly configured Notion database.
         }
 
         // General chat: stream from Claude WITH full conversation history
+        // Carry forward coaching posture from recent intent-matched turns (10-min window)
+        let recentTurns = sharedContext.getRecentContext(for: sessionId, limit: 3)
+        let activePosture: CoachingPosture
+        if let lastIntentTurn = recentTurns.last(where: { $0.intent != nil }),
+           let action = lastIntentTurn.intent?.action,
+           let target = lastIntentTurn.intent?.target,
+           Date().timeIntervalSince(lastIntentTurn.timestamp) < 600 {
+            activePosture = IntentCoachingRouter.posture(for: action, target: target)
+        } else {
+            activePosture = .general
+        }
+
+        // Rebuild system prompt with posture awareness if we have an active posture
+        let chatSystemPrompt: String
+        if activePosture != .general && activePosture != .operational {
+            chatSystemPrompt = CoachingPromptBuilder.build(
+                userName: userName,
+                dateTime: now,
+                coachingContext: coachingContext,
+                agentMemoryRules: agentMemoryRules,
+                liveContext: liveContext,
+                relationshipData: relationshipData,
+                coachingInsights: coachingInsights,
+                detailedCommitments: detailedCommitments,
+                unifiedFollowups: unifiedFollowups,
+                activePosture: activePosture
+            )
+        } else {
+            chatSystemPrompt = systemPrompt
+        }
+
         let claudeService = ClaudeAIService(config: config.ai)
         do {
             // Build messages array from conversation history + current query
             var messages = sharedContext.getMessagesArray(for: sessionId, limit: 20)
-            messages.append(["role": "user", "content": query])
+
+            // Prepend posture hint if continuing a themed conversation
+            if activePosture != .general && activePosture != .operational {
+                let hint = IntentCoachingRouter.followUpHint(for: activePosture)
+                messages.append(["role": "user", "content": hint + "\n\n" + query])
+            } else {
+                messages.append(["role": "user", "content": query])
+            }
 
             // Collect the full response for recording back into context
             var fullResponse = ""
 
             try await claudeService.streamChat(
                 messages: messages,
-                system: systemPrompt,
+                system: chatSystemPrompt,
                 maxTokens: 2048,
+                useModel: config.ai.effectiveCoachingModel,
                 onChunk: { text in
                     fullResponse += text
                     client.sendSSEJSON(event: "chunk", json: ["text": text])
@@ -4238,28 +4482,60 @@ The Commitment Check feature requires a properly configured Notion database.
             return HTTPResponse(statusCode: 500, body: ["error": "Failed to generate cards: \(error.localizedDescription)"])
         }
 
-        // Build debug response with per-card context
+        // Build debug response with per-card context and skill run results
+        let isoFormatter = ISO8601DateFormatter()
+        let relativeFormatter = RelativeDateTimeFormatter()
+        relativeFormatter.unitsStyle = .full
+
         let debugCards: [[String: Any]] = cards.map { card in
             var entry: [String: Any] = [
                 "type": card.type,
                 "label": card.label,
                 "insight": card.insight
             ]
-            // Attach the raw context data that was gathered for this card type
-            if let ctx = engine.lastDebugContext[card.type] {
+            // Attach context and status from skill run results (fixed: was "skill_\(id)" key, now matches card.type)
+            if let result = engine.lastSkillResults[card.type] {
+                entry["context"] = result.context
+                entry["status"] = result.status
+                entry["generatedAt"] = isoFormatter.string(from: result.generatedAt)
+                entry["generatedAgo"] = relativeFormatter.localizedString(for: result.generatedAt, relativeTo: Date())
+                if let error = result.error {
+                    entry["error"] = error
+                }
+            } else if let ctx = engine.lastDebugContext[card.type] {
+                // Fallback to old debug context (backward compat)
                 entry["context"] = ctx
+                entry["status"] = "success"
             }
             return entry
         }
 
-        var response: [String: Any] = ["cards": debugCards]
+        // Also include skills that ran but produced no card (no_context, error)
+        let cardTypes = Set(cards.map { $0.type })
+        let failedSkills: [[String: Any]] = engine.lastSkillResults.compactMap { (skillId, result) in
+            guard !cardTypes.contains(skillId) else { return nil }
+            var entry: [String: Any] = [
+                "type": skillId,
+                "status": result.status,
+                "generatedAt": isoFormatter.string(from: result.generatedAt),
+                "generatedAgo": relativeFormatter.localizedString(for: result.generatedAt, relativeTo: Date())
+            ]
+            // Try to get label from skill definition
+            if let skill = SkillLoader.shared.getSkill(id: skillId) {
+                entry["label"] = "\(skill.icon) \(skill.effectiveName)"
+            }
+            if let error = result.error {
+                entry["error"] = error
+            }
+            return entry
+        }
+
+        var response: [String: Any] = ["cards": debugCards + failedSkills]
 
         // Cache age
         if let generatedAt = engine.lastGeneratedAt {
-            response["generatedAt"] = ISO8601DateFormatter().string(from: generatedAt)
-            let formatter = RelativeDateTimeFormatter()
-            formatter.unitsStyle = .full
-            response["cacheAge"] = formatter.localizedString(for: generatedAt, relativeTo: Date())
+            response["generatedAt"] = isoFormatter.string(from: generatedAt)
+            response["cacheAge"] = relativeFormatter.localizedString(for: generatedAt, relativeTo: Date())
         }
 
         return HTTPResponse(statusCode: 200, body: response)
@@ -4310,6 +4586,338 @@ The Commitment Check feature requires a properly configured Notion database.
         }
     }
 
+    // MARK: - Tenets Sections Handlers
+
+    /// Returns parsed tenet sections with toggle states
+    private func handleGetTenetSections() -> HTTPResponse {
+        let sections = CoachingPromptBuilder.getTenetSectionsWithState()
+        let sectionDicts: [[String: Any]] = sections.map { section in
+            [
+                "id": section.id,
+                "title": section.title,
+                "content": section.content,
+                "enabled": section.enabled
+            ]
+        }
+
+        var response: [String: Any] = ["sections": sectionDicts]
+
+        // Include Notion URL if configured
+        if let config = AppConfig.load(),
+           let pageId = config.notion.tenetsPageId, !pageId.isEmpty {
+            response["notionUrl"] = "https://www.notion.so/\(pageId.replacingOccurrences(of: "-", with: ""))"
+        }
+
+        return HTTPResponse(statusCode: 200, body: response)
+    }
+
+    /// Toggle a tenet section on/off
+    private func handleToggleTenetSection(_ request: HTTPRequest) -> HTTPResponse {
+        guard let body = request.body,
+              let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let sectionId = json["id"] as? String else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' in request body"])
+        }
+
+        let enabled: Bool
+        if let explicitEnabled = json["enabled"] as? Bool {
+            enabled = explicitEnabled
+        } else {
+            // Toggle: read current state and invert
+            let currentState = CoachingPromptBuilder.loadTenetsToggleState()
+            enabled = !(currentState[sectionId] ?? true)
+        }
+
+        // Save updated state
+        var state = CoachingPromptBuilder.loadTenetsToggleState()
+        state[sectionId] = enabled
+        CoachingPromptBuilder.saveTenetsToggleState(state)
+
+        // Bust caches so coaching prompt reflects the change
+        CoachingPromptBuilder.invalidateNotionTenetsCache()
+        coachingEngine = nil
+        invalidateMemoryCache("coaching_cards")
+        cache.deleteByEndpoint("/api/coaching/cards")
+
+        return HTTPResponse(statusCode: 200, body: ["id": sectionId, "enabled": enabled])
+    }
+
+    // MARK: - Single Skill Refresh Handler
+
+    /// Refresh a single skill's coaching card via live LLM call
+    private func handleRefreshSingleSkill(_ request: HTTPRequest) async -> HTTPResponse {
+        guard let skillId = request.queryParams["skill"], !skillId.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'skill' query parameter"])
+        }
+
+        guard let config = AppConfig.load() else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Configuration not loaded"])
+        }
+
+        // Ensure coaching engine exists
+        if coachingEngine == nil {
+            coachingEngine = CoachingEngine(config: config, alfredService: alfredService)
+        }
+
+        guard let engine = coachingEngine else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Coaching engine unavailable"])
+        }
+
+        guard let result = await engine.refreshSingleSkill(id: skillId) else {
+            return HTTPResponse(statusCode: 404, body: ["error": "Skill not found: \(skillId)"])
+        }
+
+        var response: [String: Any] = [
+            "skillId": skillId,
+            "status": result.status,
+            "generatedAt": ISO8601DateFormatter().string(from: result.generatedAt)
+        ]
+
+        if let card = result.card {
+            response["card"] = [
+                "type": card.type,
+                "label": card.label,
+                "insight": card.insight
+            ]
+        }
+
+        if !result.context.isEmpty {
+            response["context"] = result.context
+        }
+
+        if let error = result.error {
+            response["error"] = error
+        }
+
+        return HTTPResponse(statusCode: 200, body: response)
+    }
+
+    // MARK: - Skill Library Handlers
+
+    /// Returns the library catalog with install status
+    private func handleGetSkillLibrary() -> HTTPResponse {
+        let templates = SkillLibrary.catalog
+        let existingSkills = SkillLoader.shared.loadSkills()
+        let existingIds = Set(existingSkills.map { $0.id })
+
+        let templateDicts: [[String: Any]] = templates.map { template in
+            [
+                "id": template.id,
+                "name": template.name,
+                "description": template.description,
+                "icon": template.icon,
+                "author": template.author,
+                "dataSources": template.dataSources,
+                "frequency": template.frequency,
+                "installed": existingIds.contains(template.id)
+            ]
+        }
+
+        return HTTPResponse(statusCode: 200, body: ["templates": templateDicts, "count": templates.count])
+    }
+
+    /// Install a library skill template as a user skill
+    private func handleInstallLibrarySkill(_ request: HTTPRequest) -> HTTPResponse {
+        guard let templateId = request.queryParams["id"], !templateId.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' query parameter"])
+        }
+
+        // Check if already installed
+        if SkillLoader.shared.getSkill(id: templateId) != nil {
+            return HTTPResponse(statusCode: 409, body: ["error": "Skill '\(templateId)' is already installed"])
+        }
+
+        // Find template
+        guard let template = SkillLibrary.catalog.first(where: { $0.id == templateId }) else {
+            return HTTPResponse(statusCode: 404, body: ["error": "Template not found: \(templateId)"])
+        }
+
+        // Write to user skills directory
+        let skillsDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".alfred/skills/user")
+        try? FileManager.default.createDirectory(at: skillsDir, withIntermediateDirectories: true)
+
+        let skillPath = skillsDir.appendingPathComponent("\(templateId).md").path
+        do {
+            try template.markdownContent.write(toFile: skillPath, atomically: true, encoding: .utf8)
+
+            // Bust coaching caches (SkillLoader reads from disk each time, no explicit reload needed)
+            coachingEngine = nil
+            invalidateMemoryCache("coaching_cards")
+            cache.deleteByEndpoint("/api/coaching/cards")
+
+            return HTTPResponse(statusCode: 201, body: ["installed": true, "id": templateId, "name": template.name])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to install: \(error.localizedDescription)"])
+        }
+    }
+
+    // MARK: - Custom Skills Handlers
+
+    private func handleGetSkills() -> HTTPResponse {
+        let skills = SkillLoader.shared.loadSkills()
+        let skillDicts = skills.map { $0.toDictionary() }
+        return HTTPResponse(statusCode: 200, body: [
+            "skills": skillDicts,
+            "count": skills.count,
+            "enabledCount": skills.filter { $0.enabled }.count
+        ])
+    }
+
+    private func handleToggleSkill(_ request: HTTPRequest) -> HTTPResponse {
+        guard let skillId = request.queryParams["id"], !skillId.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' query parameter"])
+        }
+
+        let newState = SkillLoader.shared.toggleSkill(id: skillId)
+
+        // Bust coaching cards cache so next refresh picks up the change
+        coachingEngine = nil
+        invalidateMemoryCache("coaching_cards")
+        cache.deleteByEndpoint("/api/coaching/cards")
+
+        return HTTPResponse(statusCode: 200, body: [
+            "id": skillId,
+            "enabled": newState,
+            "message": newState ? "Skill enabled" : "Skill disabled"
+        ])
+    }
+
+    private func handleRenameSkill(_ request: HTTPRequest) -> HTTPResponse {
+        guard let skillId = request.queryParams["id"], !skillId.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' query parameter"])
+        }
+
+        let body = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        let displayName = body["displayName"] as? String
+
+        // Verify skill exists
+        guard SkillLoader.shared.getSkill(id: skillId) != nil else {
+            return HTTPResponse(statusCode: 404, body: ["error": "Skill '\(skillId)' not found"])
+        }
+
+        // Set the display name (nil clears the override)
+        SkillLoader.shared.setDisplayName(id: skillId, displayName: displayName?.isEmpty == true ? nil : displayName)
+
+        // Bust coaching cards cache
+        coachingEngine = nil
+        invalidateMemoryCache("coaching_cards")
+        cache.deleteByEndpoint("/api/coaching/cards")
+
+        return HTTPResponse(statusCode: 200, body: [
+            "id": skillId,
+            "displayName": displayName ?? "",
+            "message": displayName != nil ? "Skill renamed to '\(displayName!)'" : "Display name reset to default"
+        ])
+    }
+
+    private func handleGetSkillDetail(_ request: HTTPRequest) -> HTTPResponse {
+        guard let skillId = request.queryParams["id"], !skillId.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' query parameter"])
+        }
+
+        guard let skill = SkillLoader.shared.getSkill(id: skillId) else {
+            return HTTPResponse(statusCode: 404, body: ["error": "Skill not found"])
+        }
+
+        // Return full detail including tenets and prompt (for editor)
+        var dict = skill.toDictionary()
+        dict["tenets"] = skill.tenets
+        dict["prompt"] = skill.prompt
+        return HTTPResponse(statusCode: 200, body: dict)
+    }
+
+    private func handleCreateSkill(_ request: HTTPRequest) -> HTTPResponse {
+        let body = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+
+        guard let name = body["name"] as? String, !name.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'name' field"])
+        }
+        guard let prompt = body["prompt"] as? String, !prompt.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'prompt' field"])
+        }
+
+        let description = body["description"] as? String ?? ""
+        let icon = body["icon"] as? String ?? "🔧"
+        let dataSources = body["dataSources"] as? [String] ?? ["tasks"]
+        let frequency = body["frequency"] as? String ?? "daily"
+        let tenets = body["tenets"] as? String ?? ""
+
+        guard let skill = SkillLoader.shared.createSkill(
+            name: name, description: description, icon: icon,
+            dataSources: dataSources, frequency: frequency,
+            tenets: tenets, prompt: prompt
+        ) else {
+            return HTTPResponse(statusCode: 409, body: ["error": "Skill already exists or invalid name"])
+        }
+
+        // Bust coaching cache
+        coachingEngine = nil
+        invalidateMemoryCache("coaching_cards")
+        cache.deleteByEndpoint("/api/coaching/cards")
+
+        return HTTPResponse(statusCode: 201, body: skill.toDictionary())
+    }
+
+    private func handleUpdateSkill(_ request: HTTPRequest) -> HTTPResponse {
+        guard let skillId = request.queryParams["id"], !skillId.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' query parameter"])
+        }
+
+        // Check if skill exists and is editable
+        guard let existing = SkillLoader.shared.getSkill(id: skillId) else {
+            return HTTPResponse(statusCode: 404, body: ["error": "Skill not found"])
+        }
+        guard existing.isEditable else {
+            return HTTPResponse(statusCode: 403, body: ["error": "Installed skills cannot be edited — they are managed by the skill author"])
+        }
+
+        let body = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+
+        guard let updated = SkillLoader.shared.updateSkill(
+            id: skillId,
+            name: body["name"] as? String,
+            description: body["description"] as? String,
+            icon: body["icon"] as? String,
+            dataSources: body["dataSources"] as? [String],
+            frequency: body["frequency"] as? String,
+            tenets: body["tenets"] as? String,
+            prompt: body["prompt"] as? String
+        ) else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to update skill"])
+        }
+
+        coachingEngine = nil
+        invalidateMemoryCache("coaching_cards")
+        cache.deleteByEndpoint("/api/coaching/cards")
+
+        return HTTPResponse(statusCode: 200, body: updated.toDictionary())
+    }
+
+    private func handleDeleteSkill(_ request: HTTPRequest) -> HTTPResponse {
+        guard let skillId = request.queryParams["id"], !skillId.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' query parameter"])
+        }
+
+        // Check if skill exists and is editable
+        guard let existing = SkillLoader.shared.getSkill(id: skillId) else {
+            return HTTPResponse(statusCode: 404, body: ["error": "Skill not found"])
+        }
+        guard existing.isEditable else {
+            return HTTPResponse(statusCode: 403, body: ["error": "Installed skills cannot be deleted — they are managed by the skill author"])
+        }
+
+        guard SkillLoader.shared.deleteSkill(id: skillId) else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to delete skill"])
+        }
+
+        coachingEngine = nil
+        invalidateMemoryCache("coaching_cards")
+        cache.deleteByEndpoint("/api/coaching/cards")
+
+        return HTTPResponse(statusCode: 200, body: ["id": skillId, "deleted": true])
+    }
+
     /// Returns a contextual welcome opener for the Chat tab
     private var openerCache: (text: String, timestamp: Date)? = nil
 
@@ -4328,6 +4936,14 @@ The Commitment Check feature requires a properly configured Notion database.
         let recentSessions = CoachingMemoryService.shared.getRecentSessions(limit: 2)
         let liveContext = await gatherLiveContext(config: config)
 
+        // Enrich opener with full coaching context (no user query to route against, include everything)
+        if coachingEngine == nil {
+            coachingEngine = CoachingEngine(config: config, alfredService: alfredService)
+        }
+        let allInsights = gatherAllCoachingInsights()
+        let commitments = gatherDetailedCommitments()
+        let unifiedFollowups = gatherUnifiedFollowups()
+
         var contextForOpener = ""
         if !followups.isEmpty {
             contextForOpener += "Open follow-ups from past coaching:\n" + followups.map { "- \($0)" }.joined(separator: "\n") + "\n"
@@ -4336,6 +4952,15 @@ The Commitment Check feature requires a properly configured Notion database.
             contextForOpener += "Recent coaching sessions:\n" + recentSessions.joined(separator: "\n") + "\n"
         }
         contextForOpener += "Today's context:\n\(liveContext)"
+        if !allInsights.isEmpty {
+            contextForOpener += "\nCoaching observations from today:\n\(allInsights)\n"
+        }
+        if !commitments.isEmpty {
+            contextForOpener += "\nCommitment status:\n\(commitments)\n"
+        }
+        if !unifiedFollowups.isEmpty {
+            contextForOpener += "\nOpen follow-ups & reminders:\n\(unifiedFollowups)\n"
+        }
 
         let prompt = """
         Generate a brief, sharp coaching observation about this person's day. This is the first thing they see when they open Alfred — make it count. 1-2 sentences max.
@@ -4610,6 +5235,139 @@ The Commitment Check feature requires a properly configured Notion database.
         }
 
         return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Chat Context Enrichment (Highest-Context Chat)
+
+    /// Gather ALL cached coaching card insights with reasoning data.
+    /// Always-on: included in every chat message so Alfred is universally informed.
+    /// Zero-cost: reads from CoachingEngine's 2h cache, no LLM calls.
+    private func gatherAllCoachingInsights() -> String {
+        guard let engine = coachingEngine,
+              let cardsWithContext = engine.getCachedCardInsightsWithContext(),
+              !cardsWithContext.isEmpty else { return "" }
+
+        var lines = ["Today's coaching observations:"]
+        for item in cardsWithContext {
+            // Insight text (truncate at 200 chars to keep token budget manageable)
+            let insight = item.card.insight.count > 200
+                ? String(item.card.insight.prefix(200)) + "..."
+                : item.card.insight
+            lines.append("  [\(item.card.label)] \(insight)")
+
+            // Reasoning: key context data points that drove this insight (max 3 lines)
+            let reasoning = item.contextData
+                .filter { !$0.hasPrefix("===") }  // skip section headers like "=== Tasks ==="
+                .filter { !$0.isEmpty }
+                .prefix(3)
+                .map { "    → \($0.trimmingCharacters(in: .whitespaces))" }
+            if !reasoning.isEmpty {
+                lines.append(contentsOf: reasoning)
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Gather detailed open commitments grouped by type (i_owe vs they_owe).
+    /// On-demand: only called when ChatContextRouter detects commitment/person topic.
+    /// If mentionedPerson is set, filters to that person's commitments only.
+    private func gatherDetailedCommitments(mentionedPerson: String? = nil) -> String {
+        let allOpen = CommitmentScanTracker.shared.getAllOpenCommitments()
+        guard !allOpen.isEmpty else { return "No open commitments." }
+
+        // If a person is mentioned, filter to their commitments
+        let filtered: [(hash: String, title: String, type: String, counterparty: String)]
+        if let person = mentionedPerson {
+            let personLower = person.lowercased()
+            filtered = allOpen.filter { $0.counterparty.lowercased().contains(personLower) }
+        } else {
+            filtered = allOpen
+        }
+
+        var lines: [String] = []
+        let header = mentionedPerson != nil
+            ? "Open commitments (\(allOpen.count) total, showing \(filtered.count) for \(mentionedPerson!)):"
+            : "Open commitments (\(allOpen.count) total):"
+        lines.append(header)
+
+        let iOwe = filtered.filter { $0.type == "i_owe" }
+        let theyOwe = filtered.filter { $0.type == "they_owe" }
+
+        if !iOwe.isEmpty {
+            lines.append("  I owe (\(iOwe.count)):")
+            for c in iOwe.prefix(5) {
+                let who = c.counterparty.isEmpty ? "" : " → \(c.counterparty)"
+                lines.append("    - \(c.title)\(who)")
+            }
+            if iOwe.count > 5 { lines.append("    ... and \(iOwe.count - 5) more") }
+        }
+
+        if !theyOwe.isEmpty {
+            lines.append("  They owe me (\(theyOwe.count)):")
+            for c in theyOwe.prefix(5) {
+                let who = c.counterparty.isEmpty ? "" : " ← \(c.counterparty)"
+                lines.append("    - \(c.title)\(who)")
+            }
+            if theyOwe.count > 5 { lines.append("    ... and \(theyOwe.count - 5) more") }
+        }
+
+        // Pending closure confirmations
+        let pending = CommitmentScanTracker.shared.getPendingClosureConfirmations()
+        if !pending.isEmpty {
+            lines.append("  Pending confirmations: \(pending.count) may be closed (awaiting review)")
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    /// Gather unified follow-ups from coaching memory AND scheduled reminders.
+    /// Always-on: follow-ups are always actionable regardless of topic.
+    private func gatherUnifiedFollowups() -> String {
+        var allFollowups: [String] = []
+
+        // Source 1: Coaching memory follow-ups (from coaching_context.md)
+        let coachingFollowups = CoachingMemoryService.shared.getOpenFollowups()
+        for f in coachingFollowups {
+            allFollowups.append(f)
+        }
+
+        // Source 2: Scheduled follow-up reminders (from ~/.alfred/followups.json)
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        let followupsPath = homeDir.appendingPathComponent(".alfred/followups.json")
+        if FileManager.default.fileExists(atPath: followupsPath.path) {
+            if let data = try? Data(contentsOf: followupsPath),
+               let followups = try? JSONDecoder().decode([FollowupReminder].self, from: data) {
+                let threeDaysAgo = Calendar.current.date(byAdding: .day, value: -3, to: Date())!
+                let relevant = followups.filter { $0.scheduledFor > threeDaysAgo }
+                let dateFmt = DateFormatter()
+                dateFmt.dateFormat = "MMM d"
+                for f in relevant.prefix(5) {
+                    let dateStr = dateFmt.string(from: f.scheduledFor)
+                    let item = "[scheduled \(dateStr)] \(f.followupAction)"
+                    // Avoid duplicates with coaching memory follow-ups
+                    if !allFollowups.contains(where: { $0.lowercased().contains(f.followupAction.lowercased().prefix(30)) }) {
+                        allFollowups.append(item)
+                    }
+                }
+            }
+        }
+
+        guard !allFollowups.isEmpty else { return "" }
+
+        // Cap at 8 items
+        let items = Array(allFollowups.prefix(8))
+        var lines = ["Open follow-ups (\(allFollowups.count) total):"]
+        lines.append(contentsOf: items.map { "  - \($0)" })
+        if allFollowups.count > 8 {
+            lines.append("  ... and \(allFollowups.count - 8) more")
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    /// Get known contact names from counterparty stats for person detection.
+    private func getKnownContactNames() -> [String] {
+        return TaskLifecycleTracker.shared.getStatsByCounterparty().map { $0.name }
     }
 
     /// Check if a chat exchange was coaching-worthy and update memory if so
@@ -5807,6 +6565,7 @@ class ClientSocket {
     private func statusText(_ code: Int) -> String {
         switch code {
         case 200: return "OK"
+        case 302: return "Found"
         case 400: return "Bad Request"
         case 401: return "Unauthorized"
         case 404: return "Not Found"
@@ -6695,53 +7454,232 @@ extension HTTPServer {
         return json
     }
 
-    // MARK: - Cadence Handlers
+    // MARK: - JSON Response Helper
 
-    private func handleCadenceStatus() -> HTTPResponse {
-        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
-        let statePath = "\(homeDir)/.alfred/scheduler_state.json"
+    private func jsonResponse(_ body: [String: Any], status: Int = 200) -> HTTPResponse {
+        return HTTPResponse(statusCode: status, body: body)
+    }
 
-        // Read scheduler state
-        var stateInfo: [String: Any] = [:]
-        if let data = try? Data(contentsOf: URL(fileURLWithPath: statePath)),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            stateInfo = json
+    // MARK: - Cadence CRUD Handlers
+
+    private func handleGetCadences() -> HTTPResponse {
+        let cadences = CadenceService.shared.getAll()
+        let cadenceList = cadences.map { $0.toDictionary() }
+        return jsonResponse(["cadences": cadenceList, "count": cadences.count])
+    }
+
+    private func handleGetToolCatalog() -> HTTPResponse {
+        let catalog = CadenceActionType.catalog.map { $0.toDictionary() }
+        return jsonResponse(["tools": catalog, "count": catalog.count])
+    }
+
+    private func handleCreateCadence(_ request: HTTPRequest) -> HTTPResponse {
+        guard let body = request.body,
+              let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+            return jsonResponse(["error": "Invalid JSON body"], status: 400)
         }
 
-        // Read cadence config defaults
-        let config = AppConfig.load()
-        let cadence = config?.cadence
+        guard let name = json["name"] as? String, !name.isEmpty else {
+            return jsonResponse(["error": "Missing required field: name"], status: 400)
+        }
+        guard let actionTypeStr = json["action_type"] as? String,
+              let actionType = CadenceActionType(rawValue: actionTypeStr) else {
+            return jsonResponse(["error": "Missing or invalid action_type"], status: 400)
+        }
+        guard let scheduleDict = json["schedule"] as? [String: Any],
+              let schedule = parseSchedule(scheduleDict) else {
+            return jsonResponse(["error": "Missing or invalid schedule"], status: 400)
+        }
 
-        // Prefer precise timestamps (written by HTTP handlers) over date-only keys (written by scheduler)
-        let status: [String: Any] = [
-            "todoScan": [
-                "enabled": cadence?.todoScanEnabled ?? true,
-                "intervalHours": cadence?.todoScanIntervalHours ?? 3,
-                "lastRun": stateInfo["lastTodoScanTime"] ?? NSNull()
-            ],
-            "commitmentScan": [
-                "enabled": cadence?.commitmentScanEnabled ?? true,
-                "time": cadence?.commitmentScanTime ?? "17:00",
-                "lastRun": stateInfo["lastCommitmentScanTimestamp"] ?? stateInfo["lastCommitmentScanDate"] ?? NSNull()
-            ],
-            "patternLearn": [
-                "enabled": cadence?.patternLearnEnabled ?? true,
-                "day": cadence?.patternLearnDay ?? "thursday",
-                "time": cadence?.patternLearnTime ?? "18:00",
-                "lastRun": stateInfo["lastPatternLearnTimestamp"] ?? stateInfo["lastPatternLearnDate"] ?? NSNull()
-            ],
-            "groupAnalysis": [
-                "enabled": cadence?.groupAnalysisEnabled ?? true,
-                "day": cadence?.groupAnalysisDay ?? "monday",
-                "time": cadence?.groupAnalysisTime ?? "09:00",
-                "lastRun": stateInfo["lastGroupAnalysisTimestamp"] ?? stateInfo["lastGroupAnalysisDate"] ?? NSNull()
-            ],
-            "autoSummary": [
-                "groups": cadence?.autoSummaryGroups ?? [],
-                "time": cadence?.autoSummaryTime ?? "18:00",
-                "lastRun": stateInfo["lastAutoSummaryTimestamp"] ?? stateInfo["lastAutoSummaryDate"] ?? NSNull()
+        let icon = json["icon"] as? String ?? "⚙️"
+        let enabled = json["enabled"] as? Bool ?? true
+        let notifyOnSuccess = json["notify_on_success"] as? Bool ?? true
+        let emailOnSuccess = json["email_on_success"] as? Bool ?? false
+        let catchUpWindowHours = json["catch_up_window_hours"] as? Int ?? 3
+        let params = parseJSONParams(json["params"] as? [String: Any] ?? [:])
+
+        let cadence = Cadence(
+            id: "user-\(UUID().uuidString.prefix(8).lowercased())",
+            name: name,
+            icon: icon,
+            actionType: actionType,
+            params: params,
+            schedule: schedule,
+            enabled: enabled,
+            isBuiltIn: false,
+            catchUpWindowHours: catchUpWindowHours,
+            notifyOnSuccess: notifyOnSuccess,
+            emailOnSuccess: emailOnSuccess
+        )
+
+        do {
+            try CadenceService.shared.create(cadence)
+            return jsonResponse(["success": true, "cadence": cadence.toDictionary()], status: 201)
+        } catch {
+            return jsonResponse(["error": error.localizedDescription], status: 400)
+        }
+    }
+
+    private func handleUpdateCadence(_ request: HTTPRequest) -> HTTPResponse {
+        guard let body = request.body,
+              let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
+            return jsonResponse(["error": "Invalid JSON body"], status: 400)
+        }
+
+        guard let id = json["id"] as? String else {
+            return jsonResponse(["error": "Missing required field: id"], status: 400)
+        }
+        guard var cadence = CadenceService.shared.get(id: id) else {
+            return jsonResponse(["error": "Cadence not found: \(id)"], status: 404)
+        }
+
+        // Apply updates
+        if let name = json["name"] as? String { cadence.name = name }
+        if let icon = json["icon"] as? String { cadence.icon = icon }
+        if let enabled = json["enabled"] as? Bool { cadence.enabled = enabled }
+        if let notifyOnSuccess = json["notify_on_success"] as? Bool { cadence.notifyOnSuccess = notifyOnSuccess }
+        if let emailOnSuccess = json["email_on_success"] as? Bool { cadence.emailOnSuccess = emailOnSuccess }
+        if let catchUpWindowHours = json["catch_up_window_hours"] as? Int { cadence.catchUpWindowHours = catchUpWindowHours }
+        if let scheduleDict = json["schedule"] as? [String: Any], let schedule = parseSchedule(scheduleDict) {
+            cadence.schedule = schedule
+        }
+        if let paramsDict = json["params"] as? [String: Any] {
+            cadence.params = parseJSONParams(paramsDict)
+        }
+        if let actionTypeStr = json["action_type"] as? String,
+           let actionType = CadenceActionType(rawValue: actionTypeStr) {
+            cadence.actionType = actionType
+        }
+
+        do {
+            try CadenceService.shared.update(cadence)
+            return jsonResponse(["success": true, "cadence": cadence.toDictionary()])
+        } catch {
+            return jsonResponse(["error": error.localizedDescription], status: 400)
+        }
+    }
+
+    private func handleDeleteCadence(_ request: HTTPRequest) -> HTTPResponse {
+        guard let id = request.queryParams["id"] else {
+            return jsonResponse(["error": "Missing query parameter: id"], status: 400)
+        }
+        do {
+            try CadenceService.shared.delete(id: id)
+            return jsonResponse(["success": true, "deleted": id])
+        } catch let error as CadenceError where error.localizedDescription.contains("built-in") {
+            return jsonResponse(["error": error.localizedDescription], status: 403)
+        } catch {
+            return jsonResponse(["error": error.localizedDescription], status: 404)
+        }
+    }
+
+    private func handleRunCadence(_ request: HTTPRequest) -> HTTPResponse {
+        guard let body = request.body,
+              let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let id = json["id"] as? String else {
+            return jsonResponse(["error": "Missing id in request body"], status: 400)
+        }
+        guard let cadence = CadenceService.shared.get(id: id) else {
+            return jsonResponse(["error": "Cadence not found: \(id)"], status: 404)
+        }
+        guard let runner = cadenceRunner else {
+            return jsonResponse(["error": "CadenceRunner not available"], status: 503)
+        }
+
+        // Run async — return immediately with accepted status, fire in background
+        Task {
+            do {
+                let summary = try await runner.run(cadence)
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy-MM-dd"
+                let todayDate = dateFormatter.string(from: Date())
+                let timestamp = ISO8601DateFormatter().string(from: Date())
+                CadenceService.shared.markRunSuccess(id: cadence.id, date: todayDate, timestamp: timestamp)
+                print("✅ [API] Manual cadence run \(cadence.name): \(summary)")
+            } catch {
+                CadenceService.shared.markRunFailure(id: cadence.id, cooldownMinutes: 5)
+                print("❌ [API] Manual cadence run \(cadence.name) failed: \(error)")
+            }
+        }
+
+        return jsonResponse(["success": true, "message": "Cadence '\(cadence.name)' started", "id": id], status: 202)
+    }
+
+    // MARK: Cadence Parsing Helpers
+
+    private func parseSchedule(_ dict: [String: Any]) -> CadenceSchedule? {
+        guard let type = dict["type"] as? String else { return nil }
+        switch type {
+        case "daily":
+            guard let time = dict["time"] as? String else { return nil }
+            return .daily(time: time)
+        case "weekly":
+            guard let day = dict["day"] as? String, let time = dict["time"] as? String else { return nil }
+            return .weekly(day: day, time: time)
+        case "interval":
+            guard let hours = dict["hours"] as? Int else { return nil }
+            let activeStart = dict["active_start"] as? Int ?? 0
+            let activeEnd = dict["active_end"] as? Int ?? 23
+            return .interval(hours: hours, activeStart: activeStart, activeEnd: activeEnd)
+        default:
+            return nil
+        }
+    }
+
+    private func parseJSONParams(_ dict: [String: Any]) -> [String: JSONValue] {
+        var result: [String: JSONValue] = [:]
+        for (key, value) in dict {
+            if let s = value as? String {
+                result[key] = .string(s)
+            } else if let i = value as? Int {
+                result[key] = .int(i)
+            } else if let b = value as? Bool {
+                result[key] = .bool(b)
+            } else if let arr = value as? [String] {
+                result[key] = .stringArray(arr)
+            } else {
+                result[key] = .null
+            }
+        }
+        return result
+    }
+
+    // MARK: - Legacy Cadence Handlers (backward compat)
+
+    private func handleCadenceStatus() -> HTTPResponse {
+        // Remap to CadenceService for backward compatibility with old UI
+        let cadences = CadenceService.shared.getAll()
+        var status: [String: Any] = [:]
+
+        for c in cadences {
+            let key: String
+            switch c.actionType {
+            case .todoScan: key = "todoScan"
+            case .commitmentScan: key = "commitmentScan"
+            case .patternLearning: key = "patternLearn"
+            case .groupAnalysis: key = "groupAnalysis"
+            case .autoSummary: key = "autoSummary"
+            default: continue
+            }
+
+            var entry: [String: Any] = [
+                "enabled": c.enabled,
+                "lastRun": c.lastRunTimestamp ?? c.lastRunDate ?? NSNull()
             ]
-        ]
+            switch c.schedule {
+            case .daily(let time):
+                entry["time"] = time
+            case .weekly(let day, let time):
+                entry["day"] = day
+                entry["time"] = time
+            case .interval(let hours, _, _):
+                entry["intervalHours"] = hours
+            }
+            if c.actionType == .autoSummary {
+                entry["groups"] = c.params["groups"]?.stringArrayValue ?? []
+            }
+            status[key] = entry
+        }
 
         return HTTPResponse(statusCode: 200, body: status)
     }
@@ -6844,99 +7782,94 @@ extension HTTPServer {
             )
         }
 
-        // Read current config
-        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
-        let configPath = "\(homeDir)/.config/alfred/config.json"
-
-        guard let configData = try? Data(contentsOf: URL(fileURLWithPath: configPath)),
-              var configJson = try? JSONSerialization.jsonObject(with: configData) as? [String: Any] else {
-            return HTTPResponse(statusCode: 500, body: ["error": "Could not read config.json"])
+        // Update the auto-summary cadence's groups param via CadenceService
+        guard var cadence = CadenceService.shared.get(id: "builtin-auto-summary") else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Auto-summary cadence not found"])
         }
 
-        // Get or create cadence section
-        var cadenceJson = configJson["cadence"] as? [String: Any] ?? [:]
-        var existingGroups = cadenceJson["auto_summary_groups"] as? [String] ?? []
-
-        // Add new groups (avoid duplicates)
+        var existingGroups = cadence.params["groups"]?.stringArrayValue ?? []
         for group in groups {
             if !existingGroups.contains(where: { $0.lowercased() == group.lowercased() }) {
                 existingGroups.append(group)
             }
         }
 
-        cadenceJson["auto_summary_groups"] = existingGroups
-        configJson["cadence"] = cadenceJson
+        cadence.params["groups"] = .stringArray(existingGroups)
+        cadence.enabled = !existingGroups.isEmpty
 
-        // Write back
         do {
-            let updatedData = try JSONSerialization.data(withJSONObject: configJson, options: [.prettyPrinted, .sortedKeys])
-            try updatedData.write(to: URL(fileURLWithPath: configPath))
+            try CadenceService.shared.update(cadence)
             return HTTPResponse(statusCode: 200, body: [
                 "success": true,
                 "autoSummaryGroups": existingGroups,
                 "message": "Added \(groups.count) group(s) to auto-summary list"
             ])
         } catch {
-            return HTTPResponse(statusCode: 500, body: ["error": "Failed to update config: \(error.localizedDescription)"])
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to update: \(error.localizedDescription)"])
         }
     }
 
     private func handleUpdateCadenceConfig(_ request: HTTPRequest) -> HTTPResponse {
+        // Legacy endpoint: remap to CadenceService update
         guard let bodyData = request.body,
               let updates = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
               !updates.isEmpty else {
-            return HTTPResponse(
-                statusCode: 400,
-                body: ["error": "Missing JSON body with cadence config updates"]
-            )
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing JSON body. Use PUT /api/cadences for the new API."])
         }
 
-        // Read current config
-        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
-        let configPath = "\(homeDir)/.config/alfred/config.json"
-
-        guard let configData = try? Data(contentsOf: URL(fileURLWithPath: configPath)),
-              var configJson = try? JSONSerialization.jsonObject(with: configData) as? [String: Any] else {
-            return HTTPResponse(statusCode: 500, body: ["error": "Could not read config.json"])
-        }
-
-        var cadenceJson = configJson["cadence"] as? [String: Any] ?? [:]
-
-        // Apply updates (keys like "todo_scan_interval_hours", "commitment_scan_time", "pattern_learn_day", etc.)
-        let allowedKeys: Set<String> = [
-            "todo_scan_enabled", "todo_scan_interval_hours",
-            "commitment_scan_enabled", "commitment_scan_time",
-            "pattern_learn_enabled", "pattern_learn_day", "pattern_learn_time",
-            "group_analysis_enabled", "group_analysis_day", "group_analysis_time",
-            "auto_summary_time"
+        // Map old config keys to cadence IDs and fields
+        var appliedCount = 0
+        let keyMappings: [(configKey: String, cadenceId: String, field: String)] = [
+            ("todo_scan_enabled", "builtin-todo-scan", "enabled"),
+            ("commitment_scan_enabled", "builtin-commitment-scan", "enabled"),
+            ("commitment_scan_time", "builtin-commitment-scan", "time"),
+            ("pattern_learn_enabled", "builtin-pattern-learning", "enabled"),
+            ("pattern_learn_day", "builtin-pattern-learning", "day"),
+            ("pattern_learn_time", "builtin-pattern-learning", "time"),
+            ("group_analysis_enabled", "builtin-group-analysis", "enabled"),
+            ("group_analysis_day", "builtin-group-analysis", "day"),
+            ("group_analysis_time", "builtin-group-analysis", "time"),
+            ("auto_summary_time", "builtin-auto-summary", "time"),
         ]
 
-        var appliedCount = 0
-        for (key, value) in updates {
-            if allowedKeys.contains(key) {
-                cadenceJson[key] = value
-                appliedCount += 1
+        for mapping in keyMappings {
+            guard let value = updates[mapping.configKey] else { continue }
+            guard var cadence = CadenceService.shared.get(id: mapping.cadenceId) else { continue }
+
+            switch mapping.field {
+            case "enabled":
+                if let enabled = value as? Bool { cadence.enabled = enabled; appliedCount += 1 }
+            case "time":
+                if let time = value as? String {
+                    switch cadence.schedule {
+                    case .daily: cadence.schedule = .daily(time: time)
+                    case .weekly(let day, _): cadence.schedule = .weekly(day: day, time: time)
+                    default: break
+                    }
+                    appliedCount += 1
+                }
+            case "day":
+                if let day = value as? String {
+                    if case .weekly(_, let time) = cadence.schedule {
+                        cadence.schedule = .weekly(day: day, time: time)
+                        appliedCount += 1
+                    }
+                }
+            default: break
             }
+
+            try? CadenceService.shared.update(cadence)
         }
 
         if appliedCount == 0 {
-            return HTTPResponse(statusCode: 400, body: ["error": "No valid cadence config keys found. Allowed: \(allowedKeys.sorted().joined(separator: ", "))"])
+            return HTTPResponse(statusCode: 400, body: ["error": "No valid cadence config keys found. Use PUT /api/cadences for the new API."])
         }
 
-        configJson["cadence"] = cadenceJson
-
-        // Write back
-        do {
-            let updatedData = try JSONSerialization.data(withJSONObject: configJson, options: [.prettyPrinted, .sortedKeys])
-            try updatedData.write(to: URL(fileURLWithPath: configPath))
-            return HTTPResponse(statusCode: 200, body: [
-                "success": true,
-                "updated": appliedCount,
-                "message": "Updated \(appliedCount) cadence setting(s)"
-            ])
-        } catch {
-            return HTTPResponse(statusCode: 500, body: ["error": "Failed to update config: \(error.localizedDescription)"])
-        }
+        return HTTPResponse(statusCode: 200, body: [
+            "success": true,
+            "updated": appliedCount,
+            "message": "Updated \(appliedCount) cadence setting(s) via CadenceService"
+        ])
     }
 
     // MARK: - Past Conversations Handlers

@@ -9,6 +9,113 @@ struct CoachingPromptBuilder {
     private static var notionTenetsCacheTimestamp: Date?
     private static let notionTenetsCacheTTL: TimeInterval = 1800  // 30 minutes
 
+    // MARK: - Tenets Toggle State
+
+    /// Represents a toggleable section of coaching tenets
+    struct TenetSection {
+        let id: String       // e.g. "campbell-rules"
+        let title: String    // e.g. "Campbell Rules"
+        let content: String  // bullet points text
+        var enabled: Bool
+    }
+
+    /// Path to tenets toggle state file
+    private static var tenetsToggleStatePath: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".alfred/tenets_toggle_state.json").path
+    }
+
+    /// Parse tenets markdown into sections by ## headings
+    static func parseTenetSections(_ markdown: String) -> [(id: String, title: String, content: String)] {
+        var sections: [(id: String, title: String, content: String)] = []
+        var currentTitle: String?
+        var currentLines: [String] = []
+
+        for line in markdown.components(separatedBy: "\n") {
+            if line.hasPrefix("## ") {
+                // Save previous section
+                if let title = currentTitle {
+                    let id = title.lowercased().replacingOccurrences(of: " ", with: "-")
+                    sections.append((id: id, title: title, content: currentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)))
+                }
+                currentTitle = String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+                currentLines = []
+            } else if currentTitle != nil {
+                currentLines.append(line)
+            }
+            // Lines before the first ## heading are skipped (intro text)
+        }
+
+        // Save last section
+        if let title = currentTitle {
+            let id = title.lowercased().replacingOccurrences(of: " ", with: "-")
+            sections.append((id: id, title: title, content: currentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)))
+        }
+
+        return sections
+    }
+
+    /// Load tenets toggle states from disk. Missing sections default to enabled.
+    static func loadTenetsToggleState() -> [String: Bool] {
+        guard let data = FileManager.default.contents(atPath: tenetsToggleStatePath),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return [:]
+        }
+        var result: [String: Bool] = [:]
+        for (key, value) in json {
+            if let dict = value as? [String: Any], let enabled = dict["enabled"] as? Bool {
+                result[key] = enabled
+            } else if let enabled = value as? Bool {
+                result[key] = enabled
+            }
+        }
+        return result
+    }
+
+    /// Save tenets toggle states to disk
+    static func saveTenetsToggleState(_ state: [String: Bool]) {
+        var dict: [String: [String: Bool]] = [:]
+        for (key, enabled) in state {
+            dict[key] = ["enabled": enabled]
+        }
+        if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]) {
+            FileManager.default.createFile(atPath: tenetsToggleStatePath, contents: data)
+        }
+    }
+
+    /// Get parsed sections with toggle states applied
+    static func getTenetSectionsWithState() -> [TenetSection] {
+        // Load raw tenets from existing cascade (Notion → local file → defaults)
+        let rawMarkdown = loadRawTenets()
+        let parsed = parseTenetSections(rawMarkdown)
+        let toggleState = loadTenetsToggleState()
+
+        return parsed.map { section in
+            let enabled = toggleState[section.id] ?? true  // default enabled
+            return TenetSection(id: section.id, title: section.title, content: section.content, enabled: enabled)
+        }
+    }
+
+    /// Apply section toggles to filter tenets content for the coaching prompt.
+    /// Called by loadCoachingTenets() after loading raw markdown.
+    private static func applyTenetsToggles(_ markdown: String) -> String {
+        let sections = parseTenetSections(markdown)
+        let toggleState = loadTenetsToggleState()
+
+        // Filter to enabled sections only
+        let enabledSections = sections.filter { toggleState[$0.id] ?? true }
+
+        // Safety: if all sections disabled, keep Alfred Rules as minimum
+        if enabledSections.isEmpty {
+            if let alfredSection = sections.first(where: { $0.id == "alfred-rules" }) {
+                return "## \(alfredSection.title)\n\(alfredSection.content)"
+            }
+            return markdown  // fallback: return everything
+        }
+
+        return enabledSections.map { "## \($0.title)\n\($0.content)" }.joined(separator: "\n\n")
+    }
+
     /// Build the full system prompt for Coach Alfred
     static func build(
         userName: String,
@@ -16,7 +123,11 @@ struct CoachingPromptBuilder {
         coachingContext: String,
         agentMemoryRules: String,
         liveContext: String,
-        relationshipData: String
+        relationshipData: String,
+        coachingInsights: String = "",       // Always-on: all coaching card insights + reasoning
+        detailedCommitments: String = "",    // On-demand: detailed commitment ledger (topic-routed)
+        unifiedFollowups: String = "",       // Always-on: merged follow-ups from all sources
+        activePosture: CoachingPosture? = nil // Intent-driven: weights coaching observations by posture
     ) -> String {
         var prompt = ""
 
@@ -35,6 +146,13 @@ struct CoachingPromptBuilder {
         ## YOUR VOICE
 
         Short. Direct. Warm underneath, sharp on the surface. You recommend ONE thing, never a list. You name specific tasks, people, and dates. You challenge assumptions — "Are you sure that's your highest leverage right now?" is your favorite question. Default to 3-4 sentences. Go longer only when the user asks to go deep, requests a roast, or opens up emotionally — then up to 6-8 sentences max. Never ramble. End with a question or a clear next step. Occasionally funny — dry wit, self-aware CEO jokes, gentle roasts grounded in real data. Never forced humor. No emojis. Bold sparingly for emphasis.
+
+        ## YOUR CAPABILITIES
+        You can analyze message threads, give briefings, check calendar, scan commitments, extract todos, and update tasks.
+        If the user asks about messages, conversations, or threads with a specific person or group, you CAN help — suggest they try phrasing like "summarize my thread with [name]" or "how's my [group name] thread on WhatsApp".
+        You can analyze their WhatsApp and iMessage history, and when thread data is fetched it appears in your coaching overlay.
+        Only reference message content, quotes, and statistics that appear in the data you received. If you need more detail than what's available, tell the user and suggest a more specific question.
+        Never fabricate message content, timestamps, or quotes.
 
         """
 
@@ -74,6 +192,43 @@ struct CoachingPromptBuilder {
             """
         }
 
+        // COACHING INSIGHTS — always-on, all cached coaching card observations + reasoning
+        if !coachingInsights.isEmpty {
+            prompt += """
+
+            ## YOUR COACHING OBSERVATIONS
+            \(coachingInsights)
+
+            These are your OWN pre-computed coaching observations from today's data. Each includes the reasoning (→ lines) so you can reference specifics. Use them as your internal compass: weave them into your coaching naturally, don't read them back verbatim. If the user challenges your advice, you have the receipts.
+            \(activePosture.flatMap { IntentCoachingRouter.observationsHint(for: $0) } ?? "")
+
+            """
+        }
+
+        // COMMITMENT LEDGER — on-demand, injected when user mentions commitments or a person
+        if !detailedCommitments.isEmpty {
+            prompt += """
+
+            ## COMMITMENT LEDGER
+            \(detailedCommitments)
+
+            \(userName)'s relationship debt. "I owe" = their responsibility to deliver. "They owe me" = follow-up opportunities. Reference specific names and items when relevant.
+
+            """
+        }
+
+        // UNIFIED FOLLOW-UPS — always-on, from coaching memory + scheduled reminders
+        if !unifiedFollowups.isEmpty {
+            prompt += """
+
+            ## OPEN FOLLOW-UPS
+            \(unifiedFollowups)
+
+            Threads from past coaching sessions AND scheduled reminders. Proactively check on these — especially early in conversations. If a follow-up is overdue, name it.
+
+            """
+        }
+
         // RELATIONSHIP DATA (~200 tokens)
         if !relationshipData.isEmpty {
             prompt += """
@@ -96,8 +251,15 @@ struct CoachingPromptBuilder {
         return prompt
     }
 
-    /// Load coaching tenets: Notion page (cached 30 min) → local file → hardcoded defaults
+    /// Load coaching tenets with toggle filtering applied.
+    /// Cascade: Notion page (cached 30 min) → local file → hardcoded defaults → toggle filter
     private static func loadCoachingTenets() -> String {
+        let raw = loadRawTenets()
+        return applyTenetsToggles(raw)
+    }
+
+    /// Load raw tenets markdown without toggle filtering (used for editing and parsing)
+    static func loadRawTenets() -> String {
         // 1. Check Notion cache
         if let cached = cachedNotionTenets, let ts = notionTenetsCacheTimestamp,
            Date().timeIntervalSince(ts) < notionTenetsCacheTTL {
@@ -307,5 +469,44 @@ struct CoachingPromptBuilder {
         }
 
         return result
+    }
+}
+
+// MARK: - Chat Context Router
+
+/// Lightweight router that detects when commitment detail should be injected into the chat prompt.
+/// Uses keyword matching + known contact name detection. No LLM call — runs in <1ms.
+struct ChatContextRouter {
+
+    /// Detect if the user's message warrants detailed commitment injection.
+    /// Returns: (needsCommitments: whether to inject the full commitment ledger,
+    ///           mentionedPerson: specific person to filter commitments for, or nil for all)
+    static func detectCommitmentContext(
+        query: String,
+        knownContacts: [String]
+    ) -> (needsCommitments: Bool, mentionedPerson: String?) {
+        let lower = query.lowercased()
+
+        // Person name detection — match against known counterparty names
+        var mentionedPerson: String? = nil
+        for contact in knownContacts {
+            let contactLower = contact.lowercased()
+            // Match whole-ish names (at least 3 chars to avoid false positives on short words)
+            if contactLower.count >= 3 && lower.contains(contactLower) {
+                mentionedPerson = contact
+                break
+            }
+        }
+
+        // Commitment topic keywords
+        let commitmentKeywords = [
+            "commitment", "owe", "promised", "follow up", "follow-up",
+            "accountability", "waiting on", "deliverable", "deadline",
+            "relationship", "working with", "1:1", "one-on-one"
+        ]
+        let hasCommitmentTopic = commitmentKeywords.contains { lower.contains($0) }
+
+        let needsCommitments = mentionedPerson != nil || hasCommitmentTopic
+        return (needsCommitments, mentionedPerson)
     }
 }

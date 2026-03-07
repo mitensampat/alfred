@@ -127,8 +127,30 @@ Alfred's commitment tracker is self-improving. See `docs/internal/COMMITMENT_LIF
 
 ## Git State Notes
 
-- Latest release: `v2.0.3` (tag pushed to GitHub with release)
-- Version in code: `2.0.3` (in `main.swift` line 17 — single source of truth)
+- Latest release: `v2.0.4` (tag pushed to GitHub with release)
+- Version in code: `2.0.4` (in `main.swift` line 17 — single source of truth)
+
+## Post-Deploy Verification Checklist
+
+**CRITICAL**: Never say a change is "done" or "fixed" until ALL steps are completed and output shown.
+
+After every Golden Path deploy:
+
+1. **Health check** — `curl -s 'http://127.0.0.1:8080/api/health?passcode=REDACTED_PASSCODE'` → confirm `"status":"ok"`
+2. **Test the specific change** — curl the exact endpoint or trigger the exact user flow that was modified. Not a generic check — the *actual behavior* that changed.
+3. **Show raw output** — paste the curl response, log output, or screenshot. No paraphrasing. Let the evidence speak.
+4. **Only then say "done"** — if the output doesn't match expectations, the fix isn't done. Investigate and iterate.
+
+For UI/frontend changes, also:
+- Load the page and visually verify (screenshot or browser tool)
+- Don't assume HTML hot-reload worked — confirm by checking the rendered output
+
+For prompt/LLM behavior changes:
+- Trigger the actual user flow (e.g. send a chat message, run a scan)
+- Check logs for the LLM's raw response to confirm the behavior changed
+- Prompt changes are non-deterministic — a single test may not catch issues, note this caveat
+
+**Never declare victory based on "the code looks right". Always verify the running system.**
 
 ## Debugging Tips
 

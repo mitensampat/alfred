@@ -1,7 +1,9 @@
 import Foundation
 
-/// Generates AI coaching cards inspired by Bill Campbell and Matt Mochary methodologies.
-/// Four card types: Leverage (highest-impact action), Relationship (people signals), Avoidance (procrastination patterns), Attention (where focus is leaking).
+/// Generates AI coaching cards from a unified skill pipeline.
+/// All coaching cards (installed methodologies + user-created) flow through the same architecture.
+/// Installed skills: Bill Campbell Method (Leverage, Relationship) + Matt Mochary Method (Avoidance, Attention, Weekly Review).
+/// User skills: custom coaching cards created by the user in ~/.alfred/skills/user/.
 class CoachingEngine {
     private let claudeService: ClaudeAIService
     private let alfredService: AlfredService
@@ -15,11 +17,36 @@ class CoachingEngine {
     var lastDebugContext: [String: [String]] = [:]
     var lastGeneratedAt: Date?
 
+    // Per-skill run results for QA/Preview (status, context, timestamp per skill)
+    var lastSkillResults: [String: SkillRunResult] = [:]
+
     struct CoachingCard: Codable {
         let type: String        // "leverage", "relationship", "avoidance", "attention"
         let label: String       // "Leverage", "Relationship", "Avoidance", "Attention"
         let insight: String     // The coaching text
         let context: String?    // Optional supporting detail
+    }
+
+    struct SkillRunResult {
+        let card: CoachingCard?
+        let status: String       // "success" | "error" | "no_context" | "fallback"
+        let context: [String]    // raw context data lines
+        let error: String?
+        let generatedAt: Date
+    }
+
+    /// Return cached coaching cards paired with the context data that generated each one.
+    /// Zero-cost cache read — no LLM calls, no API calls.
+    /// Returns nil if no cards have been generated yet or the cache has expired.
+    func getCachedCardInsightsWithContext() -> [(card: CoachingCard, contextData: [String])]? {
+        guard let cached = cachedCards, let ts = cacheTimestamp,
+              Date().timeIntervalSince(ts) < cacheTTL else {
+            return nil
+        }
+        return cached.map { card in
+            let context = lastDebugContext[card.type] ?? []
+            return (card: card, contextData: context)
+        }
     }
 
     init(config: AppConfig, alfredService: AlfredService) {
@@ -34,26 +61,55 @@ class CoachingEngine {
             return cached
         }
 
-        // Generate all four core cards concurrently
-        async let leverageCard = generateLeverageCard()
-        async let relationshipCard = generateRelationshipCard()
-        async let avoidanceCard = generateAvoidanceCard()
-        async let attentionCard = generateAttentionCard()
-
-        var cards = [
-            try await leverageCard,
-            try await relationshipCard,
-            try await avoidanceCard,
-            try await attentionCard
-        ].compactMap { $0 }
-
-        // On Friday, Saturday, Sunday — add the Weekly Review card
         let weekday = Calendar.current.component(.weekday, from: Date())
         let isWeekendOrFriday = weekday == 1 || weekday == 6 || weekday == 7  // Sun=1, Fri=6, Sat=7
+
+        // All coaching cards now come from the skill pipeline
+        let allSkills = SkillLoader.shared.getEnabledSkills()
+
+        // Separate installed vs user skills
+        let installedSkills = allSkills.filter { $0.origin == .installed }
+        let userSkills = allSkills.filter { $0.origin == .user }
+
+        // Filter by frequency: daily always runs, weekly only on Fri/Sat/Sun
+        let installedToRun = installedSkills.filter { skill in
+            skill.frequency == "daily" || (skill.frequency == "weekly" && isWeekendOrFriday)
+        }
+        let userDailySkills = userSkills.filter { $0.frequency == "daily" }
+        let userWeeklySkills = userSkills.filter { $0.frequency == "weekly" }
+
+        // Installed skills: ALL enabled run (curated by methodology authors, no cap)
+        // User skills: capped at 5 per day
+        var userSkillsToRun = Array(userDailySkills.prefix(5))
         if isWeekendOrFriday {
-            if let reviewCard = try? await generateWeeklyReviewCard() {
-                cards.append(reviewCard)
+            let remaining = 5 - userSkillsToRun.count
+            if remaining > 0 {
+                userSkillsToRun.append(contentsOf: userWeeklySkills.prefix(remaining))
             }
+        }
+
+        let skillsToRun = installedToRun + userSkillsToRun
+
+        // Run all skills concurrently
+        var cards: [CoachingCard] = []
+        await withTaskGroup(of: (Int, CoachingCard?).self) { group in
+            for (index, skill) in skillsToRun.enumerated() {
+                group.addTask {
+                    let card = await self.generateSkillCard(skill)
+                    return (index, card)
+                }
+            }
+
+            var indexedCards: [(Int, CoachingCard)] = []
+            for await (index, card) in group {
+                if let card = card {
+                    indexedCards.append((index, card))
+                }
+            }
+
+            // Sort by original index to maintain deterministic order:
+            // installed first (Leverage → Relationship → Avoidance → Attention → Weekly Review), then user skills
+            cards = indexedCards.sorted { $0.0 < $1.0 }.map { $0.1 }
         }
 
         cachedCards = cards
@@ -62,566 +118,460 @@ class CoachingEngine {
         return cards
     }
 
-    // MARK: - Leverage Card
+    // MARK: - Skill Card Generation
 
-    /// What is the single highest-leverage action right now?
-    private func generateLeverageCard() async throws -> CoachingCard? {
-        var contextParts: [String] = []
+    /// Generate a coaching card from a skill definition (installed or user-authored)
+    private func generateSkillCard(_ skill: SkillDefinition) async -> CoachingCard? {
+        let context = await gatherContextForSkill(dataSources: skill.dataSources)
 
-        // Get active tasks
-        if let orchestrator = alfredService.orchestrator {
-            do {
-                let tasks = try await orchestrator.notionServicePublic.queryActiveTasks()
-                let overdue = tasks.filter { $0.isOverdue }
-                let critical = tasks.filter { $0.priority == .critical || $0.priority == .high }
-
-                contextParts.append("Active tasks: \(tasks.count)")
-                contextParts.append("Overdue: \(overdue.count)")
-                contextParts.append("Critical/High priority: \(critical.count)")
-
-                // List top tasks
-                let topTasks = tasks.sorted { a, b in
-                    let priorityWeight: [TaskItem.Priority: Int] = [.critical: 0, .high: 1, .medium: 2, .low: 3]
-                    let aPri = a.priority.map { priorityWeight[$0] ?? 4 } ?? 4
-                    let bPri = b.priority.map { priorityWeight[$0] ?? 4 } ?? 4
-                    if aPri != bPri { return aPri < bPri }
-                    let aDate = a.dueDate ?? Date.distantFuture
-                    let bDate = b.dueDate ?? Date.distantFuture
-                    return aDate < bDate
-                }.prefix(8)
-
-                let dateFormatter = DateFormatter()
-                dateFormatter.dateFormat = "MMM d"
-
-                for task in topTasks {
-                    let due = task.dueDate.map { dateFormatter.string(from: $0) } ?? "no deadline"
-                    let overdueMark = task.isOverdue ? " [OVERDUE]" : ""
-                    contextParts.append("- [\(task.priority?.rawValue ?? "None")] \(task.title) (due: \(due))\(overdueMark)")
-                }
-            } catch {
-                contextParts.append("Tasks: unavailable")
+        // If no context available, check for fallback text
+        guard !context.isEmpty else {
+            if let fallback = skill.fallback, !fallback.isEmpty {
+                // Return a static card with the fallback text (no LLM call needed)
+                let card = CoachingCard(
+                    type: skill.id,
+                    label: "\(skill.icon) \(skill.effectiveName)",
+                    insight: fallback,
+                    context: nil
+                )
+                lastSkillResults[skill.id] = SkillRunResult(
+                    card: card, status: "fallback", context: [], error: nil, generatedAt: Date()
+                )
+                return card
             }
+            print("[CoachingEngine] Skill '\(skill.name)': no context available for data sources \(skill.dataSources)")
+            lastSkillResults[skill.id] = SkillRunResult(
+                card: nil, status: "no_context", context: [], error: nil, generatedAt: Date()
+            )
+            return nil
         }
 
-        // Calendar context
+        let contextLines = context.components(separatedBy: "\n")
+
+        var promptParts: [String] = []
+        promptParts.append("You are an executive coach.")
+
+        if !skill.tenets.isEmpty {
+            promptParts.append("\nTenets to follow:\n\(skill.tenets)")
+        }
+
+        promptParts.append("\nContext:\n\(context)")
+        promptParts.append("\n\(skill.prompt)")
+
+        let fullPrompt = promptParts.joined(separator: "\n")
+        let maxTokens = skill.frequency == "weekly" ? 300 : 200
+
         do {
-            let calBriefing = try await alfredService.fetchCalendarBriefing(for: Date())
-            let meetings = calBriefing.schedule.events
-            let remaining = meetings.filter { $0.startTime > Date() }
-            contextParts.append("Meetings today: \(meetings.count) (\(remaining.count) remaining)")
-        } catch {
-            // Not critical
-        }
+            let response = try await claudeService.generateText(
+                prompt: fullPrompt,
+                maxTokens: maxTokens
+            )
 
-        lastDebugContext["leverage"] = contextParts
-
-        guard !contextParts.isEmpty else { return nil }
-
-        let prompt = """
-        You are a ruthlessly practical executive coach. Given this person's current workload, identify the SINGLE highest-leverage action they should take right now.
-
-        Context:
-        \(contextParts.joined(separator: "\n"))
-
-        Rules:
-        - Pick ONE specific action, not a list
-        - Reference a specific task or person by name
-        - Explain WHY it's the highest leverage in one sentence
-        - No emojis, no fluff, plain language
-        - Maximum 2 sentences total
-        - If someone is waiting on something overdue, that's usually highest leverage
-
-        Respond with ONLY the coaching insight text. No JSON, no labels, no preamble.
-        """
-
-        let response = try await claudeService.generateText(
-            prompt: prompt,
-            maxTokens: 200,
-            useModel: nil // Use default model (Haiku is set as message model, but coaching needs quality)
-        )
-
-        return CoachingCard(
-            type: "leverage",
-            label: "Leverage",
-            insight: response.trimmingCharacters(in: .whitespacesAndNewlines),
-            context: nil
-        )
-    }
-
-    // MARK: - Relationship Card
-
-    /// Who needs attention? Unusual silence, piling-up obligations.
-    private func generateRelationshipCard() async throws -> CoachingCard? {
-        var contextParts: [String] = []
-
-        // Get commitment stats by counterparty
-        let counterpartyStats = TaskLifecycleTracker.shared.getStatsByCounterparty()
-        if !counterpartyStats.isEmpty {
-            contextParts.append("Commitment history by person:")
-            for stat in counterpartyStats.prefix(8) {
-                contextParts.append("- \(stat.name): \(stat.totalTasks) total, \(stat.completedTasks) completed, \(Int(stat.overdueRate * 100))% overdue rate")
+            guard !response.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                // Empty LLM response but we have a fallback
+                if let fallback = skill.fallback, !fallback.isEmpty {
+                    let card = CoachingCard(
+                        type: skill.id,
+                        label: "\(skill.icon) \(skill.effectiveName)",
+                        insight: fallback,
+                        context: nil
+                    )
+                    lastSkillResults[skill.id] = SkillRunResult(
+                        card: card, status: "fallback", context: contextLines, error: nil, generatedAt: Date()
+                    )
+                    return card
+                }
+                lastSkillResults[skill.id] = SkillRunResult(
+                    card: nil, status: "error", context: contextLines, error: "Empty LLM response", generatedAt: Date()
+                )
+                return nil
             }
-        }
 
-        // Get open commitments grouped by person
-        if let orchestrator = alfredService.orchestrator {
-            do {
-                let tasks = try await orchestrator.notionServicePublic.queryActiveTasks(type: .commitment)
-                let byPerson = Dictionary(grouping: tasks) { $0.committedTo ?? $0.committedBy ?? "Unknown" }
-                let sorted = byPerson.sorted { $0.value.count > $1.value.count }
+            // Fixed: was "skill_\(skill.id)" which never matched the reader using card.type
+            lastDebugContext[skill.id] = [context]
 
-                if !sorted.isEmpty {
-                    contextParts.append("\nOpen commitments by person:")
-                    for (person, tasks) in sorted.prefix(6) {
-                        let overdue = tasks.filter { $0.isOverdue }.count
-                        contextParts.append("- \(person): \(tasks.count) open\(overdue > 0 ? ", \(overdue) overdue" : "")")
-                    }
-                }
-            } catch {
-                // Not critical
-            }
-        }
-
-        // Tracker stats
-        let stats = CommitmentScanTracker.shared.getStats()
-        contextParts.append("\nOverall: \(stats.openCommitments) open commitments across \(stats.threadsTracked) threads")
-
-        // Recent message interactions (WhatsApp) — so we don't nudge about recently-contacted people
-        if let config = alfredService.orchestrator?.config {
-            do {
-                let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
-                let reader = WhatsAppReader(dbPath: config.messaging.whatsapp.dbPath)
-                try reader.connect()
-                let threads = try reader.fetchThreads(since: sevenDaysAgo)
-
-                if !threads.isEmpty {
-                    let formatter = RelativeDateTimeFormatter()
-                    formatter.unitsStyle = .full
-                    contextParts.append("\nRecent message interactions (last 7 days):")
-                    for thread in threads.sorted(by: { $0.lastMessageDate > $1.lastMessageDate }).prefix(10) {
-                        let name = thread.contactName ?? thread.contactIdentifier
-                        let ago = formatter.localizedString(for: thread.lastMessageDate, relativeTo: Date())
-                        contextParts.append("- \(name): last message \(ago) (WhatsApp)")
-                    }
-                }
-            } catch {
-                // Non-fatal — message data is supplementary
-            }
-        }
-
-        lastDebugContext["relationship"] = contextParts
-
-        guard contextParts.count > 1 else { return nil }
-
-        let prompt = """
-        You are an executive coach focused on relationship health. Based on this commitment and communication data, identify the ONE relationship that needs attention most.
-
-        Context:
-        \(contextParts.joined(separator: "\n"))
-
-        Rules:
-        - Name the specific person
-        - Explain what the data suggests (e.g., piling obligations, high overdue rate, one-sided commitment flow)
-        - Suggest one concrete action
-        - NEVER suggest reaching out to someone who has had message interaction in the last 7 days — they don't need a nudge
-        - Only flag relationships where there are BOTH commitment issues AND communication silence (no messages in 7+ days)
-        - No emojis, no fluff
-        - Maximum 2 sentences total
-
-        Respond with ONLY the coaching insight text. No JSON, no labels, no preamble.
-        """
-
-        let response = try await claudeService.generateText(
-            prompt: prompt,
-            maxTokens: 200
-        )
-
-        return CoachingCard(
-            type: "relationship",
-            label: "Relationship",
-            insight: response.trimmingCharacters(in: .whitespacesAndNewlines),
-            context: nil
-        )
-    }
-
-    // MARK: - Avoidance Card
-
-    /// What are you avoiding? Tasks created >14 days ago still not started, or frequently rescheduled.
-    private func generateAvoidanceCard() async throws -> CoachingCard? {
-        var contextParts: [String] = []
-        let calendar = Calendar.current
-        let fourteenDaysAgo = calendar.date(byAdding: .day, value: -14, to: Date())!
-
-        if let orchestrator = alfredService.orchestrator {
-            do {
-                let tasks = try await orchestrator.notionServicePublic.queryActiveTasks()
-
-                // Tasks created >14 days ago still "Not Started"
-                let stale = tasks.filter { task in
-                    task.status == .notStarted && task.createdDate < fourteenDaysAgo
-                }
-
-                if !stale.isEmpty {
-                    contextParts.append("Tasks created over 14 days ago, still Not Started:")
-                    let dateFormatter = DateFormatter()
-                    dateFormatter.dateFormat = "MMM d"
-                    for task in stale.prefix(5) {
-                        let age = calendar.dateComponents([.day], from: task.createdDate, to: Date()).day ?? 0
-                        contextParts.append("- \(task.title) (created \(age) days ago, \(task.priority?.rawValue ?? "no priority"))")
-                    }
-                }
-
-                // Escalated avoidance: tasks >21 days old, still not started
-                let twentyOneDaysAgo = calendar.date(byAdding: .day, value: -21, to: Date())!
-                let escalated = tasks.filter { task in
-                    task.status == .notStarted && task.createdDate < twentyOneDaysAgo
-                }
-                if !escalated.isEmpty {
-                    contextParts.append("\n=== ESCALATED AVOIDANCE (21+ days, still not started) ===")
-                    for task in escalated.prefix(3) {
-                        let age = calendar.dateComponents([.day], from: task.createdDate, to: Date()).day ?? 0
-                        contextParts.append("- [ESCALATED] \(task.title) (untouched for \(age) days)")
-                    }
-                }
-
-                // Tasks that are overdue and low priority (classic avoidance)
-                let avoidedOverdue = tasks.filter { task in
-                    task.isOverdue && (task.priority == .low || task.priority == .medium)
-                }
-
-                if !avoidedOverdue.isEmpty {
-                    contextParts.append("\nOverdue low/medium priority tasks (potential avoidance):")
-                    for task in avoidedOverdue.prefix(3) {
-                        let daysOverdue = task.dueDate.map { calendar.dateComponents([.day], from: $0, to: Date()).day ?? 0 } ?? 0
-                        contextParts.append("- \(task.title) (\(daysOverdue) days overdue)")
-                    }
-                }
-            } catch {
-                // Not critical
-            }
-        }
-
-        lastDebugContext["avoidance"] = contextParts
-
-        guard !contextParts.isEmpty else {
-            // No avoidance signals — return a positive card
-            return CoachingCard(
-                type: "avoidance",
-                label: "Avoidance",
-                insight: "No stale or avoided tasks detected. Your task hygiene looks clean.",
+            let card = CoachingCard(
+                type: skill.id,
+                label: "\(skill.icon) \(skill.effectiveName)",
+                insight: response.trimmingCharacters(in: .whitespacesAndNewlines),
                 context: nil
             )
-        }
-
-        let prompt = """
-        You are an executive coach helping someone recognize procrastination patterns. Based on this data, identify what they're most likely avoiding and why.
-
-        Context:
-        \(contextParts.joined(separator: "\n"))
-
-        Rules:
-        - Name the specific task or pattern
-        - Be empathetic but direct about the avoidance
-        - Suggest one concrete next step to break the avoidance (e.g., "spend 15 minutes on X" or "decide to drop it")
-        - If there are ESCALATED items (21+ days untouched), be more forceful: "This is the third week X has sat here. Either do it today or decide to drop it. Which is it?"
-        - Escalated items take priority over regular avoidance signals
-        - No emojis, no fluff
-        - Maximum 2 sentences total
-
-        Respond with ONLY the coaching insight text. No JSON, no labels, no preamble.
-        """
-
-        let response = try await claudeService.generateText(
-            prompt: prompt,
-            maxTokens: 200
-        )
-
-        return CoachingCard(
-            type: "avoidance",
-            label: "Avoidance",
-            insight: response.trimmingCharacters(in: .whitespacesAndNewlines),
-            context: nil
-        )
-    }
-
-    // MARK: - Attention Card
-
-    /// Where is your attention going? Hybrid of messaging velocity (inbound/outbound), group noise, and calendar load.
-    private func generateAttentionCard() async throws -> CoachingCard? {
-        var contextParts: [String] = []
-
-        // WhatsApp messaging velocity (last 7 days)
-        if let config = alfredService.orchestrator?.config {
-            do {
-                let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
-                let reader = WhatsAppReader(dbPath: config.messaging.whatsapp.dbPath)
-                try reader.connect()
-                let threads = try reader.fetchThreads(since: sevenDaysAgo)
-
-                var totalIncoming = 0
-                var totalOutgoing = 0
-                var groupStats: [(name: String, incoming: Int, outgoing: Int, total: Int)] = []
-                var dmStats: [(name: String, incoming: Int, outgoing: Int, total: Int)] = []
-
-                for thread in threads {
-                    let incoming = thread.messages.filter { $0.direction == .incoming }.count
-                    let outgoing = thread.messages.filter { $0.direction == .outgoing }.count
-                    let name = thread.contactName ?? thread.contactIdentifier
-                    totalIncoming += incoming
-                    totalOutgoing += outgoing
-
-                    if thread.contactIdentifier.contains("@g.us") {
-                        groupStats.append((name: name, incoming: incoming, outgoing: outgoing, total: incoming + outgoing))
-                    } else {
-                        dmStats.append((name: name, incoming: incoming, outgoing: outgoing, total: incoming + outgoing))
-                    }
-                }
-
-                contextParts.append("Messaging velocity (last 7 days):")
-                contextParts.append("Total inbound: \(totalIncoming), Total outbound: \(totalOutgoing)")
-                let ratio = totalOutgoing > 0 ? String(format: "%.1f", Double(totalIncoming) / Double(totalOutgoing)) : "∞"
-                contextParts.append("Inbound/outbound ratio: \(ratio):1")
-                contextParts.append("Active groups: \(groupStats.count), Active DMs: \(dmStats.count)")
-
-                // Top groups by volume
-                let topGroups = groupStats.sorted { $0.total > $1.total }.prefix(5)
-                if !topGroups.isEmpty {
-                    contextParts.append("\nTop groups by message volume:")
-                    for g in topGroups {
-                        contextParts.append("- \(g.name): \(g.total) msgs (\(g.incoming) in, \(g.outgoing) out)")
-                    }
-                }
-
-                // Top DMs by volume
-                let topDMs = dmStats.sorted { $0.total > $1.total }.prefix(5)
-                if !topDMs.isEmpty {
-                    contextParts.append("\nTop direct conversations:")
-                    for d in topDMs {
-                        contextParts.append("- \(d.name): \(d.incoming + d.outgoing) msgs (\(d.incoming) in, \(d.outgoing) out)")
-                    }
-                }
-
-                reader.disconnect()
-            } catch {
-                contextParts.append("WhatsApp messaging data: unavailable")
-            }
-        }
-
-        // Calendar load (today)
-        do {
-            let calBriefing = try await alfredService.fetchCalendarBriefing(for: Date())
-            let meetings = calBriefing.schedule.events.filter { !$0.isAllDay }
-            let remaining = meetings.filter { $0.startTime > Date() }
-
-            contextParts.append("\nCalendar today:")
-            contextParts.append("Meetings: \(meetings.count) total (\(remaining.count) remaining)")
-
-            // Calculate meeting hours
-            var totalMinutes = 0
-            for event in meetings {
-                let duration = Int(event.endTime.timeIntervalSince(event.startTime) / 60)
-                totalMinutes += duration
-            }
-            let hours = totalMinutes / 60
-            let mins = totalMinutes % 60
-            contextParts.append("Time in meetings: \(hours)h \(mins)m")
-
-            // Detect back-to-back chains (< 15 min gap)
-            let sorted = meetings.sorted { $0.startTime < $1.startTime }
-            var backToBackCount = 0
-            for i in 1..<sorted.count {
-                let gap = sorted[i].startTime.timeIntervalSince(sorted[i-1].endTime)
-                if gap < 900 { // Less than 15 minutes
-                    backToBackCount += 1
-                }
-            }
-            if backToBackCount > 0 {
-                contextParts.append("Back-to-back meetings (< 15 min gap): \(backToBackCount)")
-            }
-
-            // Free blocks > 30 min
-            var freeBlocks: [Int] = [] // in minutes
-            let workStart = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: Date())!
-            let workEnd = Calendar.current.date(bySettingHour: 18, minute: 0, second: 0, of: Date())!
-            var cursor = workStart
-            for event in sorted {
-                if event.startTime > cursor {
-                    let gap = Int(event.startTime.timeIntervalSince(cursor) / 60)
-                    if gap >= 30 {
-                        freeBlocks.append(gap)
-                    }
-                }
-                cursor = max(cursor, event.endTime)
-            }
-            // After last meeting to work end
-            if cursor < workEnd {
-                let gap = Int(workEnd.timeIntervalSince(cursor) / 60)
-                if gap >= 30 {
-                    freeBlocks.append(gap)
-                }
-            }
-
-            if freeBlocks.isEmpty {
-                contextParts.append("Free blocks (30+ min): NONE — no deep work possible today")
-            } else {
-                let blockDescs = freeBlocks.map { "\($0)m" }.joined(separator: ", ")
-                contextParts.append("Free blocks (30+ min): \(freeBlocks.count) (\(blockDescs))")
-            }
+            lastSkillResults[skill.id] = SkillRunResult(
+                card: card, status: "success", context: contextLines, error: nil, generatedAt: Date()
+            )
+            return card
         } catch {
-            contextParts.append("\nCalendar: unavailable")
+            print("[CoachingEngine] Skill '\(skill.name)' failed: \(error)")
+            lastSkillResults[skill.id] = SkillRunResult(
+                card: nil, status: "error", context: contextLines, error: error.localizedDescription, generatedAt: Date()
+            )
+            return nil
         }
-
-        lastDebugContext["attention"] = contextParts
-
-        guard contextParts.count > 2 else { return nil }
-
-        let prompt = """
-        You are an executive coach analyzing where this person's attention is going. Based on messaging patterns and calendar data, provide ONE sharp observation about their attention allocation.
-
-        Context:
-        \(contextParts.joined(separator: "\n"))
-
-        Rules:
-        - Focus on the PATTERN, not individual messages
-        - A high inbound/outbound ratio (e.g., >10:1) means they're absorbing rather than directing
-        - Name specific groups or people that are consuming disproportionate attention
-        - If calendar is packed with meetings AND messaging is high, name the double-drain
-        - If there are no free blocks, say so directly — "you have no time to think today"
-        - Suggest one concrete change (e.g., "mute X group", "block 2 hours for deep work", "decline one meeting")
-        - No emojis, no fluff
-        - Maximum 2 sentences total
-
-        Respond with ONLY the coaching insight text. No JSON, no labels, no preamble.
-        """
-
-        let response = try await claudeService.generateText(
-            prompt: prompt,
-            maxTokens: 200
-        )
-
-        return CoachingCard(
-            type: "attention",
-            label: "Attention",
-            insight: response.trimmingCharacters(in: .whitespacesAndNewlines),
-            context: nil
-        )
     }
 
-    // MARK: - Weekly Review Card
-
-    /// Matt Mochary-style weekly review: wins, energy, relationships, carry-forward.
-    /// Only shown on Friday, Saturday, Sunday.
-    private func generateWeeklyReviewCard() async throws -> CoachingCard? {
+    /// Gather context data for a skill based on its requested data sources.
+    /// Reuses the same data-fetching logic as the built-in cards.
+    private func gatherContextForSkill(dataSources: [String]) async -> String {
         var contextParts: [String] = []
-        let calendar = Calendar.current
 
-        let today = Date()
+        for source in dataSources {
+            switch source {
+            case "tasks":
+                if let orchestrator = alfredService.orchestrator {
+                    do {
+                        let tasks = try await orchestrator.notionServicePublic.queryActiveTasks()
+                        let overdue = tasks.filter { $0.isOverdue }
+                        let critical = tasks.filter { $0.priority == .critical || $0.priority == .high }
 
-        if let orchestrator = alfredService.orchestrator {
-            do {
-                let allTasks = try await orchestrator.notionServicePublic.queryActiveTasks()
+                        contextParts.append("=== Tasks ===")
+                        contextParts.append("Active: \(tasks.count), Overdue: \(overdue.count), Critical/High: \(critical.count)")
 
-                // Completed tasks this week (approximate: tasks with status .done)
-                let completed = allTasks.filter { $0.status == .done }
-                let recentCompleted = completed.prefix(10)
+                        let dateFormatter = DateFormatter()
+                        dateFormatter.dateFormat = "MMM d"
 
-                contextParts.append("Tasks completed (showing up to 10):")
-                if recentCompleted.isEmpty {
-                    contextParts.append("- None found in active view")
-                } else {
-                    for task in recentCompleted {
-                        contextParts.append("- \(task.title) [\(task.priority?.rawValue ?? "none")]")
+                        let topTasks = tasks.sorted { a, b in
+                            let priorityWeight: [TaskItem.Priority: Int] = [.critical: 0, .high: 1, .medium: 2, .low: 3]
+                            let aPri = a.priority.map { priorityWeight[$0] ?? 4 } ?? 4
+                            let bPri = b.priority.map { priorityWeight[$0] ?? 4 } ?? 4
+                            if aPri != bPri { return aPri < bPri }
+                            return (a.dueDate ?? Date.distantFuture) < (b.dueDate ?? Date.distantFuture)
+                        }.prefix(8)
+
+                        for task in topTasks {
+                            let due = task.dueDate.map { dateFormatter.string(from: $0) } ?? "no deadline"
+                            let overdueMark = task.isOverdue ? " [OVERDUE]" : ""
+                            contextParts.append("- [\(task.priority?.rawValue ?? "None")] \(task.title) (due: \(due))\(overdueMark)")
+                        }
+                    } catch {
+                        contextParts.append("Tasks: unavailable")
                     }
                 }
 
-                // Open / overdue / stale counts
-                let open = allTasks.filter { $0.status != .done }
-                let overdue = open.filter { $0.isOverdue }
-                let fourteenDaysAgo = calendar.date(byAdding: .day, value: -14, to: today)!
-                let stale = open.filter { $0.status == .notStarted && $0.createdDate < fourteenDaysAgo }
+            case "calendar":
+                do {
+                    let calBriefing = try await alfredService.fetchCalendarBriefing(for: Date())
+                    let meetings = calBriefing.schedule.events.filter { !$0.isAllDay }
+                    let remaining = meetings.filter { $0.startTime > Date() }
 
-                contextParts.append("\nOpen tasks: \(open.count)")
-                contextParts.append("Overdue: \(overdue.count)")
-                contextParts.append("Stale (14+ days, not started): \(stale.count)")
+                    contextParts.append("=== Calendar ===")
+                    contextParts.append("Meetings today: \(meetings.count) (\(remaining.count) remaining)")
 
-                // Top priority task (the focus item)
-                if let topTask = try? await orchestrator.notionServicePublic.getTopPriorityTask() {
-                    let due = topTask.dueDate.map {
-                        let df = DateFormatter()
-                        df.dateFormat = "MMM d"
-                        return df.string(from: $0)
-                    } ?? "no deadline"
-                    contextParts.append("\nTop priority task: \(topTask.title) (due: \(due))")
+                    var totalMinutes = 0
+                    for event in meetings {
+                        totalMinutes += Int(event.endTime.timeIntervalSince(event.startTime) / 60)
+                    }
+                    contextParts.append("Time in meetings: \(totalMinutes / 60)h \(totalMinutes % 60)m")
+
+                    // Free blocks
+                    let sorted = meetings.sorted { $0.startTime < $1.startTime }
+                    var freeBlocks: [Int] = []
+                    let workStart = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: Date())!
+                    let workEnd = Calendar.current.date(bySettingHour: 18, minute: 0, second: 0, of: Date())!
+                    var cursor = workStart
+                    for event in sorted {
+                        if event.startTime > cursor {
+                            let gap = Int(event.startTime.timeIntervalSince(cursor) / 60)
+                            if gap >= 30 { freeBlocks.append(gap) }
+                        }
+                        cursor = max(cursor, event.endTime)
+                    }
+                    if cursor < workEnd {
+                        let gap = Int(workEnd.timeIntervalSince(cursor) / 60)
+                        if gap >= 30 { freeBlocks.append(gap) }
+                    }
+
+                    if freeBlocks.isEmpty {
+                        contextParts.append("Free blocks (30+ min): NONE")
+                    } else {
+                        let blockDescs = freeBlocks.map { "\($0)m" }.joined(separator: ", ")
+                        contextParts.append("Free blocks: \(freeBlocks.count) (\(blockDescs))")
+                    }
+
+                    // Back-to-back detection
+                    var backToBack = 0
+                    for i in 1..<sorted.count {
+                        let gap = sorted[i].startTime.timeIntervalSince(sorted[i-1].endTime)
+                        if gap < 900 { backToBack += 1 }
+                    }
+                    if backToBack > 0 {
+                        contextParts.append("Back-to-back meetings: \(backToBack)")
+                    }
+                } catch {
+                    contextParts.append("Calendar: unavailable")
                 }
-            } catch {
-                contextParts.append("Tasks: unavailable")
+
+            case "messages":
+                if let config = alfredService.orchestrator?.config {
+                    do {
+                        let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+                        let reader = WhatsAppReader(dbPath: config.messaging.whatsapp.dbPath)
+                        try reader.connect()
+                        let threads = try reader.fetchThreads(since: sevenDaysAgo)
+
+                        var totalIncoming = 0
+                        var totalOutgoing = 0
+                        for thread in threads {
+                            totalIncoming += thread.messages.filter { $0.direction == .incoming }.count
+                            totalOutgoing += thread.messages.filter { $0.direction == .outgoing }.count
+                        }
+
+                        contextParts.append("=== Messages (7 days) ===")
+                        contextParts.append("Inbound: \(totalIncoming), Outbound: \(totalOutgoing)")
+                        let ratio = totalOutgoing > 0 ? String(format: "%.1f", Double(totalIncoming) / Double(totalOutgoing)) : "∞"
+                        contextParts.append("Ratio: \(ratio):1")
+                        contextParts.append("Active threads: \(threads.count)")
+
+                        reader.disconnect()
+                    } catch {
+                        contextParts.append("Messages: unavailable")
+                    }
+                }
+
+            case "commitments":
+                let counterpartyStats = TaskLifecycleTracker.shared.getStatsByCounterparty()
+                let trackerStats = CommitmentScanTracker.shared.getStats()
+
+                contextParts.append("=== Commitments ===")
+                contextParts.append("Open: \(trackerStats.openCommitments), Threads tracked: \(trackerStats.threadsTracked)")
+
+                if !counterpartyStats.isEmpty {
+                    contextParts.append("By person:")
+                    for stat in counterpartyStats.prefix(6) {
+                        contextParts.append("- \(stat.name): \(stat.totalTasks) total, \(stat.completedTasks) done, \(Int(stat.overdueRate * 100))% overdue")
+                    }
+                }
+
+            case "coaching_memory":
+                let recentSessions = CoachingMemoryService.shared.getRecentSessions(limit: 3)
+                if !recentSessions.isEmpty {
+                    contextParts.append("=== Recent Coaching Themes ===")
+                    for session in recentSessions {
+                        let firstLine = session.components(separatedBy: "\n").first ?? session
+                        contextParts.append("- \(String(firstLine.prefix(120)))")
+                    }
+                }
+
+            case "tasks_detailed":
+                // Enriched task data: stale tiers (14d/21d escalation), overdue low/med priority
+                if let orchestrator = alfredService.orchestrator {
+                    do {
+                        let tasks = try await orchestrator.notionServicePublic.queryActiveTasks()
+                        let cal = Calendar.current
+                        let fourteenDaysAgo = cal.date(byAdding: .day, value: -14, to: Date())!
+                        let twentyOneDaysAgo = cal.date(byAdding: .day, value: -21, to: Date())!
+
+                        contextParts.append("=== Tasks (Detailed) ===")
+                        contextParts.append("Active: \(tasks.count)")
+
+                        // Stale tasks (14+ days, not started)
+                        let stale = tasks.filter { $0.status == .notStarted && $0.createdDate < fourteenDaysAgo }
+                        if !stale.isEmpty {
+                            contextParts.append("\nTasks created over 14 days ago, still Not Started:")
+                            let dateFormatter = DateFormatter()
+                            dateFormatter.dateFormat = "MMM d"
+                            for task in stale.prefix(5) {
+                                let age = cal.dateComponents([.day], from: task.createdDate, to: Date()).day ?? 0
+                                contextParts.append("- \(task.title) (created \(age) days ago, \(task.priority?.rawValue ?? "no priority"))")
+                            }
+                        }
+
+                        // Escalated avoidance (21+ days)
+                        let escalated = tasks.filter { $0.status == .notStarted && $0.createdDate < twentyOneDaysAgo }
+                        if !escalated.isEmpty {
+                            contextParts.append("\n=== ESCALATED AVOIDANCE (21+ days, still not started) ===")
+                            for task in escalated.prefix(3) {
+                                let age = cal.dateComponents([.day], from: task.createdDate, to: Date()).day ?? 0
+                                contextParts.append("- [ESCALATED] \(task.title) (untouched for \(age) days)")
+                            }
+                        }
+
+                        // Overdue low/medium priority (classic avoidance)
+                        let avoidedOverdue = tasks.filter { $0.isOverdue && ($0.priority == .low || $0.priority == .medium) }
+                        if !avoidedOverdue.isEmpty {
+                            contextParts.append("\nOverdue low/medium priority tasks (potential avoidance):")
+                            for task in avoidedOverdue.prefix(3) {
+                                let daysOverdue = task.dueDate.map { cal.dateComponents([.day], from: $0, to: Date()).day ?? 0 } ?? 0
+                                contextParts.append("- \(task.title) (\(daysOverdue) days overdue)")
+                            }
+                        }
+
+                        // Also include summary stats
+                        let overdue = tasks.filter { $0.isOverdue }
+                        let critical = tasks.filter { $0.priority == .critical || $0.priority == .high }
+                        contextParts.append("\nOverdue: \(overdue.count), Critical/High: \(critical.count)")
+
+                        // Top priority tasks for cross-reference
+                        let dateFormatter = DateFormatter()
+                        dateFormatter.dateFormat = "MMM d"
+                        let topTasks = tasks.sorted { a, b in
+                            let priorityWeight: [TaskItem.Priority: Int] = [.critical: 0, .high: 1, .medium: 2, .low: 3]
+                            let aPri = a.priority.map { priorityWeight[$0] ?? 4 } ?? 4
+                            let bPri = b.priority.map { priorityWeight[$0] ?? 4 } ?? 4
+                            if aPri != bPri { return aPri < bPri }
+                            return (a.dueDate ?? Date.distantFuture) < (b.dueDate ?? Date.distantFuture)
+                        }.prefix(8)
+                        contextParts.append("\nTop priority tasks:")
+                        for task in topTasks {
+                            let due = task.dueDate.map { dateFormatter.string(from: $0) } ?? "no deadline"
+                            let overdueMark = task.isOverdue ? " [OVERDUE]" : ""
+                            contextParts.append("- [\(task.priority?.rawValue ?? "None")] \(task.title) (due: \(due))\(overdueMark)")
+                        }
+
+                        // Open / completed counts for weekly review
+                        let completed = tasks.filter { $0.status == .done }
+                        let open = tasks.filter { $0.status != .done }
+                        contextParts.append("\nOpen: \(open.count), Completed visible: \(completed.count)")
+                        contextParts.append("Stale (14+ days): \(stale.count)")
+                    } catch {
+                        contextParts.append("Tasks (detailed): unavailable")
+                    }
+                }
+
+            case "messages_detailed":
+                // Enriched messaging data: per-thread/group counts, top 5 by volume
+                if let config = alfredService.orchestrator?.config {
+                    do {
+                        let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+                        let reader = WhatsAppReader(dbPath: config.messaging.whatsapp.dbPath)
+                        try reader.connect()
+                        let threads = try reader.fetchThreads(since: sevenDaysAgo)
+
+                        var totalIncoming = 0
+                        var totalOutgoing = 0
+                        var groupStats: [(name: String, incoming: Int, outgoing: Int, total: Int)] = []
+                        var dmStats: [(name: String, incoming: Int, outgoing: Int, total: Int)] = []
+
+                        for thread in threads {
+                            let incoming = thread.messages.filter { $0.direction == .incoming }.count
+                            let outgoing = thread.messages.filter { $0.direction == .outgoing }.count
+                            let name = thread.contactName ?? thread.contactIdentifier
+                            totalIncoming += incoming
+                            totalOutgoing += outgoing
+
+                            if thread.contactIdentifier.contains("@g.us") {
+                                groupStats.append((name: name, incoming: incoming, outgoing: outgoing, total: incoming + outgoing))
+                            } else {
+                                dmStats.append((name: name, incoming: incoming, outgoing: outgoing, total: incoming + outgoing))
+                            }
+                        }
+
+                        contextParts.append("=== Messages (Detailed, 7 days) ===")
+                        contextParts.append("Total inbound: \(totalIncoming), Total outbound: \(totalOutgoing)")
+                        let ratio = totalOutgoing > 0 ? String(format: "%.1f", Double(totalIncoming) / Double(totalOutgoing)) : "∞"
+                        contextParts.append("Inbound/outbound ratio: \(ratio):1")
+                        contextParts.append("Active groups: \(groupStats.count), Active DMs: \(dmStats.count)")
+
+                        let topGroups = groupStats.sorted { $0.total > $1.total }.prefix(5)
+                        if !topGroups.isEmpty {
+                            contextParts.append("\nTop groups by message volume:")
+                            for g in topGroups {
+                                contextParts.append("- \(g.name): \(g.total) msgs (\(g.incoming) in, \(g.outgoing) out)")
+                            }
+                        }
+
+                        let topDMs = dmStats.sorted { $0.total > $1.total }.prefix(5)
+                        if !topDMs.isEmpty {
+                            contextParts.append("\nTop direct conversations:")
+                            for d in topDMs {
+                                contextParts.append("- \(d.name): \(d.incoming + d.outgoing) msgs (\(d.incoming) in, \(d.outgoing) out)")
+                            }
+                        }
+
+                        reader.disconnect()
+                    } catch {
+                        contextParts.append("Messages (detailed): unavailable")
+                    }
+                }
+
+            case "commitments_by_person":
+                // Enriched commitment data: per-person stats, open commitments, recent messages
+                let counterpartyStats = TaskLifecycleTracker.shared.getStatsByCounterparty()
+                contextParts.append("=== Commitments by Person ===")
+
+                if !counterpartyStats.isEmpty {
+                    contextParts.append("Commitment history by person:")
+                    for stat in counterpartyStats.prefix(8) {
+                        contextParts.append("- \(stat.name): \(stat.totalTasks) total, \(stat.completedTasks) completed, \(Int(stat.overdueRate * 100))% overdue rate")
+                    }
+                }
+
+                // Open commitments grouped by person
+                if let orchestrator = alfredService.orchestrator {
+                    do {
+                        let tasks = try await orchestrator.notionServicePublic.queryActiveTasks(type: .commitment)
+                        let byPerson = Dictionary(grouping: tasks) { $0.committedTo ?? $0.committedBy ?? "Unknown" }
+                        let sorted = byPerson.sorted { $0.value.count > $1.value.count }
+
+                        if !sorted.isEmpty {
+                            contextParts.append("\nOpen commitments by person:")
+                            for (person, tasks) in sorted.prefix(6) {
+                                let overdue = tasks.filter { $0.isOverdue }.count
+                                contextParts.append("- \(person): \(tasks.count) open\(overdue > 0 ? ", \(overdue) overdue" : "")")
+                            }
+                        }
+                    } catch {
+                        // Not critical
+                    }
+                }
+
+                // Overall stats
+                let trackerStats = CommitmentScanTracker.shared.getStats()
+                contextParts.append("\nOverall: \(trackerStats.openCommitments) open commitments across \(trackerStats.threadsTracked) threads")
+
+                // Recent message interactions (so coaching doesn't nudge about recently-contacted people)
+                if let config = alfredService.orchestrator?.config {
+                    do {
+                        let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+                        let reader = WhatsAppReader(dbPath: config.messaging.whatsapp.dbPath)
+                        try reader.connect()
+                        let threads = try reader.fetchThreads(since: sevenDaysAgo)
+
+                        if !threads.isEmpty {
+                            let formatter = RelativeDateTimeFormatter()
+                            formatter.unitsStyle = .full
+                            contextParts.append("\nRecent message interactions (last 7 days):")
+                            for thread in threads.sorted(by: { $0.lastMessageDate > $1.lastMessageDate }).prefix(10) {
+                                let name = thread.contactName ?? thread.contactIdentifier
+                                let ago = formatter.localizedString(for: thread.lastMessageDate, relativeTo: Date())
+                                contextParts.append("- \(name): last message \(ago) (WhatsApp)")
+                            }
+                        }
+                    } catch {
+                        // Non-fatal
+                    }
+                }
+
+            default:
+                break
             }
         }
 
-        // Commitment/relationship health
-        let commitStats = CommitmentScanTracker.shared.getStats()
-        contextParts.append("\nCommitments: \(commitStats.openCommitments) open, \(commitStats.closedCount) closed this period")
+        return contextParts.joined(separator: "\n")
+    }
 
-        let counterpartyStats = TaskLifecycleTracker.shared.getStatsByCounterparty()
-        if !counterpartyStats.isEmpty {
-            contextParts.append("\nRelationship health:")
-            for stat in counterpartyStats.prefix(5) {
-                contextParts.append("- \(stat.name): \(stat.completedTasks)/\(stat.totalTasks) completed, \(Int(stat.overdueRate * 100))% overdue rate")
+    // MARK: - Single Skill Refresh (for QA/Preview)
+
+    /// Refresh a single skill by ID, returning the run result for immediate use.
+    /// Also updates cachedCards in-place if a card for this skill already exists.
+    func refreshSingleSkill(id: String) async -> SkillRunResult? {
+        guard let skill = SkillLoader.shared.getSkill(id: id) else {
+            return SkillRunResult(card: nil, status: "error", context: [], error: "Skill not found: \(id)", generatedAt: Date())
+        }
+
+        let card = await generateSkillCard(skill)
+
+        // Update cached cards in-place (replace matching card by type, or append)
+        if let card = card {
+            if var cached = cachedCards {
+                if let idx = cached.firstIndex(where: { $0.type == id }) {
+                    cached[idx] = card
+                } else {
+                    cached.append(card)
+                }
+                cachedCards = cached
             }
         }
 
-        // Lifecycle stats
-        let lifecycleStats = TaskLifecycleTracker.shared.getStats()
-        contextParts.append("\nOverall completion rate: \(Int(lifecycleStats.completionRate * 100))%")
-        contextParts.append("Overall overdue rate: \(Int(lifecycleStats.overdueRate * 100))%")
-
-        // Recent coaching sessions for continuity
-        let recentSessions = CoachingMemoryService.shared.getRecentSessions(limit: 3)
-        if !recentSessions.isEmpty {
-            contextParts.append("\nRecent coaching themes:")
-            for session in recentSessions {
-                // Take first line of each session as summary
-                let firstLine = session.components(separatedBy: "\n").first ?? session
-                contextParts.append("- \(String(firstLine.prefix(120)))")
-            }
-        }
-
-        lastDebugContext["weekly_review"] = contextParts
-
-        guard contextParts.count > 2 else { return nil }
-
-        let prompt = """
-        You are an executive coach running a weekly review (Matt Mochary style). Assess this person's week across 4 dimensions:
-
-        Context:
-        \(contextParts.joined(separator: "\n"))
-
-        Dimensions to assess:
-        1. WINS: What did they accomplish? Name specifics from the completed tasks.
-        2. ENERGY: Based on the task mix and stale count, are they in their Zone of Genius or stuck grinding through Zone 3 work?
-        3. RELATIONSHIPS: Any commitment debt? Who did they neglect?
-        4. CARRY FORWARD: ONE thing to focus on next week.
-
-        Rules:
-        - Be specific — reference actual tasks and people by name
-        - Be honest but encouraging. Acknowledge wins before pushing on gaps.
-        - If completion rate is low or stale tasks are high, name the pattern directly
-        - 3 sentences maximum. One per dimension is ideal, combine where natural.
-        - No emojis, no fluff, no bullet points — flowing prose
-
-        Respond with ONLY the coaching insight text. No JSON, no labels, no preamble.
-        """
-
-        let response = try await claudeService.generateText(
-            prompt: prompt,
-            maxTokens: 300
-        )
-
-        return CoachingCard(
-            type: "weekly_review",
-            label: "Weekly Review",
-            insight: response.trimmingCharacters(in: .whitespacesAndNewlines),
-            context: nil
-        )
+        return lastSkillResults[id]
     }
 }

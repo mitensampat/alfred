@@ -247,6 +247,25 @@ class SetupStatusService {
                 configDict["messaging"] = messaging
             }
 
+        case "googleCredentials":
+            // Save Google OAuth client credentials to config
+            if let clientId = data["client_id"] as? String,
+               let clientSecret = data["client_secret"] as? String {
+                let redirectUri = data["redirect_uri"] as? String ?? "http://localhost:8080/auth/callback"
+                let googleAccount: [String: Any] = [
+                    "name": "primary",
+                    "client_id": clientId,
+                    "client_secret": clientSecret,
+                    "redirect_uri": redirectUri,
+                    "calendar_id": "primary"
+                ]
+
+                if var calendar = configDict["calendar"] as? [String: Any] {
+                    calendar["google"] = [googleAccount]
+                    configDict["calendar"] = calendar
+                }
+            }
+
         default:
             break
         }
@@ -288,25 +307,59 @@ class SetupStatusService {
         return dict
     }
 
+    /// Create minimal config file if it doesn't exist — enables first-run setup mode
+    func ensureMinimalConfig() {
+        guard !FileManager.default.fileExists(atPath: configPath) else {
+            return  // Config already exists
+        }
+
+        let dict = createMinimalConfig()
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]) else {
+            print("[SetupStatus] Failed to serialize minimal config")
+            return
+        }
+
+        // Ensure directory exists
+        let configDir = (configPath as NSString).deletingLastPathComponent
+        try? FileManager.default.createDirectory(atPath: configDir, withIntermediateDirectories: true)
+
+        do {
+            try jsonData.write(to: URL(fileURLWithPath: configPath))
+            print("[SetupStatus] Created minimal config at \(configPath)")
+        } catch {
+            print("[SetupStatus] Failed to write minimal config: \(error)")
+        }
+    }
+
     private func createMinimalConfig() -> [String: Any] {
         // Create a minimal config structure that can be filled in during FTUE
+        // Includes app.passcode and api section so the HTTP server can start
+        let passcode = String(format: "%08d", Int.random(in: 0...99999999))
+
         return [
             "app": [
                 "name": "Alfred",
                 "version": "1.0.0",
+                "port": 8080,
+                "passcode": passcode,
                 "briefing_time": "08:00",
                 "attention_alert_time": "17:00",
                 "timezone": TimeZone.current.identifier
-            ],
+            ] as [String: Any],
+            "api": [
+                "enabled": true,
+                "port": 8080,
+                "passcode": passcode
+            ] as [String: Any],
             "user": [
                 "name": "",
                 "email": "",
                 "company_domain": "",
-                "company_domains": []
-            ],
+                "company_domains": [] as [String]
+            ] as [String: Any],
             "calendar": [
-                "google": []
-            ],
+                "google": [] as [Any]
+            ] as [String: Any],
             "notion": [
                 "api_key": "",
                 "database_id": "",
@@ -321,16 +374,16 @@ class SetupStatusService {
                 "imessage": [
                     "enabled": true,
                     "db_path": "~/Library/Messages/chat.db"
-                ],
+                ] as [String: Any],
                 "whatsapp": [
                     "enabled": false,
                     "db_path": ""
-                ],
+                ] as [String: Any],
                 "signal": [
                     "enabled": false,
                     "db_path": ""
-                ]
-            ],
+                ] as [String: Any]
+            ] as [String: Any],
             "notifications": [
                 "email": [
                     "enabled": false,
@@ -338,25 +391,25 @@ class SetupStatusService {
                     "smtp_port": 587,
                     "smtp_username": "",
                     "smtp_password": ""
-                ],
+                ] as [String: Any],
                 "push": [
                     "enabled": true
-                ],
+                ] as [String: Any],
                 "slack": [
                     "enabled": false,
                     "webhook_url": "",
                     "bot_token": ""
-                ]
-            ],
+                ] as [String: Any]
+            ] as [String: Any],
             "research": [
                 "linkedin": [
                     "enabled": false,
                     "access_token": ""
-                ],
+                ] as [String: Any],
                 "search": [
                     "enabled": true
-                ]
-            ]
+                ] as [String: Any]
+            ] as [String: Any]
         ]
     }
 }

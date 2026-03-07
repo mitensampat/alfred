@@ -3560,6 +3560,24 @@
             font-size: 13px;
         }
 
+        .unified-sessions-show-more {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            margin-top: 4px;
+            background: none;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            color: var(--text-tertiary);
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .unified-sessions-show-more:hover {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
         /* ===== Cadence Items ===== */
         .cadence-list {
             background: var(--bg-primary);
@@ -3758,6 +3776,106 @@
             border: 1px solid var(--border-color);
             border-radius: 6px;
             cursor: pointer;
+        }
+
+        .cadence-add-btn {
+            border: 1px dashed var(--border-color);
+            cursor: pointer;
+            justify-content: center;
+            transition: border-color 0.15s;
+        }
+
+        .cadence-add-btn:hover {
+            border-color: var(--text-secondary);
+        }
+
+        .cadence-delete-btn {
+            background: none;
+            border: none;
+            color: var(--text-tertiary);
+            cursor: pointer;
+            font-size: 16px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            line-height: 1;
+            transition: color 0.15s, background 0.15s;
+        }
+
+        .cadence-delete-btn:hover {
+            color: #e53e3e;
+            background: rgba(229, 62, 62, 0.08);
+        }
+
+        .cadence-edit-popover select,
+        .cadence-edit-popover input[type="text"],
+        .cadence-edit-popover input[type="number"] {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .cadence-edit-section {
+            margin-bottom: 16px;
+        }
+
+        .cadence-edit-section-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-tertiary);
+            margin-bottom: 8px;
+        }
+
+        .cadence-tool-picker {
+            width: 100%;
+            font-size: 13px;
+            padding: 6px 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-family: var(--font-body);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .cadence-edit-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .cadence-toggle-switch {
+            position: relative;
+            width: 36px;
+            height: 20px;
+            background: var(--border-color);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .cadence-toggle-switch.active {
+            background: #448361;
+        }
+
+        .cadence-toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 16px;
+            height: 16px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+
+        .cadence-toggle-switch.active::after {
+            transform: translateX(16px);
+        }
+
+        .cadence-dynamic-params {
+            margin-top: 8px;
         }
 
         .quick-prompt {
@@ -6146,6 +6264,464 @@
         .unified-insight-type.attention-type { color: #ea580c; }
         .unified-insight-type.relationship { color: #7c3aed; }
         .unified-insight-type.avoidance { color: #dc2626; }
+        .unified-insight-type.custom-skill { color: #6366f1; }
+
+        /* Coach Tuner Tabs */
+        .tuner-tabs {
+            display: flex;
+            gap: 0;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 16px;
+        }
+        .tuner-tab {
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-tertiary);
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.15s ease;
+            user-select: none;
+        }
+        .tuner-tab:hover {
+            color: var(--text-primary);
+        }
+        .tuner-tab.active {
+            color: var(--accent-color);
+            border-bottom-color: var(--accent-color);
+        }
+        .tuner-tab-content {
+            display: none;
+        }
+        .tuner-tab-content.active {
+            display: block;
+            animation: fadeIn 0.15s ease;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        /* Tenet Section Cards */
+        .tenet-section-card {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 10px;
+            overflow: hidden;
+            transition: opacity 0.2s ease;
+        }
+        .tenet-section-card.disabled {
+            opacity: 0.5;
+        }
+        .tenet-section-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            cursor: pointer;
+            background: var(--bg-secondary);
+        }
+        .tenet-section-title {
+            font-size: 13px;
+            font-weight: 600;
+            flex: 1;
+        }
+        .tenet-section-body {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            padding: 0 14px;
+        }
+        .tenet-section-card.expanded .tenet-section-body {
+            max-height: 500px;
+            padding: 10px 14px;
+        }
+        .tenet-section-card.expanded .tenet-chevron {
+            transform: rotate(180deg);
+        }
+        .tenet-chevron {
+            transition: transform 0.2s ease;
+            opacity: 0.4;
+            flex-shrink: 0;
+        }
+        .tenet-section-edit-wrap {
+            display: none;
+            padding: 10px 14px;
+        }
+        .tenet-section-card.editing .tenet-section-body {
+            display: none;
+        }
+        .tenet-section-card.editing .tenet-section-edit-wrap {
+            display: block;
+        }
+
+        /* QA Status Dots */
+        .qa-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            flex-shrink: 0;
+        }
+        .qa-status-dot.success { background: #22c55e; }
+        .qa-status-dot.error { background: #ef4444; }
+        .qa-status-dot.no_context { background: #9ca3af; }
+        .qa-status-dot.fallback { background: #eab308; }
+
+        /* QA Card */
+        .qa-card {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 10px;
+            overflow: hidden;
+        }
+        .qa-card-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            background: var(--bg-secondary);
+        }
+        .qa-card-insight {
+            font-size: 13px;
+            color: var(--text-primary);
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .qa-card-context {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            padding: 0 12px;
+        }
+        .qa-card.expanded .qa-card-context {
+            max-height: 600px;
+            padding: 10px 12px;
+            overflow-y: auto;
+        }
+        .qa-card.expanded .qa-chevron {
+            transform: rotate(180deg);
+        }
+        .qa-chevron {
+            transition: transform 0.2s ease;
+            opacity: 0.4;
+            flex-shrink: 0;
+        }
+        .qa-refresh-btn {
+            font-size: 11px;
+            padding: 2px 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .qa-refresh-btn:hover {
+            border-color: var(--accent-color);
+            color: var(--accent-color);
+        }
+        .qa-refresh-btn.loading {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        /* Library Template Card */
+        .library-card {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+        .library-card-icon {
+            font-size: 20px;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+        .library-card-info {
+            flex: 1;
+        }
+        .library-card-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .library-card-author {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            margin-top: 1px;
+        }
+        .library-card-desc {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+            line-height: 1.4;
+        }
+        .library-card-meta {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            margin-top: 4px;
+        }
+        .library-install-btn {
+            font-size: 12px;
+            padding: 4px 12px;
+            border: 1px solid var(--accent-color);
+            border-radius: 6px;
+            background: transparent;
+            color: var(--accent-color);
+            cursor: pointer;
+            white-space: nowrap;
+            font-weight: 500;
+            flex-shrink: 0;
+            align-self: center;
+        }
+        .library-install-btn:hover {
+            background: var(--accent-color);
+            color: white;
+        }
+        .library-installed-badge {
+            font-size: 12px;
+            color: #22c55e;
+            font-weight: 500;
+            white-space: nowrap;
+            flex-shrink: 0;
+            align-self: center;
+        }
+
+        /* Installed skill expand (read-only tenets+prompt) */
+        .installed-skill-detail {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            padding: 0 12px;
+            background: var(--bg-primary);
+        }
+        .skill-item.expanded .installed-skill-detail {
+            max-height: 500px;
+            padding: 10px 12px;
+            overflow-y: auto;
+            border-top: 1px solid var(--border-color);
+        }
+
+        /* Skills list in Settings */
+        .skill-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .skill-item:last-child { border-bottom: none; }
+        .skill-item-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .skill-item-name {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+        .skill-display-name {
+            cursor: pointer;
+            border-bottom: 1px dashed transparent;
+            transition: border-color 0.15s;
+        }
+        .skill-display-name:hover {
+            border-bottom-color: var(--text-tertiary);
+        }
+        .skill-item-desc {
+            font-size: 12px;
+            color: var(--text-tertiary);
+            margin-top: 2px;
+        }
+        .skill-item-meta {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            margin-top: 4px;
+        }
+        .skill-toggle {
+            position: relative;
+            width: 40px;
+            height: 22px;
+            flex-shrink: 0;
+            margin-left: 12px;
+        }
+        .skill-toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .skill-toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: var(--border-color);
+            transition: 0.2s;
+            border-radius: 22px;
+        }
+        .skill-toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.2s;
+            border-radius: 50%;
+        }
+        .skill-toggle input:checked + .skill-toggle-slider {
+            background-color: #6366f1;
+        }
+        .skill-toggle input:checked + .skill-toggle-slider:before {
+            transform: translateX(18px);
+        }
+
+        /* Skill origin badges and actions */
+        .skill-origin-badge {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+        .skill-origin-badge.user { background: #dbeafe; color: #1d4ed8; }
+        .skill-origin-badge.installed { background: #f3e8ff; color: #7c3aed; }
+        .skill-actions {
+            display: flex;
+            gap: 4px;
+            margin-left: 8px;
+            flex-shrink: 0;
+        }
+        .skill-action-btn {
+            background: none;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 11px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: all 0.15s;
+        }
+        .skill-action-btn:hover { background: var(--bg-secondary); color: var(--text-primary); }
+        .skill-action-btn.delete:hover { background: #fef2f2; color: #dc2626; border-color: #fca5a5; }
+        .skill-author {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            font-style: italic;
+        }
+
+        /* Skill editor overlay */
+        .skill-editor-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+        .skill-editor-overlay.active { display: flex; }
+        .skill-editor {
+            background: var(--bg-primary);
+            border-radius: var(--radius-lg);
+            width: 90%;
+            max-width: 560px;
+            max-height: 85vh;
+            overflow-y: auto;
+            padding: 24px;
+            box-shadow: var(--shadow-lg);
+        }
+        .skill-editor h3 {
+            margin: 0 0 16px 0;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .skill-editor-field {
+            margin-bottom: 14px;
+        }
+        .skill-editor-field label {
+            display: block;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+        .skill-editor-field input,
+        .skill-editor-field textarea,
+        .skill-editor-field select {
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 13px;
+            font-family: inherit;
+            box-sizing: border-box;
+        }
+        .skill-editor-field textarea {
+            min-height: 80px;
+            resize: vertical;
+            font-family: 'SFMono-Regular', 'Menlo', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        .skill-editor-row {
+            display: flex;
+            gap: 12px;
+        }
+        .skill-editor-row .skill-editor-field { flex: 1; }
+        .skill-editor-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 20px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-color);
+        }
+        .skill-editor-btn {
+            padding: 8px 16px;
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            border: 1px solid var(--border-color);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+        .skill-editor-btn.primary {
+            background: #6366f1;
+            color: white;
+            border-color: #6366f1;
+        }
+        .skill-editor-btn.primary:hover { background: #4f46e5; }
+        .skill-datasource-checkboxes {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .skill-datasource-checkboxes label {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+        .skill-datasource-checkboxes input[type="checkbox"] {
+            width: auto;
+        }
+
         .unified-insight-text {
             font-size: 13px;
             line-height: 1.5;
@@ -6459,6 +7035,18 @@
             <!-- Weekly Review (Fri-Sun, injected by JS) -->
             <div id="weeklyReviewSection" class="weekly-review-section hidden"></div>
 
+            <!-- Recent Sessions -->
+            <div class="past-conversations" id="unifiedPastSessions" style="display:none;">
+                <div class="past-conversations-header">
+                    <span class="past-conversations-title">Recent Sessions</span>
+                </div>
+                <div class="past-conversations-list" id="unifiedPastSessionsList"></div>
+                <button class="unified-sessions-show-more" id="unifiedShowMore"
+                        onclick="unifiedLoadMoreSessions()" style="display:none;">
+                    Show more
+                </button>
+            </div>
+
             </div>
         </div>
 
@@ -6634,6 +7222,17 @@
                 <button class="settings-button-danger" onclick="clearCache()">Clear All Cache</button>
                 <div id="cacheStatus" class="hidden"></div>
             </div>
+
+            <!-- Cadences Section (in Settings) -->
+            <div class="settings-section">
+                <div class="settings-section-title">Cadences</div>
+                <div class="settings-item-desc" style="margin-bottom: 12px;">
+                    Automated scheduled tasks. Click a schedule to edit timing, or Run to trigger immediately.
+                </div>
+                <div id="cadenceStatusContent" class="cadence-list">
+                    <div class="recent-activity-empty">Loading cadences...</div>
+                </div>
+            </div>
         </div>
 
         <!-- Favorites View -->
@@ -6698,7 +7297,6 @@
 
         <!-- Agents View (now Work Patterns) -->
         <div id="agentsView" class="hidden settings-page">
-            <!-- 1. Work Patterns - task completion insights -->
             <div class="settings-section">
                 <div class="settings-section-title">📊 Work Patterns</div>
                 <div class="settings-item-desc" style="margin-bottom: 16px;">
@@ -6762,40 +7360,136 @@
 
         <!-- Coach Tuner View -->
         <div id="coachTunerView" class="hidden settings-page">
-            <div class="settings-section">
-                <div class="settings-section-title" style="display: flex; align-items: center; justify-content: space-between;">
-                    Coaching Cards
-                    <button class="cadence-run-btn" onclick="refreshCoachingDebug()" style="font-size: 12px;">Refresh</button>
-                </div>
-                <div id="coachDebugCards" style="margin-top: 8px;">
-                    <div style="color: var(--text-secondary); font-size: 13px; padding: 12px 0;">Loading...</div>
-                </div>
-                <div id="coachDebugMeta" style="font-size: 11px; color: var(--text-tertiary); margin-top: 8px;"></div>
+            <!-- Tab Bar -->
+            <div class="tuner-tabs">
+                <div class="tuner-tab active" data-tab="skills" onclick="switchTunerTab('skills')">Skills</div>
+                <div class="tuner-tab" data-tab="tenets" onclick="switchTunerTab('tenets')">Tenets</div>
+                <div class="tuner-tab" data-tab="qa" onclick="switchTunerTab('qa')">QA / Preview</div>
+                <div class="tuner-tab" data-tab="library" onclick="switchTunerTab('library')">Library</div>
             </div>
 
-            <div class="settings-section" style="margin-top: 24px;">
-                <div class="settings-section-title" style="display: flex; align-items: center; justify-content: space-between;">
-                    Coaching Tenets
-                    <button class="cadence-run-btn" id="openTenetsNotionBtn" onclick="openTenetsInNotion()" style="font-size: 12px; display: none;">
-                        Edit in Notion &rarr;
-                    </button>
+            <!-- Tab: Skills -->
+            <div id="tunerTabSkills" class="tuner-tab-content active">
+                <div class="settings-section">
+                    <div class="settings-section-title" style="display: flex; align-items: center; justify-content: space-between;">
+                        <span>Your Skills</span>
+                        <button class="skill-action-btn" onclick="openSkillEditor()" style="font-size: 12px; padding: 4px 12px;">+ New Skill</button>
+                    </div>
+                    <div id="userSkillsList" class="skills-list" style="margin-top: 8px;">
+                        <div class="loading-agents">Loading...</div>
+                    </div>
                 </div>
-                <div style="font-size: 12px; color: var(--text-tertiary); margin-bottom: 10px;">
-                    These rules shape how Coach Alfred coaches you. Edit them in Notion — changes are picked up automatically within 30 minutes.
+                <div class="settings-section" style="margin-top: 20px;">
+                    <div class="settings-section-title">Installed Skills</div>
+                    <div class="settings-item-desc" style="margin-bottom: 8px;">From coaching methodology authors. Toggle on/off. Click name to inspect.</div>
+                    <div id="installedSkillsList" class="skills-list">
+                        <div class="loading-agents">Loading...</div>
+                    </div>
                 </div>
-                <div id="tenetsPreview" style="
-                    border: 1px solid var(--border-color);
-                    border-radius: 8px;
-                    padding: 14px 16px;
-                    background: var(--bg-secondary);
-                    font-size: 13px;
-                    line-height: 1.6;
-                    color: var(--text-primary);
-                    max-height: 400px;
-                    overflow-y: auto;
-                    white-space: pre-wrap;
-                    font-family: var(--font-body);
-                ">Loading tenets...</div>
+            </div>
+
+            <!-- Tab: Tenets -->
+            <div id="tunerTabTenets" class="tuner-tab-content">
+                <div class="settings-section">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                        <div>
+                            <div class="settings-section-title" style="margin-bottom: 2px;">Coaching Tenets</div>
+                            <div style="font-size: 12px; color: var(--text-tertiary);">Toggle sections to control what Coach Alfred uses. Changes take effect immediately.</div>
+                        </div>
+                        <button class="cadence-run-btn" id="openTenetsNotionBtn2" onclick="openTenetsInNotion()" style="font-size: 12px; display: none;">
+                            Edit in Notion &rarr;
+                        </button>
+                    </div>
+                    <div id="tenetSectionsList"></div>
+                </div>
+            </div>
+
+            <!-- Tab: QA / Preview -->
+            <div id="tunerTabQA" class="tuner-tab-content">
+                <div class="settings-section">
+                    <div class="settings-section-title" style="display: flex; align-items: center; justify-content: space-between;">
+                        <span>Skill Output Preview</span>
+                        <button class="cadence-run-btn" onclick="refreshAllQA()" style="font-size: 12px;">Refresh All</button>
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-tertiary); margin-bottom: 12px;">Live output from each coaching skill. Click Refresh to regenerate with a fresh LLM call.</div>
+                    <div id="qaCardsList">
+                        <div class="loading-agents">Loading...</div>
+                    </div>
+                    <div id="qaDebugMeta" style="font-size: 11px; color: var(--text-tertiary); margin-top: 8px;"></div>
+                </div>
+            </div>
+
+            <!-- Tab: Library -->
+            <div id="tunerTabLibrary" class="tuner-tab-content">
+                <div class="settings-section">
+                    <div class="settings-section-title">Skill Library</div>
+                    <div style="font-size: 12px; color: var(--text-tertiary); margin-bottom: 12px;">Curated coaching skill templates. Install to add to your skills — fully editable after install.</div>
+                    <div id="libraryList">
+                        <div class="loading-agents">Loading...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Skill Editor Overlay (global, outside views so it renders on top) -->
+        <div id="skillEditorOverlay" class="skill-editor-overlay" onclick="if(event.target===this) closeSkillEditor()">
+            <div class="skill-editor">
+                <h3 id="skillEditorTitle">New Skill</h3>
+                <input type="hidden" id="skillEditorId" value="">
+
+                <div class="skill-editor-row">
+                    <div class="skill-editor-field" style="flex: 3;">
+                        <label>Name</label>
+                        <input type="text" id="skillEditorName" placeholder="e.g., Deep Work Guard">
+                    </div>
+                    <div class="skill-editor-field" style="flex: 0 0 60px;">
+                        <label>Icon</label>
+                        <input type="text" id="skillEditorIcon" placeholder="🎯" maxlength="2" style="text-align: center; font-size: 18px;">
+                    </div>
+                </div>
+
+                <div class="skill-editor-field">
+                    <label>Description</label>
+                    <input type="text" id="skillEditorDesc" placeholder="One-line description of what this skill does">
+                </div>
+
+                <div class="skill-editor-row">
+                    <div class="skill-editor-field">
+                        <label>Data Sources</label>
+                        <div class="skill-datasource-checkboxes">
+                            <label><input type="checkbox" value="calendar"> Calendar</label>
+                            <label><input type="checkbox" value="tasks"> Tasks</label>
+                            <label><input type="checkbox" value="messages"> Messages</label>
+                            <label><input type="checkbox" value="commitments"> Commitments</label>
+                            <label><input type="checkbox" value="coaching_memory"> Memory</label>
+                            <label><input type="checkbox" value="tasks_detailed"> Tasks (Detailed)</label>
+                            <label><input type="checkbox" value="messages_detailed"> Messages (Detailed)</label>
+                            <label><input type="checkbox" value="commitments_by_person"> Commitments by Person</label>
+                        </div>
+                    </div>
+                    <div class="skill-editor-field" style="flex: 0 0 120px;">
+                        <label>Frequency</label>
+                        <select id="skillEditorFreq">
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="skill-editor-field">
+                    <label>Tenets — coaching principles this skill follows</label>
+                    <textarea id="skillEditorTenets" rows="4" placeholder="- A productive day needs at least one 2-hour focus block&#10;- More than 5 hours of meetings is a red flag"></textarea>
+                </div>
+
+                <div class="skill-editor-field">
+                    <label>Prompt — instruction to the AI coach</label>
+                    <textarea id="skillEditorPrompt" rows="5" placeholder="Analyze today's calendar. Count uninterrupted blocks.&#10;Give one specific suggestion to protect focus time.&#10;Rules: No emojis, no fluff, maximum 2 sentences.&#10;Respond with ONLY the coaching insight text."></textarea>
+                </div>
+
+                <div class="skill-editor-actions">
+                    <button class="skill-editor-btn" onclick="closeSkillEditor()">Cancel</button>
+                    <button class="skill-editor-btn primary" id="skillEditorSave" onclick="saveSkill()">Create Skill</button>
+                </div>
             </div>
         </div>
 
@@ -6861,14 +7555,6 @@
                 </div>
             </div>
 
-            <!-- CADENCES (moved from Home) -->
-            <div id="cadenceSection" class="home-cadences" style="margin-top: 20px;">
-                <div class="home-section-label" style="margin-bottom: 10px;">CADENCES</div>
-                <div id="cadenceStatusContent" class="cadence-list">
-                    <div class="recent-activity-empty">Loading cadences...</div>
-                </div>
-                <!-- Group Suggestions moved to Messages tool (Phase 6) -->
-            </div>
         </div>
 
         <!-- Recent Activity (shown when empty) -->
@@ -7267,6 +7953,97 @@
                 }
             } catch (e) {
                 console.error('[DeleteConversation] Error:', e);
+            }
+        }
+
+        // ===============================================
+        // Unified Past Sessions (Home Dashboard)
+        // ===============================================
+
+        let _unifiedSessionsTotal = 0;
+
+        async function unifiedLoadPastSessions(limit = 5) {
+            const section = document.getElementById('unifiedPastSessions');
+            const list = document.getElementById('unifiedPastSessionsList');
+            const showMoreBtn = document.getElementById('unifiedShowMore');
+            if (!section || !list) return;
+
+            try {
+                const response = await authFetch(`/api/conversations?limit=${limit}`);
+                if (!response.ok) return;
+                const data = await response.json();
+
+                if (!data.conversations || data.conversations.length === 0) {
+                    section.style.display = 'none';
+                    return;
+                }
+
+                _unifiedSessionsTotal = data.conversations.length;
+
+                list.innerHTML = data.conversations.map(conv => {
+                    const timeAgo = formatConversationTime(conv.lastActiveAt);
+                    const title = conv.title || 'Untitled conversation';
+                    const summary = conv.summary || `${conv.turnCount} messages`;
+                    return `
+                        <div class="past-conversation-item" onclick="unifiedResumeConversation('${conv.id}')">
+                            <div class="past-conversation-content">
+                                <div class="past-conversation-title">${escapeHtml(title)}</div>
+                                <div class="past-conversation-meta">${escapeHtml(summary)} · ${timeAgo}</div>
+                            </div>
+                            <button class="past-conversation-delete" onclick="deletePastConversation(event, '${conv.id}')" title="Delete">×</button>
+                        </div>
+                    `;
+                }).join('');
+
+                section.style.display = 'block';
+
+                // Show "Show more" only if we loaded exactly the limit (more may exist) and limit < 50
+                if (showMoreBtn) {
+                    showMoreBtn.style.display = (data.conversations.length >= limit && limit < 50) ? 'block' : 'none';
+                }
+            } catch (e) {
+                console.log('[UnifiedPastSessions] Failed to load:', e.message);
+            }
+        }
+
+        function unifiedLoadMoreSessions() {
+            unifiedLoadPastSessions(50);
+        }
+
+        async function unifiedResumeConversation(id) {
+            try {
+                const response = await authFetch(`/api/conversations/restore?id=${encodeURIComponent(id)}`, { method: 'POST' });
+                if (!response.ok) {
+                    console.error('[UnifiedResume] Failed:', response.status);
+                    return;
+                }
+                const data = await response.json();
+
+                // Switch to this conversation's session
+                chatSessionId = id;
+                chatHasMessages = true;
+
+                // Enter chat mode (collapses dashboard, shows chat area)
+                unifiedEnterChatMode();
+
+                // Clear any existing messages in unified chat
+                const msgList = document.getElementById('unifiedMessageList');
+                if (msgList) msgList.innerHTML = '';
+
+                // Render restored turns as chat bubbles
+                if (data.turns && data.turns.length > 0) {
+                    data.turns.forEach(turn => {
+                        addChatBubble(turn.role === 'user' ? 'user' : 'assistant', turn.content);
+                    });
+                }
+
+                // Focus input
+                setTimeout(() => {
+                    const input = document.getElementById('unifiedInput');
+                    if (input) input.focus();
+                }, 100);
+            } catch (e) {
+                console.error('[UnifiedResume] Error:', e);
             }
         }
 
@@ -7822,17 +8599,43 @@
 
                 case 'googleOauth':
                     const googleConnected = ftueData.googleConnected;
+                    const hasGoogleCreds = ftueData.googleClientId && ftueData.googleClientSecret;
                     return `
                         <h2>Connect Google</h2>
-                        <p>Access your Calendar and Gmail for briefings and meeting prep.</p>
-                        <button class="ftue-oauth-btn" onclick="startGoogleOAuth()">
-                            <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-                            ${googleConnected ? 'Connected ✓' : 'Connect Google Account'}
-                        </button>
-                        <div id="googleOAuthStatus" style="text-align: center; margin-top: 16px;">
-                            ${googleConnected ? '<span class="ftue-status success">✓ Connected</span>' : '<span style="color: var(--text-tertiary); font-size: 13px;">Not connected</span>'}
+                        <p>Access your Calendar for briefings, meeting prep, and event creation.</p>
+
+                        <div id="googleCredsSection" style="${hasGoogleCreds ? 'display:none;' : ''}">
+                            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">
+                                First, create OAuth credentials in
+                                <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color: var(--accent-primary);">Google Cloud Console</a>.
+                                Enable the Google Calendar API, create an OAuth 2.0 Client ID (Web application), and add
+                                <code>http://localhost:8080/auth/callback</code> as an authorized redirect URI.
+                            </p>
+                            <div class="ftue-field">
+                                <label>Client ID <span class="required">*</span></label>
+                                <input type="text" id="ftueGoogleClientId" placeholder="your-client-id.apps.googleusercontent.com" value="${ftueData.googleClientId || ''}">
+                            </div>
+                            <div class="ftue-field">
+                                <label>Client Secret <span class="required">*</span></label>
+                                <input type="password" id="ftueGoogleClientSecret" placeholder="GOCSPX-..." value="${ftueData.googleClientSecret || ''}">
+                            </div>
+                            <button class="ftue-next-btn" style="margin-bottom: 16px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color);" onclick="saveGoogleCredentials()">
+                                Save Credentials
+                            </button>
+                            <div id="googleCredsStatus"></div>
                         </div>
-                        <p style="font-size: 12px; color: var(--text-tertiary); text-align: center; margin-top: 24px;">Alfred reads but never modifies your data.</p>
+
+                        <div id="googleOAuthSection" style="${hasGoogleCreds && !googleConnected ? '' : (googleConnected ? '' : 'display:none;')}">
+                            <button class="ftue-oauth-btn" onclick="startGoogleOAuth()" ${googleConnected ? 'disabled' : ''}>
+                                <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                                ${googleConnected ? 'Connected ✓' : 'Connect Google Calendar'}
+                            </button>
+                        </div>
+
+                        <div id="googleOAuthStatus" style="text-align: center; margin-top: 16px;">
+                            ${googleConnected ? '<span class="ftue-status success">✓ Connected</span>' : ''}
+                        </div>
+                        <p style="font-size: 12px; color: var(--text-tertiary); text-align: center; margin-top: 24px;">Alfred reads your calendar and can create events on your behalf.</p>
                     `;
 
                 case 'profile':
@@ -8252,14 +9055,78 @@
             }
         }
 
+        async function saveGoogleCredentials() {
+            const clientId = document.getElementById('ftueGoogleClientId')?.value?.trim();
+            const clientSecret = document.getElementById('ftueGoogleClientSecret')?.value?.trim();
+            const statusEl = document.getElementById('googleCredsStatus');
+
+            if (!clientId || !clientSecret) {
+                if (statusEl) statusEl.innerHTML = '<span class="ftue-status error">Both fields are required</span>';
+                return;
+            }
+
+            if (statusEl) statusEl.innerHTML = '<span style="color: var(--text-tertiary);">Saving...</span>';
+
+            try {
+                const response = await fetch('/api/setup/step', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        step: 'googleCredentials',
+                        data: {
+                            client_id: clientId,
+                            client_secret: clientSecret,
+                            redirect_uri: 'http://localhost:8080/auth/callback'
+                        }
+                    })
+                });
+
+                if (response.ok) {
+                    ftueData.googleClientId = clientId;
+                    ftueData.googleClientSecret = clientSecret;
+                    // Hide credentials section, show OAuth button
+                    const credsSection = document.getElementById('googleCredsSection');
+                    const oauthSection = document.getElementById('googleOAuthSection');
+                    if (credsSection) credsSection.style.display = 'none';
+                    if (oauthSection) oauthSection.style.display = '';
+                } else {
+                    if (statusEl) statusEl.innerHTML = '<span class="ftue-status error">Failed to save</span>';
+                }
+            } catch (e) {
+                if (statusEl) statusEl.innerHTML = '<span class="ftue-status error">Error: ' + e.message + '</span>';
+            }
+        }
+
         function startGoogleOAuth() {
             // Open Google OAuth in new window
-            window.open('/auth/google', 'googleOAuth', 'width=600,height=700');
-            // Mark as connected after some time (in real app, would use postMessage or polling)
-            setTimeout(() => {
-                ftueData.googleConnected = true;
-                renderFtueStep(currentFtueStep); // Re-render to show connected state
-            }, 5000);
+            const oauthWindow = window.open('/auth/google', 'googleOAuth', 'width=600,height=700');
+
+            // Listen for postMessage from callback page
+            window.addEventListener('message', function onOAuthComplete(event) {
+                if (event.data && event.data.type === 'google-oauth-complete') {
+                    ftueData.googleConnected = true;
+                    renderFtueStep(currentFtueStep);
+                    window.removeEventListener('message', onOAuthComplete);
+                }
+            });
+
+            // Also poll setup status as fallback (in case postMessage doesn't work)
+            let pollCount = 0;
+            const pollInterval = setInterval(async () => {
+                pollCount++;
+                if (pollCount > 60) { clearInterval(pollInterval); return; } // Stop after 2 minutes
+                try {
+                    const resp = await fetch('/api/setup/status');
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.completedSteps && data.completedSteps.includes('googleOauth')) {
+                            ftueData.googleConnected = true;
+                            renderFtueStep(currentFtueStep);
+                            clearInterval(pollInterval);
+                        }
+                    }
+                } catch (e) { /* ignore polling errors */ }
+            }, 2000);
         }
 
         async function openPermissionSettings(type) {
@@ -8399,6 +9266,8 @@
             if (isSunday()) {
                 loadWeeklyReflection();
             }
+            // Load past sessions for home dashboard
+            unifiedLoadPastSessions();
             // Pre-load tools data (for when overlays are opened)
             loadRecentActivity();
             loadCadenceStatus();
@@ -11658,7 +12527,7 @@
             const insightCards = [];
             let weeklyReviewCard = null;
             cards.forEach(card => {
-                if (card.type === 'weekly_review') {
+                if ((card.type || '').includes('weekly')) {
                     weeklyReviewCard = card;
                 } else {
                     insightCards.push(card);
@@ -11671,7 +12540,7 @@
                     const slide = document.createElement('div');
                     slide.className = 'insight-slide';
                     const label = card.label || card.type || 'Insight';
-                    const isUrgent = card.type === 'avoidance' && (card.insight || '').includes('week');
+                    const isUrgent = (card.type || '').includes('avoidance') && (card.insight || '').includes('week');
                     slide.innerHTML = '<div class="insight-label' + (isUrgent ? ' urgent' : '') + '">' + escapeHtml(label) + '</div>'
                         + '<div class="insight-text">' + escapeHtml(card.insight || '') + '</div>';
                     track.appendChild(slide);
@@ -11975,162 +12844,81 @@
             }
         }
 
-        // ===== Cadences Section =====
+        // ===== Cadences Section (API-driven) =====
 
-        // Cadence definitions with their trigger APIs
-        const CADENCE_DEFS = {
-            todoScan: {
-                icon: '📝', label: 'Todo Scan',
-                triggerAPI: '/api/todos/scan',
-                triggerMethod: 'POST',
-                configFields: ['intervalHours'],
-                formatSchedule: (info) => `Every ${info.intervalHours || 3}h`
-            },
-            commitmentScan: {
-                icon: '🤝', label: 'Commitment Scan',
-                triggerAPI: '/api/commitments/scan',
-                triggerMethod: 'POST',
-                configFields: ['time'],
-                formatSchedule: (info) => `Daily @ ${info.time || '17:00'}`
-            },
-            patternLearn: {
-                icon: '🧠', label: 'Pattern Learning',
-                triggerAPI: '/api/workflow-patterns/compute',
-                triggerMethod: 'POST',
-                configFields: ['day', 'time'],
-                formatSchedule: (info) => {
-                    const day = (info.day || 'thursday');
-                    return day.charAt(0).toUpperCase() + day.slice(1) + ' @ ' + (info.time || '18:00');
-                }
-            },
-            groupAnalysis: {
-                icon: '📊', label: 'Group Analysis',
-                triggerAPI: '/api/cadence/run-group-analysis',
-                triggerMethod: 'POST',
-                configFields: ['day', 'time'],
-                formatSchedule: (info) => {
-                    const day = (info.day || 'monday');
-                    return day.charAt(0).toUpperCase() + day.slice(1) + ' @ ' + (info.time || '09:00');
-                }
-            }
-        };
+        let cadenceList = []; // All cadences from API
+        let toolCatalog = []; // Available tools for create form
 
-        let cadenceData = {}; // cached for edit modal
-
-        // Render cadence data into DOM (shared by live + cached paths)
+        // Render cadences from /api/cadences data
         function renderCadenceData(data) {
-            cadenceData = data;
+            cadenceList = data.cadences || [];
             const el = document.getElementById('cadenceStatusContent');
 
             let html = '';
-            Object.entries(CADENCE_DEFS).forEach(([key, def]) => {
-                const info = data[key] || {};
-                const enabled = info.enabled !== false;
-                const lastRun = info.lastRun || null;
-                const dotColor = enabled ? (lastRun ? '#448361' : '#c4a33d') : '#999';
-                const lastRunText = lastRun ? formatRelativeTime(lastRun) : 'Never';
-                const schedule = def.formatSchedule(info);
-                const hasAPI = def.triggerAPI !== null;
+            cadenceList.forEach(c => {
+                const dotColor = c.enabled ? (c.last_run_timestamp ? '#448361' : '#c4a33d') : '#999';
+                const lastRunText = c.last_run_timestamp ? formatRelativeTime(c.last_run_timestamp) : 'Never';
+                const schedule = c.schedule_display || '';
+                const deleteBtn = c.is_built_in ? '' : `<button class="cadence-delete-btn" onclick="deleteCadence('${c.id}')" title="Delete">×</button>`;
 
                 html += `<div class="cadence-item">
                     <div class="cadence-item-left">
                         <div class="cadence-dot" style="background: ${dotColor};"></div>
-                        <span class="cadence-name">${def.icon} ${def.label}</span>
+                        <span class="cadence-name">${c.icon} ${c.name}</span>
                     </div>
-                    <span class="cadence-schedule" onclick="editCadence('${key}')" title="Click to edit">${schedule}</span>
+                    <span class="cadence-schedule" onclick="editCadence('${c.id}')" title="Click to edit">${schedule}</span>
                     <span class="cadence-last-run">${lastRunText}</span>
-                    ${hasAPI ? `<button class="cadence-run-btn" id="cadenceRun_${key}" onclick="triggerCadence('${key}')">Run</button>` : '<span></span>'}
+                    <button class="cadence-run-btn" id="cadenceRun_${c.id}" onclick="triggerCadence('${c.id}')">Run</button>
+                    ${deleteBtn}
                 </div>`;
             });
 
-            const autoGroups = data.autoSummary?.groups || [];
-            if (autoGroups.length > 0) {
-                html += `<div class="cadence-item">
-                    <div class="cadence-item-left">
-                        <div class="cadence-dot" style="background: #448361;"></div>
-                        <span class="cadence-name">📨 Auto-Summaries</span>
-                    </div>
-                    <span class="cadence-schedule">${autoGroups.length} group${autoGroups.length > 1 ? 's' : ''} @ ${data.autoSummary?.time || '18:00'}</span>
-                    <span class="cadence-last-run"></span>
-                    <span></span>
-                </div>`;
-            }
+            // Add "New Cadence" button
+            html += `<div class="cadence-item cadence-add-btn" onclick="openCreateCadence()">
+                <span style="color:var(--text-secondary);font-size:13px;">+ New Cadence</span>
+            </div>`;
 
             el.innerHTML = html || '<div class="recent-activity-empty">No cadences configured</div>';
         }
 
         async function loadCadenceStatus() {
-            // Render cache immediately
-            const cached = cacheGet('cadence_status');
+            const cached = cacheGet('cadences');
             if (cached && cached.data) {
                 renderCadenceData(cached.data);
             }
 
             try {
-                const response = await authFetch('/api/cadence/status');
+                const response = await authFetch('/api/cadences');
                 if (!response.ok) return;
                 const data = await response.json();
-
-                cacheSet('cadence_status', data);
+                cacheSet('cadences', data);
                 renderCadenceData(data);
-
-                // Group suggestions now load inside Messages tool (Phase 6)
             } catch (error) {
-                console.warn('Failed to load cadence status:', error);
-                // Cache already rendered — page isn't broken
+                console.warn('Failed to load cadences:', error);
             }
         }
 
-        function cadenceResultSummary(key, data) {
-            if (!data) return '';
-            switch (key) {
-                case 'commitmentScan':
-                    return data.found ? `${data.found} found, ${data.saved} saved` : 'No new commitments';
-                case 'todoScan':
-                    return data.todosCreated ? `${data.todosCreated} created` : 'No new todos';
-                case 'patternLearn':
-                    const cnt = data.summary?.computedPatternsCount;
-                    return cnt ? `${cnt} patterns` : 'Patterns updated';
-                case 'groupAnalysis':
-                    return data.newSuggestions ? `${data.newSuggestions} suggestions` : `${data.totalGroupsScanned || 0} groups scanned`;
-                default: return '';
-            }
-        }
-
-        async function triggerCadence(key) {
-            const def = CADENCE_DEFS[key];
-            if (!def || !def.triggerAPI) return;
-
-            const btn = document.getElementById('cadenceRun_' + key);
+        async function triggerCadence(id) {
+            const btn = document.getElementById('cadenceRun_' + id);
             if (!btn || btn.disabled) return;
-
-            // Find the "last ran" span (sibling before the button)
             const lastRunSpan = btn.previousElementSibling;
 
             btn.disabled = true;
             btn.textContent = '...';
             btn.classList.add('running');
 
-            // Use AbortController with 120s timeout (commitment scans can take 60s+)
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 120000);
-
             try {
-                const response = await authFetch(def.triggerAPI, {
-                    method: def.triggerMethod || 'POST',
-                    signal: controller.signal
+                const response = await authFetch('/api/cadences/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id })
                 });
-                clearTimeout(timeoutId);
                 if (response.ok) {
-                    const data = await response.json().catch(() => ({}));
-                    const summary = cadenceResultSummary(key, data);
-
                     btn.textContent = '✓';
                     btn.classList.remove('running');
                     btn.classList.add('success');
-                    // Show result in last-ran column
-                    if (lastRunSpan && summary) {
-                        lastRunSpan.textContent = summary;
+                    if (lastRunSpan) {
+                        lastRunSpan.textContent = 'Running...';
                         lastRunSpan.style.color = 'var(--text-secondary)';
                     }
                     setTimeout(() => {
@@ -12138,63 +12926,73 @@
                         btn.disabled = false;
                         btn.classList.remove('success');
                         if (lastRunSpan) lastRunSpan.style.color = '';
-                        loadCadenceStatus(); // Refresh last-ran times
-                    }, 3000);
+                        loadCadenceStatus();
+                    }, 5000);
                 } else {
-                    const errData = await response.json().catch(() => ({}));
-                    console.error('Cadence error:', key, response.status, errData);
                     btn.textContent = 'Error';
                     btn.classList.remove('running');
-                    setTimeout(() => {
-                        btn.textContent = 'Run';
-                        btn.disabled = false;
-                    }, 3000);
+                    setTimeout(() => { btn.textContent = 'Run'; btn.disabled = false; }, 3000);
                 }
             } catch (err) {
-                clearTimeout(timeoutId);
-                console.error('Cadence trigger failed:', key, err);
-                btn.textContent = err.name === 'AbortError' ? 'Timeout' : 'Error';
+                console.error('Cadence trigger failed:', id, err);
+                btn.textContent = 'Error';
                 btn.classList.remove('running');
-                setTimeout(() => {
-                    btn.textContent = 'Run';
-                    btn.disabled = false;
-                }, 3000);
+                setTimeout(() => { btn.textContent = 'Run'; btn.disabled = false; }, 3000);
             }
         }
 
-        function editCadence(key) {
-            const def = CADENCE_DEFS[key];
-            const info = cadenceData[key] || {};
-
-            let fieldsHtml = '';
-
-            if (def.configFields.includes('intervalHours')) {
-                fieldsHtml += `<div class="cadence-edit-row">
-                    <span class="cadence-edit-label">Every</span>
-                    <div style="display:flex;align-items:center;gap:6px;">
-                        <input type="number" id="cadenceEdit_intervalHours" class="cadence-edit-input" value="${info.intervalHours || 3}" min="1" max="24" style="width:60px;">
-                        <span class="cadence-edit-label">hours</span>
-                    </div>
-                </div>`;
+        async function deleteCadence(id) {
+            if (!confirm('Delete this cadence?')) return;
+            try {
+                const response = await authFetch('/api/cadences?id=' + encodeURIComponent(id), { method: 'DELETE' });
+                if (response.ok) {
+                    await loadCadenceStatus();
+                } else {
+                    const data = await response.json().catch(() => ({}));
+                    alert(data.error || 'Failed to delete');
+                }
+            } catch (err) {
+                alert('Failed to delete cadence');
             }
+        }
 
-            if (def.configFields.includes('day')) {
-                fieldsHtml += `<div class="cadence-edit-row">
-                    <span class="cadence-edit-label">Day</span>
-                    <select id="cadenceEdit_day" class="cadence-edit-select">
-                        ${['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].map(d =>
-                            `<option value="${d}" ${(info.day || '').toLowerCase() === d ? 'selected' : ''}>${d.charAt(0).toUpperCase() + d.slice(1)}</option>`
-                        ).join('')}
+        function editCadence(id) {
+            const cadence = cadenceList.find(c => c.id === id);
+            if (!cadence) return;
+
+            const sched = cadence.schedule || {};
+            let scheduleFieldsHtml = '';
+
+            // Schedule type
+            scheduleFieldsHtml += `<div class="cadence-edit-section">
+                <div class="cadence-edit-section-label">Schedule</div>
+                <div class="cadence-edit-row">
+                    <span class="cadence-edit-label">Type</span>
+                    <select id="cadenceEdit_schedType" class="cadence-edit-select" onchange="updateScheduleFields()">
+                        <option value="daily" ${sched.type === 'daily' ? 'selected' : ''}>Daily</option>
+                        <option value="weekly" ${sched.type === 'weekly' ? 'selected' : ''}>Weekly</option>
+                        <option value="interval" ${sched.type === 'interval' ? 'selected' : ''}>Every N Hours</option>
                     </select>
-                </div>`;
-            }
+                </div>
+                <div id="cadenceScheduleFields"></div>
+            </div>`;
 
-            if (def.configFields.includes('time')) {
-                fieldsHtml += `<div class="cadence-edit-row">
-                    <span class="cadence-edit-label">Time</span>
-                    <input type="time" id="cadenceEdit_time" class="cadence-edit-input" value="${info.time || '17:00'}" style="width:110px;">
-                </div>`;
-            }
+            // Toggles
+            const togglesHtml = `<div class="cadence-edit-section">
+                <div class="cadence-edit-section-label">Options</div>
+                <div class="cadence-edit-toggle">
+                    <span class="cadence-edit-label">Enabled</span>
+                    <div class="cadence-toggle-switch ${cadence.enabled ? 'active' : ''}" id="cadenceEdit_enabled" onclick="this.classList.toggle('active')"></div>
+                </div>
+                <div class="cadence-edit-toggle">
+                    <span class="cadence-edit-label">Notifications</span>
+                    <div class="cadence-toggle-switch ${cadence.notify_on_success ? 'active' : ''}" id="cadenceEdit_notify" onclick="this.classList.toggle('active')"></div>
+                </div>
+                <div class="cadence-edit-toggle">
+                    <span class="cadence-edit-label">Email on success</span>
+                    <div class="cadence-toggle-switch ${cadence.email_on_success ? 'active' : ''}" id="cadenceEdit_email" onclick="this.classList.toggle('active')"></div>
+                </div>
+            </div>`;
 
             // Create overlay + popover
             const overlay = document.createElement('div');
@@ -12204,17 +13002,72 @@
             const popover = document.createElement('div');
             popover.className = 'cadence-edit-popover';
             popover.id = 'cadenceEditPopover';
+            popover.style.maxWidth = '360px';
             popover.innerHTML = `
-                <div class="cadence-edit-title">${def.icon} ${def.label}</div>
-                ${fieldsHtml}
+                <div class="cadence-edit-title">${cadence.icon} ${cadence.name}</div>
+                ${scheduleFieldsHtml}
+                ${togglesHtml}
                 <div class="cadence-edit-actions">
                     <button class="cadence-edit-cancel" onclick="closeCadenceEdit()">Cancel</button>
-                    <button class="cadence-edit-save" onclick="saveCadenceEdit('${key}')">Save</button>
+                    <button class="cadence-edit-save" onclick="saveCadenceEdit('${id}')">Save</button>
                 </div>
             `;
 
             document.body.appendChild(overlay);
             document.body.appendChild(popover);
+
+            // Render schedule-specific fields based on current type
+            updateScheduleFields(sched);
+        }
+
+        function updateScheduleFields(initial) {
+            const container = document.getElementById('cadenceScheduleFields');
+            if (!container) return;
+            const type = document.getElementById('cadenceEdit_schedType')?.value || 'daily';
+
+            let html = '';
+            if (type === 'daily') {
+                const time = initial?.time || '17:00';
+                html = `<div class="cadence-edit-row">
+                    <span class="cadence-edit-label">Time</span>
+                    <input type="time" id="cadenceEdit_time" class="cadence-edit-input" value="${time}" style="width:110px;">
+                </div>`;
+            } else if (type === 'weekly') {
+                const day = initial?.day || 'monday';
+                const time = initial?.time || '09:00';
+                html = `<div class="cadence-edit-row">
+                    <span class="cadence-edit-label">Day</span>
+                    <select id="cadenceEdit_day" class="cadence-edit-select">
+                        ${['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].map(d =>
+                            `<option value="${d}" ${day.toLowerCase() === d ? 'selected' : ''}>${d.charAt(0).toUpperCase() + d.slice(1)}</option>`
+                        ).join('')}
+                    </select>
+                </div>
+                <div class="cadence-edit-row">
+                    <span class="cadence-edit-label">Time</span>
+                    <input type="time" id="cadenceEdit_time" class="cadence-edit-input" value="${time}" style="width:110px;">
+                </div>`;
+            } else if (type === 'interval') {
+                const hours = initial?.hours || 3;
+                const activeStart = initial?.active_start || 9;
+                const activeEnd = initial?.active_end || 21;
+                html = `<div class="cadence-edit-row">
+                    <span class="cadence-edit-label">Every</span>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <input type="number" id="cadenceEdit_hours" class="cadence-edit-input" value="${hours}" min="1" max="24" style="width:60px;">
+                        <span class="cadence-edit-label">hours</span>
+                    </div>
+                </div>
+                <div class="cadence-edit-row">
+                    <span class="cadence-edit-label">Active hours</span>
+                    <div style="display:flex;align-items:center;gap:4px;">
+                        <input type="number" id="cadenceEdit_activeStart" class="cadence-edit-input" value="${activeStart}" min="0" max="23" style="width:50px;">
+                        <span class="cadence-edit-label">to</span>
+                        <input type="number" id="cadenceEdit_activeEnd" class="cadence-edit-input" value="${activeEnd}" min="0" max="23" style="width:50px;">
+                    </div>
+                </div>`;
+            }
+            container.innerHTML = html;
         }
 
         function closeCadenceEdit() {
@@ -12224,47 +13077,338 @@
             if (popover) popover.remove();
         }
 
-        async function saveCadenceEdit(key) {
-            const def = CADENCE_DEFS[key];
-            const updates = {};
+        async function saveCadenceEdit(id) {
+            const schedType = document.getElementById('cadenceEdit_schedType')?.value;
+            const schedule = {};
 
-            // Map cadence key to config field names
-            const configKeyMap = {
-                todoScan: 'todo_scan',
-                commitmentScan: 'commitment_scan',
-                patternLearn: 'pattern_learn',
-                groupAnalysis: 'group_analysis'
+            if (schedType === 'daily') {
+                schedule.type = 'daily';
+                schedule.time = document.getElementById('cadenceEdit_time')?.value || '17:00';
+            } else if (schedType === 'weekly') {
+                schedule.type = 'weekly';
+                schedule.day = document.getElementById('cadenceEdit_day')?.value || 'monday';
+                schedule.time = document.getElementById('cadenceEdit_time')?.value || '09:00';
+            } else if (schedType === 'interval') {
+                schedule.type = 'interval';
+                schedule.hours = parseInt(document.getElementById('cadenceEdit_hours')?.value || '3');
+                schedule.active_start = parseInt(document.getElementById('cadenceEdit_activeStart')?.value || '9');
+                schedule.active_end = parseInt(document.getElementById('cadenceEdit_activeEnd')?.value || '21');
+            }
+
+            const updates = {
+                id: id,
+                schedule: schedule,
+                enabled: document.getElementById('cadenceEdit_enabled')?.classList.contains('active') ?? true,
+                notify_on_success: document.getElementById('cadenceEdit_notify')?.classList.contains('active') ?? true,
+                email_on_success: document.getElementById('cadenceEdit_email')?.classList.contains('active') ?? false
             };
-            const prefix = configKeyMap[key];
-
-            if (def.configFields.includes('intervalHours')) {
-                const val = document.getElementById('cadenceEdit_intervalHours')?.value;
-                if (val) updates[prefix + '_interval_hours'] = parseInt(val);
-            }
-            if (def.configFields.includes('day')) {
-                const val = document.getElementById('cadenceEdit_day')?.value;
-                if (val) updates[prefix + '_day'] = val;
-            }
-            if (def.configFields.includes('time')) {
-                const val = document.getElementById('cadenceEdit_time')?.value;
-                if (val) updates[prefix + '_time'] = val;
-            }
 
             try {
-                const response = await authFetch('/api/cadence/config', {
-                    method: 'POST',
+                const response = await authFetch('/api/cadences', {
+                    method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(updates)
                 });
                 if (response.ok) {
                     closeCadenceEdit();
+                    cacheDelete('cadences');
                     await loadCadenceStatus();
                 } else {
-                    alert('Failed to save. Server returned ' + response.status);
+                    const data = await response.json().catch(() => ({}));
+                    alert(data.error || 'Failed to save');
                 }
             } catch (err) {
-                console.error('Save cadence config failed:', err);
-                alert('Failed to save cadence config');
+                console.error('Save cadence failed:', err);
+                alert('Failed to save cadence');
+            }
+        }
+
+        async function openCreateCadence() {
+            // Load tool catalog if not cached
+            if (!toolCatalog.length) {
+                try {
+                    const response = await authFetch('/api/cadences/catalog');
+                    if (response.ok) {
+                        const data = await response.json();
+                        toolCatalog = data.tools || [];
+                    }
+                } catch (err) {
+                    console.error('Failed to load tool catalog:', err);
+                }
+            }
+
+            if (!toolCatalog.length) {
+                alert('Could not load available tools');
+                return;
+            }
+
+            // Group tools by category
+            const categories = {};
+            toolCatalog.forEach(t => {
+                if (!categories[t.category]) categories[t.category] = [];
+                categories[t.category].push(t);
+            });
+
+            let toolOptions = '';
+            Object.keys(categories).forEach(cat => {
+                toolOptions += `<optgroup label="${cat}">`;
+                categories[cat].forEach(t => {
+                    toolOptions += `<option value="${t.action_type}" data-icon="${t.icon}">${t.icon} ${t.label}</option>`;
+                });
+                toolOptions += `</optgroup>`;
+            });
+
+            const overlay = document.createElement('div');
+            overlay.className = 'cadence-edit-overlay';
+            overlay.onclick = () => closeCadenceEdit();
+
+            const popover = document.createElement('div');
+            popover.className = 'cadence-edit-popover';
+            popover.id = 'cadenceEditPopover';
+            popover.style.maxWidth = '380px';
+            popover.innerHTML = `
+                <div class="cadence-edit-title">New Cadence</div>
+
+                <div class="cadence-edit-section">
+                    <div class="cadence-edit-section-label">Basics</div>
+                    <div class="cadence-edit-row">
+                        <span class="cadence-edit-label">Name</span>
+                        <input type="text" id="cadenceCreate_name" class="cadence-edit-input" placeholder="My cadence" style="width:180px;">
+                    </div>
+                    <div class="cadence-edit-row">
+                        <span class="cadence-edit-label">Tool</span>
+                        <select id="cadenceCreate_tool" class="cadence-tool-picker" onchange="onToolSelect()">
+                            <option value="">Choose a tool...</option>
+                            ${toolOptions}
+                        </select>
+                    </div>
+                    <div id="cadenceToolDescription" style="font-size:12px;color:var(--text-tertiary);margin-top:4px;"></div>
+                </div>
+
+                <div id="cadenceCreateParams" class="cadence-dynamic-params"></div>
+
+                <div class="cadence-edit-section">
+                    <div class="cadence-edit-section-label">Schedule</div>
+                    <div class="cadence-edit-row">
+                        <span class="cadence-edit-label">Type</span>
+                        <select id="cadenceCreate_schedType" class="cadence-edit-select" onchange="updateCreateScheduleFields()">
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
+                            <option value="interval">Every N Hours</option>
+                        </select>
+                    </div>
+                    <div id="cadenceCreateScheduleFields"></div>
+                </div>
+
+                <div class="cadence-edit-section">
+                    <div class="cadence-edit-section-label">Options</div>
+                    <div class="cadence-edit-toggle">
+                        <span class="cadence-edit-label">Notifications</span>
+                        <div class="cadence-toggle-switch active" id="cadenceCreate_notify" onclick="this.classList.toggle('active')"></div>
+                    </div>
+                    <div class="cadence-edit-toggle">
+                        <span class="cadence-edit-label">Email on success</span>
+                        <div class="cadence-toggle-switch" id="cadenceCreate_email" onclick="this.classList.toggle('active')"></div>
+                    </div>
+                </div>
+
+                <div class="cadence-edit-actions">
+                    <button class="cadence-edit-cancel" onclick="closeCadenceEdit()">Cancel</button>
+                    <button class="cadence-edit-save" onclick="saveCreateCadence()">Create</button>
+                </div>
+            `;
+
+            document.body.appendChild(overlay);
+            document.body.appendChild(popover);
+
+            // Initialize schedule fields with daily defaults
+            updateCreateScheduleFields({ type: 'daily', time: '17:00' });
+        }
+
+        function onToolSelect() {
+            const actionType = document.getElementById('cadenceCreate_tool')?.value;
+            const descEl = document.getElementById('cadenceToolDescription');
+            const paramsEl = document.getElementById('cadenceCreateParams');
+
+            if (!actionType) {
+                if (descEl) descEl.textContent = '';
+                if (paramsEl) paramsEl.innerHTML = '';
+                return;
+            }
+
+            const tool = toolCatalog.find(t => t.action_type === actionType);
+            if (!tool) return;
+
+            // Show description
+            if (descEl) descEl.textContent = tool.description;
+
+            // Auto-fill name if empty
+            const nameInput = document.getElementById('cadenceCreate_name');
+            if (nameInput && !nameInput.value) nameInput.value = tool.label;
+
+            // Set default schedule
+            if (tool.default_schedule) {
+                const schedType = document.getElementById('cadenceCreate_schedType');
+                if (schedType) {
+                    schedType.value = tool.default_schedule.type;
+                    updateCreateScheduleFields(tool.default_schedule);
+                }
+            }
+
+            // Render parameter fields
+            if (paramsEl && tool.params && tool.params.length > 0) {
+                let html = '<div class="cadence-edit-section"><div class="cadence-edit-section-label">Parameters</div>';
+                tool.params.forEach(p => {
+                    if (p.type === 'select' && p.options) {
+                        html += `<div class="cadence-edit-row">
+                            <span class="cadence-edit-label">${p.label}${p.required ? ' *' : ''}</span>
+                            <select id="cadenceParam_${p.key}" class="cadence-edit-select">
+                                ${p.options.map(o => `<option value="${o}" ${p.default_value === o ? 'selected' : ''}>${o}</option>`).join('')}
+                            </select>
+                        </div>`;
+                    } else if (p.type === 'int') {
+                        html += `<div class="cadence-edit-row">
+                            <span class="cadence-edit-label">${p.label}${p.required ? ' *' : ''}</span>
+                            <input type="number" id="cadenceParam_${p.key}" class="cadence-edit-input" value="${p.default_value || ''}" style="width:80px;">
+                        </div>`;
+                    } else if (p.type === 'string_array') {
+                        html += `<div class="cadence-edit-row" style="flex-direction:column;align-items:flex-start;gap:4px;">
+                            <span class="cadence-edit-label">${p.label}${p.required ? ' *' : ''} (comma-separated)</span>
+                            <input type="text" id="cadenceParam_${p.key}" class="cadence-edit-input" placeholder="Item 1, Item 2" style="width:100%;">
+                        </div>`;
+                    } else {
+                        html += `<div class="cadence-edit-row">
+                            <span class="cadence-edit-label">${p.label}${p.required ? ' *' : ''}</span>
+                            <input type="text" id="cadenceParam_${p.key}" class="cadence-edit-input" value="${p.default_value || ''}" style="width:160px;">
+                        </div>`;
+                    }
+                });
+                html += '</div>';
+                paramsEl.innerHTML = html;
+            } else {
+                paramsEl.innerHTML = '';
+            }
+        }
+
+        function updateCreateScheduleFields(initial) {
+            const container = document.getElementById('cadenceCreateScheduleFields');
+            if (!container) return;
+            const type = document.getElementById('cadenceCreate_schedType')?.value || 'daily';
+
+            let html = '';
+            if (type === 'daily') {
+                const time = initial?.time || '17:00';
+                html = `<div class="cadence-edit-row">
+                    <span class="cadence-edit-label">Time</span>
+                    <input type="time" id="cadenceCreate_time" class="cadence-edit-input" value="${time}" style="width:110px;">
+                </div>`;
+            } else if (type === 'weekly') {
+                const day = initial?.day || 'monday';
+                const time = initial?.time || '09:00';
+                html = `<div class="cadence-edit-row">
+                    <span class="cadence-edit-label">Day</span>
+                    <select id="cadenceCreate_day" class="cadence-edit-select">
+                        ${['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].map(d =>
+                            `<option value="${d}" ${(day || '').toLowerCase() === d ? 'selected' : ''}>${d.charAt(0).toUpperCase() + d.slice(1)}</option>`
+                        ).join('')}
+                    </select>
+                </div>
+                <div class="cadence-edit-row">
+                    <span class="cadence-edit-label">Time</span>
+                    <input type="time" id="cadenceCreate_time" class="cadence-edit-input" value="${time}" style="width:110px;">
+                </div>`;
+            } else if (type === 'interval') {
+                const hours = initial?.hours || 3;
+                const activeStart = initial?.active_start || 9;
+                const activeEnd = initial?.active_end || 21;
+                html = `<div class="cadence-edit-row">
+                    <span class="cadence-edit-label">Every</span>
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <input type="number" id="cadenceCreate_hours" class="cadence-edit-input" value="${hours}" min="1" max="24" style="width:60px;">
+                        <span class="cadence-edit-label">hours</span>
+                    </div>
+                </div>
+                <div class="cadence-edit-row">
+                    <span class="cadence-edit-label">Active hours</span>
+                    <div style="display:flex;align-items:center;gap:4px;">
+                        <input type="number" id="cadenceCreate_activeStart" class="cadence-edit-input" value="${activeStart}" min="0" max="23" style="width:50px;">
+                        <span class="cadence-edit-label">to</span>
+                        <input type="number" id="cadenceCreate_activeEnd" class="cadence-edit-input" value="${activeEnd}" min="0" max="23" style="width:50px;">
+                    </div>
+                </div>`;
+            }
+            container.innerHTML = html;
+        }
+
+        async function saveCreateCadence() {
+            const name = document.getElementById('cadenceCreate_name')?.value?.trim();
+            const actionType = document.getElementById('cadenceCreate_tool')?.value;
+
+            if (!name) { alert('Please enter a name'); return; }
+            if (!actionType) { alert('Please select a tool'); return; }
+
+            const tool = toolCatalog.find(t => t.action_type === actionType);
+
+            // Build schedule
+            const schedType = document.getElementById('cadenceCreate_schedType')?.value || 'daily';
+            const schedule = { type: schedType };
+
+            if (schedType === 'daily') {
+                schedule.time = document.getElementById('cadenceCreate_time')?.value || '17:00';
+            } else if (schedType === 'weekly') {
+                schedule.day = document.getElementById('cadenceCreate_day')?.value || 'monday';
+                schedule.time = document.getElementById('cadenceCreate_time')?.value || '09:00';
+            } else if (schedType === 'interval') {
+                schedule.hours = parseInt(document.getElementById('cadenceCreate_hours')?.value || '3');
+                schedule.active_start = parseInt(document.getElementById('cadenceCreate_activeStart')?.value || '9');
+                schedule.active_end = parseInt(document.getElementById('cadenceCreate_activeEnd')?.value || '21');
+            }
+
+            // Build params from dynamic fields
+            const params = {};
+            if (tool?.params) {
+                tool.params.forEach(p => {
+                    const el = document.getElementById('cadenceParam_' + p.key);
+                    if (!el) return;
+                    const val = el.value.trim();
+                    if (!val && !p.required) return;
+                    if (p.type === 'int') {
+                        params[p.key] = parseInt(val) || 0;
+                    } else if (p.type === 'string_array') {
+                        params[p.key] = val.split(',').map(s => s.trim()).filter(Boolean);
+                    } else {
+                        params[p.key] = val;
+                    }
+                });
+            }
+
+            const body = {
+                name: name,
+                action_type: actionType,
+                icon: tool?.icon || '⚙️',
+                schedule: schedule,
+                params: params,
+                notify_on_success: document.getElementById('cadenceCreate_notify')?.classList.contains('active') ?? true,
+                email_on_success: document.getElementById('cadenceCreate_email')?.classList.contains('active') ?? false
+            };
+
+            try {
+                const response = await authFetch('/api/cadences', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                if (response.ok) {
+                    closeCadenceEdit();
+                    cacheDelete('cadences');
+                    await loadCadenceStatus();
+                } else {
+                    const data = await response.json().catch(() => ({}));
+                    alert(data.error || 'Failed to create cadence');
+                }
+            } catch (err) {
+                console.error('Create cadence failed:', err);
+                alert('Failed to create cadence');
             }
         }
 
@@ -12499,6 +13643,9 @@
         // COACH TUNER
         // ============================================
 
+        var lastTunerTab = 'skills';
+        var tenetsNotionUrl = null;
+
         function showCoachTuner() {
             // Hide everything else inside homeContent
             document.getElementById('quickPromptsSection').classList.add('hidden');
@@ -12518,109 +13665,364 @@
             // Show coach tuner view
             document.getElementById('coachTunerView').classList.remove('hidden');
 
-            // Load data
-            loadCoachingDebug();
-            loadCoachingTenets();
+            // Activate last used tab (or default to skills)
+            switchTunerTab(lastTunerTab || 'skills');
         }
 
-        async function loadCoachingDebug(force = false) {
-            const container = document.getElementById('coachDebugCards');
-            const meta = document.getElementById('coachDebugMeta');
+        function switchTunerTab(name) {
+            lastTunerTab = name;
+
+            // Update tab buttons
+            document.querySelectorAll('.tuner-tab').forEach(t => t.classList.remove('active'));
+            const activeTab = document.querySelector(`.tuner-tab[data-tab="${name}"]`);
+            if (activeTab) activeTab.classList.add('active');
+
+            // Update tab content
+            document.querySelectorAll('.tuner-tab-content').forEach(c => c.classList.remove('active'));
+            const tabMap = { skills: 'tunerTabSkills', tenets: 'tunerTabTenets', qa: 'tunerTabQA', library: 'tunerTabLibrary' };
+            const contentEl = document.getElementById(tabMap[name]);
+            if (contentEl) contentEl.classList.add('active');
+
+            // Load data for the active tab
+            if (name === 'skills') loadSkillsList();
+            if (name === 'tenets') loadTenetSections();
+            if (name === 'qa') loadQAPreview();
+            if (name === 'library') loadLibrary();
+        }
+
+        // ---- Skills Tab ----
+
+        async function loadSkillsList() {
+            const userEl = document.getElementById('userSkillsList');
+            const installedEl = document.getElementById('installedSkillsList');
+            if (!userEl || !installedEl) return;
+
+            try {
+                const response = await authFetch('/api/skills');
+                if (!response.ok) { userEl.innerHTML = '<div class="settings-item-desc">Failed to load</div>'; return; }
+                const data = await response.json();
+                const skills = data.skills || [];
+
+                const userSkills = skills.filter(s => s.origin === 'user');
+                const installedSkills = skills.filter(s => s.origin === 'installed');
+
+                // Render user skills
+                if (userSkills.length === 0) {
+                    userEl.innerHTML = '<div class="settings-item-desc" style="padding: 12px; text-align: center; border: 1px dashed var(--border-color); border-radius: 8px;">No custom skills yet. Click <strong>+ New Skill</strong> to create one.</div>';
+                } else {
+                    userEl.innerHTML = userSkills.map(skill => renderSkillItem(skill, true)).join('');
+                }
+
+                // Render installed skills (read-only with expand)
+                if (installedSkills.length === 0) {
+                    installedEl.innerHTML = '<div class="settings-item-desc">No installed skills found.</div>';
+                } else {
+                    installedEl.innerHTML = installedSkills.map(skill => renderInstalledSkillItem(skill)).join('');
+                }
+            } catch (e) {
+                console.error('[Skills] Failed to load:', e);
+                userEl.innerHTML = '<div class="settings-item-desc">Error loading skills</div>';
+            }
+        }
+
+        function renderSkillItem(skill, editable) {
+            const displayLabel = escapeHtml(skill.effectiveName || skill.name);
+            const hasCustomName = skill.displayName && skill.displayName !== skill.name;
+            const nameHtml = `<span class="skill-display-name" onclick="renameSkill('${escapeHtml(skill.id)}', this)" title="Click to rename">${escapeHtml(skill.icon || '🔧')} ${displayLabel}</span>`;
+            const editBtns = editable
+                ? `<button class="skill-action-btn" onclick="editSkill('${escapeHtml(skill.id)}')">Edit</button>
+                   <button class="skill-action-btn delete" onclick="deleteSkill('${escapeHtml(skill.id)}', '${escapeHtml(skill.name)}')">Delete</button>`
+                : '';
+
+            return `<div class="skill-item">
+                <div class="skill-item-info">
+                    <div class="skill-item-name">${nameHtml}${hasCustomName ? `<span style="font-size:10px;color:var(--text-tertiary);margin-left:4px;">(${escapeHtml(skill.name)})</span>` : ''}<span class="skill-origin-badge user">Your Skill</span></div>
+                    <div class="skill-item-desc">${escapeHtml(skill.description)}</div>
+                    <div class="skill-item-meta">${escapeHtml((skill.dataSources || []).join(', '))} · ${skill.frequency}</div>
+                </div>
+                <div class="skill-actions">
+                    ${editBtns}
+                    <label class="skill-toggle">
+                        <input type="checkbox" ${skill.enabled ? 'checked' : ''} onchange="toggleSkill('${escapeHtml(skill.id)}')">
+                        <span class="skill-toggle-slider"></span>
+                    </label>
+                </div>
+            </div>`;
+        }
+
+        function renderInstalledSkillItem(skill) {
+            const authorLine = skill.author ? `<div class="skill-author">by ${escapeHtml(skill.author)}${skill.version ? ' · v' + escapeHtml(skill.version) : ''}</div>` : '';
+
+            return `<div class="skill-item" id="installed-skill-${escapeHtml(skill.id)}">
+                <div class="skill-item-info" style="cursor: pointer;" onclick="toggleInstalledSkillDetail('${escapeHtml(skill.id)}')">
+                    <div class="skill-item-name">
+                        ${escapeHtml(skill.icon || '🔧')} ${escapeHtml(skill.effectiveName || skill.name)}
+                        <span class="skill-origin-badge installed">Installed</span>
+                    </div>
+                    ${authorLine}
+                    <div class="skill-item-desc">${escapeHtml(skill.description)}</div>
+                    <div class="skill-item-meta">${escapeHtml((skill.dataSources || []).join(', '))} · ${skill.frequency}</div>
+                </div>
+                <div class="skill-actions">
+                    <label class="skill-toggle">
+                        <input type="checkbox" ${skill.enabled ? 'checked' : ''} onchange="toggleSkill('${escapeHtml(skill.id)}')">
+                        <span class="skill-toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="installed-skill-detail" id="detail-${escapeHtml(skill.id)}"></div>
+            </div>`;
+        }
+
+        async function toggleInstalledSkillDetail(id) {
+            const skillEl = document.getElementById('installed-skill-' + id);
+            const detailEl = document.getElementById('detail-' + id);
+            if (!skillEl || !detailEl) return;
+
+            if (skillEl.classList.contains('expanded')) {
+                skillEl.classList.remove('expanded');
+                return;
+            }
+
+            // Load detail if not already loaded
+            if (!detailEl.dataset.loaded) {
+                try {
+                    const resp = await authFetch(`/api/skills/detail?id=${encodeURIComponent(id)}`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        const skill = data.skill;
+                        detailEl.innerHTML = `
+                            <div style="margin-bottom: 8px;">
+                                <div style="font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; margin-bottom: 4px;">Tenets</div>
+                                <div style="font-size: 12px; color: var(--text-secondary); white-space: pre-wrap; font-family: var(--font-mono, monospace); line-height: 1.5;">${escapeHtml(skill.tenets || '(none)')}</div>
+                            </div>
+                            <div>
+                                <div style="font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; margin-bottom: 4px;">Prompt</div>
+                                <div style="font-size: 12px; color: var(--text-secondary); white-space: pre-wrap; font-family: var(--font-mono, monospace); line-height: 1.5;">${escapeHtml(skill.prompt || '(none)')}</div>
+                            </div>
+                        `;
+                        detailEl.dataset.loaded = 'true';
+                    }
+                } catch (e) {
+                    detailEl.innerHTML = '<div style="font-size: 12px; color: var(--text-tertiary);">Failed to load details</div>';
+                }
+            }
+
+            skillEl.classList.add('expanded');
+        }
+
+        // ---- Tenets Tab ----
+
+        async function loadTenetSections() {
+            const container = document.getElementById('tenetSectionsList');
+            if (!container) return;
+
+            try {
+                const resp = await authFetch('/api/coaching/tenets/sections');
+                const data = await resp.json();
+                const sections = data.sections || [];
+
+                if (data.notionUrl) {
+                    tenetsNotionUrl = data.notionUrl;
+                    const btn = document.getElementById('openTenetsNotionBtn2');
+                    if (btn) btn.style.display = '';
+                }
+
+                if (sections.length === 0) {
+                    container.innerHTML = '<div class="settings-item-desc">No tenet sections found.</div>';
+                    return;
+                }
+
+                container.innerHTML = sections.map(section => {
+                    const rulesHtml = section.content.split('\n').map(line => {
+                        if (line.startsWith('- ')) return `<div style="padding-left: 8px; margin: 3px 0; font-size: 12px; color: var(--text-secondary); line-height: 1.5;">&#8226; ${escapeHtml(line.slice(2))}</div>`;
+                        if (line.trim() === '') return '';
+                        return `<div style="font-size: 12px; color: var(--text-secondary);">${escapeHtml(line)}</div>`;
+                    }).join('');
+
+                    return `<div class="tenet-section-card ${section.enabled ? '' : 'disabled'}" id="tenet-${escapeHtml(section.id)}">
+                        <div class="tenet-section-header">
+                            <label class="skill-toggle" style="flex-shrink: 0;" onclick="event.stopPropagation()">
+                                <input type="checkbox" ${section.enabled ? 'checked' : ''} onchange="toggleTenetSection('${escapeHtml(section.id)}', this)">
+                                <span class="skill-toggle-slider"></span>
+                            </label>
+                            <div class="tenet-section-title" onclick="expandTenetSection(this.closest('.tenet-section-card'))">${escapeHtml(section.title)}</div>
+                            <svg class="tenet-chevron" onclick="expandTenetSection(this.closest('.tenet-section-card'))" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                        </div>
+                        <div class="tenet-section-body">${rulesHtml}</div>
+                    </div>`;
+                }).join('');
+            } catch (err) {
+                container.innerHTML = '<div class="settings-item-desc">Failed to load tenet sections</div>';
+            }
+        }
+
+        async function toggleTenetSection(id, checkbox) {
+            const card = document.getElementById('tenet-' + id);
+            try {
+                const resp = await authFetch('/api/coaching/tenets/sections/toggle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: id, enabled: checkbox.checked })
+                });
+                if (!resp.ok) throw new Error('Toggle failed');
+                if (card) {
+                    card.classList.toggle('disabled', !checkbox.checked);
+                }
+            } catch (e) {
+                console.error('[Tenets] Toggle failed:', e);
+                checkbox.checked = !checkbox.checked;
+            }
+        }
+
+        function expandTenetSection(el) {
+            if (el) el.classList.toggle('expanded');
+        }
+
+        function openTenetsInNotion() {
+            if (tenetsNotionUrl) window.open(tenetsNotionUrl, '_blank');
+        }
+
+        // ---- QA / Preview Tab ----
+
+        async function loadQAPreview(force = false) {
+            const container = document.getElementById('qaCardsList');
+            const meta = document.getElementById('qaDebugMeta');
+            if (!container) return;
+
             try {
                 const url = force ? '/api/coaching/debug?force=true' : '/api/coaching/debug';
                 const resp = await authFetch(url);
                 const data = await resp.json();
 
                 if (!data.cards || data.cards.length === 0) {
-                    container.innerHTML = '<div style="color: var(--text-secondary); font-size: 13px; padding: 12px 0;">No coaching cards generated yet.</div>';
+                    container.innerHTML = '<div style="color: var(--text-secondary); font-size: 13px; padding: 16px; text-align: center; border: 1px dashed var(--border-color); border-radius: 8px;">No coaching cards generated yet. Cards are generated on your first daily briefing or chat.</div>';
                     return;
                 }
 
                 container.innerHTML = data.cards.map(card => {
+                    const status = card.status || 'success';
+                    const statusTitles = { success: 'Generated successfully', error: 'Generation failed', no_context: 'No data available', fallback: 'Using fallback text' };
                     const ctx = (card.context || []).map(line =>
                         `<div style="font-size: 12px; color: var(--text-secondary); padding: 1px 0; white-space: pre-wrap;">${escapeHtml(line)}</div>`
                     ).join('');
+                    const timestamp = card.generatedAgo ? `<span style="font-size: 11px; color: var(--text-tertiary);">${escapeHtml(card.generatedAgo)}</span>` : '';
+                    const errorMsg = card.error ? `<div style="font-size: 12px; color: #ef4444; margin-top: 4px;">${escapeHtml(card.error)}</div>` : '';
 
-                    return `
-                        <div class="tuner-card" style="border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 10px; overflow: hidden;">
-                            <div onclick="this.parentElement.classList.toggle('expanded')" style="
-                                display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer;
-                                background: var(--bg-secondary);
-                            ">
-                                <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-tertiary); min-width: 80px;">${escapeHtml(card.label)}</span>
-                                <span style="font-size: 13px; color: var(--text-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(card.insight)}</span>
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0; opacity: 0.4; transition: transform 0.2s;"><polyline points="6 9 12 15 18 9"/></svg>
-                            </div>
-                            <div class="tuner-card-context" style="
-                                max-height: 0; overflow: hidden; transition: max-height 0.3s ease;
-                                padding: 0 12px; border-top: 0px solid var(--border-color);
-                            ">
-                                <div style="padding: 10px 0;">
-                                    <div style="font-size: 11px; font-weight: 600; color: var(--text-tertiary); margin-bottom: 6px; text-transform: uppercase;">Context Data</div>
-                                    ${ctx || '<div style="font-size: 12px; color: var(--text-tertiary);">No context captured</div>'}
-                                </div>
+                    return `<div class="qa-card" id="qa-${escapeHtml(card.type)}">
+                        <div class="qa-card-header" onclick="this.parentElement.classList.toggle('expanded')" style="cursor: pointer;">
+                            <span class="qa-status-dot ${status}" title="${statusTitles[status] || status}"></span>
+                            <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-tertiary); min-width: 70px;">${escapeHtml(card.label || card.type)}</span>
+                            <span class="qa-card-insight">${escapeHtml(card.insight || '(no output)')}</span>
+                            ${timestamp}
+                            <button class="qa-refresh-btn" onclick="event.stopPropagation(); refreshSingleSkillQA('${escapeHtml(card.type)}', this)">Refresh</button>
+                            <svg class="qa-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink: 0;"><polyline points="6 9 12 15 18 9"/></svg>
+                        </div>
+                        <div class="qa-card-context">
+                            <div style="padding: 2px 0;">
+                                ${errorMsg}
+                                <div style="font-size: 11px; font-weight: 600; color: var(--text-tertiary); margin-bottom: 4px; text-transform: uppercase;">Context Data</div>
+                                ${ctx || '<div style="font-size: 12px; color: var(--text-tertiary);">No context captured</div>'}
                             </div>
                         </div>
-                    `;
+                    </div>`;
                 }).join('');
 
-                // Cache age
-                if (data.cacheAge) {
-                    meta.textContent = `Generated ${data.cacheAge}`;
+                if (data.cacheAge && meta) {
+                    meta.textContent = `Last full run: ${data.cacheAge}`;
                 }
             } catch (err) {
                 container.innerHTML = `<div style="color: var(--text-secondary); font-size: 13px;">Failed to load: ${err.message}</div>`;
             }
         }
 
-        async function refreshCoachingDebug() {
-            document.getElementById('coachDebugCards').innerHTML = '<div style="color: var(--text-secondary); font-size: 13px; padding: 12px 0;">Regenerating cards...</div>';
-            document.getElementById('coachDebugMeta').textContent = '';
-            loadCoachingDebug(true);
-        }
-
-        var tenetsNotionUrl = null;
-
-        async function loadCoachingTenets() {
+        async function refreshSingleSkillQA(skillId, btn) {
+            if (btn) { btn.classList.add('loading'); btn.textContent = '...'; }
             try {
-                const resp = await authFetch('/api/coaching/tenets');
+                const resp = await authFetch(`/api/coaching/debug/refresh?skill=${encodeURIComponent(skillId)}`, { method: 'POST' });
                 const data = await resp.json();
-                const content = data.content || '';
 
-                // Render tenets as formatted read-only preview
-                const preview = document.getElementById('tenetsPreview');
-                preview.innerHTML = renderTenetsPreview(content);
+                // Update the card in-place
+                const cardEl = document.getElementById('qa-' + skillId);
+                if (cardEl && data.card) {
+                    const insightEl = cardEl.querySelector('.qa-card-insight');
+                    if (insightEl) insightEl.textContent = data.card.insight || '(no output)';
 
-                // Show "Edit in Notion" button if URL available
-                if (data.notionUrl) {
-                    tenetsNotionUrl = data.notionUrl;
-                    document.getElementById('openTenetsNotionBtn').style.display = '';
+                    const dotEl = cardEl.querySelector('.qa-status-dot');
+                    if (dotEl) { dotEl.className = 'qa-status-dot ' + (data.status || 'success'); }
                 }
-            } catch (err) {
-                document.getElementById('tenetsPreview').innerHTML =
-                    '<span style="color: var(--text-tertiary);">Failed to load tenets</span>';
+            } catch (e) {
+                console.error('[QA] Refresh failed:', e);
+            }
+            if (btn) { btn.classList.remove('loading'); btn.textContent = 'Refresh'; }
+        }
+
+        function refreshAllQA() {
+            const container = document.getElementById('qaCardsList');
+            if (container) container.innerHTML = '<div class="loading-agents">Regenerating all cards...</div>';
+            document.getElementById('qaDebugMeta').textContent = '';
+            loadQAPreview(true);
+        }
+
+        // ---- Library Tab ----
+
+        async function loadLibrary() {
+            const container = document.getElementById('libraryList');
+            if (!container) return;
+
+            try {
+                const resp = await authFetch('/api/skills/library');
+                const data = await resp.json();
+                const templates = data.templates || [];
+
+                if (templates.length === 0) {
+                    container.innerHTML = '<div class="settings-item-desc" style="text-align: center; padding: 16px;">No templates available yet.</div>';
+                    return;
+                }
+
+                container.innerHTML = templates.map(t => {
+                    const actionHtml = t.installed
+                        ? `<span class="library-installed-badge">&#10003; Installed</span>`
+                        : `<button class="library-install-btn" onclick="installLibrarySkill('${escapeHtml(t.id)}', this)">Install</button>`;
+
+                    return `<div class="library-card">
+                        <div class="library-card-icon">${t.icon || '🔧'}</div>
+                        <div class="library-card-info">
+                            <div class="library-card-name">${escapeHtml(t.name)}</div>
+                            <div class="library-card-author">by ${escapeHtml(t.author)}</div>
+                            <div class="library-card-desc">${escapeHtml(t.description)}</div>
+                            <div class="library-card-meta">${escapeHtml(t.dataSources.join(', '))} · ${t.frequency}</div>
+                        </div>
+                        ${actionHtml}
+                    </div>`;
+                }).join('');
+            } catch (e) {
+                console.error('[Library] Failed to load:', e);
+                container.innerHTML = '<div class="settings-item-desc">Failed to load library</div>';
             }
         }
 
-        function renderTenetsPreview(md) {
-            return md.split('\n').map(line => {
-                if (line.startsWith('# ')) return `<div style="font-size: 15px; font-weight: 700; margin: 12px 0 6px 0;">${escapeHtml(line.slice(2))}</div>`;
-                if (line.startsWith('## ')) return `<div style="font-size: 13px; font-weight: 600; margin: 10px 0 4px 0; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">${escapeHtml(line.slice(3))}</div>`;
-                if (line.startsWith('### ')) return `<div style="font-size: 13px; font-weight: 600; margin: 8px 0 4px 0;">${escapeHtml(line.slice(4))}</div>`;
-                if (line.startsWith('- ')) return `<div style="padding-left: 12px; margin: 2px 0;">\u2022 ${escapeHtml(line.slice(2))}</div>`;
-                if (line.startsWith('---')) return `<hr style="border: none; border-top: 1px solid var(--border-color); margin: 8px 0;">`;
-                if (line.trim() === '') return '<div style="height: 6px;"></div>';
-                return `<div>${escapeHtml(line)}</div>`;
-            }).join('');
-        }
+        async function installLibrarySkill(id, btn) {
+            if (btn) { btn.disabled = true; btn.textContent = 'Installing...'; }
+            try {
+                const resp = await authFetch(`/api/skills/library/install?id=${encodeURIComponent(id)}`, { method: 'POST' });
+                if (resp.status === 409) {
+                    if (btn) { btn.textContent = 'Already Installed'; }
+                    return;
+                }
+                if (!resp.ok) throw new Error('Install failed');
 
-        function openTenetsInNotion() {
-            if (tenetsNotionUrl) {
-                window.open(tenetsNotionUrl, '_blank');
+                // Replace button with badge
+                if (btn) {
+                    const badge = document.createElement('span');
+                    badge.className = 'library-installed-badge';
+                    badge.innerHTML = '&#10003; Installed';
+                    btn.parentElement.replaceChild(badge, btn);
+                }
+            } catch (e) {
+                console.error('[Library] Install failed:', e);
+                if (btn) { btn.disabled = false; btn.textContent = 'Install'; }
             }
         }
-
-        // resetTenetsToDefault removed — user edits tenets in Notion now
 
         // ============================================
         // FAVORITES
@@ -12895,8 +14297,196 @@
                 console.error('Failed to load settings:', error);
             }
 
-            // Also load scheduled config
+            // Also load scheduled config, skills, and cadences
             loadScheduledConfig();
+            loadSkillsList();
+            loadCadenceStatus();
+        }
+
+        async function toggleSkill(id) {
+            try {
+                const response = await authFetch(`/api/skills/toggle?id=${encodeURIComponent(id)}`, { method: 'POST' });
+                if (!response.ok) {
+                    console.error('[Skills] Toggle failed:', response.status);
+                    return;
+                }
+                loadSkillsList();
+            } catch (e) {
+                console.error('[Skills] Toggle error:', e);
+            }
+        }
+
+        // Inline rename: click skill name → editable field → save on blur/enter
+        function renameSkill(id, el) {
+            const currentText = el.textContent;
+            // Remove icon prefix (first char + space)
+            const parts = currentText.split(' ');
+            const icon = parts[0];
+            const currentName = parts.slice(1).join(' ');
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = currentName;
+            input.style.cssText = 'font-size: 13px; font-weight: 500; border: 1px solid #6366f1; border-radius: 4px; padding: 2px 6px; width: 180px; outline: none;';
+
+            el.innerHTML = '';
+            el.appendChild(document.createTextNode(icon + ' '));
+            el.appendChild(input);
+            input.focus();
+            input.select();
+
+            async function save() {
+                const newName = input.value.trim();
+                if (newName && newName !== currentName) {
+                    try {
+                        await authFetch(`/api/skills/rename?id=${encodeURIComponent(id)}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ displayName: newName })
+                        });
+                    } catch (e) {
+                        console.error('[Skills] Rename failed:', e);
+                    }
+                }
+                loadSkillsList();
+            }
+
+            input.addEventListener('blur', save);
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { input.blur(); }
+                if (e.key === 'Escape') { loadSkillsList(); }
+            });
+        }
+
+        // Skill editor CRUD
+        function openSkillEditor(editId) {
+            const overlay = document.getElementById('skillEditorOverlay');
+            const titleEl = document.getElementById('skillEditorTitle');
+            const saveBtn = document.getElementById('skillEditorSave');
+            const idField = document.getElementById('skillEditorId');
+
+            // Reset form
+            document.getElementById('skillEditorName').value = '';
+            document.getElementById('skillEditorIcon').value = '';
+            document.getElementById('skillEditorDesc').value = '';
+            document.getElementById('skillEditorFreq').value = 'daily';
+            document.getElementById('skillEditorTenets').value = '';
+            document.getElementById('skillEditorPrompt').value = '';
+            document.querySelectorAll('.skill-datasource-checkboxes input').forEach(cb => cb.checked = false);
+            idField.value = '';
+
+            if (editId) {
+                titleEl.textContent = 'Edit Skill';
+                saveBtn.textContent = 'Save Changes';
+                // Load existing skill data
+                loadSkillForEdit(editId);
+            } else {
+                titleEl.textContent = 'New Skill';
+                saveBtn.textContent = 'Create Skill';
+                // Default: check "tasks"
+                document.querySelector('.skill-datasource-checkboxes input[value="tasks"]').checked = true;
+            }
+
+            overlay.classList.add('active');
+        }
+
+        async function loadSkillForEdit(id) {
+            try {
+                const response = await authFetch(`/api/skills/detail?id=${encodeURIComponent(id)}`);
+                if (!response.ok) return;
+                const skill = await response.json();
+
+                document.getElementById('skillEditorId').value = skill.id;
+                document.getElementById('skillEditorName').value = skill.name || '';
+                document.getElementById('skillEditorIcon').value = skill.icon || '';
+                document.getElementById('skillEditorDesc').value = skill.description || '';
+                document.getElementById('skillEditorFreq').value = skill.frequency || 'daily';
+                document.getElementById('skillEditorTenets').value = skill.tenets || '';
+                document.getElementById('skillEditorPrompt').value = skill.prompt || '';
+
+                // Check data source boxes
+                const sources = skill.dataSources || [];
+                document.querySelectorAll('.skill-datasource-checkboxes input').forEach(cb => {
+                    cb.checked = sources.includes(cb.value);
+                });
+            } catch (e) {
+                console.error('[Skills] Failed to load skill for edit:', e);
+            }
+        }
+
+        function closeSkillEditor() {
+            document.getElementById('skillEditorOverlay').classList.remove('active');
+        }
+
+        function editSkill(id) {
+            openSkillEditor(id);
+        }
+
+        async function saveSkill() {
+            const id = document.getElementById('skillEditorId').value;
+            const name = document.getElementById('skillEditorName').value.trim();
+            const icon = document.getElementById('skillEditorIcon').value.trim() || '🔧';
+            const description = document.getElementById('skillEditorDesc').value.trim();
+            const frequency = document.getElementById('skillEditorFreq').value;
+            const tenets = document.getElementById('skillEditorTenets').value.trim();
+            const prompt = document.getElementById('skillEditorPrompt').value.trim();
+
+            if (!name) { alert('Skill name is required'); return; }
+            if (!prompt) { alert('Prompt is required — this tells the AI coach what to do'); return; }
+
+            const dataSources = [];
+            document.querySelectorAll('.skill-datasource-checkboxes input:checked').forEach(cb => {
+                dataSources.push(cb.value);
+            });
+
+            const payload = { name, icon, description, dataSources, frequency, tenets, prompt };
+
+            try {
+                let response;
+                if (id) {
+                    // Update existing
+                    response = await authFetch(`/api/skills?id=${encodeURIComponent(id)}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                } else {
+                    // Create new
+                    response = await authFetch('/api/skills', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                }
+
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    alert(err.error || 'Failed to save skill');
+                    return;
+                }
+
+                closeSkillEditor();
+                loadSkillsList();
+            } catch (e) {
+                console.error('[Skills] Save error:', e);
+                alert('Failed to save skill');
+            }
+        }
+
+        async function deleteSkill(id, name) {
+            if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+
+            try {
+                const response = await authFetch(`/api/skills?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    alert(err.error || 'Failed to delete skill');
+                    return;
+                }
+                loadSkillsList();
+            } catch (e) {
+                console.error('[Skills] Delete error:', e);
+            }
         }
 
         // Load scheduled email config
@@ -14295,17 +15885,17 @@
                 const response = await authFetch('/api/commitments/scan', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ lookbackDays: 14 })
+                    body: JSON.stringify({ scanMode: 'favorites', lookbackDays: 14 })
                 });
 
                 if (response.ok) {
                     const result = await response.json();
                     showToast(`Scan complete: ${result.found} found, ${result.saved} new`, 'success');
 
-                    // Reload stats to show updated counts
-                    await loadCommitmentTrackerStats();
+                    // Reload the entire dashboard to show new data
+                    await showCommitmentsDashboard();
                 } else {
-                    const error = await response.json();
+                    const error = await response.json().catch(() => ({}));
                     showToast(error.error || 'Scan failed', 'error');
                 }
             } catch (error) {
@@ -14451,43 +16041,8 @@
         }
 
         async function scanCommitmentsFromFavoritesTab() {
-            const scanBtn = document.getElementById('commitments-tracker-scan-btn');
-            const periodEl = document.getElementById('commitments-tracker-period');
-
-            if (scanBtn) {
-                scanBtn.disabled = true;
-                scanBtn.classList.add('scanning');
-            }
-            if (periodEl) {
-                periodEl.textContent = 'Scanning Favorites...';
-            }
-
-            try {
-                const response = await authFetch('/api/commitments/scan', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ lookbackDays: 14 })
-                });
-
-                if (response.ok) {
-                    const result = await response.json();
-                    showToast(`Scan complete: ${result.found} found, ${result.saved} new`, 'success');
-
-                    // Reload the entire commitments dashboard to get fresh data
-                    await showCommitmentsDashboard();
-                } else {
-                    const error = await response.json();
-                    showToast(error.error || 'Scan failed', 'error');
-                }
-            } catch (error) {
-                console.error('Commitment scan failed:', error);
-                showToast('Failed to scan commitments', 'error');
-            } finally {
-                if (scanBtn) {
-                    scanBtn.disabled = false;
-                    scanBtn.classList.remove('scanning');
-                }
-            }
+            // Reuse the same scan function since IDs are the same
+            await scanCommitmentsFromFavorites();
         }
 
         function toggleTeachSection() {
@@ -15318,6 +16873,8 @@
             document.getElementById('unifiedHomeBtn').classList.remove('visible');
             // Also close any tool overlay that might be open
             unifiedCloseToolOverlay();
+            // Refresh past sessions (new conversation may have been created)
+            unifiedLoadPastSessions();
             document.getElementById('unifiedInput').focus();
         }
 
@@ -15463,7 +17020,7 @@
             const weeklySection = document.getElementById('weeklyReviewSection');
             let html = '';
             cards.forEach(card => {
-                if (card.type === 'weekly_review') {
+                if ((card.type || '').includes('weekly')) {
                     // Render weekly review separately
                     if (weeklySection) {
                         weeklySection.innerHTML = '<div class="weekly-review-label">WEEKLY REVIEW</div>'
@@ -15480,6 +17037,7 @@
                 else if (typeClass.includes('relationship')) cssClass = 'relationship';
                 else if (typeClass.includes('avoidance')) cssClass = 'avoidance';
                 else if (typeClass.includes('leverage')) cssClass = 'leverage';
+                else cssClass = 'custom-skill'; // User-defined coaching skills
 
                 html += `<div class="unified-insight-card">
                     <div class="unified-insight-type ${cssClass}">${escapeHtml(label)}</div>

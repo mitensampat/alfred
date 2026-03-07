@@ -219,10 +219,16 @@ class NotificationService {
                 .coaching-leverage { border-left: 3px solid #2383e2; background: #f0f7ff; }
                 .coaching-relationship { border-left: 3px solid #2d8a56; background: #e8f5e9; }
                 .coaching-avoidance { border-left: 3px solid #f7b955; background: #fffbeb; }
+                .coaching-attention { border-left: 3px solid #ea580c; background: #fff7ed; }
+                .coaching-weekly { border-left: 3px solid #7c3aed; background: #f5f3ff; }
+                .coaching-skill { border-left: 3px solid #6366f1; background: #eef2ff; }
                 .coaching-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
                 .coaching-leverage .coaching-label { color: #2383e2; }
                 .coaching-relationship .coaching-label { color: #2d8a56; }
                 .coaching-avoidance .coaching-label { color: #d4880f; }
+                .coaching-attention .coaching-label { color: #ea580c; }
+                .coaching-weekly .coaching-label { color: #7c3aed; }
+                .coaching-skill .coaching-label { color: #6366f1; }
                 .event { padding: 10px 14px; border-left: 3px solid #2383e2; background: #f0f7ff; border-radius: 4px; margin-bottom: 8px; }
                 .event-time { font-size: 13px; color: #2383e2; font-weight: 500; }
                 .event-title { font-weight: 600; color: #37352f; }
@@ -245,19 +251,25 @@ class NotificationService {
             for card in cards {
                 let emoji: String
                 let cssClass: String
-                switch card.type {
-                case "leverage":
+                let cardType = card.type.lowercased()
+                if cardType.contains("leverage") {
                     emoji = "🎯"
                     cssClass = "coaching-leverage"
-                case "relationship":
+                } else if cardType.contains("relationship") {
                     emoji = "👤"
                     cssClass = "coaching-relationship"
-                case "avoidance":
+                } else if cardType.contains("avoidance") {
                     emoji = "🪞"
                     cssClass = "coaching-avoidance"
-                default:
+                } else if cardType.contains("attention") {
+                    emoji = "📡"
+                    cssClass = "coaching-attention"
+                } else if cardType.contains("weekly") {
+                    emoji = "📋"
+                    cssClass = "coaching-weekly"
+                } else {
                     emoji = "💡"
-                    cssClass = "coaching-leverage"
+                    cssClass = "coaching-skill"
                 }
 
                 markdown += "**\(emoji) \(card.label):** \(card.insight)\n\n"

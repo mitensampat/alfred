@@ -110,6 +110,10 @@ struct UserIntent: Codable {
         let newDueDate: Date?          // new due date for the task
         let noteToAdd: String?         // text to append to Description
 
+        // Task creation filters (used when action is "create" and target is "tasks"/"todos")
+        let taskTitle: String?            // title for new task (distinct from taskSearchTerm which is for search)
+        let taskType: String?             // "Todo", "Commitment", "Follow-up"
+
         // Calendar event creation filters (used when action is "create" and target is "calendar")
         let eventTitle: String?           // "Meeting with Mona about finance"
         let eventTime: String?            // ISO8601 datetime computed from natural language
@@ -134,6 +138,8 @@ struct UserIntent: Codable {
             case newPriority = "new_priority"
             case newDueDate = "new_due_date"
             case noteToAdd = "note_to_add"
+            case taskTitle = "task_title"
+            case taskType = "task_type"
             case eventTitle = "event_title"
             case eventTime = "event_time"
             case eventDurationMinutes = "event_duration_minutes"
@@ -207,6 +213,10 @@ struct UserIntent: Codable {
             newPriority = try container.decodeIfPresent(String.self, forKey: .newPriority)
             noteToAdd = try container.decodeIfPresent(String.self, forKey: .noteToAdd)
 
+            // Task creation fields
+            taskTitle = try container.decodeIfPresent(String.self, forKey: .taskTitle)
+            taskType = try container.decodeIfPresent(String.self, forKey: .taskType)
+
             // Decode newDueDate from flexible date string
             if let dateString = try container.decodeIfPresent(String.self, forKey: .newDueDate) {
                 newDueDate = IntentFilters.parseFlexibleDate(dateString)
@@ -268,6 +278,8 @@ struct UserIntent: Codable {
             self.newPriority = nil
             self.newDueDate = nil
             self.noteToAdd = nil
+            self.taskTitle = nil
+            self.taskType = nil
             self.eventTitle = nil
             self.eventTime = nil
             self.eventDurationMinutes = nil
@@ -293,6 +305,8 @@ struct UserIntent: Codable {
             newPriority: String? = nil,
             newDueDate: Date? = nil,
             noteToAdd: String? = nil,
+            taskTitle: String? = nil,
+            taskType: String? = nil,
             eventTitle: String? = nil,
             eventTime: String? = nil,
             eventDurationMinutes: Int? = nil,
@@ -315,6 +329,8 @@ struct UserIntent: Codable {
             self.newPriority = newPriority
             self.newDueDate = newDueDate
             self.noteToAdd = noteToAdd
+            self.taskTitle = taskTitle
+            self.taskType = taskType
             self.eventTitle = eventTitle
             self.eventTime = eventTime
             self.eventDurationMinutes = eventDurationMinutes

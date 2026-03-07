@@ -573,6 +573,7 @@ class ClaudeAIService {
         messages: [[String: String]],
         system: String? = nil,
         maxTokens: Int = 2048,
+        useModel: String? = nil,
         onChunk: @escaping (String) -> Void
     ) async throws {
         guard !messages.isEmpty else { return }
@@ -586,7 +587,7 @@ class ClaudeAIService {
         request.timeoutInterval = 120
 
         var body: [String: Any] = [
-            "model": model,
+            "model": useModel ?? model,
             "max_tokens": maxTokens,
             "stream": true,
             "messages": messages
@@ -719,6 +720,14 @@ class ClaudeAIService {
             let analysis = try JSONDecoder().decode(MessageAnalysis.self, from: jsonData)
             return analysis
         } catch {
+            // Retry with cleaned JSON
+            let cleaned = cleanJSON(jsonString)
+            if cleaned != jsonString, let cleanedData = cleaned.data(using: .utf8) {
+                if let analysis = try? JSONDecoder().decode(MessageAnalysis.self, from: cleanedData) {
+                    print("✅ MessageAnalysis JSON decode succeeded after cleanup")
+                    return analysis
+                }
+            }
             print("ERROR: JSON decoding failed:")
             print("Extracted JSON:", jsonString)
             print("Decode error:", error)
@@ -742,6 +751,14 @@ class ClaudeAIService {
             let analysis = try JSONDecoder().decode(FocusedThreadAnalysisData.self, from: jsonData)
             return analysis
         } catch {
+            // Retry with cleaned JSON
+            let cleaned = cleanJSON(jsonString)
+            if cleaned != jsonString, let cleanedData = cleaned.data(using: .utf8) {
+                if let analysis = try? JSONDecoder().decode(FocusedThreadAnalysisData.self, from: cleanedData) {
+                    print("✅ ThreadAnalysis JSON decode succeeded after cleanup")
+                    return analysis
+                }
+            }
             print("ERROR: JSON decoding failed:")
             print("Extracted JSON:", jsonString)
             print("Decode error:", error)
@@ -855,6 +872,26 @@ class ClaudeAIService {
             dueDate: dueDate,
             sourceMessage: message
         )
+    }
+
+    /// Clean common JSON issues that Claude produces (trailing commas, "value" or "value", comments)
+    private func cleanJSON(_ json: String) -> String {
+        var cleaned = json
+        // Fix "value" or "value" pattern → keep only the first alternative
+        cleaned = cleaned.replacingOccurrences(
+            of: "(\"[^\"]*\")\\s+or\\s+\"[^\"]*\"",
+            with: "$1",
+            options: .regularExpression
+        )
+        // Remove single-line comments
+        cleaned = cleaned.replacingOccurrences(of: "//[^\n]*", with: "", options: .regularExpression)
+        // Remove trailing commas before } or ]
+        cleaned = cleaned.replacingOccurrences(of: ",\\s*([}\\]])", with: "$1", options: .regularExpression)
+        // Remove control chars (keep newline/tab)
+        cleaned = String(cleaned.unicodeScalars.filter {
+            $0.value >= 32 || $0.value == 10 || $0.value == 9
+        }.map { Character($0) })
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func extractJSON(from text: String) -> String? {

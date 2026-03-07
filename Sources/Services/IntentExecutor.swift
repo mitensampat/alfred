@@ -28,13 +28,19 @@ class IntentExecutor {
             return formatCalendarResponse(calendarBriefing, query: intent.originalQuery)
 
         // MARK: - Message Actions
-        case (.analyze, .messages), (.list, .messages):
+        case (.analyze, .messages), (.list, .messages), (.find, .messages), (.summarize, .messages):
+            // If a specific contact is mentioned, use focused thread analysis for better results
+            if let contactName = intent.filters.contactName {
+                let timeframe = intent.filters.lookbackDays.map { "\($0)d" } ?? "7d"
+                let thread = try await orchestrator.getFocusedWhatsAppThread(contactName: contactName, timeframe: timeframe)
+                return formatThreadResponse(thread, query: intent.originalQuery)
+            }
             let platform = intent.filters.platform?.rawValue ?? "all"
             let timeframe = intent.filters.lookbackDays.map { "\($0)d" } ?? "24h"
             let summaries = try await orchestrator.getMessagesSummary(platform: platform, timeframe: timeframe)
             return formatMessagesResponse(summaries, query: intent.originalQuery)
 
-        case (.find, .thread), (.summarize, .thread):
+        case (.find, .thread), (.summarize, .thread), (.analyze, .thread):
             guard let contactName = intent.filters.contactName else {
                 throw IntentExecutionError.missingRequiredParameter("contact_name")
             }
@@ -66,13 +72,48 @@ class IntentExecutor {
             let result = try await orchestrator.processWhatsAppTodos(lookbackDays: lookbackDays)
             return formatTodoScanResponse(result, query: intent.originalQuery)
 
+        case (.list, .todos):
+            let todos = try await orchestrator.notionServicePublic.queryActiveTasks(type: .todo)
+            return formatTaskListResponse(todos, query: intent.originalQuery)
+
+        // MARK: - Task Actions
+        case (.list, .tasks):
+            let typeFilter: TaskItem.TaskType? = intent.filters.taskType.flatMap { TaskItem.TaskType(rawValue: $0) }
+            let tasks = try await orchestrator.notionServicePublic.queryActiveTasks(type: typeFilter)
+            return formatTaskListResponse(tasks, query: intent.originalQuery)
+
+        case (.search, .tasks), (.find, .tasks):
+            guard let searchTerm = intent.filters.taskSearchTerm, !searchTerm.isEmpty else {
+                return IntentExecutionResult(
+                    data: [:] as [String: Any],
+                    conversationalResponse: "What task are you looking for? Give me a name or keyword.",
+                    structuredData: nil
+                )
+            }
+            let tasks = try await orchestrator.notionServicePublic.findTasksByFuzzyTitle(searchTerm)
+            return formatTaskSearchResponse(tasks, searchTerm: searchTerm, query: intent.originalQuery)
+
+        case (.create, .tasks), (.create, .todos):
+            return try await handleCreateTask(intent: intent)
+
+        case (.delete, .tasks):
+            return try await handleTaskDeletion(intent: intent)
+
+        case (.update, .tasks), (.update, .commitments):
+            return try await handleTaskUpdate(intent: intent)
+
+        case (.check, .tasks):
+            let stats = TaskLifecycleTracker.shared.getStats()
+            return formatTaskStatsResponse(stats, query: intent.originalQuery)
+
         // MARK: - Calendar Event Creation
         case (.create, .calendar):
             return try await handleCreateCalendarEvent(intent: intent)
 
-        // MARK: - Task Update Actions
-        case (.update, .tasks):
-            return try await handleTaskUpdate(intent: intent)
+        // MARK: - Commitment Actions (check overdue)
+        case (.check, .commitments):
+            let overdue = try await orchestrator.notionServicePublic.queryOverdueCommitmentsFromTasks()
+            return formatOverdueCommitmentsResponse(overdue, query: intent.originalQuery)
 
         // MARK: - Attention Check
         case (.check, .attention), (.generate, .attention):
@@ -84,16 +125,40 @@ class IntentExecutor {
             let drafts = try await fetchDrafts()
             return formatDraftsResponse(drafts, query: intent.originalQuery)
 
+        case (.generate, .drafts):
+            return try await handleGenerateDrafts(intent: intent)
+
+        // MARK: - Weekly Reflection
+        case (.summarize, .briefing):
+            return try await handleWeeklyReflection(intent: intent)
+
         case (_, nil):
-            // Target is ambiguous - this should have been caught by clarification
+            let actionHint: String
+            switch intent.action {
+            case .list: actionHint = "You can list your tasks, commitments, calendar, messages, todos, or drafts."
+            case .create: actionHint = "You can create a task, todo, or calendar event."
+            case .update: actionHint = "You can update a task or commitment."
+            case .generate: actionHint = "You can generate a briefing, attention check, or draft responses."
+            case .scan: actionHint = "You can scan for commitments or todos."
+            case .check: actionHint = "You can check your attention, tasks, or commitments."
+            case .search, .find: actionHint = "You can search for tasks, commitments, or specific threads."
+            case .delete: actionHint = "You can cancel a task."
+            case .summarize: actionHint = "You can summarize a message thread or get a weekly reflection."
+            case .analyze: actionHint = "You can analyze a specific message thread."
+            }
             return IntentExecutionResult(
                 data: [:] as [String: Any],
-                conversationalResponse: "I'm not sure what you'd like me to help with. Could you be more specific?",
+                conversationalResponse: "I'd like to help! \(actionHint) What would you like?",
                 structuredData: nil
             )
 
         default:
-            throw IntentExecutionError.unsupportedIntent(action: intent.action.rawValue, target: intent.target?.rawValue ?? "unknown")
+            let suggestion = getSuggestionForUnsupported(action: intent.action, target: intent.target)
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: suggestion,
+                structuredData: nil
+            )
         }
     }
 
@@ -481,7 +546,45 @@ class IntentExecutor {
     }
 
     private func formatThreadResponse(_ thread: FocusedThreadAnalysis, query: String) -> IntentExecutionResult {
-        return IntentExecutionResult(data: thread, conversationalResponse: "Here's the thread analysis", structuredData: nil)
+        var response = "**\(thread.thread.contactName ?? thread.thread.contactIdentifier)** (\(thread.thread.platform.displayName))\n"
+
+        // Message stats
+        let total = thread.thread.messages.count
+        let sent = thread.thread.messages.filter { $0.direction == .outgoing }.count
+        let received = total - sent
+        if let first = thread.thread.messages.first, let last = thread.thread.messages.last {
+            let df = DateFormatter()
+            df.dateFormat = "MMM d"
+            response += "Period: \(df.string(from: first.timestamp)) – \(df.string(from: last.timestamp)) · \(total) messages (\(sent) sent, \(received) received)\n\n"
+        }
+
+        // AI summary
+        response += "**Summary**: \(thread.summary)\n\n"
+
+        // Key quotes (actual quotes from the analysis)
+        if !thread.keyQuotes.isEmpty {
+            response += "**Key quotes**:\n"
+            for q in thread.keyQuotes.prefix(5) {
+                response += "- [\(q.timestamp)] \(q.speaker): \"\(q.quote)\"\n"
+            }
+            response += "\n"
+        }
+
+        // Action items
+        if !thread.actionItems.isEmpty {
+            response += "**Action items**:\n"
+            for item in thread.actionItems {
+                response += "- [\(item.priority)] \(item.item)\n"
+            }
+            response += "\n"
+        }
+
+        // Context
+        if !thread.context.isEmpty {
+            response += "**Context**: \(thread.context)\n"
+        }
+
+        return IntentExecutionResult(data: thread, conversationalResponse: response, structuredData: nil)
     }
 
     private func formatCommitmentScanResponse(_ result: CommitmentScanResult, query: String) -> IntentExecutionResult {
@@ -549,6 +652,361 @@ class IntentExecutor {
 
     private func formatDraftsResponse(_ drafts: [MessageDraft], query: String) -> IntentExecutionResult {
         return IntentExecutionResult(data: drafts, conversationalResponse: "Found \(drafts.count) drafts", structuredData: nil)
+    }
+
+    private func formatTaskListResponse(_ tasks: [TaskItem], query: String) -> IntentExecutionResult {
+        if tasks.isEmpty {
+            return IntentExecutionResult(
+                data: tasks,
+                conversationalResponse: "You have no active tasks right now.",
+                structuredData: nil
+            )
+        }
+
+        var response = "You have \(tasks.count) active task\(tasks.count == 1 ? "" : "s"):\n\n"
+
+        // Group by priority for better readability
+        let overdue = tasks.filter { $0.isOverdue }
+        let rest = tasks.filter { !$0.isOverdue }
+
+        if !overdue.isEmpty {
+            response += "**Overdue (\(overdue.count)):**\n"
+            for task in overdue.prefix(5) {
+                response += "- \(task.title)"
+                if let p = task.priority { response += " [\(p.rawValue)]" }
+                response += "\n"
+            }
+            if overdue.count > 5 { response += "- ...and \(overdue.count - 5) more\n" }
+            response += "\n"
+        }
+
+        let showing = rest.prefix(10)
+        for task in showing {
+            response += "- \(task.title)"
+            if let p = task.priority { response += " [\(p.rawValue)]" }
+            if let due = task.dueDate {
+                let fmt = DateFormatter()
+                fmt.dateStyle = .short
+                response += " (due \(fmt.string(from: due)))"
+            }
+            response += "\n"
+        }
+        if rest.count > 10 { response += "\n...and \(rest.count - 10) more" }
+
+        return IntentExecutionResult(data: tasks, conversationalResponse: response, structuredData: nil)
+    }
+
+    private func formatTaskSearchResponse(_ tasks: [TaskItem], searchTerm: String, query: String) -> IntentExecutionResult {
+        if tasks.isEmpty {
+            return IntentExecutionResult(
+                data: tasks,
+                conversationalResponse: "No active tasks matching '\(searchTerm)'.",
+                structuredData: nil
+            )
+        }
+
+        var response = "Found \(tasks.count) task\(tasks.count == 1 ? "" : "s") matching '\(searchTerm)':\n\n"
+        for task in tasks.prefix(5) {
+            response += "- \(task.title)"
+            if let p = task.priority { response += " [\(p.rawValue)]" }
+            response += " — \(task.status.rawValue)"
+            if task.isOverdue { response += " (OVERDUE)" }
+            response += "\n"
+        }
+        if tasks.count > 5 { response += "\n...and \(tasks.count - 5) more" }
+
+        return IntentExecutionResult(data: tasks, conversationalResponse: response, structuredData: nil)
+    }
+
+    private func formatOverdueCommitmentsResponse(_ commitments: [Commitment], query: String) -> IntentExecutionResult {
+        if commitments.isEmpty {
+            return IntentExecutionResult(
+                data: commitments,
+                conversationalResponse: "You're all caught up — no overdue commitments.",
+                structuredData: nil
+            )
+        }
+
+        var response = "You have \(commitments.count) overdue commitment\(commitments.count == 1 ? "" : "s"):\n\n"
+        for c in commitments.prefix(8) {
+            let arrow = c.type == .iOwe ? "You owe" : "Owed by"
+            let person = c.type == .iOwe ? c.committedTo : c.committedBy
+            response += "- \(c.title) (\(arrow) \(person))\n"
+        }
+        if commitments.count > 8 { response += "\n...and \(commitments.count - 8) more" }
+
+        return IntentExecutionResult(data: commitments, conversationalResponse: response, structuredData: nil)
+    }
+
+    private func formatTaskStatsResponse(_ stats: LifecycleStats, query: String) -> IntentExecutionResult {
+        var response = "**Task overview:**\n\n"
+        response += "- Total tracked: \(stats.totalTasks)\n"
+        response += "- Completed: \(stats.totalCompleted)\n"
+        response += "- Completion rate: \(Int(stats.completionRate * 100))%\n"
+        response += "- Overdue rate: \(Int(stats.overdueRate * 100))%\n"
+        if let lastScan = stats.lastScanTime {
+            let fmt = DateFormatter()
+            fmt.dateStyle = .short
+            fmt.timeStyle = .short
+            response += "- Last scan: \(fmt.string(from: lastScan))\n"
+        }
+
+        return IntentExecutionResult(data: stats, conversationalResponse: response, structuredData: nil)
+    }
+
+    // MARK: - Unsupported Intent Suggestions
+
+    private func getSuggestionForUnsupported(action: UserIntent.Action, target: UserIntent.Target?) -> String {
+        guard let target = target else {
+            return "I'm not sure what you'd like me to help with. Try asking about your briefing, calendar, tasks, commitments, or messages."
+        }
+
+        switch target {
+        case .briefing:
+            return "I can generate your daily briefing or weekly reflection. Try 'generate my briefing' or 'how was my week?'"
+        case .calendar:
+            return "I can show your calendar or create events. Try 'what's on my calendar today?' or 'schedule a meeting'."
+        case .messages:
+            return "I can summarize your messages or analyze specific threads. Try 'summarize my messages' or 'what's happening with [contact]?'"
+        case .tasks:
+            return "I can list, create, update, search, or cancel tasks. Try 'show my tasks', 'create a task', or 'mark [task] as done'."
+        case .todos:
+            return "I can list your todos, create new ones, or scan WhatsApp for them. Try 'show my todos' or 'scan for todos'."
+        case .commitments:
+            return "I can list, scan, or check your commitments. Try 'show my commitments', 'scan for commitments', or 'any overdue commitments?'"
+        case .drafts:
+            return "I can list your pending drafts or generate new ones. Try 'show my drafts' or 'draft a reply to [contact]'."
+        case .attention:
+            return "I can check what needs your attention. Try 'what should I focus on?'"
+        case .thread:
+            return "I can analyze a specific message thread. Try 'summarize my thread with [contact]'."
+        case .meeting:
+            return "I can show your meeting schedule or create events. Try 'what meetings do I have today?' or 'schedule a meeting'."
+        case .contacts:
+            return "I can help with your favorites. Try 'show my favorite contacts'."
+        case .preferences:
+            return "Settings changes should be made through the Alfred web UI."
+        }
+    }
+
+    // MARK: - Task Creation Handler
+
+    private func handleCreateTask(intent: UserIntent) async throws -> IntentExecutionResult {
+        let filters = intent.filters
+
+        guard let title = filters.taskTitle ?? filters.taskSearchTerm, !title.isEmpty else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "What should the task be called? Give me a title.",
+                structuredData: nil
+            )
+        }
+
+        let taskType: TaskItem.TaskType
+        if intent.target == .todos {
+            taskType = .todo
+        } else if let typeStr = filters.taskType, let parsed = TaskItem.TaskType(rawValue: typeStr) {
+            taskType = parsed
+        } else {
+            taskType = .todo
+        }
+
+        let priority: TaskItem.Priority?
+        if let p = filters.newPriority {
+            priority = TaskItem.Priority(rawValue: p)
+        } else {
+            priority = nil
+        }
+
+        let task = TaskItem(
+            notionId: "",
+            title: title,
+            type: taskType,
+            status: .notStarted,
+            description: filters.noteToAdd,
+            dueDate: filters.newDueDate,
+            priority: priority,
+            assignee: nil,
+            commitmentDirection: nil,
+            committedBy: nil,
+            committedTo: nil,
+            originalContext: nil,
+            sourcePlatform: .manual,
+            sourceThread: nil,
+            sourceThreadId: nil,
+            tags: nil,
+            followUpDate: nil,
+            uniqueHash: nil,
+            notes: nil,
+            createdDate: Date(),
+            lastUpdated: Date()
+        )
+
+        let notionId = try await orchestrator.notionServicePublic.createTask(task)
+        print("✅ Created task '\(title)' in Notion: \(notionId)")
+
+        var response = "Created \(taskType.rawValue.lowercased()) '\(title)'"
+        if let p = priority { response += " with \(p.rawValue) priority" }
+        if let dueDate = filters.newDueDate {
+            let fmt = DateFormatter()
+            fmt.dateStyle = .medium
+            response += ", due \(fmt.string(from: dueDate))"
+        }
+        response += "."
+
+        return IntentExecutionResult(
+            data: task,
+            conversationalResponse: response,
+            structuredData: [
+                "type": "task_create",
+                "taskTitle": title,
+                "taskType": taskType.rawValue,
+                "notionId": notionId,
+                "success": true
+            ]
+        )
+    }
+
+    // MARK: - Task Deletion Handler
+
+    private func handleTaskDeletion(intent: UserIntent) async throws -> IntentExecutionResult {
+        let filters = intent.filters
+
+        guard let searchTerm = filters.taskSearchTerm, !searchTerm.isEmpty else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "Which task would you like to cancel? Give me a name or keyword.",
+                structuredData: nil
+            )
+        }
+
+        let matchingTasks = try await orchestrator.notionServicePublic.findTasksByFuzzyTitle(searchTerm)
+
+        guard !matchingTasks.isEmpty else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "I couldn't find an active task matching '\(searchTerm)'.",
+                structuredData: nil
+            )
+        }
+
+        if matchingTasks.count > 3 {
+            let taskNames = matchingTasks.prefix(5).map { $0.title }
+            return IntentExecutionResult(
+                data: ["type": "disambiguation", "matches": taskNames] as [String: Any],
+                conversationalResponse: "I found \(matchingTasks.count) tasks matching '\(searchTerm)'. Which one?\n" + taskNames.enumerated().map { "  \($0.offset + 1). \($0.element)" }.joined(separator: "\n"),
+                structuredData: nil
+            )
+        }
+
+        let task = matchingTasks[0]
+        var updates = NotionService.TaskPropertyUpdate()
+        updates.status = .cancelled
+
+        let dateFmt = DateFormatter()
+        dateFmt.dateFormat = "yyyy-MM-dd HH:mm"
+        updates.appendDescription = "[\(dateFmt.string(from: Date()))] Cancelled by Coach Alfred"
+
+        try await orchestrator.notionServicePublic.updateTaskProperties(notionId: task.notionId, updates: updates)
+        print("✅ Cancelled task '\(task.title)'")
+
+        return IntentExecutionResult(
+            data: task,
+            conversationalResponse: "Cancelled '\(task.title)'.",
+            structuredData: [
+                "type": "task_delete",
+                "taskTitle": task.title,
+                "notionId": task.notionId,
+                "success": true
+            ]
+        )
+    }
+
+    // MARK: - Draft Generation Handler
+
+    private func handleGenerateDrafts(intent: UserIntent) async throws -> IntentExecutionResult {
+        if let contactName = intent.filters.contactName {
+            let timeframe = intent.filters.lookbackDays.map { "\($0)d" } ?? "7d"
+            let thread = try await orchestrator.getFocusedWhatsAppThread(contactName: contactName, timeframe: timeframe)
+            let count = try await orchestrator.generateDraftForThread(thread)
+            return IntentExecutionResult(
+                data: count,
+                conversationalResponse: count > 0
+                    ? "Generated \(count) draft response\(count == 1 ? "" : "s") for \(contactName)."
+                    : "No draft responses needed for \(contactName) right now.",
+                structuredData: nil
+            )
+        } else {
+            let summaries = try await orchestrator.getMessagesSummary(platform: "all", timeframe: "24h")
+            let count = try await orchestrator.generateDraftsForMessages(summaries)
+            return IntentExecutionResult(
+                data: count,
+                conversationalResponse: count > 0
+                    ? "Generated \(count) draft response\(count == 1 ? "" : "s") across your messages."
+                    : "No draft responses needed right now.",
+                structuredData: nil
+            )
+        }
+    }
+
+    // MARK: - Weekly Reflection Handler
+
+    private func handleWeeklyReflection(intent: UserIntent) async throws -> IntentExecutionResult {
+        // Gather this week's data from multiple sources
+        let today = Date()
+        let weekAgo = Calendar.current.date(byAdding: .day, value: -7, to: today) ?? today
+
+        // Get tasks completed this week
+        let allTasks = try await orchestrator.notionServicePublic.queryActiveTasks()
+        let stats = TaskLifecycleTracker.shared.getStats()
+        let recentChanges = TaskLifecycleTracker.shared.getRecentChanges(limit: 20)
+
+        // Get commitment stats
+        let openCommitments = try await orchestrator.notionServicePublic.queryActiveCommitmentsFromTasks(type: nil)
+        let overdueCommitments = try await orchestrator.notionServicePublic.queryOverdueCommitmentsFromTasks()
+
+        // Build a summary
+        let completedThisWeek = recentChanges.filter { $0.newStatus == "Done" }
+        var response = "**This week's snapshot:**\n\n"
+        response += "- Tasks completed: \(completedThisWeek.count)\n"
+        response += "- Active tasks: \(allTasks.count)\n"
+        response += "- Open commitments: \(openCommitments.count)"
+        if !overdueCommitments.isEmpty {
+            response += " (\(overdueCommitments.count) overdue)"
+        }
+        response += "\n"
+        response += "- Overall completion rate: \(Int(stats.completionRate * 100))%\n"
+
+        if !completedThisWeek.isEmpty {
+            response += "\n**Completed:**\n"
+            for change in completedThisWeek.prefix(5) {
+                response += "- \(change.title)\n"
+            }
+            if completedThisWeek.count > 5 {
+                response += "- ...and \(completedThisWeek.count - 5) more\n"
+            }
+        }
+
+        if !overdueCommitments.isEmpty {
+            response += "\n**Overdue commitments:**\n"
+            for c in overdueCommitments.prefix(3) {
+                let person = c.type == .iOwe ? c.committedTo : c.committedBy
+                response += "- \(c.title) (with \(person))\n"
+            }
+        }
+
+        return IntentExecutionResult(
+            data: stats,
+            conversationalResponse: response,
+            structuredData: [
+                "type": "weekly_reflection",
+                "completedCount": completedThisWeek.count,
+                "activeTasks": allTasks.count,
+                "openCommitments": openCommitments.count,
+                "overdueCommitments": overdueCommitments.count,
+                "completionRate": Int(stats.completionRate * 100)
+            ]
+        )
     }
 
     // MARK: - Task Update Handler

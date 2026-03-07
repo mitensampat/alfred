@@ -246,11 +246,21 @@ class AlfredService: ObservableObject {
         let fullLookbackDate = Calendar.current.date(byAdding: .day, value: -lookbackDays, to: Date()) ?? Date()
         let tracker = CommitmentScanTracker.shared
 
+        // For full scan mode, cap synchronous processing to avoid HTTP timeout
+        // Process first batch synchronously, rest in background
+        let maxSyncContacts = scanMode == "full" ? 25 : contactsToScan.count
+        let syncContacts = Array(contactsToScan.prefix(maxSyncContacts))
+        let bgContacts = scanMode == "full" ? Array(contactsToScan.dropFirst(maxSyncContacts)) : []
+
+        if !bgContacts.isEmpty {
+            print("📊 Full scan: processing \(syncContacts.count) contacts now, \(bgContacts.count) in background")
+        }
+
         var totalFound = 0
         var totalSaved = 0
         var totalSkippedNewMessages = 0
 
-        for contact in contactsToScan {
+        for contact in syncContacts {
             let allMessages = try await orchestrator.fetchMessagesForContact(contact, since: fullLookbackDate)
 
             guard !allMessages.isEmpty else { continue }
@@ -357,97 +367,154 @@ class AlfredService: ObservableObject {
             print("📊 Scan summary: \(totalFound) found, \(totalSaved) new, skipped \(totalSkippedNewMessages) already-scanned messages")
         }
 
-        // Phase 1.5: Reverse Sync (Notion → Local Tracker)
-        // If user manually marked commitments as Done in Notion, update local tracker
-        var reverseSyncCount = 0
-        let allOpenLocal = tracker.getAllOpenCommitments()
-        for openCommitment in allOpenLocal {
-            do {
-                if let result = try await orchestrator.notionServicePublic.findCommitmentWithStatusByHash(openCommitment.hash) {
-                    if result.status.lowercased() == "done" || result.status.lowercased() == "cancelled" {
-                        tracker.markCommitmentClosed(hash: openCommitment.hash, closureMethod: "notion-reverse-sync")
-                        reverseSyncCount += 1
-                    }
-                }
-            } catch {
-                // Non-fatal: skip this commitment if Notion lookup fails
-            }
-        }
-        if reverseSyncCount > 0 {
-            print("🔄 Reverse sync: updated \(reverseSyncCount) commitments from Notion (manually closed)")
-        }
+        // Phase 1.5 & 2: Reverse Sync + Closure Detection + remaining full-scan contacts
+        // Run in background to avoid blocking the HTTP response (these can take 60s+)
+        let bgOrchestrator = orchestrator
+        let bgContactsToScan = contactsToScan
+        let bgLookbackDate = fullLookbackDate
+        let bgRemainingContacts = bgContacts
+        Task {
+            // Phase 1-continued: Process remaining contacts from full scan (background)
+            if !bgRemainingContacts.isEmpty {
+                print("🔄 Background: scanning remaining \(bgRemainingContacts.count) contacts...")
+                for contact in bgRemainingContacts {
+                    do {
+                        let allMessages = try await bgOrchestrator.fetchMessagesForContact(contact, since: bgLookbackDate)
+                        guard !allMessages.isEmpty else { continue }
 
-        // Phase 2: Closure Detection
-        // Check if any open commitments have been fulfilled based on recent messages
-        var closedCount = 0
-        var pendingClosureCount = 0
+                        let groupedByThread = Dictionary(grouping: allMessages) { $0.threadName }
 
-        for contact in contactsToScan {
-            let allMessages = try await orchestrator.fetchMessagesForContact(contact, since: fullLookbackDate)
-            guard !allMessages.isEmpty else { continue }
+                        for (threadName, threadMessages) in groupedByThread {
+                            guard let firstMessage = threadMessages.first else { continue }
+                            let threadId = firstMessage.threadId
 
-            let groupedByThread = Dictionary(grouping: allMessages) { $0.threadId }
+                            let lastMsgTimestamp = tracker.getLastMessageTimestamp(threadId: threadId)
+                            let newMessages: [Message]
 
-            for (threadId, threadMessages) in groupedByThread {
-                // Get open commitments for this thread from local tracker
-                let openCommitments = tracker.getOpenCommitmentsForThread(threadId: threadId)
-                guard !openCommitments.isEmpty else { continue }
+                            if let lastTimestamp = lastMsgTimestamp {
+                                let filtered = threadMessages.filter { $0.message.timestamp > lastTimestamp }
+                                if filtered.isEmpty { continue }
+                                newMessages = filtered.map { $0.message }
+                            } else {
+                                newMessages = threadMessages.map { $0.message }
+                            }
 
-                // Detect closures using AI
-                do {
-                    let messages = threadMessages.map { $0.message }
-                    let closures = try await orchestrator.commitmentAnalyzer.detectClosures(
-                        openCommitments: openCommitments,
-                        messages: messages,
-                        threadName: threadMessages.first?.threadName ?? contact
-                    )
-
-                    for closure in closures {
-                        // Record the closure detection
-                        tracker.recordClosureDetection(
-                            commitmentHash: closure.commitmentHash,
-                            closureSignal: closure.closureSignal,
-                            confidence: closure.confidence,
-                            autoClosed: closure.autoClose
-                        )
-
-                        if closure.autoClose {
-                            // High confidence (>=0.85) - auto-close
-                            tracker.markCommitmentClosed(hash: closure.commitmentHash, closureMethod: "auto-closed")
-
-                            // Also update in Notion
-                            try? await orchestrator.notionServicePublic.closeCommitmentInTasks(
-                                hash: closure.commitmentHash,
-                                reason: closure.reason
+                            let extraction = try await bgOrchestrator.commitmentAnalyzer.analyzeMessages(
+                                newMessages,
+                                platform: firstMessage.platform,
+                                threadName: threadName,
+                                threadId: threadId
                             )
 
-                            closedCount += 1
-                            print("✅ Auto-closed commitment: \(closure.reason)")
-                        } else {
-                            // Medium confidence (0.6-0.84) - queue for user confirmation
-                            pendingClosureCount += 1
-                            print("❓ Pending closure: \(closure.closureSignal) (confidence: \(closure.confidence))")
+                            for commitment in extraction.commitments {
+                                if tracker.hasExtractedCommitment(hash: commitment.uniqueHash) { continue }
+                                let existingCommitment = try await bgOrchestrator.notionServicePublic.findCommitmentByHashInTasks(commitment.uniqueHash)
+                                if existingCommitment != nil {
+                                    tracker.recordExtraction(hash: commitment.uniqueHash, threadId: threadId, type: commitment.type.rawValue, title: commitment.title, counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy, confidence: 0.8)
+                                    continue
+                                }
+                                _ = try await bgOrchestrator.notionServicePublic.createCommitmentInTasks(commitment)
+                                tracker.recordExtraction(hash: commitment.uniqueHash, threadId: threadId, type: commitment.type.rawValue, title: commitment.title, counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy, confidence: 0.8)
+                            }
+
+                            let allMsgs = threadMessages.map { $0.message }
+                            let newestMsgTime = allMsgs.compactMap { $0.timestamp }.max() ?? Date()
+                            tracker.recordThreadScan(threadId: threadId, threadName: threadName, platform: firstMessage.platform.rawValue, lastMessageTimestamp: newestMsgTime, messagesScanned: newMessages.count, commitmentsFound: extraction.commitments.count)
+                        }
+                    } catch {
+                        // Non-fatal: skip this contact if fetch fails
+                    }
+                }
+                print("✅ Background: finished scanning remaining contacts")
+            }
+
+            // Phase 1.5: Reverse Sync (Notion → Local Tracker)
+            var reverseSyncCount = 0
+            let allOpenLocal = tracker.getAllOpenCommitments()
+            for openCommitment in allOpenLocal {
+                do {
+                    if let result = try await bgOrchestrator.notionServicePublic.findCommitmentWithStatusByHash(openCommitment.hash) {
+                        if result.status.lowercased() == "done" || result.status.lowercased() == "cancelled" {
+                            tracker.markCommitmentClosed(hash: openCommitment.hash, closureMethod: "notion-reverse-sync")
+                            reverseSyncCount += 1
                         }
                     }
                 } catch {
-                    print("⚠️ Closure detection failed for thread \(threadId): \(error)")
+                    // Non-fatal: skip this commitment if Notion lookup fails
                 }
             }
-        }
+            if reverseSyncCount > 0 {
+                print("🔄 Reverse sync: updated \(reverseSyncCount) commitments from Notion (manually closed)")
+            }
 
-        if closedCount > 0 {
-            print("🎯 Auto-closed \(closedCount) commitments")
-        }
-        if pendingClosureCount > 0 {
-            print("❓ \(pendingClosureCount) commitments need user confirmation for closure")
+            // Phase 2: Closure Detection
+            var closedCount = 0
+            var pendingClosureCount = 0
+
+            for contact in bgContactsToScan {
+                do {
+                    let allMessages = try await bgOrchestrator.fetchMessagesForContact(contact, since: bgLookbackDate)
+                    guard !allMessages.isEmpty else { continue }
+
+                    let groupedByThread = Dictionary(grouping: allMessages) { $0.threadId }
+
+                    for (threadId, threadMessages) in groupedByThread {
+                        let openCommitments = tracker.getOpenCommitmentsForThread(threadId: threadId)
+                        guard !openCommitments.isEmpty else { continue }
+
+                        do {
+                            let messages = threadMessages.map { $0.message }
+                            let closures = try await bgOrchestrator.commitmentAnalyzer.detectClosures(
+                                openCommitments: openCommitments,
+                                messages: messages,
+                                threadName: threadMessages.first?.threadName ?? contact
+                            )
+
+                            for closure in closures {
+                                tracker.recordClosureDetection(
+                                    commitmentHash: closure.commitmentHash,
+                                    closureSignal: closure.closureSignal,
+                                    confidence: closure.confidence,
+                                    autoClosed: closure.autoClose
+                                )
+
+                                if closure.autoClose {
+                                    tracker.markCommitmentClosed(hash: closure.commitmentHash, closureMethod: "auto-closed")
+                                    try? await bgOrchestrator.notionServicePublic.closeCommitmentInTasks(
+                                        hash: closure.commitmentHash,
+                                        reason: closure.reason
+                                    )
+                                    closedCount += 1
+                                    print("✅ Auto-closed commitment: \(closure.reason)")
+                                } else {
+                                    pendingClosureCount += 1
+                                    print("❓ Pending closure: \(closure.closureSignal) (confidence: \(closure.confidence))")
+                                }
+                            }
+                        } catch {
+                            print("⚠️ Closure detection failed for thread \(threadId): \(error)")
+                        }
+                    }
+                } catch {
+                    print("⚠️ Message fetch failed for \(contact): \(error)")
+                }
+            }
+
+            if closedCount > 0 {
+                print("🎯 Auto-closed \(closedCount) commitments")
+            }
+            if pendingClosureCount > 0 {
+                print("❓ \(pendingClosureCount) commitments need user confirmation for closure")
+            }
+            print("📋 Background closure detection complete")
         }
 
         return CommitmentScanResult(
             totalFound: totalFound,
             saved: totalSaved,
             duplicates: totalFound - totalSaved,
-            autoClosed: closedCount,
-            pendingClosures: pendingClosureCount
+            autoClosed: 0,  // Background task will handle these
+            pendingClosures: 0
         )
     }
 
