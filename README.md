@@ -1,6 +1,6 @@
 # Coach Alfred
 
-**Your AI executive coach.** Reads your messages, scans your calendar, tracks your commitments — then coaches you like Bill Campbell meets Matt Mochary. You wake up knowing what matters, who needs attention, and what you're avoiding.
+**An AI coaching platform for leaders.** Alfred runs silently on your Mac, ingests your real communication, calendar, and task data — then coaches you with the instincts of Bill Campbell and the systems of Matt Mochary. You wake up knowing what matters, who needs attention, and what you're avoiding.
 
 ![macOS](https://img.shields.io/badge/macOS-13%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9%2B-orange)
@@ -9,17 +9,64 @@
 
 ## The idea
 
-Most productivity tools make you do the organizing. Alfred flips that. It runs silently on your Mac, ingests your real communication and calendar data, and delivers three things:
+Most productivity tools make you do the organizing. Alfred flips that. It's a platform that runs continuously on your Mac — connecting to your messages, calendar, tasks, and notes — then delivers coaching, automation, and intelligence through three surfaces:
 
 1. **A morning briefing email** that opens with coaching — not noise
 2. **A mobile-first dashboard** you can glance at between meetings
-3. **An AI chat** that can read your data, take actions, and coach you in context
+3. **An AI chat** that reads your data, takes actions, and coaches you in context
 
 The coaching layer is inspired by two frameworks:
 - **Bill Campbell** — the Silicon Valley coach who asked "what's the one thing?" before every meeting
 - **Matt Mochary** — the CEO coach who taught leaders to spot avoidance patterns and relationship debt
 
-Alfred generates three coaching cards every morning:
+---
+
+## Platform Architecture
+
+Alfred isn't a single-purpose tool — it's a platform with three layers:
+
+### 1. Tools Layer — 12 Configurable Actions
+
+Every automation in Alfred is a **tool** — a self-contained action that can be scheduled, triggered manually, or combined into cadences:
+
+| Tool | Category | What it does |
+|------|----------|-------------|
+| Morning Briefing | Review | Calendar + messages + coaching → email |
+| Attention Check | Review | Mid-day focus defense alert |
+| Todo Scan | Communication | Extract action items from WhatsApp/iMessage |
+| Commitment Scan | Communication | Track promises made and owed |
+| Message Summary | Communication | Summarize a specific contact or group |
+| Auto Summary | Communication | Scheduled summaries for selected groups |
+| Pattern Learning | Analysis | Learn from your feedback to improve accuracy |
+| Group Analysis | Analysis | Identify important threads across groups |
+| Weekly Review | Review | Multi-service metrics + narrative reflection |
+| Playbook Sync | Sync | Push communication playbooks to Notion |
+| Coaching Sync | Sync | Sync coaching insights to Notion |
+| Task Lifecycle Scan | Sync | Track task state changes across systems |
+
+### 2. Cadence Layer — Configurable Scheduling
+
+Each tool can be wrapped in a **cadence** — a scheduled automation with its own timing, parameters, and notification preferences:
+
+- **Schedule types**: Daily (at a specific time), Weekly (day + time), or Interval (every N hours within active window)
+- **Full CRUD**: Create custom cadences, edit schedules, toggle enable/disable, delete user-created ones
+- **Parameters**: Each tool accepts typed parameters (contacts, lookback days, scan modes, group lists)
+- **Reliability**: Catch-up windows for missed runs, failure cooldowns with automatic retry, dedup prevention
+- **8 built-in cadences** ship out of the box, fully editable. Create unlimited custom ones.
+
+### 3. Coaching Layer — Intent-Aware Intelligence
+
+Alfred's coaching engine doesn't just react to what you ask — it recognizes your **intent** and routes to specialized strategies:
+
+| Intent | Coaching Strategy |
+|--------|------------------|
+| Task management | Prioritization, delegation, deadline awareness |
+| Communication | Relationship dynamics, response patterns, follow-up |
+| Reflection | Pattern recognition, avoidance detection, growth |
+| Planning | Resource allocation, calendar optimization, energy management |
+| Information lookup | Context enrichment, connection to past patterns |
+
+The coaching engine generates three cards every morning:
 
 | Card | Question it answers |
 |------|-------------------|
@@ -34,48 +81,30 @@ These appear in your email *before* the calendar and messages, so the strategic 
 ## What it does
 
 ### Morning briefing email
-Sent automatically at your configured time. Layout:
-
-```
-🧭 Your Coach Says
-   🎯 Leverage — "Close the deal deck today — it's blocking three downstream decisions."
-   👤 Relationship — "You have 4 overdue commitments to Alice. High-trust people notice first."
-   🪞 Avoidance — "The compliance audit has been 'Not Started' for 22 days. Spend 15 minutes today."
-
-📅 Today's Schedule
-   8 meetings, 5h 10m meeting time, 3h 40m focus time
-   + AI-generated prep notes for each external meeting
-
-💬 Messages Summary
-   1,290 messages analyzed across WhatsApp, iMessage, Signal
-   Critical threads surfaced, suggested responses drafted
-
-✅ Action Items
-   Prioritized by urgency, with due dates and context
-```
+Sent automatically at your configured time:
+- Coaching insights (Leverage, Relationship, Avoidance)
+- Today's schedule with AI-generated prep notes for external meetings
+- Message analysis across WhatsApp, iMessage, Signal
+- Prioritized action items with due dates and context
 
 ### Mobile dashboard
 A single-page PWA that works on any device:
-
 - **Focus Card** — Your top task with Mark Done action
-- **Attention Card** — Pending actions and items that need your response
 - **Coaching Insights** — Stacked Leverage / Relationship / Avoidance cards
-- **Inline Chat** — Dashboard collapses, streaming AI chat appears in-place
-- **Fixed Bottom Bar** — Quick-action chips (Briefing, Calendar, Todos, Commitments) + text input, always visible
-- **⋯ Drawer** — All tools accessible from a bottom sheet (Calendar, Messages, Commitments, Settings, Memory, and more)
+- **Inline Chat** — Streaming AI chat that reads your data and takes actions
+- **Quick Actions** — Briefing, Calendar, Todos, Commitments + text input
+- **Cadence Manager** — View, edit, create, and trigger all your scheduled automations
 
 ### Calendar event creation
 Create events directly from chat:
 - *"Schedule a call with Alice tomorrow at 3pm about the product roadmap"*
 - Alfred creates the Google Calendar event, returns a shareable link, and offers a Copy Invite button
-- Events are titled in the format: `Adam <> Alice : Topic`
-- OAuth re-authentication is handled seamlessly when write scope is needed
 
 ### Commitment tracking
-Alfred scans your conversations and extracts commitments — things you owe others and things they owe you. These feed into the Relationship coaching card and get stored in Notion for follow-through. The tracker is self-improving: auto-closure confidence thresholds adjust over time based on your confirm/reject feedback.
+Scans conversations for commitments — things you owe others and things they owe you. The tracker is self-improving: auto-closure confidence thresholds adjust over time based on your confirm/reject feedback.
 
 ### Attention defense
-A 3PM check-in that asks: given what's left today, what must get done and what can wait? Prevents end-of-day panic.
+A 3PM check-in that asks: given what's left today, what must get done and what can wait?
 
 ### Agent memory
 Alfred learns your preferences over time. Teach it rules ("always be brief with Bob"), and it remembers across sessions. Memory is stored as transparent, editable files.
@@ -87,34 +116,34 @@ Alfred learns your preferences over time. Teach it rules ("always be brief with 
 Alfred is a single Swift binary that runs as a macOS LaunchAgent. One process, one port, always on.
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                   Coach Alfred v2.0                       │
-│                                                          │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌─────────┐ │
-│  │ Coaching  │  │ Briefing │  │  Agent   │  │  Chat   │ │
-│  │  Engine   │  │Orchestr. │  │ Manager  │  │ Engine  │ │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬────┘ │
-│       │              │             │              │      │
-│  ┌────▼──────────────▼─────────────▼──────────────▼────┐ │
-│  │                  HTTP API Server                    │ │
-│  │                   (Port 8080)                       │ │
-│  └──────────────────────┬──────────────────────────────┘ │
-│                         │                                │
-│  ┌──────┬──────┬────────┼────────┬──────┬──────┐        │
-│  │Google│iMsg  │WhatsApp│ Notion │Claude│ SMTP │        │
-│  │ Cal  │      │Signal  │  API   │  AI  │Email │        │
-│  └──────┴──────┴────────┴────────┴──────┴──────┘        │
-└──────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                     Coach Alfred v2.0                            │
+│                                                                 │
+│  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌────────────┐  │
+│  │  Coaching  │  │  Cadence  │  │  Intent   │  │    Chat    │  │
+│  │  Engine    │  │  Runner   │  │  Router   │  │   Engine   │  │
+│  └─────┬─────┘  └─────┬─────┘  └─────┬─────┘  └─────┬──────┘  │
+│        │               │              │               │         │
+│  ┌─────▼───────────────▼──────────────▼───────────────▼──────┐  │
+│  │                     HTTP API Server                       │  │
+│  │                      (Port 8080)                          │  │
+│  │    /api/cadences  /api/briefing  /api/chat  /api/memory   │  │
+│  └──────────────────────────┬────────────────────────────────┘  │
+│                              │                                  │
+│  ┌────────┬────────┬─────────┼─────────┬────────┬────────┐     │
+│  │ Google │ iMsg   │WhatsApp │ Notion  │ Claude │  SMTP  │     │
+│  │  Cal   │        │ Signal  │  API    │   AI   │ Email  │     │
+│  └────────┴────────┴─────────┴─────────┴────────┴────────┘     │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 **Data flow:**
-1. Scheduler fires at your configured briefing time
-2. Orchestrator fetches messages (iMessage, WhatsApp, Signal), calendar (Google), and tasks (Notion) in parallel
-3. Claude AI analyzes conversations, generates meeting prep, extracts commitments
-4. Coaching Engine takes the assembled data and generates Leverage/Relationship/Avoidance insights
-5. Email is sent with coaching first, schedule second, messages third
-6. Same data powers the web dashboard and chat
-7. Chat can also take actions — create calendar events, scan commitments, extract todos
+1. Cadence scheduler evaluates all enabled cadences every 60 seconds
+2. When a cadence fires, the Runner dispatches to the appropriate tool
+3. Tools fetch data from integrations (messages, calendar, tasks) in parallel
+4. Claude AI analyzes, coaches, and generates insights
+5. Results are delivered via email, notifications, and the web dashboard
+6. Chat provides real-time access to the same tools with intent-aware coaching
 
 ---
 
@@ -184,6 +213,32 @@ See [SETUP.md](SETUP.md) for the full guide.
 | **Gmail** | Email threads in briefings |
 | **Slack** | Notification delivery |
 | **SMTP** | Morning briefing email |
+
+---
+
+## Cadence API
+
+Alfred exposes a full CRUD API for managing cadences programmatically:
+
+```bash
+# List all cadences
+curl "http://localhost:8080/api/cadences?passcode=YOUR_PASSCODE"
+
+# View available tools
+curl "http://localhost:8080/api/cadences/catalog?passcode=YOUR_PASSCODE"
+
+# Create a custom cadence
+curl -X POST "http://localhost:8080/api/cadences?passcode=YOUR_PASSCODE" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Evening Digest","action_type":"message_summary",
+       "schedule":{"type":"daily","time":"18:00"},
+       "params":{"contact":"Team Chat","platform":"whatsapp","timeframe":"24h"}}'
+
+# Trigger a cadence manually
+curl -X POST "http://localhost:8080/api/cadences/run?passcode=YOUR_PASSCODE" \
+  -H "Content-Type: application/json" \
+  -d '{"id":"builtin-commitment-scan"}'
+```
 
 ---
 
