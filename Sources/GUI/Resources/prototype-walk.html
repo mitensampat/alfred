@@ -1,0 +1,1988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>the walk — comprehensive prototype</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        /* ══════════════════════════════════════
+           DESIGN SYSTEM — "The Walk"
+           Warm · Grounded · Coaching
+           ══════════════════════════════════════ */
+
+        /* ── LIGHT MODE: Ralph Lauren Navy ── */
+        :root {
+            /* Canvas */
+            --canvas: #f8f7f4;
+            --surface: #ffffff;
+            --surface-sunken: #f0eeea;
+            --surface-overlay: rgba(27, 42, 74, 0.45);
+
+            /* Ink */
+            --ink: #1b2a4a;
+            --ink-secondary: #5c6370;
+            --ink-tertiary: #8890a0;
+            --ink-faint: #b0b5be;
+
+            /* Lines */
+            --line: #e4e2dc;
+            --line-strong: #d4d1ca;
+
+            /* Coach — navy (the coach's voice, challenge, directness) */
+            --coach: #1b2a4a;
+            --coach-light: #e8ecf2;
+            --coach-dark: #12203a;
+
+            /* Growth — hunt club green (success, progress, completion) */
+            --growth: #2d5a3d;
+            --growth-light: #e4efe7;
+            --growth-dark: #1e4a2e;
+
+            /* Semantic */
+            --warning: #c49a3c;
+            --warning-light: #faf1dd;
+            --danger: #8b2332;
+            --danger-light: #f4e4e6;
+            --info: #3d6888;
+            --info-light: #e4eef4;
+            --method: #6b4c3b;
+            --method-light: #f4ece3;
+
+            /* Typography */
+            --font-display: 'Playfair Display', Georgia, serif;
+            --font-body: 'Inter', -apple-system, sans-serif;
+        }
+
+        /* ── DARK MODE: Linear ── */
+        [data-theme="dark"] {
+            --canvas: #08090a;
+            --surface: #141516;
+            --surface-sunken: #0f1011;
+            --surface-overlay: rgba(0, 0, 0, 0.65);
+
+            --ink: #f7f8f8;
+            --ink-secondary: #8a8f98;
+            --ink-tertiary: #62666d;
+            --ink-faint: #3e4046;
+
+            --line: #23252a;
+            --line-strong: #34343a;
+
+            --coach: #5E6AD2;
+            --coach-light: #18182f;
+            --coach-dark: #4f5bc3;
+
+            --growth: #26B5CE;
+            --growth-light: #0d2b30;
+            --growth-dark: #1da3ba;
+
+            --warning: #F0BF00;
+            --warning-light: #2b2400;
+            --danger: #EB5757;
+            --danger-light: #2d1519;
+            --info: #5E6AD2;
+            --info-light: #18182f;
+            --method: #828fff;
+            --method-light: #1a1a30;
+        }
+
+        /* ── Dark mode component overrides ── */
+        [data-theme="dark"] .user-bubble {
+            background: var(--surface);
+            color: var(--ink);
+            border: 1px solid var(--line);
+        }
+        [data-theme="dark"] .send-btn {
+            background: var(--coach);
+            color: white;
+        }
+        [data-theme="dark"] .pill-primary {
+            background: var(--coach);
+            color: white;
+            border-color: var(--coach);
+        }
+        [data-theme="dark"] .toggle::after {
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: var(--font-body);
+            background: var(--canvas);
+            color: var(--ink);
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ── Screen Navigation (prototype-only) ── */
+        .screen-nav {
+            display: flex;
+            gap: 0;
+            background: var(--surface);
+            border-bottom: 1px solid var(--line);
+            padding: 0 16px;
+            flex-shrink: 0;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .screen-nav button {
+            font-family: var(--font-body);
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--ink-tertiary);
+            background: none;
+            border: none;
+            padding: 12px 10px 10px;
+            cursor: pointer;
+            white-space: nowrap;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            letter-spacing: 0.02em;
+        }
+        .screen-nav button.active {
+            color: var(--coach);
+            border-bottom-color: var(--coach);
+        }
+        .screen-nav button:hover { color: var(--ink-secondary); }
+
+        /* ── Layout ── */
+        .screen { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+        .screen.active { display: flex; }
+
+        .header {
+            padding: 16px 20px 0;
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        .header-title {
+            font-family: var(--font-display);
+            font-size: 18px;
+            font-weight: 400;
+            color: var(--ink);
+        }
+        .header-meta {
+            font-size: 11px;
+            color: var(--ink-faint);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .header-icon {
+            cursor: pointer;
+            font-size: 16px;
+            opacity: 0.4;
+            transition: opacity 0.2s;
+        }
+        .header-icon:hover { opacity: 0.7; }
+
+        .pulse {
+            padding: 6px 20px 12px;
+            font-size: 10px;
+            color: var(--ink-faint);
+            letter-spacing: 0.03em;
+        }
+
+        .canvas {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0 20px 120px;
+            scroll-behavior: smooth;
+        }
+
+        /* ── Conversation Elements ── */
+        .time-marker {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 28px 0 16px;
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--coach);
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        .time-marker::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--line);
+        }
+
+        .coach-msg {
+            margin-bottom: 16px;
+            font-size: 14px;
+            line-height: 1.65;
+            color: var(--ink);
+        }
+
+        .coach-question {
+            border-left: 3px solid var(--coach);
+            padding: 12px 16px;
+            margin: 12px 0;
+            background: var(--coach-light);
+            border-radius: 0 8px 8px 0;
+            font-size: 14px;
+            line-height: 1.6;
+            font-style: italic;
+            color: var(--ink);
+        }
+
+        .user-msg {
+            display: flex;
+            justify-content: flex-end;
+            margin: 12px 0;
+        }
+        .user-bubble {
+            background: var(--ink);
+            color: #faf9f6;
+            padding: 10px 16px;
+            border-radius: 18px 18px 4px 18px;
+            font-size: 14px;
+            line-height: 1.5;
+            max-width: 85%;
+        }
+
+        .annotation {
+            font-size: 10px;
+            color: var(--ink-faint);
+            font-style: italic;
+            margin: 4px 0 12px;
+            padding-left: 4px;
+        }
+
+        .divider {
+            border: none;
+            border-top: 1px dashed var(--line);
+            margin: 28px 0;
+        }
+
+        /* ── Card System ── */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin: 12px 0;
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--ink-secondary);
+            letter-spacing: 0.03em;
+        }
+
+        /* Focus Card */
+        .focus-card {
+            border-left: 3px solid var(--warning);
+            background: var(--warning-light);
+        }
+        .focus-card .focus-title {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+        .focus-card .focus-stats {
+            display: flex;
+            gap: 16px;
+            font-size: 11px;
+            color: var(--ink-secondary);
+        }
+        .focus-card .focus-stats span { display: flex; align-items: center; gap: 4px; }
+        .focus-card .focus-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        /* Calendar Card */
+        .calendar-card .cal-event {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--line);
+            font-size: 13px;
+        }
+        .calendar-card .cal-event:last-child { border: none; }
+        .cal-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .cal-time { color: var(--ink-tertiary); font-size: 12px; min-width: 44px; font-variant-numeric: tabular-nums; }
+        .cal-title { flex: 1; }
+        .cal-flag { font-size: 10px; color: var(--danger); font-weight: 500; }
+        .cal-footer {
+            display: flex;
+            gap: 16px;
+            padding-top: 10px;
+            margin-top: 4px;
+            border-top: 1px solid var(--line);
+            font-size: 11px;
+            color: var(--ink-secondary);
+        }
+
+        /* Commitment Card */
+        .commitment-section { margin-bottom: 12px; }
+        .commitment-section-label {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--ink-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 6px;
+        }
+        .commitment-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 0;
+            font-size: 13px;
+            border-bottom: 1px solid var(--line);
+        }
+        .commitment-item:last-child { border: none; }
+        .commitment-age {
+            font-size: 11px;
+            color: var(--ink-tertiary);
+            margin-left: auto;
+            white-space: nowrap;
+        }
+        .commitment-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        /* Message Summary Card */
+        .msg-thread {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            padding: 6px 0;
+            font-size: 13px;
+        }
+        .msg-thread-dot { margin-top: 6px; width: 4px; height: 4px; border-radius: 50%; background: var(--ink-tertiary); flex-shrink: 0; }
+        .msg-meta { font-size: 11px; color: var(--ink-tertiary); }
+
+        /* Evidence Card */
+        .evidence-card {
+            border-left: 3px solid var(--method);
+            background: var(--method-light);
+        }
+        .evidence-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            font-size: 12px;
+        }
+        .evidence-label { color: var(--ink-secondary); }
+        .evidence-value { font-weight: 600; }
+
+        /* Approval Card */
+        .approval-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 0;
+            font-size: 13px;
+            border-bottom: 1px solid var(--line);
+        }
+        .approval-item:last-child { border: none; }
+        .approval-check {
+            width: 18px; height: 18px;
+            border-radius: 4px;
+            border: 2px solid var(--line-strong);
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+        }
+        .approval-check.checked {
+            background: var(--growth);
+            border-color: var(--growth);
+            color: white;
+        }
+        .approval-type {
+            font-size: 10px;
+            color: var(--ink-tertiary);
+            margin-left: auto;
+        }
+
+        /* Pattern Card */
+        .pattern-item {
+            padding: 8px 0;
+            border-bottom: 1px solid var(--line);
+        }
+        .pattern-item:last-child { border: none; }
+        .pattern-title { font-size: 13px; font-weight: 500; margin-bottom: 2px; }
+        .pattern-desc { font-size: 12px; color: var(--ink-secondary); }
+        .pattern-evidence { font-size: 11px; color: var(--coach); margin-top: 3px; }
+
+        /* ── Buttons ── */
+        .btn {
+            font-family: var(--font-body);
+            font-size: 12px;
+            font-weight: 500;
+            padding: 6px 14px;
+            border-radius: 8px;
+            border: 1px solid var(--line-strong);
+            background: var(--surface);
+            color: var(--ink);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .btn:hover { background: var(--surface-sunken); }
+        .btn-coach {
+            background: var(--coach);
+            color: white;
+            border-color: var(--coach);
+        }
+        .btn-coach:hover { background: var(--coach-dark); }
+        .btn-growth {
+            background: var(--growth);
+            color: white;
+            border-color: var(--growth);
+        }
+        .btn-growth:hover { background: var(--growth-dark); }
+        .btn-sm { font-size: 11px; padding: 4px 10px; border-radius: 6px; }
+        .btn-ghost {
+            background: none;
+            border: none;
+            color: var(--coach);
+            font-weight: 500;
+            padding: 4px 8px;
+            cursor: pointer;
+        }
+
+        /* ── Badges ── */
+        .badge {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 500;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+        .badge-danger { background: var(--danger-light); color: var(--danger); }
+        .badge-warning { background: var(--warning-light); color: var(--warning); }
+        .badge-growth { background: var(--growth-light); color: var(--growth); }
+        .badge-info { background: var(--info-light); color: var(--info); }
+        .badge-method { background: var(--method-light); color: var(--method); }
+        .badge-coach { background: var(--coach-light); color: var(--coach); }
+
+        /* ── Status Dots ── */
+        .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+        .dot-green { background: var(--growth); }
+        .dot-yellow { background: var(--warning); }
+        .dot-red { background: var(--danger); }
+        .dot-gray { background: var(--ink-faint); }
+
+        /* ── Toggles ── */
+        .toggle {
+            width: 36px; height: 20px;
+            border-radius: 10px;
+            background: var(--line-strong);
+            position: relative;
+            cursor: pointer;
+            transition: background 0.2s;
+            flex-shrink: 0;
+        }
+        .toggle::after {
+            content: '';
+            width: 16px; height: 16px;
+            border-radius: 50%;
+            background: white;
+            position: absolute;
+            top: 2px; left: 2px;
+            transition: transform 0.2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+        }
+        .toggle.on { background: var(--growth); }
+        .toggle.on::after { transform: translateX(16px); }
+
+        /* ── Coaching Screen ── */
+        .section-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--ink-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin: 24px 0 12px;
+        }
+        .section-title:first-child { margin-top: 8px; }
+
+        .skill-card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
+            cursor: pointer;
+        }
+        .skill-card-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .skill-icon { font-size: 20px; }
+        .skill-info { flex: 1; }
+        .skill-name { font-size: 14px; font-weight: 600; }
+        .skill-method { font-size: 10px; color: var(--method); margin-top: 1px; }
+        .skill-desc {
+            font-size: 12px;
+            color: var(--ink-secondary);
+            margin-top: 8px;
+            line-height: 1.5;
+        }
+        .skill-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 8px;
+            font-size: 11px;
+            color: var(--ink-tertiary);
+        }
+        .skill-detail {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--line);
+            display: none;
+        }
+        .skill-detail.open { display: block; }
+        .skill-detail-label {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--ink-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin: 10px 0 4px;
+        }
+        .skill-detail-label:first-child { margin-top: 0; }
+        .skill-detail-content {
+            font-size: 12px;
+            color: var(--ink-secondary);
+            line-height: 1.5;
+            padding: 8px 12px;
+            background: var(--surface-sunken);
+            border-radius: 8px;
+        }
+        .data-source-tag {
+            display: inline-block;
+            font-size: 10px;
+            padding: 2px 8px;
+            background: var(--info-light);
+            color: var(--info);
+            border-radius: 6px;
+            margin: 2px 4px 2px 0;
+        }
+
+        .tenet-section {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
+        }
+        .tenet-section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .tenet-section-name { font-size: 13px; font-weight: 600; }
+        .tenet-section-count { font-size: 11px; color: var(--ink-tertiary); }
+        .tenet-preview {
+            font-size: 12px;
+            color: var(--ink-secondary);
+            margin-top: 8px;
+            line-height: 1.5;
+            font-style: italic;
+        }
+
+        .marketplace-card {
+            background: var(--surface);
+            border: 1px dashed var(--line-strong);
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+        }
+        .marketplace-icon { font-size: 24px; flex-shrink: 0; margin-top: 2px; }
+        .marketplace-name { font-size: 13px; font-weight: 600; }
+        .marketplace-desc { font-size: 12px; color: var(--ink-secondary); margin-top: 2px; line-height: 1.4; }
+        .marketplace-install {
+            font-size: 11px;
+            color: var(--coach);
+            font-weight: 600;
+            margin-top: 6px;
+            cursor: pointer;
+        }
+
+        /* ── Configure Screen ── */
+        .config-card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            margin-bottom: 10px;
+            overflow: hidden;
+        }
+
+        .cadence-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--line);
+            font-size: 13px;
+        }
+        .cadence-item:last-child { border: none; }
+        .cadence-info { flex: 1; }
+        .cadence-name { font-weight: 500; }
+        .cadence-schedule { font-size: 11px; color: var(--ink-tertiary); margin-top: 1px; }
+        .cadence-actions { display: flex; gap: 6px; }
+        .cadence-add {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 12px 16px;
+            font-size: 12px;
+            color: var(--ink-tertiary);
+            cursor: pointer;
+            border: 1px dashed var(--line-strong);
+            border-radius: 12px;
+            margin-bottom: 10px;
+        }
+
+        .fav-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--line);
+            font-size: 13px;
+        }
+        .fav-item:last-child { border: none; }
+        .fav-platforms { font-size: 10px; color: var(--ink-tertiary); margin-left: auto; }
+        .fav-remove { color: var(--danger); cursor: pointer; font-size: 14px; margin-left: 8px; opacity: 0.5; }
+
+        .config-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--line);
+            font-size: 13px;
+        }
+        .config-row:last-child { border: none; }
+        .config-value { font-size: 12px; font-family: 'SF Mono', monospace; color: var(--ink-tertiary); max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+        .config-status { font-size: 11px; }
+        .config-status.connected { color: var(--growth); }
+
+        .memory-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--line);
+            font-size: 13px;
+        }
+        .memory-item:last-child { border: none; }
+        .memory-text { flex: 1; }
+        .memory-remove { color: var(--danger); cursor: pointer; opacity: 0.4; }
+
+        .teach-input {
+            display: flex;
+            gap: 8px;
+            padding: 12px 16px;
+        }
+        .teach-input input {
+            flex: 1;
+            font-family: var(--font-body);
+            font-size: 13px;
+            padding: 8px 12px;
+            border: 1px solid var(--line-strong);
+            border-radius: 8px;
+            background: var(--surface);
+            color: var(--ink);
+            outline: none;
+        }
+        .teach-input input:focus { border-color: var(--coach); }
+
+        /* ── Bottom Bar ── */
+        .bottom-bar {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            background: var(--surface);
+            border-top: 1px solid var(--line);
+            padding: 8px 16px max(8px, env(safe-area-inset-bottom));
+            z-index: 100;
+        }
+        .pills {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            padding-bottom: 8px;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+        }
+        .pills::-webkit-scrollbar { display: none; }
+        .pill {
+            font-family: var(--font-body);
+            font-size: 12px;
+            font-weight: 500;
+            padding: 6px 14px;
+            border-radius: 20px;
+            border: 1px solid var(--line-strong);
+            background: var(--surface);
+            color: var(--ink-secondary);
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.15s;
+        }
+        .pill:hover { background: var(--surface-sunken); color: var(--ink); }
+        .pill-primary {
+            background: var(--ink);
+            color: var(--canvas);
+            border-color: var(--ink);
+        }
+        .pill-primary:hover { opacity: 0.85; }
+        .input-row { display: flex; gap: 8px; }
+        .input-field {
+            flex: 1;
+            font-family: var(--font-body);
+            font-size: 14px;
+            padding: 10px 16px;
+            border: 1px solid var(--line-strong);
+            border-radius: 24px;
+            background: var(--surface);
+            color: var(--ink);
+            outline: none;
+        }
+        .input-field:focus { border-color: var(--coach); }
+        .input-field::placeholder { color: var(--ink-faint); }
+        .send-btn {
+            width: 40px; height: 40px;
+            border-radius: 50%;
+            background: var(--ink);
+            color: white;
+            border: none;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        /* ── Helpers ── */
+        .text-coach { color: var(--coach); }
+        .text-growth { color: var(--growth); }
+        .text-danger { color: var(--danger); }
+        .text-warning { color: var(--warning); }
+        .text-secondary { color: var(--ink-secondary); }
+        .text-xs { font-size: 11px; }
+        .fw-600 { font-weight: 600; }
+        .flex { display: flex; }
+        .items-center { align-items: center; }
+        .justify-between { justify-content: space-between; }
+
+        .fade-in {
+            animation: fadeIn 0.3s ease;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+    <script>
+        // Anti-flash: set theme before first paint
+        (function() {
+            var saved = localStorage.getItem('alfred-theme');
+            if (saved === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        })();
+    </script>
+</head>
+<body>
+
+    <!-- ═══ SCREEN NAVIGATION (prototype-only) ═══ -->
+    <!-- PROTOTYPE NAV — not part of the product. In the real app: conversation canvas
+         is the only screen. Coaching is accessed via the pill. Configure via gear icon. -->
+    <nav class="screen-nav">
+        <button class="active" onclick="showScreen('day')">today</button>
+        <button onclick="showScreen('tools')">tools</button>
+        <button onclick="showScreen('coaching')">coaching</button>
+        <button onclick="showScreen('configure')">configure</button>
+    </nav>
+
+    <!-- ═══════════════════════════════════════════
+         SCREEN 1: THE DAY
+         The coaching conversation from morning to evening
+         ═══════════════════════════════════════════ -->
+    <div class="screen active" id="screen-day">
+        <div class="header">
+            <div class="header-title">coach alfred</div>
+            <div class="header-meta">
+                <span>tuesday, march 9</span>
+                <span class="header-icon" onclick="showScreen('configure')" title="Settings">&#9881;</span>
+            </div>
+        </div>
+        <div class="pulse">Scanned 412 messages &middot; 52 tasks &middot; 81 commitments &middot; 12m ago</div>
+
+        <div class="canvas" id="canvas-day">
+
+            <!-- ── Morning Walk: 8:15 AM ── -->
+            <div class="time-marker">8:15 AM &middot; Morning Walk</div>
+
+            <div class="coach-msg">Good morning. Three things on my mind for you today.</div>
+
+            <div class="coach-msg">Your calendar has 4 meetings starting at 10, but there's a 2-hour open block from 1 to 3. That's your only thinking time today. The investor deck you've been avoiding for 16 days? Today might actually be the day &mdash; if you protect that block.</div>
+
+            <!-- Focus Card -->
+            <div class="card focus-card">
+                <div class="card-header">
+                    <span>&#127919; TODAY'S FOCUS</span>
+                    <span class="badge badge-warning">pinned</span>
+                </div>
+                <div class="focus-title">Send GM growth path to Kunal</div>
+                <div class="focus-stats">
+                    <span>&#128197; 3 days overdue</span>
+                    <span>&#128172; last msg: Friday</span>
+                    <span>&#9989; 91% reliability</span>
+                </div>
+                <div class="focus-actions">
+                    <button class="btn btn-sm btn-growth">&#10003; Done</button>
+                    <button class="btn btn-sm">Change Focus</button>
+                </div>
+            </div>
+
+            <div class="coach-msg">Most importantly: Kunal hasn't heard from you in 3 days on the GM growth path, and you promised it Friday. That's the move today.</div>
+
+            <div class="coach-question">What's actually blocking the Kunal thing?</div>
+
+            <div class="user-msg"><div class="user-bubble">The Kunal thing is blocked because I need the revenue data from Priya first</div></div>
+
+            <!-- Evidence Card -->
+            <div class="card evidence-card">
+                <div class="card-header">
+                    <span>&#128270; MESSAGE EVIDENCE</span>
+                    <span class="badge badge-method">WhatsApp</span>
+                </div>
+                <div class="evidence-row">
+                    <span class="evidence-label">Priya sent revenue data</span>
+                    <span class="evidence-value">Tuesday, 11:04 AM</span>
+                </div>
+                <div class="evidence-row">
+                    <span class="evidence-label">You opened the thread</span>
+                    <span class="evidence-value">Not yet</span>
+                </div>
+            </div>
+
+            <div class="coach-msg">Priya sent you the data Tuesday at 11am. You haven't opened it. The block isn't Priya.</div>
+
+            <div class="coach-question">What's the real resistance here?</div>
+
+            <div class="user-msg"><div class="user-bubble">Fine. I'll do it first thing after standup.</div></div>
+
+            <div class="coach-msg">Good. I'll check in after your 10:00 standup.</div>
+            <div class="annotation">&#8593; Coach holds accountability with a specific follow-up time</div>
+
+            <!-- ── Mid-day: 11:30 AM ── -->
+            <div class="time-marker">11:30 AM &middot; Check-in</div>
+
+            <div class="coach-msg">Standup ran 15 minutes over. Did the Kunal thing happen?</div>
+
+            <div class="user-msg"><div class="user-bubble">Yes, sent it. He responded already, looks good.</div></div>
+
+            <div class="coach-msg">One down. Your 1:1 with Sarah is at 1:30 &mdash; you should know what you owe her before you walk in.</div>
+
+            <!-- ── Context Nudge: Before Sarah 1:1 ── -->
+            <div class="time-marker">1:15 PM &middot; Before Sarah 1:1</div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span>&#128203; YOU OWE SARAH</span>
+                    <span class="badge badge-danger">2 overdue</span>
+                </div>
+                <div class="commitment-item">
+                    <span class="dot dot-red"></span>
+                    <span>Design system review feedback</span>
+                    <span class="commitment-age text-danger">9 days</span>
+                </div>
+                <div class="commitment-item">
+                    <span class="dot dot-red"></span>
+                    <span>Q2 headcount proposal</span>
+                    <span class="commitment-age text-danger">5 days</span>
+                </div>
+                <div class="commitment-item">
+                    <span class="dot dot-green"></span>
+                    <span>Launch timeline sign-off</span>
+                    <span class="commitment-age text-growth">due today</span>
+                </div>
+            </div>
+
+            <div class="coach-question">Two items are overdue. Do you want to address them head-on in the 1:1, or do you need to do something before you walk in?</div>
+
+            <div class="user-msg"><div class="user-bubble">I'll tackle the headcount proposal in my 1-3 block. Can you draft a quick message to Sarah acknowledging the delay?</div></div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span>&#9998; DRAFT NUDGE</span>
+                    <button class="btn btn-sm">Copy</button>
+                </div>
+                <div style="font-size: 13px; line-height: 1.6; color: var(--ink-secondary); padding: 4px 0;">
+                    "Hey Sarah &mdash; wanted to flag before our 1:1: the headcount proposal is coming today, I had a dependency on Priya's numbers that just cleared. Design review feedback I owe you too &mdash; will have that by EOD tomorrow. Didn't want you walking in wondering."
+                </div>
+            </div>
+            <div class="annotation">&#8593; Nudge generation &mdash; inline in conversation, not a separate modal</div>
+
+            <!-- ── Pattern Interrupt: 3:00 PM ── -->
+            <div class="time-marker">3:00 PM &middot; Pattern Interrupt</div>
+
+            <div class="coach-msg">3 hours left. Let me show you the shape of your day so far.</div>
+
+            <div class="card evidence-card">
+                <div class="card-header">
+                    <span>&#128200; BEHAVIORAL THREAD</span>
+                    <span class="badge badge-method">Mochary Attention</span>
+                </div>
+                <div class="evidence-row">
+                    <span class="evidence-label">Meetings today</span>
+                    <span class="evidence-value">3h 45m</span>
+                </div>
+                <div class="evidence-row">
+                    <span class="evidence-label">Focus time used</span>
+                    <span class="evidence-value text-danger">0 min</span>
+                </div>
+                <div class="evidence-row">
+                    <span class="evidence-label">Messages sent/received</span>
+                    <span class="evidence-value">47 / 112</span>
+                </div>
+                <div class="evidence-row">
+                    <span class="evidence-label">Avoidance streak (investor deck)</span>
+                    <span class="evidence-value text-danger">Day 16</span>
+                </div>
+            </div>
+
+            <div class="coach-msg">You did the Kunal thing &mdash; good. But here's what I notice: you had that 1-3 block and spent it on the headcount proposal for Sarah. The investor deck is now day 16 of avoidance.</div>
+
+            <div class="coach-question">Tomorrow you have 2 free hours in the morning. I want you to block the first one for the deck. Will you do that?</div>
+
+            <div class="user-msg"><div class="user-bubble">Deal. Block 8:30-9:30 for the investor deck.</div></div>
+
+            <div class="coach-msg">Done. I've noted the commitment. Tomorrow morning I'll hold you to it.</div>
+            <div class="annotation">&#8593; Commitment tracking through conversation &mdash; no task manager needed</div>
+
+            <!-- ── Evening Close: 6:00 PM ── -->
+            <div class="time-marker">6:00 PM &middot; Evening Close</div>
+
+            <div class="coach-msg">Let's close the day. Here's what happened:</div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span>&#127775; TODAY'S SCORECARD</span>
+                    <span class="badge badge-growth">solid day</span>
+                </div>
+                <div class="evidence-row">
+                    <span class="evidence-label">Commitments closed</span>
+                    <span class="evidence-value text-growth">2 of 5</span>
+                </div>
+                <div class="evidence-row">
+                    <span class="evidence-label">Focus goal</span>
+                    <span class="evidence-value text-growth">&#10003; Completed</span>
+                </div>
+                <div class="evidence-row">
+                    <span class="evidence-label">Coaching sessions</span>
+                    <span class="evidence-value">4 touchpoints</span>
+                </div>
+                <div class="evidence-row">
+                    <span class="evidence-label">Carry-forward</span>
+                    <span class="evidence-value text-warning">3 items</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header"><span>&#128197; TOMORROW PREVIEW</span></div>
+                <div class="calendar-card">
+                    <div class="cal-event">
+                        <span class="cal-time">8:30</span>
+                        <div class="cal-dot" style="background: var(--coach);"></div>
+                        <span class="cal-title fw-600">Investor Deck (blocked)</span>
+                        <span class="cal-flag">commitment</span>
+                    </div>
+                    <div class="cal-event">
+                        <span class="cal-time">10:00</span>
+                        <div class="cal-dot" style="background: var(--growth);"></div>
+                        <span class="cal-title">Team standup</span>
+                    </div>
+                    <div class="cal-event">
+                        <span class="cal-time">11:00</span>
+                        <div class="cal-dot" style="background: var(--info);"></div>
+                        <span class="cal-title">Product review</span>
+                    </div>
+                    <div class="cal-event">
+                        <span class="cal-time">2:00</span>
+                        <div class="cal-dot" style="background: var(--warning);"></div>
+                        <span class="cal-title">Board prep call</span>
+                        <span class="cal-flag">needs deck</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="coach-msg">You shipped the Kunal thing and handled the Sarah situation head-on. That's real progress. The investor deck is still hanging &mdash; and I think we both know it's not about the data, it's about the ask. Tomorrow, 8:30. Deal?</div>
+
+            <div class="user-msg"><div class="user-bubble">Deal.</div></div>
+
+            <div class="coach-msg">Get some rest. See you in the morning.</div>
+
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════
+         SCREEN 2: TOOLS
+         How every tool surfaces within conversation
+         ═══════════════════════════════════════════ -->
+    <div class="screen" id="screen-tools">
+        <div class="header">
+            <div class="header-title">tools in conversation</div>
+            <div class="header-meta"><span>how every tool works in The Walk</span></div>
+        </div>
+        <div class="pulse" style="color: var(--coach); font-weight: 500;">Each current tool becomes a rich card inside the coaching conversation</div>
+
+        <div class="canvas">
+
+            <!-- ── 1. Calendar ── -->
+            <div class="time-marker">Calendar</div>
+            <div class="annotation">Current: separate form page with date picker + filter. The Walk: inline card with coaching annotations.</div>
+
+            <div class="user-msg"><div class="user-bubble">What's on my calendar today?</div></div>
+
+            <div class="coach-msg">6 meetings today, but the one I'd pay attention to is the 1:1 with Sarah at 1:30. You owe her three things and two are overdue.</div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span>&#128197; TODAY'S CALENDAR</span>
+                    <span class="badge badge-info">6 events</span>
+                </div>
+                <div class="calendar-card">
+                    <div class="cal-event">
+                        <span class="cal-time">9:00</span>
+                        <div class="cal-dot" style="background: var(--ink-faint);"></div>
+                        <span class="cal-title">Sprint planning</span>
+                    </div>
+                    <div class="cal-event">
+                        <span class="cal-time">10:00</span>
+                        <div class="cal-dot" style="background: var(--growth);"></div>
+                        <span class="cal-title" style="color: var(--growth);">Deep work block</span>
+                        <span style="font-size: 10px; color: var(--growth);">2h free</span>
+                    </div>
+                    <div class="cal-event" style="background: var(--danger-light); margin: 0 -16px; padding: 8px 16px; border-radius: 6px;">
+                        <span class="cal-time">1:30</span>
+                        <div class="cal-dot" style="background: var(--danger);"></div>
+                        <span class="cal-title fw-600">1:1 with Sarah</span>
+                        <span class="cal-flag">3 overdue</span>
+                    </div>
+                    <div class="cal-event">
+                        <span class="cal-time">3:00</span>
+                        <div class="cal-dot" style="background: var(--ink-faint);"></div>
+                        <span class="cal-title">Team standup</span>
+                    </div>
+                    <div class="cal-event">
+                        <span class="cal-time">4:00</span>
+                        <div class="cal-dot" style="background: var(--warning);"></div>
+                        <span class="cal-title">Investor call</span>
+                    </div>
+                    <div class="cal-event">
+                        <span class="cal-time">5:30</span>
+                        <div class="cal-dot" style="background: var(--ink-faint);"></div>
+                        <span class="cal-title">Wrap-up / admin</span>
+                    </div>
+                    <div class="cal-footer">
+                        <span>&#128339; 4 meetings</span>
+                        <span>&#127793; 2h free</span>
+                        <span class="text-danger">&#9888; 1 flagged</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="annotation">&#8593; Calendar is coaching-annotated: flagged events show commitment context, free blocks highlighted as opportunities</div>
+
+            <hr class="divider">
+
+            <!-- ── 2. Commitments ── -->
+            <div class="time-marker">Commitments</div>
+            <div class="annotation">Current: full dashboard page with scorecard, scan buttons, pending closures. The Walk: inline ledger with contextual actions.</div>
+
+            <div class="user-msg"><div class="user-bubble">What commitments do I have open?</div></div>
+
+            <div class="coach-msg">8 open commitments. Two patterns jump out: you owe the most to Sarah, and Swamy owes you a response from 5 days ago.</div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span>&#128203; COMMITMENT LEDGER</span>
+                    <span class="badge badge-coach">8 open &middot; 91% reliable</span>
+                </div>
+                <div class="commitment-section">
+                    <div class="commitment-section-label">I Owe (5)</div>
+                    <div class="commitment-item">
+                        <span class="dot dot-red"></span>
+                        <span>ESOP comparison &#8594; Board</span>
+                        <span class="commitment-age text-danger">16 days</span>
+                    </div>
+                    <div class="commitment-item">
+                        <span class="dot dot-red"></span>
+                        <span>Design review &#8594; Sarah</span>
+                        <span class="commitment-age text-danger">9 days</span>
+                    </div>
+                    <div class="commitment-item">
+                        <span class="dot dot-yellow"></span>
+                        <span>Headcount proposal &#8594; Sarah</span>
+                        <span class="commitment-age text-warning">5 days</span>
+                    </div>
+                    <div class="commitment-item">
+                        <span class="dot dot-green"></span>
+                        <span>Launch sign-off &#8594; Sarah</span>
+                        <span class="commitment-age">today</span>
+                    </div>
+                    <div class="commitment-item">
+                        <span class="dot dot-green"></span>
+                        <span>Pipeline update &#8594; Mike</span>
+                        <span class="commitment-age">2 days</span>
+                    </div>
+                </div>
+                <div class="commitment-section">
+                    <div class="commitment-section-label">They Owe Me (3)</div>
+                    <div class="commitment-item">
+                        <span class="dot dot-yellow"></span>
+                        <span>Revenue data &#8592; Priya</span>
+                        <span class="commitment-age">&#10003; received</span>
+                    </div>
+                    <div class="commitment-item">
+                        <span class="dot dot-red"></span>
+                        <span>Vendor quote &#8592; Swamy</span>
+                        <span class="commitment-age text-danger">5 days</span>
+                    </div>
+                    <div class="commitment-item">
+                        <span class="dot dot-green"></span>
+                        <span>Legal review &#8592; Anand</span>
+                        <span class="commitment-age">due Thu</span>
+                    </div>
+                </div>
+                <div class="commitment-actions">
+                    <button class="btn btn-sm">&#128270; Scan Favorites</button>
+                    <button class="btn btn-sm">Full Scan</button>
+                    <button class="btn btn-sm btn-coach">Nudge Swamy</button>
+                </div>
+            </div>
+
+            <div class="coach-question">Swamy's vendor quote is 5 days late. Want me to draft a follow-up?</div>
+
+            <hr class="divider">
+
+            <!-- ── 3. Messages ── -->
+            <div class="time-marker">Messages</div>
+            <div class="annotation">Current: form page with contact, platform, timeframe selectors. The Walk: ask naturally, get coaching-wrapped summary.</div>
+
+            <div class="user-msg"><div class="user-bubble">Summarize messages from the Product team this week</div></div>
+
+            <div class="coach-msg">43 messages from 6 people over 7 days. Three threads that matter:</div>
+
+            <div class="card">
+                <div class="card-header"><span>&#128172; PRODUCT TEAM &middot; WHATSAPP &middot; 7 DAYS</span></div>
+                <div class="msg-thread">
+                    <div class="msg-thread-dot" style="background: var(--danger);"></div>
+                    <div>
+                        <div class="fw-600">Launch timeline debate</div>
+                        <div class="msg-meta">18 messages &middot; heated &middot; Sarah + Kunal + 2 others</div>
+                    </div>
+                </div>
+                <div class="msg-thread">
+                    <div class="msg-thread-dot" style="background: var(--warning);"></div>
+                    <div>
+                        <div class="fw-600">Design handoff blocking</div>
+                        <div class="msg-meta">12 messages &middot; 3 people waiting on you</div>
+                    </div>
+                </div>
+                <div class="msg-thread">
+                    <div class="msg-thread-dot" style="background: var(--info);"></div>
+                    <div>
+                        <div class="fw-600">Growth path follow-up</div>
+                        <div class="msg-meta">8 messages &middot; Kunal asking about timeline 2x</div>
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line);">
+                    <span class="text-xs text-secondary">&#9889; 4 action items detected</span>
+                    <button class="btn-ghost">Review Extractions &#8594;</button>
+                </div>
+            </div>
+
+            <div class="coach-msg">The design handoff thread has 3 people waiting on you. That's the one that'll bite you if you ignore it.</div>
+
+            <hr class="divider">
+
+            <!-- ── 4. Todo Extraction ── -->
+            <div class="time-marker">Todo Extraction</div>
+            <div class="annotation">Current: form page with lookback, then approval UI. The Walk: coach surfaces findings, you approve inline.</div>
+
+            <div class="user-msg"><div class="user-bubble">Pull todos from this week's messages</div></div>
+
+            <div class="coach-msg">Found 6 items across your WhatsApp and iMessage threads. Review and I'll save the ones you want to Notion.</div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span>&#9745; EXTRACTED ITEMS &middot; 7 DAYS</span>
+                    <span class="badge badge-info">6 found</span>
+                </div>
+                <div class="approval-item">
+                    <div class="approval-check checked">&#10003;</div>
+                    <span>Send GM growth path to Kunal</span>
+                    <span class="approval-type">I Owe</span>
+                </div>
+                <div class="approval-item">
+                    <div class="approval-check checked">&#10003;</div>
+                    <span>Review ESOP comparison numbers</span>
+                    <span class="approval-type">I Owe</span>
+                </div>
+                <div class="approval-item">
+                    <div class="approval-check checked">&#10003;</div>
+                    <span>Follow up on design specs</span>
+                    <span class="approval-type">Todo</span>
+                </div>
+                <div class="approval-item">
+                    <div class="approval-check">&#8203;</div>
+                    <span style="color: var(--ink-tertiary);">Check in with Mike re: pipeline</span>
+                    <span class="approval-type">Follow-up</span>
+                </div>
+                <div class="approval-item">
+                    <div class="approval-check checked">&#10003;</div>
+                    <span>Prep investor deck data</span>
+                    <span class="approval-type">I Owe</span>
+                </div>
+                <div class="approval-item">
+                    <div class="approval-check checked">&#10003;</div>
+                    <span>Share meeting notes with team</span>
+                    <span class="approval-type">Follow-up</span>
+                </div>
+                <div style="margin-top: 10px; display: flex; gap: 8px;">
+                    <button class="btn btn-growth btn-sm">Save 5 Selected to Notion</button>
+                    <button class="btn btn-sm">Select All</button>
+                </div>
+            </div>
+
+            <hr class="divider">
+
+            <!-- ── 5. Focus Pin ── -->
+            <div class="time-marker">Focus Pin</div>
+            <div class="annotation">Current: pin suggestions bottom sheet. The Walk: coach helps you choose in conversation.</div>
+
+            <div class="user-msg"><div class="user-bubble">What should I focus on today?</div></div>
+
+            <div class="coach-msg">Based on your commitments, calendar, and what's been slipping &mdash; here are my top 3. Pick one and I'll hold you to it.</div>
+
+            <div class="card">
+                <div class="card-header"><span>&#127919; PIN YOUR FOCUS</span></div>
+                <div style="padding: 8px 0; border-bottom: 1px solid var(--line); cursor: pointer;">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <div class="fw-600" style="font-size: 13px;">Send GM growth path to Kunal</div>
+                            <div class="text-xs text-secondary">3 days overdue &middot; relationship risk</div>
+                        </div>
+                        <span class="badge badge-coach">recommended</span>
+                    </div>
+                </div>
+                <div style="padding: 8px 0; border-bottom: 1px solid var(--line); cursor: pointer;">
+                    <div class="fw-600" style="font-size: 13px;">ESOP comparison for Board</div>
+                    <div class="text-xs text-secondary">16 days overdue &middot; avoidance pattern</div>
+                </div>
+                <div style="padding: 8px 0; cursor: pointer;">
+                    <div class="fw-600" style="font-size: 13px;">Design review feedback for Sarah</div>
+                    <div class="text-xs text-secondary">9 days overdue &middot; 1:1 today at 1:30</div>
+                </div>
+            </div>
+
+            <hr class="divider">
+
+            <!-- ── 6. Workflow Patterns ── -->
+            <div class="time-marker">Patterns &amp; Learning</div>
+            <div class="annotation">Current: Patterns &amp; Memory page with 3 sub-tabs. The Walk: coach references patterns naturally, or you can ask.</div>
+
+            <div class="user-msg"><div class="user-bubble">Show me my patterns</div></div>
+
+            <div class="coach-msg">Here's what I've learned about how you work over the past 6 weeks:</div>
+
+            <div class="card">
+                <div class="card-header">
+                    <span>&#128200; BEHAVIORAL PATTERNS</span>
+                    <span class="badge badge-method">6 weeks</span>
+                </div>
+                <div class="pattern-item">
+                    <div class="pattern-title">Avoidance-then-Sprint</div>
+                    <div class="pattern-desc">You avoid tasks for 10-14 days, then complete them in a single intense session.</div>
+                    <div class="pattern-evidence">Seen 4 times &middot; Investor deck is in avoidance phase now</div>
+                </div>
+                <div class="pattern-item">
+                    <div class="pattern-title">Relationship Debt Blindness</div>
+                    <div class="pattern-desc">You lose track of commitments to people you don't message frequently.</div>
+                    <div class="pattern-evidence">Seen 6 times &middot; Currently 3 people affected</div>
+                </div>
+                <div class="pattern-item">
+                    <div class="pattern-title">Morning Momentum</div>
+                    <div class="pattern-desc">Your completion rate is 3x higher for tasks started before 10am.</div>
+                    <div class="pattern-evidence">Consistent &middot; 87% confidence</div>
+                </div>
+            </div>
+
+            <div class="coach-msg">These patterns feed into your <strong>Playbook</strong> &mdash; synced to Notion weekly. The Morning Momentum pattern is why I always push your hardest task to first thing.</div>
+
+            <hr class="divider">
+
+            <!-- ── 7. Teach Alfred ── -->
+            <div class="time-marker">Teaching &amp; Memory</div>
+            <div class="annotation">Current: "Teach Alfred" input on Memory page. The Walk: teach through natural conversation.</div>
+
+            <div class="user-msg"><div class="user-bubble">Teach: always review Kunal's messages before our Wednesday 1:1</div></div>
+
+            <div class="card" style="border-left: 3px solid var(--growth); background: var(--growth-light);">
+                <div class="card-header">
+                    <span>&#129504; LEARNED</span>
+                    <span class="badge badge-growth">saved to memory</span>
+                </div>
+                <div style="font-size: 13px; line-height: 1.5;">
+                    Before every Wednesday 1:1 with Kunal, I'll review his recent messages and surface anything you should know. This will appear in your Wednesday morning walk.
+                </div>
+            </div>
+
+            <div class="annotation">&#8593; Memory rules taught through conversation. Say "forget that rule" or "show me what you've learned" to manage.</div>
+
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════
+         SCREEN 3: COACHING
+         Skills, tenets, and marketplace
+         Accessed via "Coaching" pill
+         ═══════════════════════════════════════════ -->
+    <div class="screen" id="screen-coaching">
+        <div class="header">
+            <div class="header-title">coaching</div>
+            <div class="header-meta"><span>skills &amp; methodology</span></div>
+        </div>
+
+        <div class="canvas" style="padding-top: 8px;">
+
+            <div class="section-title">Active Skills (6)</div>
+
+            <div class="skill-card" onclick="toggleSkillDetail(this)">
+                <div class="skill-card-header">
+                    <div class="skill-icon">&#9878;</div>
+                    <div class="skill-info">
+                        <div class="skill-name">Leverage Finder</div>
+                        <div class="skill-method">Bill Campbell Method</div>
+                    </div>
+                    <div class="toggle on"></div>
+                </div>
+                <div class="skill-desc">Identifies the single highest-leverage action from your tasks and calendar. Cuts through noise to find what moves the needle.</div>
+                <div class="skill-meta">
+                    <span>Refreshed 12m ago</span>
+                    <button class="btn-ghost" style="font-size: 14px;">&#8635;</button>
+                </div>
+                <div class="skill-detail">
+                    <div class="skill-detail-label">Tenets</div>
+                    <div class="skill-detail-content">
+                        &bull; Focus on ONE thing, not a prioritized list<br>
+                        &bull; Leverage = impact &times; urgency &times; dependency risk<br>
+                        &bull; People-blocking items always outrank solo work
+                    </div>
+                    <div class="skill-detail-label">Data Sources</div>
+                    <div>
+                        <span class="data-source-tag">tasks</span>
+                        <span class="data-source-tag">calendar</span>
+                        <span class="data-source-tag">commitments</span>
+                    </div>
+                    <div class="skill-detail-label">Prompt</div>
+                    <div class="skill-detail-content" style="font-size: 11px;">
+                        You are a coach applying Bill Campbell's "ruthless prioritization" method. Given the user's tasks and calendar, identify the SINGLE most leveraged action...
+                    </div>
+                    <div style="margin-top: 12px; display: flex; gap: 8px;">
+                        <button class="btn btn-sm btn-coach">Edit Skill</button>
+                        <button class="btn btn-sm">Duplicate</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="skill-card">
+                <div class="skill-card-header">
+                    <div class="skill-icon">&#128101;</div>
+                    <div class="skill-info">
+                        <div class="skill-name">Relationship Radar</div>
+                        <div class="skill-method">Bill Campbell Method</div>
+                    </div>
+                    <div class="toggle on"></div>
+                </div>
+                <div class="skill-desc">Cross-references commitment debt against message silence to find relationships needing attention.</div>
+                <div class="skill-meta">
+                    <span>Refreshed 12m ago</span>
+                    <button class="btn-ghost" style="font-size: 14px;">&#8635;</button>
+                </div>
+            </div>
+
+            <div class="skill-card">
+                <div class="skill-card-header">
+                    <div class="skill-icon">&#128683;</div>
+                    <div class="skill-info">
+                        <div class="skill-name">Avoidance Detector</div>
+                        <div class="skill-method">Matt Mochary Method</div>
+                    </div>
+                    <div class="toggle on"></div>
+                </div>
+                <div class="skill-desc">Spots tasks untouched for 14+ days, escalates at 21+. Asks the question you're avoiding.</div>
+                <div class="skill-meta">
+                    <span>Refreshed 12m ago</span>
+                    <button class="btn-ghost" style="font-size: 14px;">&#8635;</button>
+                </div>
+            </div>
+
+            <div class="skill-card">
+                <div class="skill-card-header">
+                    <div class="skill-icon">&#127897;</div>
+                    <div class="skill-info">
+                        <div class="skill-name">Deep Work Guard</div>
+                        <div class="skill-method">Cal Newport Method</div>
+                    </div>
+                    <div class="toggle on"></div>
+                </div>
+                <div class="skill-desc">Protects uninterrupted blocks from meeting creep and message overload.</div>
+                <div class="skill-meta">
+                    <span>Refreshed 12m ago</span>
+                    <button class="btn-ghost" style="font-size: 14px;">&#8635;</button>
+                </div>
+            </div>
+
+            <div class="skill-card">
+                <div class="skill-card-header">
+                    <div class="skill-icon">&#128202;</div>
+                    <div class="skill-info">
+                        <div class="skill-name">Attention Audit</div>
+                        <div class="skill-method">Matt Mochary Method</div>
+                    </div>
+                    <div class="toggle on"></div>
+                </div>
+                <div class="skill-desc">Analyzes message volume, calendar density, and free blocks to determine if you're directing or absorbing.</div>
+                <div class="skill-meta">
+                    <span>Refreshed 25m ago</span>
+                    <button class="btn-ghost" style="font-size: 14px;">&#8635;</button>
+                </div>
+            </div>
+
+            <div class="skill-card">
+                <div class="skill-card-header">
+                    <div class="skill-icon">&#129309;</div>
+                    <div class="skill-info">
+                        <div class="skill-name">Follow Through</div>
+                        <div class="skill-method">Bill Campbell Method</div>
+                    </div>
+                    <div class="toggle on"></div>
+                </div>
+                <div class="skill-desc">Tracks commitment closure rate and flags when reliability is slipping with specific people.</div>
+                <div class="skill-meta">
+                    <span>Refreshed 12m ago</span>
+                    <button class="btn-ghost" style="font-size: 14px;">&#8635;</button>
+                </div>
+            </div>
+
+            <div class="cadence-add" style="margin-top: 4px;">+ Create Custom Skill</div>
+
+            <!-- Tenets -->
+            <div class="section-title">Coaching Tenets</div>
+            <div class="annotation" style="margin-top: -8px;">Toggle methodology sections on/off to shape how Alfred coaches you</div>
+
+            <div class="tenet-section">
+                <div class="tenet-section-header">
+                    <div>
+                        <div class="tenet-section-name">Bill Campbell Rules</div>
+                        <div class="tenet-section-count text-xs text-secondary">12 tenets</div>
+                    </div>
+                    <div class="toggle on"></div>
+                </div>
+                <div class="tenet-preview">"Start with the person, not the problem." "Ask what they'll do, not what they should do." "One priority, not a prioritized list..."</div>
+            </div>
+
+            <div class="tenet-section">
+                <div class="tenet-section-header">
+                    <div>
+                        <div class="tenet-section-name">Matt Mochary Rules</div>
+                        <div class="tenet-section-count text-xs text-secondary">8 tenets</div>
+                    </div>
+                    <div class="toggle on"></div>
+                </div>
+                <div class="tenet-preview">"Energy audit: track zone-of-genius vs. zone-3 grinding." "Fear is the root. Name it..."</div>
+            </div>
+
+            <div class="tenet-section">
+                <div class="tenet-section-header">
+                    <div>
+                        <div class="tenet-section-name">Alfred Core Rules</div>
+                        <div class="tenet-section-count text-xs text-secondary">6 tenets</div>
+                    </div>
+                    <div class="toggle on"></div>
+                </div>
+                <div class="tenet-preview">"Never performative praise." "Be specific, never generic." "Questions over instructions..."</div>
+            </div>
+
+            <!-- Marketplace -->
+            <div class="section-title">From the Marketplace</div>
+
+            <div class="marketplace-card">
+                <div class="marketplace-icon">&#9201;</div>
+                <div style="flex: 1;">
+                    <div class="marketplace-name">Andy Grove's Maker Schedule</div>
+                    <div class="marketplace-desc">Protects deep work blocks from meeting creep. Flags when maker vs. manager ratio tips below 40%.</div>
+                    <div class="marketplace-install">Install &#8594;</div>
+                </div>
+            </div>
+
+            <div class="marketplace-card">
+                <div class="marketplace-icon">&#9889;</div>
+                <div style="flex: 1;">
+                    <div class="marketplace-name">Energy Audit</div>
+                    <div class="marketplace-desc">Tracks Zone-of-Genius vs. Zone-3 grinding across your calendar and tasks.</div>
+                    <div class="marketplace-install">Install &#8594;</div>
+                </div>
+            </div>
+
+            <div class="marketplace-card">
+                <div class="marketplace-icon">&#128101;</div>
+                <div style="flex: 1;">
+                    <div class="marketplace-name">Delegation Radar</div>
+                    <div class="marketplace-desc">Spots tasks you're personally doing that someone on your team could own.</div>
+                    <div class="marketplace-install">Install &#8594;</div>
+                </div>
+            </div>
+
+            <div class="marketplace-card">
+                <div class="marketplace-icon">&#128176;</div>
+                <div style="flex: 1;">
+                    <div class="marketplace-name">Deal Pipeline Coach</div>
+                    <div class="marketplace-desc">Tracks deal-related commitments and flags when follow-ups are slipping.</div>
+                    <div class="marketplace-install">Install &#8594;</div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════
+         SCREEN 4: CONFIGURE
+         Cadences, favorites, memory, settings
+         Accessed via gear icon
+         ═══════════════════════════════════════════ -->
+    <div class="screen" id="screen-configure">
+        <div class="header">
+            <div class="header-title">configure</div>
+            <div class="header-meta"><span>cadences, contacts &amp; settings</span></div>
+        </div>
+
+        <div class="canvas" style="padding-top: 8px;">
+
+            <div class="section-title">Cadences</div>
+            <div class="annotation" style="margin-top: -8px;">Scheduled automations that feed Alfred's coaching intelligence</div>
+
+            <div class="config-card">
+                <div class="cadence-item">
+                    <span class="dot dot-green"></span>
+                    <div class="cadence-info">
+                        <div class="cadence-name">Morning Briefing</div>
+                        <div class="cadence-schedule">daily at 8:15 AM &middot; ran 14h ago</div>
+                    </div>
+                    <div class="cadence-actions">
+                        <button class="btn btn-sm">&#9654;</button>
+                        <button class="btn btn-sm">&#9998;</button>
+                    </div>
+                </div>
+                <div class="cadence-item">
+                    <span class="dot dot-green"></span>
+                    <div class="cadence-info">
+                        <div class="cadence-name">Attention Check</div>
+                        <div class="cadence-schedule">daily at 3:00 PM &middot; ran 20h ago</div>
+                    </div>
+                    <div class="cadence-actions">
+                        <button class="btn btn-sm">&#9654;</button>
+                        <button class="btn btn-sm">&#9998;</button>
+                    </div>
+                </div>
+                <div class="cadence-item">
+                    <span class="dot dot-green"></span>
+                    <div class="cadence-info">
+                        <div class="cadence-name">Todo Scan</div>
+                        <div class="cadence-schedule">every 3h (9am-9pm) &middot; ran 1h ago</div>
+                    </div>
+                    <div class="cadence-actions">
+                        <button class="btn btn-sm">&#9654;</button>
+                        <button class="btn btn-sm">&#9998;</button>
+                    </div>
+                </div>
+                <div class="cadence-item">
+                    <span class="dot dot-green"></span>
+                    <div class="cadence-info">
+                        <div class="cadence-name">Commitment Scan</div>
+                        <div class="cadence-schedule">daily at 5:00 PM &middot; ran 20h ago</div>
+                    </div>
+                    <div class="cadence-actions">
+                        <button class="btn btn-sm">&#9654;</button>
+                        <button class="btn btn-sm">&#9998;</button>
+                    </div>
+                </div>
+                <div class="cadence-item">
+                    <span class="dot dot-green"></span>
+                    <div class="cadence-info">
+                        <div class="cadence-name">Pattern Learning</div>
+                        <div class="cadence-schedule">weekly Thu at 6:00 PM &middot; ran 3d ago</div>
+                    </div>
+                    <div class="cadence-actions">
+                        <button class="btn btn-sm">&#9654;</button>
+                        <button class="btn btn-sm">&#9998;</button>
+                    </div>
+                </div>
+                <div class="cadence-item">
+                    <span class="dot dot-green"></span>
+                    <div class="cadence-info">
+                        <div class="cadence-name">Weekly Review</div>
+                        <div class="cadence-schedule">weekly Sun at 8:00 AM &middot; ran 1d ago</div>
+                    </div>
+                    <div class="cadence-actions">
+                        <button class="btn btn-sm">&#9654;</button>
+                        <button class="btn btn-sm">&#9998;</button>
+                    </div>
+                </div>
+                <div class="cadence-item">
+                    <span class="dot dot-gray"></span>
+                    <div class="cadence-info">
+                        <div class="cadence-name" style="color: var(--ink-tertiary);">Auto Summary</div>
+                        <div class="cadence-schedule">disabled &middot; daily at 6:00 PM</div>
+                    </div>
+                    <div class="cadence-actions">
+                        <button class="btn btn-sm">&#9654;</button>
+                        <button class="btn btn-sm">&#9998;</button>
+                    </div>
+                </div>
+                <div class="cadence-item">
+                    <span class="dot dot-green"></span>
+                    <div class="cadence-info">
+                        <div class="cadence-name">Playbook Sync</div>
+                        <div class="cadence-schedule">weekly Thu at 6:30 PM &middot; ran 3d ago</div>
+                    </div>
+                    <div class="cadence-actions">
+                        <button class="btn btn-sm">&#9654;</button>
+                        <button class="btn btn-sm">&#9998;</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="cadence-add">+ New Cadence</div>
+
+            <div class="annotation">Cadences are Alfred's heartbeat. They run in the background, ingesting data and surfacing insights during coaching conversations. Create new cadences from 12 available tool types.</div>
+
+            <!-- Favorites -->
+            <div class="section-title">Favorite Contacts</div>
+
+            <div class="config-card">
+                <div class="fav-item">
+                    <span>&#128100;</span>
+                    <span class="fw-600">Kunal</span>
+                    <span class="fav-platforms">whatsapp &middot; imessage</span>
+                    <span class="fav-remove">&times;</span>
+                </div>
+                <div class="fav-item">
+                    <span>&#128100;</span>
+                    <span class="fw-600">Sarah</span>
+                    <span class="fav-platforms">email &middot; imessage</span>
+                    <span class="fav-remove">&times;</span>
+                </div>
+                <div class="fav-item">
+                    <span>&#128100;</span>
+                    <span class="fw-600">Swamy</span>
+                    <span class="fav-platforms">whatsapp</span>
+                    <span class="fav-remove">&times;</span>
+                </div>
+                <div class="fav-item">
+                    <span>&#128100;</span>
+                    <span class="fw-600">Mike</span>
+                    <span class="fav-platforms">imessage</span>
+                    <span class="fav-remove">&times;</span>
+                </div>
+            </div>
+            <div class="cadence-add">+ Add Contact</div>
+
+            <div class="section-title">Favorite Groups</div>
+
+            <div class="config-card">
+                <div class="fav-item">
+                    <span>&#128101;</span>
+                    <span class="fw-600">Product Team</span>
+                    <span class="fav-platforms">whatsapp</span>
+                    <span class="fav-remove">&times;</span>
+                </div>
+                <div class="fav-item">
+                    <span>&#128101;</span>
+                    <span class="fw-600">Board</span>
+                    <span class="fav-platforms">whatsapp</span>
+                    <span class="fav-remove">&times;</span>
+                </div>
+            </div>
+            <div class="cadence-add">+ Add Group</div>
+
+            <!-- Memory -->
+            <div class="section-title">What Alfred Knows</div>
+            <div class="annotation" style="margin-top: -8px;">Rules you've taught Alfred through conversation</div>
+
+            <div class="config-card">
+                <div class="memory-item">
+                    <span>&#129504;</span>
+                    <span class="memory-text">Always check Kunal's messages before Wednesday 1:1s</span>
+                    <span class="memory-remove">&times;</span>
+                </div>
+                <div class="memory-item">
+                    <span>&#129504;</span>
+                    <span class="memory-text">Flag emails from investors within 1 hour</span>
+                    <span class="memory-remove">&times;</span>
+                </div>
+                <div class="memory-item">
+                    <span>&#129504;</span>
+                    <span class="memory-text">Never surface Twitter DMs in morning walk</span>
+                    <span class="memory-remove">&times;</span>
+                </div>
+                <div class="memory-item">
+                    <span>&#129504;</span>
+                    <span class="memory-text">Swamy prefers WhatsApp for quick questions</span>
+                    <span class="memory-remove">&times;</span>
+                </div>
+            </div>
+
+            <div class="teach-input">
+                <input type="text" placeholder="Teach Alfred something new..." />
+                <button class="btn btn-sm btn-coach">Teach</button>
+            </div>
+
+            <!-- Notion Config -->
+            <div class="section-title">Notion</div>
+
+            <div class="config-card">
+                <div class="config-row">
+                    <div>
+                        <div class="fw-600" style="font-size: 13px;">Tasks Database</div>
+                        <div class="config-value">REDACTED_ID-5573...</div>
+                    </div>
+                    <span class="config-status connected">&#10003; Connected</span>
+                </div>
+                <div class="config-row">
+                    <div>
+                        <div class="fw-600" style="font-size: 13px;">Second Brain</div>
+                        <div class="config-value">31c30844-5573...</div>
+                    </div>
+                    <span class="config-status connected">&#10003; Connected</span>
+                </div>
+                <div class="config-row">
+                    <div>
+                        <div class="fw-600" style="font-size: 13px;">Granola Notes</div>
+                        <div class="config-value">abc12345-6789...</div>
+                    </div>
+                    <span class="config-status connected">&#10003; Connected</span>
+                </div>
+                <div class="config-row" style="cursor: pointer; color: var(--coach);">
+                    <span style="font-size: 13px;">+ Add Context Database</span>
+                </div>
+            </div>
+
+            <!-- Security -->
+            <div class="section-title">Appearance</div>
+
+            <div class="config-card">
+                <div class="config-row">
+                    <div>
+                        <div class="fw-600" style="font-size: 13px;">Dark Mode</div>
+                        <div style="font-size: 11px; color: var(--ink-tertiary); margin-top: 2px;">Linear-inspired dark palette</div>
+                    </div>
+                    <div class="toggle" id="themeToggle" onclick="toggleTheme()"></div>
+                </div>
+            </div>
+
+            <div class="section-title">Security &amp; Maintenance</div>
+
+            <div class="config-card">
+                <div class="config-row" style="cursor: pointer;">
+                    <span style="font-size: 13px;">Change Passcode</span>
+                    <span class="text-xs text-secondary">&#8594;</span>
+                </div>
+                <div class="config-row" style="cursor: pointer;">
+                    <span style="font-size: 13px;">Clear All Caches</span>
+                    <span class="text-xs text-secondary">&#8594;</span>
+                </div>
+                <div class="config-row">
+                    <span style="font-size: 13px;">Version</span>
+                    <span class="text-xs text-secondary">2.0.4</span>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- palette screens A-G removed — themes now live in :root / [data-theme="dark"] -->
+    <!-- ═══ BOTTOM BAR ═══ -->
+    <div class="bottom-bar" id="bottomBar">
+        <div class="pills">
+            <div class="pill pill-primary" onclick="showScreen('coaching')">Coaching</div>
+            <div class="pill" onclick="insertStarter('Show me my calendar today')">Calendar</div>
+            <div class="pill" onclick="insertStarter('What commitments do I have open?')">Commitments</div>
+            <div class="pill" onclick="insertStarter('Any messages I should respond to?')">Messages</div>
+            <div class="pill" onclick="insertStarter('What should I focus on?')">Focus</div>
+            <div class="pill" onclick="insertStarter('Pull todos from this week')">Todos</div>
+            <div class="pill" onclick="insertStarter('Run my weekly reflection')">Weekly</div>
+        </div>
+        <div class="input-row">
+            <input type="text" class="input-field" id="chatInput" placeholder="Talk to Alfred..." />
+            <button class="send-btn" onclick="send()">&#8593;</button>
+        </div>
+    </div>
+
+    <script>
+        // ── Theme Management ──
+        function initTheme() {
+            const saved = localStorage.getItem('alfred-theme');
+            if (saved) {
+                applyTheme(saved);
+                fetchThemeFromAPI();
+            } else {
+                fetchThemeFromAPI().then(apiTheme => {
+                    if (apiTheme) {
+                        applyTheme(apiTheme);
+                    } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                        applyTheme('dark');
+                    } else {
+                        applyTheme('light');
+                    }
+                });
+            }
+        }
+
+        function applyTheme(theme) {
+            if (theme === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            } else {
+                document.documentElement.removeAttribute('data-theme');
+            }
+            localStorage.setItem('alfred-theme', theme);
+            updateThemeToggle(theme);
+        }
+
+        function updateThemeToggle(theme) {
+            const toggle = document.getElementById('themeToggle');
+            if (toggle) {
+                if (theme === 'dark') {
+                    toggle.classList.add('on');
+                } else {
+                    toggle.classList.remove('on');
+                }
+            }
+        }
+
+        function toggleTheme() {
+            const current = localStorage.getItem('alfred-theme') || 'light';
+            const next = current === 'dark' ? 'light' : 'dark';
+            applyTheme(next);
+            saveThemeToAPI(next);
+        }
+
+        async function fetchThemeFromAPI() {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const passcode = params.get('passcode');
+                if (!passcode) return null;
+                const response = await fetch('/api/config/theme?passcode=' + passcode);
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.theme || 'light';
+                }
+            } catch (e) { }
+            return null;
+        }
+
+        async function saveThemeToAPI(theme) {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const passcode = params.get('passcode');
+                if (!passcode) return;
+                await fetch('/api/config/theme?passcode=' + passcode, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ theme: theme })
+                });
+            } catch (e) { }
+        }
+
+        // ── Screen Navigation ──
+        function showScreen(id) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById('screen-' + id).classList.add('active');
+            const buttons = document.querySelectorAll('.screen-nav button');
+            const screens = ['day', 'tools', 'coaching', 'configure'];
+            const idx = screens.indexOf(id);
+            buttons.forEach(b => b.classList.remove('active'));
+            if (idx >= 0) buttons[idx].classList.add('active');
+            document.getElementById('bottomBar').style.display =
+                (id === 'day' || id === 'tools') ? 'block' : 'none';
+        }
+
+        function toggleSkillDetail(card) {
+            const detail = card.querySelector('.skill-detail');
+            if (detail) detail.classList.toggle('open');
+        }
+
+        function insertStarter(text) {
+            showScreen('day');
+            document.getElementById('chatInput').value = text;
+            document.getElementById('chatInput').focus();
+        }
+
+        function send() {
+            const input = document.getElementById('chatInput');
+            if (!input.value.trim()) return;
+            const canvas = document.getElementById('canvas-day');
+            const msg = document.createElement('div');
+            msg.className = 'user-msg fade-in';
+            msg.innerHTML = '<div class="user-bubble">' + input.value + '</div>';
+            canvas.appendChild(msg);
+            input.value = '';
+            canvas.scrollTop = canvas.scrollHeight;
+        }
+
+        // ── Initialization ──
+        window.addEventListener('load', () => {
+            document.getElementById('canvas-day').scrollTop =
+                document.getElementById('canvas-day').scrollHeight;
+            initTheme();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey && document.activeElement.id === 'chatInput') {
+                e.preventDefault();
+                send();
+            }
+        });
+    </script>
+
+</body>
+</html>

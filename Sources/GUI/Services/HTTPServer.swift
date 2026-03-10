@@ -114,7 +114,7 @@ class HTTPServer {
             }
 
             // Allow notion UI without authentication
-            if request.path == "/index-notion.html" {
+            if request.path == "/home.html" {
                 let response = handleNotionUI()
                 try await client.send(response)
                 return
@@ -391,7 +391,7 @@ class HTTPServer {
 
     private func handleNotionUI() -> HTTPResponse {
         // Use HotReloadManager for hot-reloadable web files
-        if let html = HotReloadManager.shared.getWebFile("index-notion.html") {
+        if let html = HotReloadManager.shared.getWebFile("home.html") {
             return HTTPResponse(
                 statusCode: 200,
                 headers: ["Content-Type": "text/html; charset=utf-8"],

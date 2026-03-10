@@ -29,12 +29,12 @@ echo ""
 echo "📍 Access the web interface:"
 echo ""
 echo "   Local:"
-echo "   http://localhost:8080/index-notion.html?passcode=REDACTED_PASSCODE"
+echo "   http://localhost:8080/home.html?passcode=REDACTED_PASSCODE"
 echo ""
 
 if [ -n "$LOCAL_IP" ]; then
     echo "   Network:"
-    echo "   http://$LOCAL_IP:8080/index-notion.html?passcode=REDACTED_PASSCODE"
+    echo "   http://$LOCAL_IP:8080/home.html?passcode=REDACTED_PASSCODE"
     echo ""
 fi
 

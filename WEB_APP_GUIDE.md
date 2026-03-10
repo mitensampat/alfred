@@ -33,12 +33,12 @@ swift run alfred
 
 **Option A: Direct URL**
 ```
-http://localhost:8080/web/index-notion.html?passcode=REDACTED_PASSCODE
+http://localhost:8080/web/home.html?passcode=REDACTED_PASSCODE
 ```
 
 **Option B: Enter passcode manually**
 ```
-http://localhost:8080/web/index-notion.html
+http://localhost:8080/web/home.html
 ```
 Then enter passcode: `REDACTED_PASSCODE`
 
@@ -81,7 +81,7 @@ Once authenticated:
 
 On another device on your network:
 ```
-http://<your-mac-ip>:8080/web/index-notion.html?passcode=REDACTED_PASSCODE
+http://<your-mac-ip>:8080/web/home.html?passcode=REDACTED_PASSCODE
 ```
 
 Find your IP: `ifconfig | grep "inet " | grep -v 127.0.0.1`
@@ -97,7 +97,7 @@ Then access via the ngrok URL.
 
 ## File Locations
 
-- **Web interface**: `/Sources/GUI/Resources/index-notion.html`
+- **Web interface**: `/Sources/GUI/Resources/home.html`
 - **Server code**: `/Sources/GUI/Services/HTTPServer.swift`
 - **Config**: `/Config/config.json`
 
@@ -127,7 +127,7 @@ Edit `Config/config.json`:
 
 ### Modify UI
 
-Edit `/Sources/GUI/Resources/index-notion.html` - it's just HTML/CSS/JavaScript!
+Edit `/Sources/GUI/Resources/home.html` - it's just HTML/CSS/JavaScript!
 
 ## Advantages Over Desktop App
 
@@ -166,7 +166,7 @@ cd "/Users/mitensampat/Documents/Claude apps/Alfred"
 swift run alfred-app &
 
 # 2. Open in browser
-open "http://localhost:8080/web/index-notion.html?passcode=REDACTED_PASSCODE"
+open "http://localhost:8080/web/home.html?passcode=REDACTED_PASSCODE"
 
 # 3. Click Calendar and enjoy!
 ```

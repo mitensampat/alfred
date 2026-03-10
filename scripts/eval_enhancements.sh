@@ -314,14 +314,14 @@ test_briefing_streaming() {
     fi
 
     log_section "4.4 Verify UI streaming code"
-    if grep -q "streamRequest\|EventSource\|text/event-stream" Sources/GUI/Resources/index-notion.html 2>/dev/null; then
+    if grep -q "streamRequest\|EventSource\|text/event-stream" Sources/GUI/Resources/home.html 2>/dev/null; then
         log_pass "UI has streaming support code"
     else
         log_fail "UI streaming code not found"
     fi
 
     log_section "4.5 Verify progress UI elements"
-    if grep -q "progress-container\|progress-step\|progress-status" Sources/GUI/Resources/index-notion.html 2>/dev/null; then
+    if grep -q "progress-container\|progress-step\|progress-status" Sources/GUI/Resources/home.html 2>/dev/null; then
         log_pass "Progress UI elements defined"
     else
         log_fail "Progress UI elements not found"
@@ -335,21 +335,21 @@ test_scan_progress() {
     log_header "TEST 5: Scan Progress Inline Indicator"
 
     log_section "5.1 Verify scan button has ID"
-    if grep -q 'id="scanWorkPatternsBtn"' Sources/GUI/Resources/index-notion.html 2>/dev/null; then
+    if grep -q 'id="scanWorkPatternsBtn"' Sources/GUI/Resources/home.html 2>/dev/null; then
         log_pass "Scan button has ID for dynamic updates"
     else
         log_fail "Scan button ID not found"
     fi
 
     log_section "5.2 Verify inline progress implementation"
-    if grep -q "updateButtonProgress\|progress-mini-spinner" Sources/GUI/Resources/index-notion.html 2>/dev/null; then
+    if grep -q "updateButtonProgress\|progress-mini-spinner" Sources/GUI/Resources/home.html 2>/dev/null; then
         log_pass "Inline button progress implemented"
     else
         log_fail "Inline button progress not found"
     fi
 
     log_section "5.3 Verify progress stages"
-    if grep -q "Connecting to Notion\|Fetching tasks\|Analyzing changes" Sources/GUI/Resources/index-notion.html 2>/dev/null; then
+    if grep -q "Connecting to Notion\|Fetching tasks\|Analyzing changes" Sources/GUI/Resources/home.html 2>/dev/null; then
         log_pass "Progress stages defined"
     else
         log_fail "Progress stages not found"
@@ -379,7 +379,7 @@ test_scan_progress() {
     fi
 
     log_section "5.5 Verify completion feedback"
-    if grep -q "Done:.*tasks\|Scan failed" Sources/GUI/Resources/index-notion.html 2>/dev/null; then
+    if grep -q "Done:.*tasks\|Scan failed" Sources/GUI/Resources/home.html 2>/dev/null; then
         log_pass "Completion feedback messages defined"
     else
         log_fail "Completion feedback not found"

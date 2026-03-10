@@ -393,6 +393,27 @@ class CommitmentAnalyzer {
             jsonText = jsonText.replacingOccurrences(of: "```json", with: "")
             jsonText = jsonText.replacingOccurrences(of: "```", with: "")
             jsonText = jsonText.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if jsonText.hasPrefix("```") {
+            jsonText = String(jsonText.dropFirst(3))
+            if let end = jsonText.range(of: "```") {
+                jsonText = String(jsonText[..<end.lowerBound])
+            }
+            jsonText = jsonText.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        // Extract just the JSON object — Claude sometimes appends explanatory text after the JSON
+        if let start = jsonText.firstIndex(of: "{") {
+            var depth = 0
+            var endIndex = jsonText.endIndex
+            for i in jsonText.indices[start...] {
+                if jsonText[i] == "{" { depth += 1 }
+                else if jsonText[i] == "}" { depth -= 1 }
+                if depth == 0 {
+                    endIndex = jsonText.index(after: i)
+                    break
+                }
+            }
+            jsonText = String(jsonText[start..<endIndex])
         }
 
         guard let data = jsonText.data(using: .utf8) else {

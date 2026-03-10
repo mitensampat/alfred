@@ -21,7 +21,7 @@ cp .build/release/Alfred /Applications/Alfred.app/Contents/MacOS/Alfred
 codesign --force --sign - --identifier com.msfoundry.alfred /Applications/Alfred.app/Contents/MacOS/Alfred
 
 # 5. Sync HTML to hot-reload directory
-cp Sources/GUI/Resources/index-notion.html ~/.config/alfred/web/index-notion.html
+cp Sources/GUI/Resources/home.html ~/.config/alfred/web/home.html
 
 # 6. Restart via LaunchAgent
 launchctl load ~/Library/LaunchAgents/com.msfoundry.alfred.plist
@@ -42,12 +42,12 @@ launchctl load ~/Library/LaunchAgents/com.msfoundry.alfred.plist
 - **Port**: 8080 (configured in `~/.config/alfred/config.json`)
 - **Passcode**: `REDACTED_PASSCODE`
 - **Health check**: `curl http://localhost:8080/api/health?passcode=REDACTED_PASSCODE`
-- **Web UI**: `http://localhost:8080/index-notion.html?passcode=REDACTED_PASSCODE`
+- **Web UI**: `http://localhost:8080/home.html?passcode=REDACTED_PASSCODE`
 
 ## Hot-Reload System
 
 - Alfred serves HTML from `~/.config/alfred/web/` (reads fresh from disk each request)
-- Source HTML lives at `Sources/GUI/Resources/index-notion.html`
+- Source HTML lives at `Sources/GUI/Resources/home.html`
 - `HotReloadManager.swift` copies source → hot-reload dir only if target doesn't exist
 - For HTML-only changes, just edit the hot-reload file directly (no rebuild needed)
 - For Swift changes, you MUST rebuild and reinstall the binary
@@ -57,7 +57,7 @@ launchctl load ~/Library/LaunchAgents/com.msfoundry.alfred.plist
 | File | Purpose |
 |------|---------|
 | `~/.config/alfred/config.json` | All runtime configuration |
-| `~/.config/alfred/web/index-notion.html` | Live HTML served by the server (hot-reload) |
+| `~/.config/alfred/web/home.html` | Live HTML served by the server (hot-reload) |
 | `~/.alfred/scheduler_state.json` | Tracks last briefing/attention run dates |
 | `~/.alfred/agents/` | Agent memory files |
 | `~/.alfred/commitment_scan.db` | Commitment extractions, closure detections, pending confirmations |

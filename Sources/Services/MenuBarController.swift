@@ -13,11 +13,12 @@ class MenuBarController: NSObject, NSMenuDelegate {
     private var alfredService: AlfredService?
     private var orchestrator: BriefingOrchestrator?
     private var schedulerTimer: Timer?
-    private var lastBriefingRun: String = ""
-    private var lastAttentionRun: String = ""
 
     // In-memory dedup for cadence loop (keyed by cadence ID → "YYYY-MM-DD_HH:mm")
     private var lastCadenceRunKeys: [String: String] = [:]
+
+    // In-flight guard: cadence IDs currently executing (prevents duplicate spawns while async work is running)
+    private var inFlightCadenceIds: Set<String> = []
 
     // CadenceRunner dispatches actions to service methods
     private var cadenceRunner: CadenceRunner?
@@ -314,19 +315,14 @@ class MenuBarController: NSObject, NSMenuDelegate {
         // Log scheduler start
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
         let logPath = "\(homeDir)/.alfred/scheduler.log"
-        logToFile("Scheduler started", path: logPath)
-        logToFile("Morning briefing time: \(config.app.briefingTime)", path: logPath)
-        logToFile("Attention check time: \(config.app.attentionAlertTime)", path: logPath)
+        logToFile("Scheduler started (unified cadence loop)", path: logPath)
 
-        if let scheduled = config.scheduled {
-            logToFile("Email to: \(scheduled.emailTo)", path: logPath)
-            logToFile("Briefing enabled: \(scheduled.briefingEnabled)", path: logPath)
-            logToFile("Attention enabled: \(scheduled.attentionEnabled)", path: logPath)
+        let enabledCadences = CadenceService.shared.getEnabled()
+        for cadence in enabledCadences {
+            logToFile("  \(cadence.icon) \(cadence.name): \(cadence.schedule.displayText)", path: logPath)
         }
 
-        print("📅 Scheduler started")
-        print("   Briefing: \(config.app.briefingTime)")
-        print("   Attention: \(config.app.attentionAlertTime)")
+        print("📅 Scheduler started (unified cadence loop, \(enabledCadences.count) cadences)")
 
         // Check every 60 seconds
         schedulerTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
@@ -348,24 +344,26 @@ class MenuBarController: NSObject, NSMenuDelegate {
 
     // MARK: - Scheduler State Persistence
 
+    // SchedulerState: only used for pinned goal persistence now.
+    // All cadence scheduling state is managed by CadenceService.
     private struct SchedulerState: Codable {
-        var lastBriefingDate: String?  // Format: "yyyy-MM-dd"
-        var lastAttentionDate: String?  // Format: "yyyy-MM-dd"
-        // Cadence loop state
-        var lastTodoScanTime: String?        // ISO timestamp (interval-based)
-        var lastCommitmentScanDate: String?  // date string (daily)
-        var lastCommitmentScanTimestamp: String?  // ISO timestamp for UI display
-        var lastPatternLearnDate: String?    // date string (weekly)
-        var lastPatternLearnTimestamp: String? // ISO timestamp for UI display
-        var lastGroupAnalysisDate: String?   // date string (weekly)
-        var lastGroupAnalysisTimestamp: String? // ISO timestamp for UI display
-        var lastAutoSummaryDate: String?     // date string (daily)
-        var lastAutoSummaryTimestamp: String? // ISO timestamp for UI display
-        var lastWeeklyReviewDate: String?    // date string (weekly)
-        var lastWeeklyReviewTimestamp: String? // ISO timestamp for UI display
-        // Pin It: user's declared #1 focus goal
+        // Legacy cadence fields kept for backward-compatible JSON decoding
+        var lastBriefingDate: String?
+        var lastAttentionDate: String?
+        var lastTodoScanTime: String?
+        var lastCommitmentScanDate: String?
+        var lastCommitmentScanTimestamp: String?
+        var lastPatternLearnDate: String?
+        var lastPatternLearnTimestamp: String?
+        var lastGroupAnalysisDate: String?
+        var lastGroupAnalysisTimestamp: String?
+        var lastAutoSummaryDate: String?
+        var lastAutoSummaryTimestamp: String?
+        var lastWeeklyReviewDate: String?
+        var lastWeeklyReviewTimestamp: String?
+        // Pin It: user's declared #1 focus goal (actively used by HTTPServer)
         var pinnedGoalNotionId: String?
-        var pinnedGoalAt: String?             // ISO timestamp when pinned
+        var pinnedGoalAt: String?
     }
 
     private func loadSchedulerState() -> SchedulerState {
@@ -389,11 +387,6 @@ class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func checkAndRunScheduledTasks() async {
-        // Re-read config for hot-reload
-        let config = AppConfig.load() ?? self.config
-        guard let config = config else { return }
-
-        let scheduled = config.scheduled
         let now = Date()
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
@@ -403,104 +396,10 @@ class MenuBarController: NSObject, NSMenuDelegate {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
         let logPath = "\(homeDir)/.alfred/scheduler.log"
 
-        let emailTo = scheduled?.emailTo.isEmpty == false ? scheduled?.emailTo : nil
-
-        // Load persistent state to track which days we've run tasks
-        var state = loadSchedulerState()
-
-        // Morning Briefing
-        let briefingEnabled = scheduled?.briefingEnabled ?? true
-        let briefingTime = config.app.briefingTime  // e.g. "08:15"
-
-        // Check if we should run briefing:
-        // 1. At the exact scheduled time, OR
-        // 2. If we missed today's briefing (current time is after scheduled time, but we haven't run today)
-        let shouldRunBriefing: Bool = {
-            guard briefingEnabled && state.lastBriefingDate != todayDate else { return false }
-
-            // At the exact scheduled time
-            if currentTime == briefingTime && lastBriefingRun != currentTime {
-                return true
-            }
-
-            // Catch-up: We're past the scheduled time but haven't run today
-            if currentTime > briefingTime {
-                logToFile("Catch-up: Missed briefing time (\(briefingTime)), running now at \(currentTime)", path: logPath)
-                return true
-            }
-
-            return false
-        }()
-
-        if shouldRunBriefing {
-            lastBriefingRun = currentTime
-            state.lastBriefingDate = todayDate
-            saveSchedulerState(state)
-            logToFile("Running morning briefing at \(currentTime)", path: logPath)
-
-            if let orchestrator = orchestrator {
-                do {
-                    let today = Date()
-                    _ = try await orchestrator.generateBriefing(for: today, sendNotifications: true, toAddress: emailTo)
-                    logToFile("Morning briefing sent successfully", path: logPath)
-                    showNotification(title: "Morning Briefing Sent", body: "Check your email for today's briefing")
-                } catch {
-                    logToFile("Error generating briefing: \(error)", path: logPath)
-                    // Reset state so we can retry
-                    state.lastBriefingDate = nil
-                    saveSchedulerState(state)
-                }
-            } else {
-                logToFile("Orchestrator not available for briefing", path: logPath)
-            }
-        }
-
-        // Attention Check
-        let attentionEnabled = scheduled?.attentionEnabled ?? true
-        let attentionTime = config.app.attentionAlertTime  // e.g. "15:00"
-
-        // Check if we should run attention check (same logic as briefing)
-        let shouldRunAttention: Bool = {
-            guard attentionEnabled && state.lastAttentionDate != todayDate else { return false }
-
-            // At the exact scheduled time
-            if currentTime == attentionTime && lastAttentionRun != currentTime {
-                return true
-            }
-
-            // Catch-up: We're past the scheduled time but haven't run today
-            if currentTime > attentionTime {
-                logToFile("Catch-up: Missed attention time (\(attentionTime)), running now at \(currentTime)", path: logPath)
-                return true
-            }
-
-            return false
-        }()
-
-        if shouldRunAttention {
-            lastAttentionRun = currentTime
-            state.lastAttentionDate = todayDate
-            saveSchedulerState(state)
-            logToFile("Running attention check at \(currentTime)", path: logPath)
-
-            if let orchestrator = orchestrator {
-                do {
-                    _ = try await orchestrator.generateAttentionDefenseAlert(sendNotifications: true, toAddress: emailTo)
-                    logToFile("Attention check sent successfully", path: logPath)
-                    showNotification(title: "Attention Check Sent", body: "Check your email for the attention report")
-                } catch {
-                    logToFile("Error generating attention check: \(error)", path: logPath)
-                    // Reset state so we can retry
-                    state.lastAttentionDate = nil
-                    saveSchedulerState(state)
-                }
-            } else {
-                logToFile("Orchestrator not available for attention check", path: logPath)
-            }
-        }
-
         // ===============================================
-        // GENERIC CADENCE LOOP (driven by CadenceService)
+        // UNIFIED CADENCE LOOP (single scheduling system)
+        // All action types — including morning briefing and attention check —
+        // are driven by CadenceService. No hardcoded scheduler blocks.
         // ===============================================
         let calendar = Calendar.current
         let hour = calendar.component(.hour, from: now)
@@ -513,11 +412,16 @@ class MenuBarController: NSObject, NSMenuDelegate {
             // In-memory dedup: don't re-evaluate the same cadence at the same minute
             if lastCadenceRunKeys[cadence.id] == runKey { continue }
 
+            // In-flight guard: skip if this cadence is already running (prevents duplicate
+            // spawns while async work takes longer than the 60-second tick interval)
+            if inFlightCadenceIds.contains(cadence.id) { continue }
+
             let shouldRun = shouldRunCadence(cadence, currentTime: currentTime, todayDate: todayDate, hour: hour, weekday: weekday, now: now, logPath: logPath)
             guard shouldRun else { continue }
 
-            // Mark in-memory dedup
+            // Mark in-memory dedup + in-flight guard
             lastCadenceRunKeys[cadence.id] = runKey
+            inFlightCadenceIds.insert(cadence.id)
 
             logToFile("\(cadence.icon) [Cadence] Running \(cadence.name)...", path: logPath)
             do {
@@ -532,6 +436,8 @@ class MenuBarController: NSObject, NSMenuDelegate {
                 logToFile("❌ [Cadence] \(cadence.name) failed: \(error)", path: logPath)
                 CadenceService.shared.markRunFailure(id: cadence.id, cooldownMinutes: 30)
             }
+            // Release in-flight guard after completion (success or failure)
+            inFlightCadenceIds.remove(cadence.id)
         }
     }
 

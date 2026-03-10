@@ -37,7 +37,7 @@ class AlfredHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error(404, "Not found")
 
 print(f"Starting server on http://localhost:{PORT}")
-print(f"Web interface: http://localhost:{PORT}/web/index-notion.html")
+print(f"Web interface: http://localhost:{PORT}/web/home.html")
 print("Note: API calls won't work - this only serves static files")
 print("For full functionality, run: swift run alfred")
 print()

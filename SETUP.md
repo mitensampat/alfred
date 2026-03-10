@@ -57,7 +57,7 @@ Follow the OAuth flow in your browser.
 
 Open in browser:
 ```
-http://localhost:8080/web/index-notion.html?passcode=YOUR_PASSCODE
+http://localhost:8080/web/home.html?passcode=YOUR_PASSCODE
 ```
 
 ## Configuration Details
@@ -149,12 +149,12 @@ The web interface provides:
 
 **Access locally:**
 ```
-http://localhost:8080/web/index-notion.html?passcode=YOUR_PASSCODE
+http://localhost:8080/web/home.html?passcode=YOUR_PASSCODE
 ```
 
 **Access from other devices on your network:**
 ```
-http://YOUR_MAC_IP:8080/web/index-notion.html?passcode=YOUR_PASSCODE
+http://YOUR_MAC_IP:8080/web/home.html?passcode=YOUR_PASSCODE
 ```
 
 Find your Mac's IP: `ifconfig | grep "inet " | grep -v 127.0.0.1`
@@ -183,7 +183,7 @@ Find your Mac's IP: `ifconfig | grep "inet " | grep -v 127.0.0.1`
 ### Option 1: Tailscale (Recommended)
 
 1. Install [Tailscale](https://tailscale.com/) on your Mac and remote device
-2. Access via Tailscale IP: `http://100.x.x.x:8080/web/index-notion.html?passcode=YOUR_PASSCODE`
+2. Access via Tailscale IP: `http://100.x.x.x:8080/web/home.html?passcode=YOUR_PASSCODE`
 
 ### Option 2: ngrok
 
@@ -238,7 +238,7 @@ Alfred/
 ### Making Changes
 
 **Web interface only:**
-Edit `Sources/GUI/Resources/index-notion.html`, save, and refresh browser.
+Edit `Sources/GUI/Resources/home.html`, save, and refresh browser.
 
 **Backend changes:**
 ```bash

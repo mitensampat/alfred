@@ -54,7 +54,7 @@ class HotReloadManager {
 
     private func copyWebFilesIfNeeded() {
         let fm = FileManager.default
-        let targetIndex = webDir.appendingPathComponent("index-notion.html")
+        let targetIndex = webDir.appendingPathComponent("home.html")
 
         // Only copy if target doesn't exist
         guard !fm.fileExists(atPath: targetIndex.path) else {
@@ -63,7 +63,7 @@ class HotReloadManager {
         }
 
         // Copy from source directory
-        let webFiles = ["index-notion.html"]
+        let webFiles = ["home.html"]
 
         for file in webFiles {
             let source = sourceWebDir.appendingPathComponent(file)
@@ -124,9 +124,9 @@ class HotReloadManager {
         return nil
     }
 
-    /// Get the primary web UI (index-notion.html)
+    /// Get the primary web UI (home.html)
     func getMainWebUI() -> String? {
-        return getWebFile("index-notion.html")
+        return getWebFile("home.html")
     }
 
     // MARK: - Prompt Loading

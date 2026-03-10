@@ -30,7 +30,7 @@ Accent:       #2383e2  (bright blue)
 
 ### File Structure
 
-**New Notion UI**: `/Sources/GUI/Resources/index-notion.html`
+**New Notion UI**: `/Sources/GUI/Resources/home.html`
 - Clean HTML5 with embedded CSS and JavaScript
 - No external dependencies
 - Mobile-responsive design
@@ -251,7 +251,7 @@ To switch back to menubar app:
 ## Implementation Files
 
 ### Web
-- `/Sources/GUI/Resources/index-notion.html` - Complete web interface
+- `/Sources/GUI/Resources/home.html` - Complete web interface
 - `/Sources/GUI/Services/HTTPServer.swift` - Updated to serve Notion UI
 
 ### Desktop
@@ -370,7 +370,7 @@ The web interface is embedded in the desktop app's Resources.
 
 ### Web UI Not Loading
 
-1. Check HTML file exists: `ls Sources/GUI/Resources/index-notion.html`
+1. Check HTML file exists: `ls Sources/GUI/Resources/home.html`
 2. Verify server is running: `curl http://localhost:8080/api/health`
 3. Check console logs for file path errors
 

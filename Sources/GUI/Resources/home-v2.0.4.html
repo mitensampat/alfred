@@ -6266,6 +6266,48 @@
         .unified-insight-type.avoidance { color: #dc2626; }
         .unified-insight-type.custom-skill { color: #6366f1; }
 
+        .unified-insight-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 6px;
+        }
+        .unified-insight-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+            font-size: 11px;
+            color: var(--text-tertiary, #999);
+        }
+        .unified-insight-skill-tag {
+            background: var(--bg-secondary, #f5f5f5);
+            padding: 2px 7px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 500;
+            color: var(--text-secondary, #666);
+        }
+        .unified-insight-refresh {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 13px;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: var(--text-tertiary, #999);
+            transition: color 0.15s, background 0.15s;
+            line-height: 1;
+        }
+        .unified-insight-refresh:hover {
+            color: var(--text-primary, #333);
+            background: var(--bg-secondary, #f5f5f5);
+        }
+        .unified-insight-refresh.spinning {
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
         /* Coach Tuner Tabs */
         .tuner-tabs {
             display: flex;
@@ -7092,54 +7134,18 @@
 
         <!-- Settings View -->
         <div id="settingsView" class="hidden settings-page">
+            <!-- Cadences Section -->
             <div class="settings-section">
-                <div class="settings-section-title">Scheduled Emails</div>
-                <div class="settings-item-desc" style="margin-bottom: 16px;">
-                    Configure automated email delivery for your Daily Briefing and Attention Check.
+                <div class="settings-section-title">Cadences</div>
+                <div class="settings-item-desc" style="margin-bottom: 12px;">
+                    Automated scheduled tasks. Click a schedule to edit timing, or Run to trigger immediately.
                 </div>
-
-                <div class="settings-toggle-row">
-                    <div class="settings-toggle-label">
-                        <div class="settings-toggle-title">Daily Briefing</div>
-                        <div class="settings-toggle-desc" id="briefingTimeDesc">sent daily at 07:00</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="briefingEnabled" checked>
-                        <span class="toggle-slider"></span>
-                    </label>
+                <div id="cadenceStatusContent" class="cadence-list">
+                    <div class="recent-activity-empty">Loading cadences...</div>
                 </div>
-
-                <div class="settings-item" style="margin-top: 8px;">
-                    <div class="settings-item-label">Briefing Time</div>
-                    <input type="time" id="briefingTime" class="settings-input" value="07:00" />
-                </div>
-
-                <div class="settings-toggle-row" style="margin-top: 12px;">
-                    <div class="settings-toggle-label">
-                        <div class="settings-toggle-title">Attention Check</div>
-                        <div class="settings-toggle-desc" id="attentionTimeDesc">sent daily at 15:00</div>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="attentionEnabled" checked>
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-
-                <div class="settings-item" style="margin-top: 8px;">
-                    <div class="settings-item-label">Attention Check Time</div>
-                    <input type="time" id="attentionTime" class="settings-input" value="15:00" />
-                </div>
-
-                <div class="settings-item" style="margin-top: 16px;">
-                    <div class="settings-item-label">Email Address</div>
-                    <div class="settings-item-desc">both scheduled emails will be sent to this address</div>
-                    <input type="email" id="scheduledEmailTo" class="settings-input" placeholder="your@email.com" />
-                </div>
-
-                <button class="settings-button-save" onclick="saveScheduledConfig()">Save Schedule Settings</button>
-                <div id="scheduledConfigStatus" class="hidden"></div>
             </div>
 
+            <!-- Notion Configuration -->
             <div class="settings-section">
                 <div class="settings-section-title">Notion Configuration</div>
                 <div class="settings-item">
@@ -7193,6 +7199,7 @@
                 <div id="notionConfigStatus" class="hidden"></div>
             </div>
 
+            <!-- Security / Passcode -->
             <div class="settings-section">
                 <div class="settings-section-title">Security</div>
                 <div class="settings-item">
@@ -7214,6 +7221,7 @@
                 <div id="passcodeStatus" class="hidden"></div>
             </div>
 
+            <!-- Cache Management -->
             <div class="settings-section">
                 <div class="settings-section-title">Cache Management</div>
                 <div class="settings-item">
@@ -7221,17 +7229,6 @@
                 </div>
                 <button class="settings-button-danger" onclick="clearCache()">Clear All Cache</button>
                 <div id="cacheStatus" class="hidden"></div>
-            </div>
-
-            <!-- Cadences Section (in Settings) -->
-            <div class="settings-section">
-                <div class="settings-section-title">Cadences</div>
-                <div class="settings-item-desc" style="margin-bottom: 12px;">
-                    Automated scheduled tasks. Click a schedule to edit timing, or Run to trigger immediately.
-                </div>
-                <div id="cadenceStatusContent" class="cadence-list">
-                    <div class="recent-activity-empty">Loading cadences...</div>
-                </div>
             </div>
         </div>
 
@@ -8095,10 +8092,10 @@
                 return;
             }
             // Fire-and-forget: close the conversation for title/summary generation
+            // Cookie-based auth — sendBeacon automatically includes cookies
             try {
                 const url = new URL('/api/conversations/close', window.location.origin);
                 url.searchParams.set('id', chatSessionId);
-                url.searchParams.set('passcode', new URLSearchParams(window.location.search).get('passcode') || '');
                 navigator.sendBeacon(url.toString());
             } catch (e) {
                 console.log('[CloseConversation] sendBeacon failed:', e);
@@ -8392,7 +8389,6 @@
             const url = new URL('/api/chat/stream', window.location.origin);
             url.searchParams.set('q', query);
             url.searchParams.set('sessionId', chatSessionId);
-            if (token) url.searchParams.set('passcode', new URLSearchParams(window.location.search).get('passcode') || '');
 
             try {
                 const headers = { 'Accept': 'text/event-stream', 'Cache-Control': 'no-cache' };
@@ -9187,6 +9183,12 @@
             } catch (error) {
                 console.error('Failed to check setup status:', error);
                 // Continue with normal auth flow if status check fails
+            }
+
+            // Strip passcode from URL bar if present (clean bookmarkable URL)
+            if (window.location.search.includes('passcode')) {
+                const cleanUrl = window.location.pathname;
+                window.history.replaceState({}, '', cleanUrl);
             }
 
             // Normal auth flow
@@ -12596,7 +12598,7 @@
             const cardsAbort = new AbortController();
             const cardsTimeout = setTimeout(() => cardsAbort.abort(), 3000);
             try {
-                const response = await authFetch('/api/coaching/cards', { signal: cardsAbort.signal });
+                const response = await authFetch('/api/coaching/debug', { signal: cardsAbort.signal });
                 clearTimeout(cardsTimeout);
                 if (!response.ok) throw new Error('Coaching API failed: ' + response.status);
                 const data = await response.json();
@@ -14297,8 +14299,7 @@
                 console.error('Failed to load settings:', error);
             }
 
-            // Also load scheduled config, skills, and cadences
-            loadScheduledConfig();
+            // Also load skills and cadences
             loadSkillsList();
             loadCadenceStatus();
         }
@@ -14486,79 +14487,6 @@
                 loadSkillsList();
             } catch (e) {
                 console.error('[Skills] Delete error:', e);
-            }
-        }
-
-        // Load scheduled email config
-        async function loadScheduledConfig() {
-            try {
-                const response = await authFetch('/api/config/scheduled');
-                if (!response.ok) return;
-
-                const data = await response.json();
-
-                document.getElementById('briefingEnabled').checked = data.briefing_enabled !== false;
-                document.getElementById('attentionEnabled').checked = data.attention_enabled !== false;
-                document.getElementById('briefingTime').value = data.briefing_time || '07:00';
-                document.getElementById('attentionTime').value = data.attention_alert_time || '15:00';
-                document.getElementById('scheduledEmailTo').value = data.email_to || '';
-
-                document.getElementById('briefingTimeDesc').textContent =
-                    'sent daily at ' + (data.briefing_time || '07:00');
-                document.getElementById('attentionTimeDesc').textContent =
-                    'sent daily at ' + (data.attention_alert_time || '15:00');
-            } catch (error) {
-                console.error('Failed to load scheduled config:', error);
-            }
-        }
-
-        // Save scheduled email config
-        async function saveScheduledConfig() {
-            const statusEl = document.getElementById('scheduledConfigStatus');
-
-            const payload = {
-                briefing_enabled: document.getElementById('briefingEnabled').checked,
-                attention_enabled: document.getElementById('attentionEnabled').checked,
-                briefing_time: document.getElementById('briefingTime').value,
-                attention_alert_time: document.getElementById('attentionTime').value,
-                email_to: document.getElementById('scheduledEmailTo').value.trim()
-            };
-
-            const timeRegex = /^\d{2}:\d{2}$/;
-            if (!timeRegex.test(payload.briefing_time) || !timeRegex.test(payload.attention_alert_time)) {
-                statusEl.className = 'settings-error';
-                statusEl.textContent = 'Please enter valid times in HH:MM format';
-                statusEl.classList.remove('hidden');
-                return;
-            }
-
-            try {
-                const response = await authFetch('/api/config/scheduled', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    statusEl.className = 'settings-success';
-                    statusEl.textContent = 'schedule settings saved successfully';
-                    statusEl.classList.remove('hidden');
-
-                    document.getElementById('briefingTimeDesc').textContent =
-                        'sent daily at ' + payload.briefing_time;
-                    document.getElementById('attentionTimeDesc').textContent =
-                        'sent daily at ' + payload.attention_alert_time;
-                } else {
-                    statusEl.className = 'settings-error';
-                    statusEl.textContent = 'Error: ' + (data.error || 'Failed to save');
-                    statusEl.classList.remove('hidden');
-                }
-            } catch (error) {
-                statusEl.className = 'settings-error';
-                statusEl.textContent = 'Failed to connect to server';
-                statusEl.classList.remove('hidden');
             }
         }
 
@@ -17008,6 +16936,15 @@
 
         // ── Render Stacked Insight Cards ──
 
+        function skillMethodology(type) {
+            if (!type) return '';
+            if (type.startsWith('campbell-')) return 'Bill Campbell Method';
+            if (type.startsWith('mochary-')) return 'Matt Mochary Method';
+            if (type === 'deep-work-guard') return 'Cal Newport Method';
+            if (type === 'deal-pipeline') return 'Bill Campbell Method';
+            return 'Custom Skill';
+        }
+
         function unifiedRenderInsightCards(cards) {
             const container = document.getElementById('unifiedInsights');
             if (!container) return;
@@ -17021,7 +16958,6 @@
             let html = '';
             cards.forEach(card => {
                 if ((card.type || '').includes('weekly')) {
-                    // Render weekly review separately
                     if (weeklySection) {
                         weeklySection.innerHTML = '<div class="weekly-review-label">WEEKLY REVIEW</div>'
                             + '<div class="weekly-review-text">' + escapeHtml(card.insight || '') + '</div>';
@@ -17031,20 +16967,52 @@
                 }
                 const label = card.label || card.type || 'Insight';
                 const typeClass = (card.type || '').toLowerCase();
-                // Map type to CSS class
                 let cssClass = 'leverage';
                 if (typeClass.includes('attention')) cssClass = 'attention-type';
                 else if (typeClass.includes('relationship')) cssClass = 'relationship';
                 else if (typeClass.includes('avoidance')) cssClass = 'avoidance';
                 else if (typeClass.includes('leverage')) cssClass = 'leverage';
-                else cssClass = 'custom-skill'; // User-defined coaching skills
+                else cssClass = 'custom-skill';
 
-                html += `<div class="unified-insight-card">
-                    <div class="unified-insight-type ${cssClass}">${escapeHtml(label)}</div>
+                const ago = card.generatedAgo || '';
+                const method = skillMethodology(card.type);
+
+                html += `<div class="unified-insight-card" id="card-${escapeHtml(card.type || '')}">
+                    <div class="unified-insight-header">
+                        <div class="unified-insight-type ${cssClass}">${escapeHtml(label)}</div>
+                        <button class="unified-insight-refresh" onclick="refreshCoachingCard('${escapeHtml(card.type || '')}')" title="Regenerate this card">&#x21bb;</button>
+                    </div>
                     <div class="unified-insight-text">${escapeHtml(card.insight || '')}</div>
+                    <div class="unified-insight-meta">
+                        ${method ? '<span class="unified-insight-skill-tag">' + escapeHtml(method) + '</span>' : ''}
+                        ${ago ? '<span>' + escapeHtml(ago) + '</span>' : ''}
+                    </div>
                 </div>`;
             });
             container.innerHTML = html || '<div class="unified-insight-card"><div class="unified-insight-type leverage">Coach</div><div class="unified-insight-text">No insights yet today.</div></div>';
+        }
+
+        async function refreshCoachingCard(skillType) {
+            const card = document.getElementById('card-' + skillType);
+            if (!card) return;
+            const btn = card.querySelector('.unified-insight-refresh');
+            if (btn) btn.classList.add('spinning');
+
+            try {
+                const response = await authFetch('/api/coaching/debug/refresh?skill=' + encodeURIComponent(skillType), { method: 'POST' });
+                if (!response.ok) throw new Error('Refresh failed: ' + response.status);
+                const data = await response.json();
+                if (data.card) {
+                    const textEl = card.querySelector('.unified-insight-text');
+                    if (textEl) textEl.textContent = data.card.insight || '';
+                    const metaEl = card.querySelector('.unified-insight-meta span:last-child');
+                    if (metaEl) metaEl.textContent = 'just now';
+                }
+            } catch (err) {
+                console.error('Failed to refresh card:', err);
+            } finally {
+                if (btn) btn.classList.remove('spinning');
+            }
         }
 
     </script>

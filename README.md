@@ -66,15 +66,15 @@ Alfred's coaching engine doesn't just react to what you ask — it recognizes yo
 | Planning | Resource allocation, calendar optimization, energy management |
 | Information lookup | Context enrichment, connection to past patterns |
 
-The coaching engine generates three cards every morning:
+The coaching engine generates three insights every morning, woven into the Today screen's conversation thread:
 
-| Card | Question it answers |
-|------|-------------------|
+| Insight | Question it answers |
+|---------|-------------------|
 | **Leverage** | What's the single highest-impact thing you should do right now? |
 | **Relationship** | Who needs your attention — and what does the data say? |
 | **Avoidance** | What are you putting off, and why? |
 
-These appear in your email *before* the calendar and messages, so the strategic frame is set before the tactical noise hits.
+Each insight shows its coaching origin (Bill Campbell, Matt Mochary, or Cal Newport method), when it was generated, and a refresh button to regenerate on demand. These also appear in your morning briefing email *before* the calendar and messages, so the strategic frame is set before the tactical noise hits.
 
 ---
 
@@ -87,13 +87,13 @@ Sent automatically at your configured time:
 - Message analysis across WhatsApp, iMessage, Signal
 - Prioritized action items with due dates and context
 
-### Mobile dashboard
-A single-page PWA that works on any device:
-- **Focus Card** — Your top task with Mark Done action
-- **Coaching Insights** — Stacked Leverage / Relationship / Avoidance cards
-- **Inline Chat** — Streaming AI chat that reads your data and takes actions
-- **Quick Actions** — Briefing, Calendar, Todos, Commitments + text input
-- **Cadence Manager** — View, edit, create, and trigger all your scheduled automations
+### Today screen
+A conversation-first mobile dashboard (PWA) that reads like a coaching session, not a static dashboard:
+- **Morning thread** — Time-stamped narrative with a personalized coach greeting, your top focus task, contextual narrative about your day, and an accountability question
+- **Coaching insights** — Leverage, Relationship, and Avoidance cards woven into the thread with skill attribution breadcrumbs (Bill Campbell, Matt Mochary, Cal Newport) and one-tap refresh
+- **Inline chat** — Streaming AI chat that reads your data and takes actions; "Talk to Alfred" opens a free-form input with intent-aware routing
+- **Quick actions** — Calendar, Todos, Commitments + text input
+- **Cadence manager** — View, edit, create, and trigger all your scheduled automations
 
 ### Calendar event creation
 Create events directly from chat:
@@ -184,7 +184,7 @@ launchctl load ~/Library/LaunchAgents/com.msfoundry.alfred.plist
 
 ```
 # Web dashboard
-http://localhost:8080/index-notion.html?passcode=YOUR_PASSCODE
+http://localhost:8080/home.html?passcode=YOUR_PASSCODE
 
 # Health check
 curl "http://localhost:8080/api/health?passcode=YOUR_PASSCODE"

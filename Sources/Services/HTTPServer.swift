@@ -261,10 +261,20 @@ class HTTPServer {
             }
 
             // Allow web UI without authentication
-            if request.path == "/" || request.path == "/index.html" || request.path == "/index-notion.html" {
+            if request.path == "/" || request.path == "/index.html" || request.path == "/home.html" {
                 let response = handleNotionUI()
                 try await client.send(response)
                 return
+            }
+
+            // Serve any HTML file from web directory (prototypes, etc.)
+            if request.path.hasSuffix(".html") && request.path != "/home.html" && request.path != "/index.html" {
+                let filename = String(request.path.dropFirst()) // strip leading /
+                if let html = HotReloadManager.shared.getWebFile(filename) {
+                    let response = HTTPResponse(statusCode: 200, headers: ["Content-Type": "text/html; charset=utf-8"], htmlBody: html)
+                    try await client.send(response)
+                    return
+                }
             }
 
             // Serve PWA manifest
@@ -361,6 +371,20 @@ class HTTPServer {
             }
         }
 
+        // Check session cookie (for sendBeacon, PWA, and other cookied requests)
+        if let cookieHeader = request.headers["cookie"] {
+            let cookies = cookieHeader.split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }
+            for cookie in cookies {
+                let parts = cookie.split(separator: "=", maxSplits: 1)
+                if parts.count == 2 && parts[0] == "alfred_session" {
+                    let token = String(parts[1])
+                    if validateSession(token: token) {
+                        return true
+                    }
+                }
+            }
+        }
+
         // Check X-API-Key header (legacy, still works with passcode)
         if let apiKey = request.headers["x-api-key"], apiKey == passcode {
             return true
@@ -413,8 +437,13 @@ class HTTPServer {
         // Create session
         let session = createSession()
 
+        // Set session cookie (SameSite=Strict, HttpOnly for security, 30-day expiry)
+        let maxAge = 30 * 24 * 60 * 60 // 30 days
+        let cookieHeader = "alfred_session=\(session.token); Path=/; Max-Age=\(maxAge); SameSite=Strict; HttpOnly"
+
         return HTTPResponse(
             statusCode: 200,
+            headers: ["Set-Cookie": cookieHeader],
             body: [
                 "success": true,
                 "token": session.token,
@@ -433,7 +462,9 @@ class HTTPServer {
             }
         }
 
-        return HTTPResponse(statusCode: 200, body: ["success": true])
+        // Clear session cookie
+        let clearCookie = "alfred_session=; Path=/; Max-Age=0; SameSite=Strict; HttpOnly"
+        return HTTPResponse(statusCode: 200, headers: ["Set-Cookie": clearCookie], body: ["success": true])
     }
 
     // MARK: - Google OAuth Flow
@@ -670,6 +701,12 @@ class HTTPServer {
 
         case ("POST", "/api/config/scheduled"):
             return handleUpdateScheduledConfig(request)
+
+        case ("GET", "/api/config/theme"):
+            return handleGetTheme()
+
+        case ("POST", "/api/config/theme"):
+            return handleUpdateTheme(request)
 
         case ("POST", "/api/cache/clear"):
             return handleClearCache()
@@ -967,7 +1004,7 @@ class HTTPServer {
 
     private func handleNotionUI() -> HTTPResponse {
         // Use HotReloadManager for hot-reloadable web files
-        if let html = HotReloadManager.shared.getWebFile("index-notion.html") {
+        if let html = HotReloadManager.shared.getWebFile("home.html") {
             return HTTPResponse(
                 statusCode: 200,
                 headers: ["Content-Type": "text/html; charset=utf-8"],
@@ -3082,6 +3119,59 @@ The Commitment Check feature requires a properly configured Notion database.
             invalidateMemoryCache("config_scheduled")
 
             return HTTPResponse(statusCode: 200, body: ["message": "Schedule settings saved successfully"])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to update config: \(error.localizedDescription)"])
+        }
+    }
+
+    // MARK: - Theme Handlers
+
+    private func handleGetTheme() -> HTTPResponse {
+        let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
+
+        guard FileManager.default.fileExists(atPath: configPath) else {
+            return HTTPResponse(statusCode: 200, body: ["theme": "light"])
+        }
+
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
+            let config = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let app = config?["app"] as? [String: Any]
+            let theme = app?["theme"] as? String ?? "light"
+
+            return HTTPResponse(statusCode: 200, body: ["theme": theme])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to read config: \(error.localizedDescription)"])
+        }
+    }
+
+    private func handleUpdateTheme(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let theme = json["theme"] as? String else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Invalid request body. Expected {\"theme\": \"light\" | \"dark\"}"])
+        }
+
+        guard theme == "light" || theme == "dark" else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Invalid theme value. Must be \"light\" or \"dark\""])
+        }
+
+        let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
+
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
+            var config = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+
+            var app = config["app"] as? [String: Any] ?? [:]
+            app["theme"] = theme
+            config["app"] = app
+
+            let updatedData = try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
+            try updatedData.write(to: URL(fileURLWithPath: configPath))
+
+            print("🎨 Theme updated to: \(theme)")
+
+            return HTTPResponse(statusCode: 200, body: ["message": "Theme updated to \(theme)", "theme": theme])
         } catch {
             return HTTPResponse(statusCode: 500, body: ["error": "Failed to update config: \(error.localizedDescription)"])
         }

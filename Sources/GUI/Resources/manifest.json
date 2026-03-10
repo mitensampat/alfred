@@ -2,7 +2,7 @@
   "name": "Alfred",
   "short_name": "Alfred",
   "description": "Your personal executive assistant",
-  "start_url": "/index-notion.html",
+  "start_url": "/home.html",
   "display": "standalone",
   "background_color": "#f7f6f3",
   "theme_color": "#f7f6f3",

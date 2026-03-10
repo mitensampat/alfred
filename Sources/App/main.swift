@@ -14,7 +14,7 @@ Task {
 RunLoop.main.run()
 
 struct AlfredApp {
-    static let version = "2.0.4"
+    static let version = "2.0.5"
     static var menuBarController: MenuBarController?  // Keep reference to prevent deallocation
 
     static func main() async {
@@ -2479,11 +2479,11 @@ struct AlfredApp {
         let localIP = getLocalIP()
         if let ip = localIP {
             print("📍 Access the web interface at:")
-            print("   Local:  http://localhost:\(apiConfig.port)/web/index-notion.html?passcode=\(apiConfig.passcode)")
-            print("   Network: http://\(ip):\(apiConfig.port)/web/index-notion.html?passcode=\(apiConfig.passcode)")
+            print("   Local:  http://localhost:\(apiConfig.port)/web/home.html?passcode=\(apiConfig.passcode)")
+            print("   Network: http://\(ip):\(apiConfig.port)/web/home.html?passcode=\(apiConfig.passcode)")
         } else {
             print("📍 Access the web interface at:")
-            print("   http://localhost:\(apiConfig.port)/web/index-notion.html?passcode=\(apiConfig.passcode)")
+            print("   http://localhost:\(apiConfig.port)/web/home.html?passcode=\(apiConfig.passcode)")
         }
         print("")
         print("Press Ctrl+C to stop the server")
@@ -2691,13 +2691,13 @@ struct AlfredApp {
             try server.start()
 
             print("🌐 Setup wizard running at:")
-            print("   http://localhost:\(port)/index-notion.html?passcode=\(passcode)")
+            print("   http://localhost:\(port)/home.html?passcode=\(passcode)")
             print("")
             print("Opening browser...")
             print("")
 
             // Auto-open browser to the FTUE wizard
-            let url = URL(string: "http://localhost:\(port)/index-notion.html?passcode=\(passcode)")!
+            let url = URL(string: "http://localhost:\(port)/home.html?passcode=\(passcode)")!
             NSWorkspace.shared.open(url)
 
             // Keep alive

@@ -4,7 +4,7 @@
 cd "$(dirname "$0")"
 
 echo "🚀 Starting Alfred HTTP Server..."
-echo "📍 Web interface will be available at: http://localhost:8080/web/index-notion.html"
+echo "📍 Web interface will be available at: http://localhost:8080/web/home.html"
 echo "🔐 Passcode: REDACTED_PASSCODE"
 echo ""
 
