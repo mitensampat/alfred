@@ -10,6 +10,8 @@ class WorkflowLearningService {
     static let shared = WorkflowLearningService()
 
     private let dbPath: String
+    private var db: OpaquePointer?
+    private let dbLock = NSLock()
     private let fileManager = FileManager.default
     private let queue = DispatchQueue(label: "com.alfred.workflowlearning", qos: .utility)
 
@@ -23,17 +25,23 @@ class WorkflowLearningService {
         try? fileManager.createDirectory(atPath: alfredDir, withIntermediateDirectories: true)
 
         dbPath = "\(alfredDir)/workflow_learning.db"
-        initializeDatabase()
+
+        if sqlite3_open(dbPath, &db) == SQLITE_OK {
+            sqlite3_exec(db, "PRAGMA journal_mode=WAL", nil, nil, nil)
+            sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nil, nil, nil)
+            initializeDatabase()
+        } else {
+            print("❌ WorkflowLearning: Failed to open database")
+        }
+    }
+
+    deinit {
+        if let db = db {
+            sqlite3_close(db)
+        }
     }
 
     private func initializeDatabase() {
-        var db: OpaquePointer?
-        guard sqlite3_open(dbPath, &db) == SQLITE_OK else {
-            print("❌ WorkflowLearning: Failed to open database")
-            return
-        }
-        defer { sqlite3_close(db) }
-
         // Scan feedback - tracks approval/rejection of extracted items
         let createScanFeedback = """
         CREATE TABLE IF NOT EXISTS scan_feedback (
@@ -147,9 +155,8 @@ class WorkflowLearningService {
         queue.async { [weak self] in
             guard let self = self else { return }
 
-            var db: OpaquePointer?
-            guard sqlite3_open(self.dbPath, &db) == SQLITE_OK else { return }
-            defer { sqlite3_close(db) }
+            self.dbLock.lock()
+            defer { self.dbLock.unlock() }
 
             let sql = """
             INSERT INTO scan_feedback (thread_id, thread_name, platform, item_type, accepted, edited, original_title, edited_title)
@@ -157,7 +164,7 @@ class WorkflowLearningService {
             """
 
             var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            guard sqlite3_prepare_v2(self.db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
             defer { sqlite3_finalize(stmt) }
 
             sqlite3_bind_text(stmt, 1, threadId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
@@ -261,9 +268,8 @@ class WorkflowLearningService {
         wasOverdue: Bool,
         closureMethod: String?
     ) {
-        var db: OpaquePointer?
-        guard sqlite3_open(dbPath, &db) == SQLITE_OK else { return }
-        defer { sqlite3_close(db) }
+        dbLock.lock()
+        defer { dbLock.unlock() }
 
         let sql = """
         INSERT INTO commitment_lifecycle (commitment_hash, event_type, counterparty, commitment_type, priority, days_open, was_overdue, closure_method)
@@ -317,9 +323,8 @@ class WorkflowLearningService {
         queue.async { [weak self] in
             guard let self = self else { return }
 
-            var db: OpaquePointer?
-            guard sqlite3_open(self.dbPath, &db) == SQLITE_OK else { return }
-            defer { sqlite3_close(db) }
+            self.dbLock.lock()
+            defer { self.dbLock.unlock() }
 
             let sql = """
             INSERT INTO closure_detection_feedback (commitment_hash, commitment_title, signal, ai_confidence, user_accepted)
@@ -327,7 +332,7 @@ class WorkflowLearningService {
             """
 
             var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            guard sqlite3_prepare_v2(self.db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
             defer { sqlite3_finalize(stmt) }
 
             sqlite3_bind_text(stmt, 1, commitmentHash, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
@@ -357,9 +362,8 @@ class WorkflowLearningService {
         queue.async { [weak self] in
             guard let self = self else { return }
 
-            var db: OpaquePointer?
-            guard sqlite3_open(self.dbPath, &db) == SQLITE_OK else { return }
-            defer { sqlite3_close(db) }
+            self.dbLock.lock()
+            defer { self.dbLock.unlock() }
 
             let sql = """
             INSERT INTO task_triage (task_id, task_type, from_status, to_status, priority, counterparty, days_in_previous_status)
@@ -367,7 +371,7 @@ class WorkflowLearningService {
             """
 
             var stmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            guard sqlite3_prepare_v2(self.db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
             defer { sqlite3_finalize(stmt) }
 
             sqlite3_bind_text(stmt, 1, taskId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
@@ -401,35 +405,34 @@ class WorkflowLearningService {
         queue.async { [weak self] in
             guard let self = self else { return }
 
-            var db: OpaquePointer?
-            guard sqlite3_open(self.dbPath, &db) == SQLITE_OK else { return }
-            defer { sqlite3_close(db) }
+            self.dbLock.lock()
+            defer { self.dbLock.unlock() }
 
             print("🧠 WorkflowLearning: Computing patterns...")
 
             // Clear old computed patterns
-            sqlite3_exec(db, "DELETE FROM computed_patterns", nil, nil, nil)
+            sqlite3_exec(self.db, "DELETE FROM computed_patterns", nil, nil, nil)
 
             // 1. Thread relevance patterns
-            self.computeThreadRelevancePatterns(db: db)
+            self.computeThreadRelevancePatterns()
 
             // 2. Counterparty reliability patterns
-            self.computeCounterpartyPatterns(db: db)
+            self.computeCounterpartyPatterns()
 
             // 3. Closure signal accuracy patterns
-            self.computeClosureSignalPatterns(db: db)
+            self.computeClosureSignalPatterns()
 
             // 4. Task completion patterns
-            self.computeTaskCompletionPatterns(db: db)
+            self.computeTaskCompletionPatterns()
 
             // 5. Time-based patterns
-            self.computeTimePatterns(db: db)
+            self.computeTimePatterns()
 
             print("✅ WorkflowLearning: Pattern computation complete")
         }
     }
 
-    private func computeThreadRelevancePatterns(db: OpaquePointer?) {
+    private func computeThreadRelevancePatterns() {
         // Calculate acceptance rate per thread
         let sql = """
         SELECT thread_name, platform,
@@ -461,7 +464,6 @@ class WorkflowLearningService {
                 (acceptanceRate >= 50 ? "Moderate quality - some useful extractions" : "Low yield - consider adjusting scan settings")
 
             insertComputedPattern(
-                db: db,
                 patternId: "thread_relevance_\(threadName.hashValue)",
                 patternType: "thread_relevance",
                 patternCategory: "Scan Quality",
@@ -476,7 +478,7 @@ class WorkflowLearningService {
         }
     }
 
-    private func computeCounterpartyPatterns(db: OpaquePointer?) {
+    private func computeCounterpartyPatterns() {
         // Get the user's own name so we can exclude self-referencing patterns
         let userName = AppConfig.load()?.user.name ?? ""
 
@@ -534,7 +536,6 @@ class WorkflowLearningService {
             }
 
             insertComputedPattern(
-                db: db,
                 patternId: "counterparty_\(counterparty.hashValue)_\(commitmentType.hashValue)",
                 patternType: "counterparty_reliability",
                 patternCategory: "People Patterns",
@@ -549,7 +550,7 @@ class WorkflowLearningService {
         }
     }
 
-    private func computeClosureSignalPatterns(db: OpaquePointer?) {
+    private func computeClosureSignalPatterns() {
         // Calculate accuracy per closure signal
         let sql = """
         SELECT signal,
@@ -579,7 +580,6 @@ class WorkflowLearningService {
             let truncatedSignal = signal.count > 30 ? String(signal.prefix(30)) + "..." : signal
 
             insertComputedPattern(
-                db: db,
                 patternId: "closure_signal_\(signal.hashValue)",
                 patternType: "closure_accuracy",
                 patternCategory: "AI Accuracy",
@@ -594,7 +594,7 @@ class WorkflowLearningService {
         }
     }
 
-    private func computeTaskCompletionPatterns(db: OpaquePointer?) {
+    private func computeTaskCompletionPatterns() {
         // Calculate completion patterns by task type
         let sql = """
         SELECT task_type,
@@ -627,7 +627,6 @@ class WorkflowLearningService {
             }
 
             insertComputedPattern(
-                db: db,
                 patternId: "task_completion_\(taskType.hashValue)",
                 patternType: "task_completion",
                 patternCategory: "Task Patterns",
@@ -642,7 +641,7 @@ class WorkflowLearningService {
         }
     }
 
-    private func computeTimePatterns(db: OpaquePointer?) {
+    private func computeTimePatterns() {
         // Day of week productivity patterns
         let sql = """
         SELECT
@@ -683,7 +682,6 @@ class WorkflowLearningService {
             let percentage = Double(topDay.1) / Double(totalCompletions) * 100
 
             insertComputedPattern(
-                db: db,
                 patternId: "productivity_day",
                 patternType: "time_pattern",
                 patternCategory: "Time Patterns",
@@ -699,7 +697,6 @@ class WorkflowLearningService {
     }
 
     private func insertComputedPattern(
-        db: OpaquePointer?,
         patternId: String,
         patternType: String,
         patternCategory: String,
@@ -739,9 +736,8 @@ class WorkflowLearningService {
 
     /// Get all computed patterns grouped by category
     func getComputedPatterns() -> [String: [[String: Any]]] {
-        var db: OpaquePointer?
-        guard sqlite3_open(dbPath, &db) == SQLITE_OK else { return [:] }
-        defer { sqlite3_close(db) }
+        dbLock.lock()
+        defer { dbLock.unlock() }
 
         let sql = """
         SELECT pattern_id, pattern_type, pattern_category, title, description,
@@ -826,9 +822,8 @@ class WorkflowLearningService {
 
     /// Get summary statistics for the learning system
     func getSummary() -> [String: Any] {
-        var db: OpaquePointer?
-        guard sqlite3_open(dbPath, &db) == SQLITE_OK else { return [:] }
-        defer { sqlite3_close(db) }
+        dbLock.lock()
+        defer { dbLock.unlock() }
 
         var summary: [String: Any] = [:]
 
@@ -890,10 +885,10 @@ class WorkflowLearningService {
         let totalPatterns = summary["computedPatternsCount"] as? Int ?? 0
         guard totalPatterns > 0 else { return nil }
 
-        let subject = "🧠 Alfred Learning Digest - \(totalPatterns) patterns observed"
+        let subject = "🧠 Coach Alfred: Learning Digest - \(totalPatterns) patterns observed"
 
         var body = """
-        # Alfred Learning Digest
+        # Coach Alfred: Learning Digest
 
         Here's what I've learned from observing your workflows over the past 30 days.
 

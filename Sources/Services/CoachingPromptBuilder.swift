@@ -83,16 +83,12 @@ struct CoachingPromptBuilder {
         }
     }
 
-    /// Get parsed sections with toggle states applied
+    /// Get parsed sections with toggle states applied.
+    /// Loads from installed tenet-only skill files (frequency=none, dataSources=none).
     static func getTenetSectionsWithState() -> [TenetSection] {
-        // Load raw tenets from existing cascade (Notion → local file → defaults)
-        let rawMarkdown = loadRawTenets()
-        let parsed = parseTenetSections(rawMarkdown)
-        let toggleState = loadTenetsToggleState()
-
-        return parsed.map { section in
-            let enabled = toggleState[section.id] ?? true  // default enabled
-            return TenetSection(id: section.id, title: section.title, content: section.content, enabled: enabled)
+        let tenetSkills = SkillLoader.shared.loadSkills().filter { $0.isTenetOnly }
+        return tenetSkills.map { skill in
+            TenetSection(id: skill.id, title: skill.effectiveName, content: skill.tenets, enabled: skill.enabled)
         }
     }
 
@@ -126,10 +122,24 @@ struct CoachingPromptBuilder {
         relationshipData: String,
         coachingInsights: String = "",       // Always-on: all coaching card insights + reasoning
         detailedCommitments: String = "",    // On-demand: detailed commitment ledger (topic-routed)
+        recentMessages: String = "",         // On-demand: actual messages with a mentioned person
         unifiedFollowups: String = "",       // Always-on: merged follow-ups from all sources
-        activePosture: CoachingPosture? = nil // Intent-driven: weights coaching observations by posture
+        activePosture: CoachingPosture? = nil, // Intent-driven: weights coaching observations by posture
+        trustLevel: TrustLevel = .new        // Progressive trust: calibrates coaching voice over time
     ) -> String {
         var prompt = ""
+
+        // GROUND RULES — anti-hallucination guardrails (MUST come first, before personality)
+        prompt += """
+        ## ABSOLUTE RULES (override everything below — violation = system failure)
+        1. NEVER fabricate specific task names, commitment titles, dates, or details. You may ONLY cite items that appear verbatim in your context data below. If an item is not listed in your context, it does not exist to you.
+        2. When your context shows 0 items for a person (e.g. "showing 0 for X"), you MUST say "I don't have any records for [person]" — NEVER invent items to fill the gap. Making up plausible-sounding items is the worst thing you can do.
+        3. If the user says something is done and your data disagrees, TRUST THE USER. Say "my records still show X as open — let me flag that for update" rather than asserting they're wrong.
+        4. If you're uncertain about a fact, say "I'm not sure" or "my data may be stale." Bill Campbell never bullshitted — neither do you.
+        5. Only reference message content, quotes, statistics, and commitment details that appear VERBATIM in your context below. If data is marked as stale or unavailable, say so.
+        6. NEVER guess task titles or commitment names. If someone asks "what do I owe X?" and your data has no items for X, say "I don't have any tracked items with X." Do NOT make up items that sound plausible.
+
+        """
 
         // IDENTITY (~400 tokens — deeply researched Campbell x Mochary personality)
         prompt += """
@@ -145,7 +155,13 @@ struct CoachingPromptBuilder {
 
         ## YOUR VOICE
 
-        Short. Direct. Warm underneath, sharp on the surface. You recommend ONE thing, never a list. You name specific tasks, people, and dates. You challenge assumptions — "Are you sure that's your highest leverage right now?" is your favorite question. Default to 3-4 sentences. Go longer only when the user asks to go deep, requests a roast, or opens up emotionally — then up to 6-8 sentences max. Never ramble. End with a question or a clear next step. Occasionally funny — dry wit, self-aware CEO jokes, gentle roasts grounded in real data. Never forced humor. No emojis. Bold sparingly for emphasis.
+        Short. Direct. Warm underneath, sharp on the surface. You name specific tasks, people, and dates. You challenge assumptions — "Are you sure that's your highest leverage right now?" is your favorite question. Default to 3-4 sentences. Go longer only when the user asks to go deep, requests a roast, or opens up emotionally — then up to 6-8 sentences max. Never ramble. Occasionally funny — dry wit, self-aware CEO jokes, gentle roasts grounded in real data. Never forced humor. No emojis. Bold sparingly for emphasis.
+
+        **CRITICAL — Read the room:**
+        - When the user is GIVING you context, correcting your understanding, or telling you something — ABSORB IT. Acknowledge what they said, update your mental model, and stop. Do NOT pivot to an unrelated recommendation. A simple "Got it, noted." or "Good to know — I'll factor that in." is often the right response.
+        - When the user is ASKING for advice, unsure about something, or sharing a dilemma — THEN coach. Give ONE recommendation, not a list.
+        - When in doubt about whether they want coaching: ask, don't assume. "Want me to dig into that?" beats an unsolicited lecture.
+        - End with a question only when you're genuinely coaching. Do NOT manufacture questions just to seem engaged.
 
         ## YOUR CAPABILITIES
         You can analyze message threads, give briefings, check calendar, scan commitments, extract todos, and update tasks.
@@ -153,6 +169,27 @@ struct CoachingPromptBuilder {
         You can analyze their WhatsApp and iMessage history, and when thread data is fetched it appears in your coaching overlay.
         Only reference message content, quotes, and statistics that appear in the data you received. If you need more detail than what's available, tell the user and suggest a more specific question.
         Never fabricate message content, timestamps, or quotes.
+
+        """
+
+        // TRUST LEVEL CALIBRATION — voice adjusts as the relationship deepens
+        let trustCalibration: String
+        switch trustLevel {
+        case .new:
+            trustCalibration = "You have just met this person. You have earned zero trust. Be observational and curious. Ask permission before giving hard feedback. Lead with questions, not directives. When you notice a pattern, name it gently and ask if they see it too. Your job right now is to prove you are worth listening to."
+        case .developing:
+            trustCalibration = "You have had several sessions together. You are starting to see patterns. Shift from pure questions toward tentative suggestions. You can name an avoidance pattern if you have seen it more than once. Still ask before going hard — 'Can I be direct about something?' Use phrases like 'I've noticed...' and 'What if...'"
+        case .established:
+            trustCalibration = "You have built real context over many sessions. You can give clear directives, not just suggestions. When you see rationalizing, call it. You no longer need to ask permission to be honest. Still warm, but drop the softening qualifiers. Be specific: name the task, the person, the pattern."
+        case .deep:
+            trustCalibration = "You have earned the right to be fully direct. This is Bill Campbell mode. Direct challenge of stated beliefs when warranted. You know their patterns intimately — name them without apology. Hold them to Impeccable Agreements with zero hedging. When something is being avoided, say so plainly."
+        }
+
+        prompt += """
+
+        ## RELATIONSHIP STAGE: \(trustLevel.displayName.uppercased())
+
+        \(trustCalibration)
 
         """
 
@@ -217,6 +254,18 @@ struct CoachingPromptBuilder {
             """
         }
 
+        // RECENT MESSAGES — on-demand, injected when user mentions a person + message/commitment context
+        if !recentMessages.isEmpty {
+            prompt += """
+
+            ## RECENT MESSAGES
+            \(recentMessages)
+
+            These are ACTUAL messages from the user's devices. Use them to verify commitment status — if a message shows something was delivered or discussed, it likely IS done even if the commitment ledger still shows it open.
+
+            """
+        }
+
         // UNIFIED FOLLOW-UPS — always-on, from coaching memory + scheduled reminders
         if !unifiedFollowups.isEmpty {
             prompt += """
@@ -251,46 +300,17 @@ struct CoachingPromptBuilder {
         return prompt
     }
 
-    /// Load coaching tenets with toggle filtering applied.
-    /// Cascade: Notion page (cached 30 min) → local file → hardcoded defaults → toggle filter
+    /// Load coaching tenets from installed tenet-only skill files.
+    /// Only enabled tenets are included in the coaching prompt.
     private static func loadCoachingTenets() -> String {
-        let raw = loadRawTenets()
-        return applyTenetsToggles(raw)
-    }
+        let sections = getTenetSectionsWithState().filter { $0.enabled }
 
-    /// Load raw tenets markdown without toggle filtering (used for editing and parsing)
-    static func loadRawTenets() -> String {
-        // 1. Check Notion cache
-        if let cached = cachedNotionTenets, let ts = notionTenetsCacheTimestamp,
-           Date().timeIntervalSince(ts) < notionTenetsCacheTTL {
-            return cached
+        // Safety: if all sections disabled, use defaults
+        if sections.isEmpty {
+            return defaultTenets
         }
 
-        // 2. Try Notion fetch (synchronous wrapper — acceptable since prompt building is already sync)
-        if let config = AppConfig.load(),
-           let pageId = config.notion.tenetsPageId, !pageId.isEmpty {
-            let notionContent = fetchTenetsFromNotionSync(pageId: pageId, apiKey: config.notion.apiKey)
-            if let content = notionContent, !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                cachedNotionTenets = content
-                notionTenetsCacheTimestamp = Date()
-                // Also sync to local file as backup
-                let localPath = FileManager.default.homeDirectoryForCurrentUser
-                    .appendingPathComponent(".alfred/coaching_tenets.md").path
-                try? content.write(toFile: localPath, atomically: true, encoding: .utf8)
-                return content
-            }
-        }
-
-        // 3. Fall back to local file
-        let tenetsPath = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".alfred/coaching_tenets.md").path
-        if let content = try? String(contentsOfFile: tenetsPath, encoding: .utf8),
-           !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return content
-        }
-
-        // 4. Hardcoded defaults
-        return defaultTenets
+        return sections.map { "## \($0.title)\n\($0.content)" }.joined(separator: "\n\n")
     }
 
     /// Fetch page content from Notion API (blocks → markdown text)
@@ -401,12 +421,14 @@ struct CoachingPromptBuilder {
     - Stale tasks are avoidance signals. Overdue commitments are relationship debt. Name both.
 
     **Alfred Rules:**
-    - ONE recommendation per response. Not a list. One clear thing to do next.
+    - When coaching, give ONE recommendation. Not a list. One clear thing.
+    - When the user is just giving you information or context, acknowledge it and stop. Don't pivot to an unrelated task.
     - Reference specific tasks, people, dates from your context. Never be vague.
     - If there are open follow-ups from past sessions, check on them early.
     - First message of a new conversation: open with something contextual and specific — never generic.
     - If asked to roast or go hard, use real data. Be playful, not mean.
-    - If you lack context, say so. Never make things up.
+    - NEVER fabricate or extrapolate. If you have a count but not the details, say "I see N items but I don't have the specifics." If the user says something is done, trust them over your data.
+    - When you're uncertain, ask — don't assert. Bill Campbell would say "I thought you still owed 3 things to X — am I wrong?" not "You owe 3 things to X."
     - No emojis. Markdown (bold, italics) sparingly.
     """
 
@@ -481,10 +503,10 @@ struct ChatContextRouter {
     /// Detect if the user's message warrants detailed commitment injection.
     /// Returns: (needsCommitments: whether to inject the full commitment ledger,
     ///           mentionedPerson: specific person to filter commitments for, or nil for all)
-    static func detectCommitmentContext(
+    static func detectContext(
         query: String,
         knownContacts: [String]
-    ) -> (needsCommitments: Bool, mentionedPerson: String?) {
+    ) -> (needsCommitments: Bool, needsMessages: Bool, mentionedPerson: String?) {
         let lower = query.lowercased()
 
         // Person name detection — match against known counterparty names
@@ -502,11 +524,37 @@ struct ChatContextRouter {
         let commitmentKeywords = [
             "commitment", "owe", "promised", "follow up", "follow-up",
             "accountability", "waiting on", "deliverable", "deadline",
-            "relationship", "working with", "1:1", "one-on-one"
+            "relationship", "working with", "1:1", "one-on-one",
+            "task", "tasks", "open item", "open items", "overdue"
         ]
         let hasCommitmentTopic = commitmentKeywords.contains { lower.contains($0) }
 
+        // Message context keywords — trigger fetching actual messages for a person
+        let messageKeywords = [
+            "message", "messaged", "told", "said", "texted", "replied",
+            "conversation", "thread", "chat", "whatsapp", "imessage",
+            "already done", "already closed", "already sent", "already finished",
+            "completed", "finished", "wrapped up", "done with",
+            "analyse my messages", "analyze my messages", "check my messages",
+            "look at my messages", "read my messages",
+            "spoke to", "spoke with", "talked to", "talked with",
+            "discussed with", "confirmed with", "agreed with"
+        ]
+        let hasMessageTopic = messageKeywords.contains { lower.contains($0) }
+
+        // If user mentions a person + commitment/message keywords, fetch both
         let needsCommitments = mentionedPerson != nil || hasCommitmentTopic
-        return (needsCommitments, mentionedPerson)
+        let needsMessages = mentionedPerson != nil && (hasMessageTopic || hasCommitmentTopic)
+
+        return (needsCommitments, needsMessages, mentionedPerson)
+    }
+
+    /// Legacy compatibility wrapper
+    static func detectCommitmentContext(
+        query: String,
+        knownContacts: [String]
+    ) -> (needsCommitments: Bool, mentionedPerson: String?) {
+        let result = detectContext(query: query, knownContacts: knownContacts)
+        return (result.needsCommitments, result.mentionedPerson)
     }
 }

@@ -441,7 +441,14 @@ class MenuBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    /// Evaluates whether a cadence should run right now based on its schedule type
+    /// Evaluates whether a cadence should run right now based on its schedule type.
+    ///
+    /// Key design decisions:
+    /// - Daily cadences: run any time after the scheduled time on the same day (rest-of-day catch-up).
+    ///   A laptop may be asleep at the exact time — when it wakes, the cadence fires.
+    /// - Weekly cadences: run on the scheduled day OR within `weeklyCatchUpDays` after.
+    ///   If Sunday is missed, Monday/Tuesday still catch up.
+    /// - Manual API runs do NOT suppress scheduled runs (tracked separately).
     private func shouldRunCadence(_ cadence: Cadence, currentTime: String, todayDate: String, hour: Int, weekday: Int, now: Date, logPath: String) -> Bool {
         // Check failure cooldown
         if let cooldownUntil = cadence.failureCooldownUntil, now < cooldownUntil {
@@ -450,33 +457,46 @@ class MenuBarController: NSObject, NSMenuDelegate {
 
         switch cadence.schedule {
         case .daily(let time):
-            // Already ran today?
+            // Already ran today (via scheduler)?
             guard cadence.lastRunDate != todayDate else { return false }
-            // At exact time
-            if currentTime == time { return true }
-            // Catch-up window
-            if currentTime > time {
-                let catchUpLimit = cadenceCatchUpLimit(from: time, hours: cadence.catchUpWindowHours)
-                if currentTime <= catchUpLimit {
-                    logToFile("⏰ [Cadence] Catch-up: Missed \(cadence.name) time (\(time)), running at \(currentTime)", path: logPath)
-                    return true
-                }
+            // Must be at or past the scheduled time — rest-of-day catch-up
+            guard currentTime >= time else { return false }
+            if currentTime != time {
+                logToFile("⏰ [Cadence] Catch-up: Missed \(cadence.name) time (\(time)), running at \(currentTime)", path: logPath)
             }
-            return false
+            return true
 
         case .weekly(let day, let time):
             let targetWeekday = dayNameToWeekday(day)
-            guard weekday == targetWeekday else { return false }
-            guard cadence.lastRunDate != todayDate else { return false }
-            if currentTime == time { return true }
-            if currentTime > time {
-                let catchUpLimit = cadenceCatchUpLimit(from: time, hours: cadence.catchUpWindowHours)
-                if currentTime <= catchUpLimit {
-                    logToFile("⏰ [Cadence] Catch-up: Missed \(cadence.name) time (\(time)), running at \(currentTime)", path: logPath)
-                    return true
+
+            // Check if we're on the scheduled day or within the catch-up window
+            let daysElapsed = (weekday - targetWeekday + 7) % 7  // 0 = same day, 1 = next day, etc.
+            guard daysElapsed <= cadence.weeklyCatchUpDays else { return false }
+
+            // Already ran this week? Check if lastRunDate falls within recent days
+            if let lastRunDate = cadence.lastRunDate {
+                let dateFormatter = DateFormatter()
+                dateFormatter.dateFormat = "yyyy-MM-dd"
+                if let lastDate = dateFormatter.date(from: lastRunDate) {
+                    let daysSinceLastRun = Calendar.current.dateComponents([.day], from: lastDate, to: now).day ?? 0
+                    // If it ran within the last 6 days, it already ran this week
+                    if daysSinceLastRun < 7 && daysSinceLastRun >= 0 {
+                        return false
+                    }
                 }
             }
-            return false
+
+            // On the scheduled day: must be at or past the scheduled time
+            if daysElapsed == 0 {
+                guard currentTime >= time else { return false }
+                if currentTime != time {
+                    logToFile("⏰ [Cadence] Catch-up: Missed \(cadence.name) time (\(time)), running at \(currentTime)", path: logPath)
+                }
+            } else {
+                // Catch-up day: run immediately (any time of day)
+                logToFile("⏰ [Cadence] Weekly catch-up: \(cadence.name) missed \(day) @ \(time), running \(daysElapsed) day(s) late", path: logPath)
+            }
+            return true
 
         case .interval(let hours, let activeStart, let activeEnd):
             // Must be within active hours
@@ -505,19 +525,6 @@ class MenuBarController: NSObject, NSMenuDelegate {
         case "saturday": return 7
         default: return 5  // Default to Thursday
         }
-    }
-
-    /// Calculate the catch-up time limit (scheduled time + N hours), capped at 23:59
-    private func cadenceCatchUpLimit(from scheduledTime: String, hours: Int) -> String {
-        let parts = scheduledTime.split(separator: ":")
-        guard parts.count == 2, let hour = Int(parts[0]), let minute = Int(parts[1]) else {
-            return "23:59"
-        }
-        let newHour = min(hour + hours, 23)
-        if newHour == 23 && hour + hours > 23 {
-            return "23:59"
-        }
-        return String(format: "%02d:%02d", newHour, minute)
     }
 
     private func logToFile(_ message: String, path: String) {

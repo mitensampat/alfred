@@ -1,5 +1,4 @@
 import Foundation
-import UserNotifications
 
 class NotificationService {
     private let config: NotificationConfig
@@ -16,26 +15,70 @@ class NotificationService {
         if config.email.enabled {
             print("  → Sending email notification...")
             try await sendEmail(
-                subject: "Alfred: Daily Briefing - \(briefing.date.formatted(date: .abbreviated, time: .omitted))",
+                subject: "Coach Alfred: Daily Briefing - \(briefing.date.formatted(date: .abbreviated, time: .omitted))",
                 body: formatted.html,
                 toAddress: toAddress
             )
             print("  ✓ Email sent")
         }
 
-        if config.push.enabled {
-            do {
-                print("  → Sending push notification...")
-                try await sendPushNotification(
-                    title: "Morning Briefing Ready",
-                    body: "Your briefing for \(briefing.date.formatted(date: .abbreviated, time: .omitted)) is ready"
-                )
-                print("  ✓ Push notification sent")
-            } catch {
-                print("  ⊗ Push notifications not available in command-line mode")
+        // Signal notification with smart body
+        if let signal = config.signal, signal.enabled {
+            let smartBody = buildSmartPushBody(for: briefing)
+            sendSignalMessage("☕ \(smartBody)")
+        }
+
+    }
+
+    /// Build a smart, data-driven push notification body from the briefing contents.
+    /// Prioritises the most salient fact: back-to-backs > overdue tasks > light day.
+    private func buildSmartPushBody(for briefing: DailyBriefing) -> String {
+        let events = briefing.calendarBriefing.schedule.events.filter { !$0.isAllDay }
+        let timedSorted = events.sorted { $0.startTime < $1.startTime }
+        let timeFmt = DateFormatter()
+        timeFmt.dateFormat = "h a"
+
+        // Detect back-to-back chains (< 15 min gap)
+        var backToBackCount = 0
+        if timedSorted.count > 1 {
+            for i in 1..<timedSorted.count {
+                if timedSorted[i].startTime.timeIntervalSince(timedSorted[i-1].endTime) < 900 {
+                    backToBackCount += 1
+                }
             }
         }
 
+        if backToBackCount > 1 {
+            let first = timedSorted.first.map { timeFmt.string(from: $0.startTime) } ?? "morning"
+            let last = timedSorted.last.map { timeFmt.string(from: $0.endTime) } ?? "afternoon"
+            return "\(backToBackCount) back-to-backs from \(first)–\(last). Open Alfred."
+        }
+
+        // Check for overdue high-priority tasks
+        let overdueHigh = briefing.actionItems.filter { item in
+            guard let due = item.dueDate else { return false }
+            return due < Date() && (item.priority == .critical || item.priority == .high)
+        }
+        if let topOverdue = overdueHigh.first {
+            let daysLate: Int
+            if let due = topOverdue.dueDate {
+                daysLate = max(1, Calendar.current.dateComponents([.day], from: due, to: Date()).day ?? 1)
+            } else {
+                daysLate = 1
+            }
+            let truncated = String(topOverdue.title.prefix(35))
+            return "\(truncated) is \(daysLate) day\(daysLate == 1 ? "" : "s") late. Open Alfred."
+        }
+
+        // Light day framing
+        let meetingCount = events.count
+        let focusHours = Int(briefing.calendarBriefing.focusTime / 3600)
+        if meetingCount <= 3 && focusHours >= 3 {
+            return "Light day — \(meetingCount) meeting\(meetingCount == 1 ? "" : "s"), \(focusHours)h open. Deep work window."
+        }
+
+        // Fallback
+        return "\(meetingCount) meeting\(meetingCount == 1 ? "" : "s") today. Open Alfred."
     }
 
     func sendAttentionDefenseReport(_ report: AttentionDefenseReport, toAddress: String? = nil) async throws {
@@ -44,21 +87,15 @@ class NotificationService {
 
         if config.email.enabled {
             try await sendEmail(
-                subject: "Alfred: Attention Defense - \(dateStr)",
+                subject: "Coach Alfred: Attention Defense - \(dateStr)",
                 body: formatted.html,
                 toAddress: toAddress
             )
         }
 
-        if config.push.enabled {
-            do {
-                try await sendPushNotification(
-                    title: "Attention Defense Alert",
-                    body: "\(report.mustDoToday.count) critical tasks before EOD"
-                )
-            } catch {
-                print("Note: Push notifications not available in command-line mode")
-            }
+        // Signal attention alert
+        if let signal = config.signal, signal.enabled {
+            sendSignalMessage("🔴 \(report.mustDoToday.count) critical tasks before EOD. Open Alfred.")
         }
 
     }
@@ -73,23 +110,15 @@ class NotificationService {
             let dateFormatter = DateFormatter()
             dateFormatter.dateFormat = "EEEE, MMM d"
             try await sendEmail(
-                subject: "Alfred Agent Digest - \(dateFormatter.string(from: digest.date))",
+                subject: "Coach Alfred: Agent Digest - \(dateFormatter.string(from: digest.date))",
                 body: formatted.html
             )
             print("  ✓ Agent digest email sent")
         }
 
-        if config.push.enabled {
-            do {
-                print("  → Sending push notification...")
-                try await sendPushNotification(
-                    title: "Daily Agent Digest Ready",
-                    body: "\(digest.summary.totalDecisions) decisions, \(digest.newLearnings.count) new learnings"
-                )
-                print("  ✓ Push notification sent")
-            } catch {
-                print("  ⊗ Push notifications not available in command-line mode")
-            }
+        // Signal agent digest nudge
+        if let signal = config.signal, signal.enabled {
+            sendSignalMessage("📊 \(digest.summary.totalDecisions) decisions, \(digest.newLearnings.count) new learnings today. Open Alfred.")
         }
 
     }
@@ -99,6 +128,11 @@ class NotificationService {
             print("  → Sending learning digest email...")
             try await sendEmail(subject: subject, body: body)
             print("  ✓ Learning digest email sent")
+        }
+
+        // Signal learning digest nudge
+        if let signal = config.signal, signal.enabled {
+            sendSignalMessage("🧠 Weekly learning digest ready. Check your email.")
         }
     }
 
@@ -120,7 +154,7 @@ class NotificationService {
 
         msg = MIMEMultipart('alternative')
         msg['Subject'] = '\(subject.replacingOccurrences(of: "'", with: "\\'"))'
-        msg['From'] = '\(config.email.smtpUsername)'
+        msg['From'] = 'Coach Alfred <\(config.email.smtpUsername)>'
         msg['To'] = '\(recipient)'
 
         html_part = MIMEText('''
@@ -160,21 +194,139 @@ class NotificationService {
         }
     }
 
-    // MARK: - Push Notifications
+    // MARK: - Signal Messaging
 
-    private func sendPushNotification(title: String, body: String) async throws {
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
+    /// Send a message to the user via signal-cli. Fire-and-forget — logs errors but doesn't throw.
+    private func sendSignalMessage(_ message: String) {
+        guard let signal = config.signal, signal.enabled else { return }
 
-        let request = UNNotificationRequest(
-            identifier: UUID().uuidString,
-            content: content,
-            trigger: nil
-        )
+        let cliPath = signal.cliPath ?? "/opt/homebrew/bin/signal-cli"
+        guard FileManager.default.fileExists(atPath: cliPath) else {
+            print("  ⊗ signal-cli not found at \(cliPath)")
+            return
+        }
 
-        try await UNUserNotificationCenter.current().add(request)
+        let phone = signal.phoneNumber
+        print("  → Sending Signal message to \(phone)...")
+
+        // Run in background to avoid blocking the caller
+        DispatchQueue.global(qos: .utility).async {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: cliPath)
+            process.arguments = ["-a", phone, "send", "-m", message, phone]
+
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+                if process.terminationStatus == 0 {
+                    print("  ✓ Signal message sent")
+                } else {
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    let output = String(data: data, encoding: .utf8) ?? ""
+                    print("  ⊗ Signal send failed (exit \(process.terminationStatus)): \(output)")
+                }
+            } catch {
+                print("  ⊗ Signal send error: \(error)")
+            }
+        }
+    }
+
+    // MARK: - Shared Email Design System (Ralph Lauren Navy)
+
+    /// Single source of truth for all email styling.
+    /// Matches the app's Ralph Lauren Navy palette from home.html :root variables.
+    static let emailCSS = """
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #1b2a4a;
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f8f7f4;
+        }
+        .brand { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; }
+        h1 { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-size: 28px; font-weight: 600; margin-bottom: 24px; color: #1b2a4a; }
+        h2 { font-size: 14px; font-weight: 600; color: #5c6370; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 28px; margin-bottom: 12px; border-bottom: 1px solid #e4e2dc; padding-bottom: 8px; }
+        h3 { font-size: 15px; font-weight: 600; color: #1b2a4a; margin-top: 16px; margin-bottom: 8px; }
+        p { margin: 12px 0; font-size: 14px; }
+        hr { border: none; border-top: 1px solid #e4e2dc; margin: 24px 0; }
+        strong { color: #1b2a4a; }
+        .stat { display: inline-block; margin-right: 24px; margin-bottom: 8px; }
+        .stat-label { color: #5c6370; font-size: 13px; }
+        .stat-value { font-size: 18px; font-weight: 600; color: #1b2a4a; }
+        .stat-grid { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
+        .stat-grid .stat { flex: 1; min-width: 100px; background: #f0eeea; border-radius: 6px; padding: 12px; text-align: center; margin-right: 0; }
+        .stat-grid .stat-value { font-size: 24px; }
+        .stat-grid .stat-label { font-size: 12px; margin-top: 4px; }
+        .item { background: #f0eeea; border-radius: 6px; padding: 12px 16px; margin-bottom: 10px; }
+        .item-title { font-weight: 600; color: #1b2a4a; margin-bottom: 4px; }
+        .item-meta { font-size: 13px; color: #5c6370; }
+        .item-desc { font-size: 14px; color: #1b2a4a; margin-top: 6px; }
+        .priority-critical { border-left: 3px solid #8b2332; background: #f4e4e6; }
+        .priority-high { border-left: 3px solid #8b2332; }
+        .priority-medium { border-left: 3px solid #c49a3c; }
+        .priority-low { border-left: 3px solid #2d5a3d; }
+        .coaching-leverage { border-left: 3px solid #3d6888; background: #e4eef4; }
+        .coaching-relationship { border-left: 3px solid #2d5a3d; background: #e4efe7; }
+        .coaching-avoidance { border-left: 3px solid #c49a3c; background: #faf1dd; }
+        .coaching-attention { border-left: 3px solid #c49a3c; background: #faf1dd; }
+        .coaching-weekly { border-left: 3px solid #6b4c3b; background: #f4ece3; }
+        .coaching-skill { border-left: 3px solid #3d6888; background: #e4eef4; }
+        .coaching-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+        .coaching-leverage .coaching-label { color: #3d6888; }
+        .coaching-relationship .coaching-label { color: #2d5a3d; }
+        .coaching-avoidance .coaching-label { color: #c49a3c; }
+        .coaching-attention .coaching-label { color: #c49a3c; }
+        .coaching-weekly .coaching-label { color: #6b4c3b; }
+        .coaching-skill .coaching-label { color: #3d6888; }
+        .event { padding: 10px 14px; border-left: 3px solid #3d6888; background: #e4eef4; border-radius: 4px; margin-bottom: 8px; }
+        .event-time { font-size: 13px; color: #3d6888; font-weight: 500; }
+        .event-title { font-weight: 600; color: #1b2a4a; }
+        .event-location { font-size: 13px; color: #5c6370; margin-top: 2px; }
+        .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-right: 6px; }
+        .tag-external { background: #faf1dd; color: #92400e; }
+        .can-push { border-left: 3px solid #2d5a3d; background: #e4efe7; }
+        .overdue { border-left: 3px solid #8b2332; }
+        .recommendation { padding: 8px 12px; background: #e4eef4; border-radius: 4px; margin-bottom: 6px; color: #3d6888; font-size: 14px; }
+        .agent-card { background: #f0eeea; border-radius: 8px; padding: 14px; margin-bottom: 10px; }
+        .agent-name { font-weight: 600; color: #1b2a4a; margin-bottom: 8px; }
+        .agent-stats { display: flex; gap: 16px; font-size: 13px; color: #5c6370; }
+        .agent-insight { font-size: 14px; color: #1b2a4a; margin-top: 8px; padding: 8px; background: #ffffff; border-radius: 4px; }
+        .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e4e2dc; font-size: 12px; color: #8890a0; text-align: center; }
+        .footer .brand { font-size: 14px; font-weight: 500; color: #1b2a4a; }
+    """
+
+    /// Standard HTML email preamble using the shared design system
+    static func emailHead() -> String {
+        return """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
+            <style>
+                \(emailCSS)
+            </style>
+        </head>
+        <body>
+        """
+    }
+
+    /// Standard HTML email footer
+    static func emailFoot() -> String {
+        return """
+            <div class="footer">
+                Generated by <span class="brand">alfred</span> v\(AlfredApp.version) • \(Date().formatted(date: .abbreviated, time: .shortened))
+            </div>
+        </body>
+        </html>
+        """
     }
 
     // MARK: - Formatting
@@ -184,64 +336,9 @@ class NotificationService {
         // Layout order: Coach Says → Calendar → Messages → Action Items
         var markdown = "# Daily Briefing - \(briefing.date.formatted(date: .long, time: .omitted))\n\n"
 
-        // HTML with clean, readable styling (matching web UI with Inter + Playfair Display fonts)
-        var html = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
-            <style>
-                body {
-                    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-                    line-height: 1.6;
-                    color: #37352f;
-                    max-width: 700px;
-                    margin: 0 auto;
-                    padding: 20px;
-                    background: #ffffff;
-                }
-                .brand { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; }
-                h1 { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-size: 28px; font-weight: 600; margin-bottom: 24px; color: #37352f; }
-                h2 { font-size: 16px; font-weight: 600; color: #787774; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 28px; margin-bottom: 12px; border-bottom: 1px solid #e9e9e7; padding-bottom: 8px; }
-                h3 { font-size: 15px; font-weight: 600; color: #37352f; margin-top: 16px; margin-bottom: 8px; }
-                .stat { display: inline-block; margin-right: 24px; margin-bottom: 8px; }
-                .stat-label { color: #787774; font-size: 13px; }
-                .stat-value { font-size: 18px; font-weight: 600; color: #37352f; }
-                .item { background: #f7f6f3; border-radius: 6px; padding: 12px 16px; margin-bottom: 10px; }
-                .item-title { font-weight: 600; color: #37352f; margin-bottom: 4px; }
-                .item-meta { font-size: 13px; color: #787774; }
-                .item-desc { font-size: 14px; color: #37352f; margin-top: 6px; }
-                .priority-high { border-left: 3px solid #eb5757; }
-                .priority-critical { border-left: 3px solid #eb5757; background: #fef2f2; }
-                .priority-medium { border-left: 3px solid #f7b955; }
-                .priority-low { border-left: 3px solid #6fcf97; }
-                .coaching-leverage { border-left: 3px solid #2383e2; background: #f0f7ff; }
-                .coaching-relationship { border-left: 3px solid #2d8a56; background: #e8f5e9; }
-                .coaching-avoidance { border-left: 3px solid #f7b955; background: #fffbeb; }
-                .coaching-attention { border-left: 3px solid #ea580c; background: #fff7ed; }
-                .coaching-weekly { border-left: 3px solid #7c3aed; background: #f5f3ff; }
-                .coaching-skill { border-left: 3px solid #6366f1; background: #eef2ff; }
-                .coaching-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-                .coaching-leverage .coaching-label { color: #2383e2; }
-                .coaching-relationship .coaching-label { color: #2d8a56; }
-                .coaching-avoidance .coaching-label { color: #d4880f; }
-                .coaching-attention .coaching-label { color: #ea580c; }
-                .coaching-weekly .coaching-label { color: #7c3aed; }
-                .coaching-skill .coaching-label { color: #6366f1; }
-                .event { padding: 10px 14px; border-left: 3px solid #2383e2; background: #f0f7ff; border-radius: 4px; margin-bottom: 8px; }
-                .event-time { font-size: 13px; color: #2383e2; font-weight: 500; }
-                .event-title { font-weight: 600; color: #37352f; }
-                .event-location { font-size: 13px; color: #787774; margin-top: 2px; }
-                .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-right: 6px; }
-                .tag-external { background: #fef3c7; color: #92400e; }
-                .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e9e9e7; font-size: 12px; color: #9b9a97; text-align: center; }
-                .footer .brand { font-size: 14px; font-weight: 500; }
-            </style>
-        </head>
-        <body>
-            <h1>📅 Daily Briefing for \(briefing.date.formatted(date: .long, time: .omitted))</h1>
-        """
+        // HTML using shared Ralph Lauren Navy design system
+        var html = Self.emailHead()
+        html += "<h1>📅 Daily Briefing for \(briefing.date.formatted(date: .long, time: .omitted))</h1>"
 
         // ── Section 1: Coach Says ──────────────────────────────────────
         if let cards = briefing.coachingCards, !cards.isEmpty {
@@ -394,13 +491,7 @@ class NotificationService {
         }
 
         // Footer
-        html += """
-            <div class="footer">
-                Generated by <span class="brand">alfred</span> v\(AlfredApp.version) • \(Date().formatted(date: .abbreviated, time: .shortened))
-            </div>
-        </body>
-        </html>
-        """
+        html += Self.emailFoot()
 
         return (markdown, html)
     }
@@ -408,32 +499,10 @@ class NotificationService {
     private func formatAttentionReport(_ report: AttentionDefenseReport) -> (markdown: String, html: String) {
         var markdown = "# Attention Defense Report - \(report.currentTime.formatted(date: .omitted, time: .shortened))\n\n"
 
-        var html = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
-            <style>
-                body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; line-height: 1.6; color: #37352f; max-width: 700px; margin: 0 auto; padding: 20px; background: #ffffff; }
-                .brand { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; }
-                h1 { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-size: 28px; font-weight: 600; margin-bottom: 24px; color: #37352f; }
-                h2 { font-size: 16px; font-weight: 600; color: #787774; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 28px; margin-bottom: 12px; border-bottom: 1px solid #e9e9e7; padding-bottom: 8px; }
-                .item { background: #f7f6f3; border-radius: 6px; padding: 12px 16px; margin-bottom: 10px; }
-                .item-title { font-weight: 600; color: #37352f; margin-bottom: 4px; }
-                .item-meta { font-size: 13px; color: #787774; }
-                .item-desc { font-size: 14px; color: #37352f; margin-top: 6px; }
-                .priority-high { border-left: 3px solid #eb5757; }
-                .priority-medium { border-left: 3px solid #f7b955; }
-                .can-push { border-left: 3px solid #2d8a56; background: #e8f5e9; }
-                .recommendation { padding: 8px 12px; background: #f0f7ff; border-radius: 4px; margin-bottom: 6px; color: #2383e2; font-size: 14px; }
-                .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e9e9e7; font-size: 12px; color: #9b9a97; text-align: center; }
-                .footer .brand { font-size: 14px; font-weight: 500; }
-            </style>
-        </head>
-        <body>
+        var html = Self.emailHead()
+        html += """
             <h1>⚡ Attention Defense Report</h1>
-            <p style="color: #787774; margin-top: -16px; margin-bottom: 24px;">Generated at \(report.currentTime.formatted(date: .omitted, time: .shortened))</p>
+            <p style="color: #5c6370; margin-top: -16px; margin-bottom: 24px;">Generated at \(report.currentTime.formatted(date: .omitted, time: .shortened))</p>
         """
 
         // Must Do Today
@@ -481,13 +550,7 @@ class NotificationService {
             html += "<div class=\"recommendation\">\(rec)</div>"
         }
 
-        html += """
-            <div class="footer">
-                Generated by <span class="brand">alfred</span> v\(AlfredApp.version) • \(Date().formatted(date: .abbreviated, time: .shortened))
-            </div>
-        </body>
-        </html>
-        """
+        html += Self.emailFoot()
 
         return (markdown, html)
     }
@@ -498,37 +561,10 @@ class NotificationService {
 
         var markdown = "# Alfred Agent Digest - \(dateFormatter.string(from: digest.date))\n\n"
 
-        var html = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
-            <style>
-                body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; line-height: 1.6; color: #37352f; max-width: 700px; margin: 0 auto; padding: 20px; background: #ffffff; }
-                .brand { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; }
-                h1 { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-size: 28px; font-weight: 600; margin-bottom: 24px; color: #37352f; }
-                h2 { font-size: 16px; font-weight: 600; color: #787774; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 28px; margin-bottom: 12px; border-bottom: 1px solid #e9e9e7; padding-bottom: 8px; }
-                .stat-grid { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
-                .stat { flex: 1; min-width: 100px; background: #f7f6f3; border-radius: 6px; padding: 12px; text-align: center; }
-                .stat-value { font-size: 24px; font-weight: 600; color: #37352f; }
-                .stat-label { font-size: 12px; color: #787774; margin-top: 4px; }
-                .agent-card { background: #f7f6f3; border-radius: 8px; padding: 14px; margin-bottom: 10px; }
-                .agent-name { font-weight: 600; color: #37352f; margin-bottom: 8px; }
-                .agent-stats { display: flex; gap: 16px; font-size: 13px; color: #787774; }
-                .agent-insight { font-size: 14px; color: #37352f; margin-top: 8px; padding: 8px; background: #ffffff; border-radius: 4px; }
-                .item { padding: 10px 14px; background: #f7f6f3; border-radius: 6px; margin-bottom: 8px; }
-                .item-title { font-weight: 600; color: #37352f; }
-                .item-meta { font-size: 13px; color: #787774; margin-top: 4px; }
-                .overdue { border-left: 3px solid #eb5757; }
-                .recommendation { padding: 8px 12px; background: #f0f7ff; border-radius: 4px; margin-bottom: 6px; color: #2383e2; font-size: 14px; }
-                .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e9e9e7; font-size: 12px; color: #9b9a97; text-align: center; }
-                .footer .brand { font-size: 14px; font-weight: 500; }
-            </style>
-        </head>
-        <body>
+        var html = Self.emailHead()
+        html += """
             <h1>🤖 <span class="brand">alfred</span> Agent Digest</h1>
-            <p style="color: #787774; margin-top: -16px; margin-bottom: 24px;">\(dateFormatter.string(from: digest.date))</p>
+            <p style="color: #5c6370; margin-top: -16px; margin-bottom: 24px;">\(dateFormatter.string(from: digest.date))</p>
         """
 
         // Summary Stats
@@ -626,13 +662,7 @@ class NotificationService {
             }
         }
 
-        html += """
-            <div class="footer">
-                Generated by <span class="brand">alfred</span> v\(AlfredApp.version) • \(Date().formatted(date: .abbreviated, time: .shortened))
-            </div>
-        </body>
-        </html>
-        """
+        html += Self.emailFoot()
 
         return (markdown, html)
     }

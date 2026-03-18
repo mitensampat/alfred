@@ -96,6 +96,7 @@ class SignalReader {
         LEFT JOIN conversations ON messages.conversationId = conversations.id
         WHERE messages.sent_at > ?
         ORDER BY messages.sent_at DESC
+        LIMIT 5000
         """
 
         var statement: OpaquePointer?

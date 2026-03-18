@@ -177,11 +177,26 @@ class CommitmentAnalyzer {
         return try parseCommitmentResponse(text)
     }
 
+    /// Check if a string looks like a raw WhatsApp/platform ID rather than a human name
+    private func isRawId(_ name: String) -> Bool {
+        // Base64-encoded IDs (e.g. CM2E5M0GIABIAZABAPABAg==)
+        if name.hasSuffix("==") || name.hasSuffix("=") { return true }
+        // Phone numbers or numeric IDs
+        if name.allSatisfy({ $0.isNumber || $0 == "+" || $0 == "-" || $0 == " " }) && name.count > 5 { return true }
+        // Email-style IDs
+        if name.contains("@") && !name.contains(" ") { return true }
+        return false
+    }
+
     private func buildExtractionPrompt(_ request: CommitmentExtractionRequest, platform: String, threadId: String) -> String {
         // Collect unique participant names from group chats (for non-user messages with sender names)
+        // Filter out raw IDs — only include actual human-readable names
         let otherParticipants = Set(request.messages.compactMap { message -> String? in
             guard !message.isFromUser else { return nil }
-            return message.senderName ?? message.sender
+            let name = message.senderName ?? message.sender
+            // Skip raw platform IDs — they're not usable as counterparty names
+            if isRawId(name) { return nil }
+            return name
         })
         let isGroupChat = otherParticipants.count > 1
 
@@ -191,8 +206,10 @@ class CommitmentAnalyzer {
             if message.isFromUser {
                 sender = request.userInfo.name
             } else {
-                // Use sender name if available (important for groups), otherwise fall back to sender ID
-                sender = message.senderName ?? message.sender
+                // Use sender name if available (important for groups)
+                // If only a raw ID is available, use "Unknown participant" to avoid polluting commitment data
+                let rawName = message.senderName ?? message.sender
+                sender = isRawId(rawName) ? "Unknown participant" : rawName
             }
             let timestamp = ISO8601DateFormatter().string(from: message.timestamp)
             return "[\(timestamp)] \(sender): \(message.content)"
@@ -286,14 +303,14 @@ class CommitmentAnalyzer {
 
         For each valid commitment found, extract:
         - type: "i_owe" or "they_owe"
-        - title: A brief 3-8 word description
-        - commitmentText: The exact phrase containing the commitment
-        - committedBy: Name of person making the commitment
-        - committedTo: Name of person receiving the commitment
+        - title: A brief 3-8 word description using ONLY words that appear in the actual messages. Do NOT invent names, products, or topics that aren't explicitly mentioned in the conversation text above. If the message is vague (e.g. "I'll give it that skill"), use the vague language — do NOT guess what "it" refers to.
+        - commitmentText: The exact phrase containing the commitment (copy verbatim from the message)
+        - committedBy: Name of person making the commitment. MUST be a real human name from the conversation. If you only have a raw ID (e.g. base64 string, phone number), use "Unknown".
+        - committedTo: Name of person receiving the commitment. Same rule — real names only, "Unknown" if unresolvable.
         - dueDate: ISO8601 date if mentioned (e.g., "tomorrow", "Friday", "next week")
         - priority: "critical", "high", "medium", or "low" based on urgency indicators
         - context: Surrounding context from the message
-        - confidence: 0.0 to 1.0 score of how confident you are this is a real commitment
+        - confidence: 0.0 to 1.0 score of how confident you are this is a real commitment. Lower confidence (0.6-0.7) when the commitment is vague or the subject is unclear. Higher confidence (0.8+) only when the commitment is specific and unambiguous.
 
         Only extract commitments with confidence >= 0.6.
         """
@@ -443,12 +460,20 @@ class CommitmentAnalyzer {
             if to.lowercased() == userName.lowercased() {
                 to = threadName.isEmpty ? "Unknown" : threadName
             }
+            // Guard: if AI returned a raw ID instead of a name, use thread name
+            if isRawId(to) {
+                to = threadName.isEmpty ? "Unknown" : threadName
+            }
             return (userName, to)
         case .theyOwe:
             // Someone committed to user — counterparty is committedBy
             var by = extracted.committedBy.isEmpty ? "Unknown" : extracted.committedBy
             // Guard: if AI returned the user's own name as the counterparty, use thread name instead
             if by.lowercased() == userName.lowercased() {
+                by = threadName.isEmpty ? "Unknown" : threadName
+            }
+            // Guard: if AI returned a raw ID instead of a name, use thread name
+            if isRawId(by) {
                 by = threadName.isEmpty ? "Unknown" : threadName
             }
             return (by, userName)
@@ -747,6 +772,27 @@ class CommitmentAnalyzer {
             jsonText = jsonText.replacingOccurrences(of: "```json", with: "")
             jsonText = jsonText.replacingOccurrences(of: "```", with: "")
             jsonText = jsonText.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else if jsonText.hasPrefix("```") {
+            jsonText = String(jsonText.dropFirst(3))
+            if let end = jsonText.range(of: "```") {
+                jsonText = String(jsonText[..<end.lowerBound])
+            }
+            jsonText = jsonText.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        // Extract just the JSON object — Claude sometimes appends explanatory text after the JSON
+        if let start = jsonText.firstIndex(of: "{") {
+            var depth = 0
+            var endIndex = jsonText.endIndex
+            for i in jsonText.indices[start...] {
+                if jsonText[i] == "{" { depth += 1 }
+                else if jsonText[i] == "}" { depth -= 1 }
+                if depth == 0 {
+                    endIndex = jsonText.index(after: i)
+                    break
+                }
+            }
+            jsonText = String(jsonText[start..<endIndex])
         }
 
         guard let data = jsonText.data(using: .utf8) else {

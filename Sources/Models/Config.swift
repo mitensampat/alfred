@@ -130,18 +130,25 @@ struct AppSettings: Codable {
 struct UserSettings: Codable {
     let name: String
     let email: String
+    let workEmail: String?  // Configurable work email for calendar invites; falls back to `email`
     let companyDomain: String
     let companyDomains: [String]
 
     enum CodingKeys: String, CodingKey {
         case name
         case email
+        case workEmail = "work_email"
         case companyDomain = "company_domain"
         case companyDomains = "company_domains"
     }
 
     func isInternal(email: String) -> Bool {
         companyDomains.contains { email.hasSuffix("@\($0)") }
+    }
+
+    /// The email to use as default calendar invitee (work_email if set, else email)
+    var calendarEmail: String {
+        workEmail ?? email
     }
 }
 
@@ -288,6 +295,7 @@ struct NotificationConfig: Codable {
     let email: EmailConfig
     let push: PushConfig
     let slack: SlackConfig
+    let signal: SignalConfig?
 
     struct EmailConfig: Codable {
         let enabled: Bool
@@ -318,6 +326,18 @@ struct NotificationConfig: Codable {
             case enabled
             case webhookUrl = "webhook_url"
             case botToken = "bot_token"
+        }
+    }
+
+    struct SignalConfig: Codable {
+        let enabled: Bool
+        let phoneNumber: String      // User's phone number (e.g. "+15551234567")
+        let cliPath: String?          // Path to signal-cli binary (default: /opt/homebrew/bin/signal-cli)
+
+        enum CodingKeys: String, CodingKey {
+            case enabled
+            case phoneNumber = "phone_number"
+            case cliPath = "cli_path"
         }
     }
 }

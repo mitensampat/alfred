@@ -13,12 +13,26 @@ class CoachingEngine {
     private var cacheTimestamp: Date?
     private let cacheTTL: TimeInterval = 7200 // 2 hours
 
+    // Short-TTL cache for data sources to avoid redundant fetches when multiple skills
+    // request the same data source during a single generateCoachingCards() run
+    private var dataSourceCache: [String: (data: String, timestamp: Date)] = [:]
+    private let dataSourceCacheTTL: TimeInterval = 60 // 1 minute
+
     // Debug context: stores the raw context data that drove each card
     var lastDebugContext: [String: [String]] = [:]
     var lastGeneratedAt: Date?
 
     // Per-skill run results for QA/Preview (status, context, timestamp per skill)
     var lastSkillResults: [String: SkillRunResult] = [:]
+
+    /// Internal result from generateSkillCard — bundles the card with side-effect data
+    /// so that shared dictionary mutations happen serially, not from concurrent TaskGroup tasks.
+    private struct SkillCardOutput: Sendable {
+        let card: CoachingCard?
+        let skillId: String
+        let debugContext: [String]?
+        let result: SkillRunResult
+    }
 
     struct CoachingCard: Codable {
         let type: String        // "leverage", "relationship", "avoidance", "attention"
@@ -54,12 +68,79 @@ class CoachingEngine {
         self.alfredService = alfredService
     }
 
+    // MARK: - Disk Cache
+
+    private var alfredDataDir: String {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".alfred").path
+    }
+
+    private var cardsDiskPath: String {
+        "\(alfredDataDir)/coaching_cards_today.json"
+    }
+
+    /// Save coaching cards to disk with today's date and generation timestamp.
+    func saveCardsToDisk(_ cards: [CoachingCard]) {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let payload: [String: Any] = [
+            "date": dateFormatter.string(from: Date()),
+            "generatedAt": ISO8601DateFormatter().string(from: Date()),
+            "cards": cards.map { card -> [String: Any] in
+                var dict: [String: Any] = ["type": card.type, "label": card.label, "insight": card.insight]
+                if let ctx = card.context { dict["context"] = ctx }
+                return dict
+            }
+        ]
+        do {
+            let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted])
+            try data.write(to: URL(fileURLWithPath: cardsDiskPath), options: .atomic)
+            print("[CoachingEngine] Coaching cards saved to disk (\(cards.count) cards)")
+        } catch {
+            print("[CoachingEngine] Failed to save coaching cards to disk: \(error)")
+        }
+    }
+
+    /// Load same-day coaching cards from disk. Returns nil if absent, stale (>4h), or different day.
+    func loadCardsFromDisk() -> [CoachingCard]? {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let todayStr = dateFormatter.string(from: Date())
+        guard FileManager.default.fileExists(atPath: cardsDiskPath),
+              let data = try? Data(contentsOf: URL(fileURLWithPath: cardsDiskPath)),
+              let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        guard let date = payload["date"] as? String, date == todayStr else { return nil }
+        if let genStr = payload["generatedAt"] as? String,
+           let genAt = ISO8601DateFormatter().date(from: genStr),
+           Date().timeIntervalSince(genAt) > 14400 { return nil }
+        guard let cardsRaw = payload["cards"] as? [[String: Any]] else { return nil }
+        let cards: [CoachingCard] = cardsRaw.compactMap { dict in
+            guard let type = dict["type"] as? String,
+                  let label = dict["label"] as? String,
+                  let insight = dict["insight"] as? String else { return nil }
+            return CoachingCard(type: type, label: label, insight: insight, context: dict["context"] as? String)
+        }
+        guard !cards.isEmpty else { return nil }
+        print("[CoachingEngine] Loaded \(cards.count) coaching cards from disk cache")
+        return cards
+    }
+
     func generateCoachingCards(forceRefresh: Bool = false) async throws -> [CoachingCard] {
         // Return cached if fresh (unless force-refreshing)
         if !forceRefresh, let cached = cachedCards, let ts = cacheTimestamp,
            Date().timeIntervalSince(ts) < cacheTTL {
             return cached
         }
+
+        // Check disk cache (pre-generated during morning briefing cadence)
+        if !forceRefresh, let diskCards = loadCardsFromDisk() {
+            cachedCards = diskCards
+            cacheTimestamp = Date()
+            lastGeneratedAt = Date()
+            return diskCards
+        }
+
+        // Clear per-source cache at the start of each generation cycle
+        dataSourceCache.removeAll()
 
         let weekday = Calendar.current.component(.weekday, from: Date())
         let isWeekendOrFriday = weekday == 1 || weekday == 6 || weekday == 7  // Sun=1, Fri=6, Sat=7
@@ -90,19 +171,21 @@ class CoachingEngine {
 
         let skillsToRun = installedToRun + userSkillsToRun
 
-        // Run all skills concurrently
+        // Run all skills concurrently — dictionary mutations happen serially in the for-await loop
         var cards: [CoachingCard] = []
-        await withTaskGroup(of: (Int, CoachingCard?).self) { group in
+        await withTaskGroup(of: (Int, SkillCardOutput).self) { group in
             for (index, skill) in skillsToRun.enumerated() {
                 group.addTask {
-                    let card = await self.generateSkillCard(skill)
-                    return (index, card)
+                    let output = await self.generateSkillCard(skill)
+                    return (index, output)
                 }
             }
 
             var indexedCards: [(Int, CoachingCard)] = []
-            for await (index, card) in group {
-                if let card = card {
+            for await (index, output) in group {
+                // Apply side effects serially (safe — only one iteration at a time)
+                applySkillOutput(output)
+                if let card = output.card {
                     indexedCards.append((index, card))
                 }
             }
@@ -115,13 +198,19 @@ class CoachingEngine {
         cachedCards = cards
         cacheTimestamp = Date()
         lastGeneratedAt = Date()
+
+        // Persist to disk for instant loading after process restarts
+        saveCardsToDisk(cards)
+
         return cards
     }
 
     // MARK: - Skill Card Generation
 
-    /// Generate a coaching card from a skill definition (installed or user-authored)
-    private func generateSkillCard(_ skill: SkillDefinition) async -> CoachingCard? {
+    /// Generate a coaching card from a skill definition (installed or user-authored).
+    /// Returns a SkillCardOutput with all data — does NOT mutate shared dictionaries.
+    /// Callers must apply the output to lastDebugContext/lastSkillResults serially.
+    private func generateSkillCard(_ skill: SkillDefinition) async -> SkillCardOutput {
         let context = await gatherContextForSkill(dataSources: skill.dataSources)
 
         // If no context available, check for fallback text
@@ -134,16 +223,16 @@ class CoachingEngine {
                     insight: fallback,
                     context: nil
                 )
-                lastSkillResults[skill.id] = SkillRunResult(
-                    card: card, status: "fallback", context: [], error: nil, generatedAt: Date()
+                return SkillCardOutput(
+                    card: card, skillId: skill.id, debugContext: nil,
+                    result: SkillRunResult(card: card, status: "fallback", context: [], error: nil, generatedAt: Date())
                 )
-                return card
             }
             print("[CoachingEngine] Skill '\(skill.name)': no context available for data sources \(skill.dataSources)")
-            lastSkillResults[skill.id] = SkillRunResult(
-                card: nil, status: "no_context", context: [], error: nil, generatedAt: Date()
+            return SkillCardOutput(
+                card: nil, skillId: skill.id, debugContext: nil,
+                result: SkillRunResult(card: nil, status: "no_context", context: [], error: nil, generatedAt: Date())
             )
-            return nil
         }
 
         let contextLines = context.components(separatedBy: "\n")
@@ -176,19 +265,16 @@ class CoachingEngine {
                         insight: fallback,
                         context: nil
                     )
-                    lastSkillResults[skill.id] = SkillRunResult(
-                        card: card, status: "fallback", context: contextLines, error: nil, generatedAt: Date()
+                    return SkillCardOutput(
+                        card: card, skillId: skill.id, debugContext: nil,
+                        result: SkillRunResult(card: card, status: "fallback", context: contextLines, error: nil, generatedAt: Date())
                     )
-                    return card
                 }
-                lastSkillResults[skill.id] = SkillRunResult(
-                    card: nil, status: "error", context: contextLines, error: "Empty LLM response", generatedAt: Date()
+                return SkillCardOutput(
+                    card: nil, skillId: skill.id, debugContext: nil,
+                    result: SkillRunResult(card: nil, status: "error", context: contextLines, error: "Empty LLM response", generatedAt: Date())
                 )
-                return nil
             }
-
-            // Fixed: was "skill_\(skill.id)" which never matched the reader using card.type
-            lastDebugContext[skill.id] = [context]
 
             let card = CoachingCard(
                 type: skill.id,
@@ -196,26 +282,60 @@ class CoachingEngine {
                 insight: response.trimmingCharacters(in: .whitespacesAndNewlines),
                 context: nil
             )
-            lastSkillResults[skill.id] = SkillRunResult(
-                card: card, status: "success", context: contextLines, error: nil, generatedAt: Date()
+            return SkillCardOutput(
+                card: card, skillId: skill.id, debugContext: [context],
+                result: SkillRunResult(card: card, status: "success", context: contextLines, error: nil, generatedAt: Date())
             )
-            return card
         } catch {
             print("[CoachingEngine] Skill '\(skill.name)' failed: \(error)")
-            lastSkillResults[skill.id] = SkillRunResult(
-                card: nil, status: "error", context: contextLines, error: error.localizedDescription, generatedAt: Date()
+            return SkillCardOutput(
+                card: nil, skillId: skill.id, debugContext: nil,
+                result: SkillRunResult(card: nil, status: "error", context: contextLines, error: error.localizedDescription, generatedAt: Date())
             )
-            return nil
+        }
+    }
+
+    /// Apply a SkillCardOutput's side effects to shared dictionaries.
+    /// Must be called serially (from the for-await loop, not from inside TaskGroup tasks).
+    private func applySkillOutput(_ output: SkillCardOutput) {
+        lastSkillResults[output.skillId] = output.result
+        if let debugCtx = output.debugContext {
+            lastDebugContext[output.skillId] = debugCtx
         }
     }
 
     /// Gather context data for a skill based on its requested data sources.
     /// Reuses the same data-fetching logic as the built-in cards.
+    /// Uses a short-TTL cache so multiple skills requesting the same data source
+    /// in the same generation cycle don't trigger redundant API/DB calls.
     private func gatherContextForSkill(dataSources: [String]) async -> String {
         var contextParts: [String] = []
 
         for source in dataSources {
-            switch source {
+            // Check cache first: if another skill already fetched this source recently, reuse it
+            if let cached = dataSourceCache[source],
+               Date().timeIntervalSince(cached.timestamp) < dataSourceCacheTTL {
+                if !cached.data.isEmpty {
+                    contextParts.append(cached.data)
+                }
+                continue
+            }
+
+            let sourceData = await fetchSingleDataSource(source)
+            dataSourceCache[source] = (data: sourceData, timestamp: Date())
+            if !sourceData.isEmpty {
+                contextParts.append(sourceData)
+            }
+        }
+
+        return contextParts.joined(separator: "\n")
+    }
+
+    /// Fetch a single data source by name. Returns the context string for that source.
+    private func fetchSingleDataSource(_ source: String) async -> String {
+        var contextParts: [String] = []
+
+        switch source {
             case "tasks":
                 if let orchestrator = alfredService.orchestrator {
                     do {
@@ -417,10 +537,18 @@ class CoachingEngine {
                             contextParts.append("- [\(task.priority?.rawValue ?? "None")] \(task.title) (due: \(due))\(overdueMark)")
                         }
 
-                        // Open / completed counts for weekly review
-                        let completed = tasks.filter { $0.status == .done }
-                        let open = tasks.filter { $0.status != .done }
-                        contextParts.append("\nOpen: \(open.count), Completed visible: \(completed.count)")
+                        // Recently completed tasks (separate query — active tasks exclude Done)
+                        let recentlyCompleted = try await orchestrator.notionServicePublic.queryRecentlyCompletedTasks(days: 7)
+                        contextParts.append("\nCompleted this week: \(recentlyCompleted.count)")
+                        if !recentlyCompleted.isEmpty {
+                            contextParts.append("Recently completed tasks:")
+                            for task in recentlyCompleted.prefix(8) {
+                                let pri = task.priority?.rawValue ?? "None"
+                                contextParts.append("- [DONE] [\(pri)] \(task.title)")
+                            }
+                        }
+
+                        contextParts.append("Open: \(tasks.count)")
                         contextParts.append("Stale (14+ days): \(stale.count)")
                     } catch {
                         contextParts.append("Tasks (detailed): unavailable")
@@ -544,9 +672,99 @@ class CoachingEngine {
             default:
                 break
             }
-        }
 
         return contextParts.joined(separator: "\n")
+    }
+
+    // MARK: - Streaming Card Generation
+
+    /// Stream coaching cards one at a time as they complete.
+    /// Each card is yielded via the onCard callback as soon as its LLM call finishes.
+    /// Cache is updated after all cards complete.
+    func streamCoachingCards(
+        forceRefresh: Bool = false,
+        onCard: @escaping (CoachingCard, SkillRunResult) -> Void
+    ) async throws {
+        // If cached and not forcing refresh, emit all cached cards immediately
+        if !forceRefresh, let cached = cachedCards, let ts = cacheTimestamp,
+           Date().timeIntervalSince(ts) < cacheTTL {
+            for card in cached {
+                let result = lastSkillResults[card.type] ?? SkillRunResult(
+                    card: card, status: "cached", context: [], error: nil, generatedAt: ts
+                )
+                onCard(card, result)
+            }
+            return
+        }
+
+        // Clear per-source cache at start
+        dataSourceCache.removeAll()
+
+        let weekday = Calendar.current.component(.weekday, from: Date())
+        let isWeekendOrFriday = weekday == 1 || weekday == 6 || weekday == 7
+
+        let allSkills = SkillLoader.shared.getEnabledSkills()
+        let installedSkills = allSkills.filter { $0.origin == .installed }
+        let userSkills = allSkills.filter { $0.origin == .user }
+
+        let installedToRun = installedSkills.filter { skill in
+            skill.frequency == "daily" || (skill.frequency == "weekly" && isWeekendOrFriday)
+        }
+        let userDailySkills = userSkills.filter { $0.frequency == "daily" }
+        let userWeeklySkills = userSkills.filter { $0.frequency == "weekly" }
+
+        var userSkillsToRun = Array(userDailySkills.prefix(5))
+        if isWeekendOrFriday {
+            let remaining = 5 - userSkillsToRun.count
+            if remaining > 0 {
+                userSkillsToRun.append(contentsOf: userWeeklySkills.prefix(remaining))
+            }
+        }
+
+        let skillsToRun = installedToRun + userSkillsToRun
+
+        // Pre-fetch shared data sources CONCURRENTLY before card generation
+        // This prevents redundant API calls when multiple skills need the same data
+        let allDataSources = Array(Set(skillsToRun.flatMap { $0.dataSources }))
+        await withTaskGroup(of: (String, String).self) { prefetchGroup in
+            for source in allDataSources {
+                prefetchGroup.addTask {
+                    let data = await self.fetchSingleDataSource(source)
+                    return (source, data)
+                }
+            }
+            for await (source, data) in prefetchGroup {
+                dataSourceCache[source] = (data: data, timestamp: Date())
+            }
+        }
+
+        // Run all skills concurrently, streaming each card as it completes
+        // Dictionary mutations happen serially in the for-await loop (not inside TaskGroup tasks)
+        var allCards: [(Int, CoachingCard)] = []
+
+        await withTaskGroup(of: (Int, SkillCardOutput).self) { group in
+            for (index, skill) in skillsToRun.enumerated() {
+                group.addTask {
+                    let output = await self.generateSkillCard(skill)
+                    return (index, output)
+                }
+            }
+
+            for await (index, output) in group {
+                // Apply side effects serially (safe — only one iteration at a time)
+                applySkillOutput(output)
+                if let card = output.card {
+                    allCards.append((index, card))
+                    onCard(card, output.result)
+                }
+            }
+        }
+
+        // Update cache with all completed cards (sorted by original order)
+        let sortedCards = allCards.sorted { $0.0 < $1.0 }.map { $0.1 }
+        cachedCards = sortedCards
+        cacheTimestamp = Date()
+        lastGeneratedAt = Date()
     }
 
     // MARK: - Single Skill Refresh (for QA/Preview)
@@ -558,10 +776,11 @@ class CoachingEngine {
             return SkillRunResult(card: nil, status: "error", context: [], error: "Skill not found: \(id)", generatedAt: Date())
         }
 
-        let card = await generateSkillCard(skill)
+        let output = await generateSkillCard(skill)
+        applySkillOutput(output)
 
         // Update cached cards in-place (replace matching card by type, or append)
-        if let card = card {
+        if let card = output.card {
             if var cached = cachedCards {
                 if let idx = cached.firstIndex(where: { $0.type == id }) {
                     cached[idx] = card

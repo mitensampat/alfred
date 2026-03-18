@@ -11,7 +11,9 @@ class IntentExecutor {
     }
 
     /// Execute a user intent and return a conversational response
-    func execute(_ intent: UserIntent) async throws -> IntentExecutionResult {
+    /// - Parameter rawQuery: The original user message (may differ from intent.originalQuery which is LLM-rewritten)
+    func execute(_ intent: UserIntent, rawQuery: String? = nil) async throws -> IntentExecutionResult {
+        let effectiveQuery = rawQuery ?? intent.originalQuery
         switch (intent.action, intent.target) {
 
         // MARK: - Briefing Actions
@@ -60,10 +62,15 @@ class IntentExecutor {
             return formatCommitmentScanResponse(result, query: intent.originalQuery)
 
         case (.list, .commitments), (.find, .commitments):
-            let commitments = try await fetchCommitments(
+            var commitments = try await fetchCommitments(
                 type: intent.filters.commitmentType,
                 contactName: intent.filters.contactName
             )
+            // Filter to overdue only if requested
+            let queryLower = intent.originalQuery.lowercased()
+            if queryLower.contains("overdue") || queryLower.contains("behind") {
+                commitments = commitments.filter { $0.isOverdue }
+            }
             return formatCommitmentsListResponse(commitments, query: intent.originalQuery)
 
         // MARK: - Todo Actions
@@ -77,21 +84,31 @@ class IntentExecutor {
             return formatTaskListResponse(todos, query: intent.originalQuery)
 
         // MARK: - Task Actions
-        case (.list, .tasks):
+        case (.list, .tasks), (.check, .tasks), (.search, .tasks), (.find, .tasks), (.generate, .tasks), (.summarize, .tasks), (.analyze, .tasks):
+            // Check if user is asking about completed/done tasks
+            let queryLower = effectiveQuery.lowercased()
+            let isCompletedQuery = queryLower.contains("completed") || queryLower.contains("finished") || queryLower.contains("done") || queryLower.contains("closed") || queryLower.contains("complete")
+            if isCompletedQuery {
+                let days = intent.filters.lookbackDays ?? 7
+                print("📋 [IntentExecutor] Completed tasks query detected (effectiveQuery: '\(effectiveQuery)', days: \(days))")
+                let completed = try await orchestrator.notionServicePublic.queryRecentlyCompletedTasks(days: days)
+                print("📋 [IntentExecutor] Found \(completed.count) completed tasks")
+                return formatTaskListResponse(completed, query: intent.originalQuery, isCompleted: true)
+            }
+            // For search/find, use fuzzy search if search term provided
+            if (intent.action == .search || intent.action == .find),
+               let searchTerm = intent.filters.taskSearchTerm, !searchTerm.isEmpty {
+                let tasks = try await orchestrator.notionServicePublic.findTasksByFuzzyTitle(searchTerm)
+                return formatTaskSearchResponse(tasks, searchTerm: searchTerm, query: intent.originalQuery)
+            }
+            // For check, show stats
+            if intent.action == .check {
+                let stats = TaskLifecycleTracker.shared.getStats()
+                return formatTaskStatsResponse(stats, query: intent.originalQuery)
+            }
             let typeFilter: TaskItem.TaskType? = intent.filters.taskType.flatMap { TaskItem.TaskType(rawValue: $0) }
             let tasks = try await orchestrator.notionServicePublic.queryActiveTasks(type: typeFilter)
             return formatTaskListResponse(tasks, query: intent.originalQuery)
-
-        case (.search, .tasks), (.find, .tasks):
-            guard let searchTerm = intent.filters.taskSearchTerm, !searchTerm.isEmpty else {
-                return IntentExecutionResult(
-                    data: [:] as [String: Any],
-                    conversationalResponse: "What task are you looking for? Give me a name or keyword.",
-                    structuredData: nil
-                )
-            }
-            let tasks = try await orchestrator.notionServicePublic.findTasksByFuzzyTitle(searchTerm)
-            return formatTaskSearchResponse(tasks, searchTerm: searchTerm, query: intent.originalQuery)
 
         case (.create, .tasks), (.create, .todos):
             return try await handleCreateTask(intent: intent)
@@ -102,18 +119,21 @@ class IntentExecutor {
         case (.update, .tasks), (.update, .commitments):
             return try await handleTaskUpdate(intent: intent)
 
-        case (.check, .tasks):
-            let stats = TaskLifecycleTracker.shared.getStats()
-            return formatTaskStatsResponse(stats, query: intent.originalQuery)
-
         // MARK: - Calendar Event Creation
         case (.create, .calendar):
             return try await handleCreateCalendarEvent(intent: intent)
 
-        // MARK: - Commitment Actions (check overdue)
+        // MARK: - Commitment Actions (check — route through list for unified filtering)
         case (.check, .commitments):
-            let overdue = try await orchestrator.notionServicePublic.queryOverdueCommitmentsFromTasks()
-            return formatOverdueCommitmentsResponse(overdue, query: intent.originalQuery)
+            var commitments = try await fetchCommitments(
+                type: intent.filters.commitmentType,
+                contactName: intent.filters.contactName
+            )
+            let queryLower = intent.originalQuery.lowercased()
+            if queryLower.contains("overdue") || queryLower.contains("behind") {
+                commitments = commitments.filter { $0.isOverdue }
+            }
+            return formatCommitmentsListResponse(commitments, query: intent.originalQuery)
 
         // MARK: - Attention Check
         case (.check, .attention), (.generate, .attention):
@@ -654,44 +674,61 @@ class IntentExecutor {
         return IntentExecutionResult(data: drafts, conversationalResponse: "Found \(drafts.count) drafts", structuredData: nil)
     }
 
-    private func formatTaskListResponse(_ tasks: [TaskItem], query: String) -> IntentExecutionResult {
+    private func formatTaskListResponse(_ tasks: [TaskItem], query: String, isCompleted: Bool = false) -> IntentExecutionResult {
+        let label = isCompleted ? "completed" : "active"
+
         if tasks.isEmpty {
+            let emptyMsg = isCompleted
+                ? "No tasks completed in the last week."
+                : "You have no active tasks right now."
             return IntentExecutionResult(
                 data: tasks,
-                conversationalResponse: "You have no active tasks right now.",
+                conversationalResponse: emptyMsg,
                 structuredData: nil
             )
         }
 
-        var response = "You have \(tasks.count) active task\(tasks.count == 1 ? "" : "s"):\n\n"
+        var response = isCompleted
+            ? "You have \(tasks.count) recently completed task\(tasks.count == 1 ? "" : "s"):\n\n"
+            : "You have \(tasks.count) active task\(tasks.count == 1 ? "" : "s"):\n\n"
 
-        // Group by priority for better readability
-        let overdue = tasks.filter { $0.isOverdue }
-        let rest = tasks.filter { !$0.isOverdue }
-
-        if !overdue.isEmpty {
-            response += "**Overdue (\(overdue.count)):**\n"
-            for task in overdue.prefix(5) {
-                response += "- \(task.title)"
+        if isCompleted {
+            // For completed tasks, just list them (no overdue grouping)
+            for task in tasks.prefix(15) {
+                response += "- ✅ \(task.title)"
                 if let p = task.priority { response += " [\(p.rawValue)]" }
                 response += "\n"
             }
-            if overdue.count > 5 { response += "- ...and \(overdue.count - 5) more\n" }
-            response += "\n"
-        }
+            if tasks.count > 15 { response += "\n...and \(tasks.count - 15) more" }
+        } else {
+            // Group by priority for better readability
+            let overdue = tasks.filter { $0.isOverdue }
+            let rest = tasks.filter { !$0.isOverdue }
 
-        let showing = rest.prefix(10)
-        for task in showing {
-            response += "- \(task.title)"
-            if let p = task.priority { response += " [\(p.rawValue)]" }
-            if let due = task.dueDate {
-                let fmt = DateFormatter()
-                fmt.dateStyle = .short
-                response += " (due \(fmt.string(from: due)))"
+            if !overdue.isEmpty {
+                response += "**Overdue (\(overdue.count)):**\n"
+                for task in overdue.prefix(5) {
+                    response += "- \(task.title)"
+                    if let p = task.priority { response += " [\(p.rawValue)]" }
+                    response += "\n"
+                }
+                if overdue.count > 5 { response += "- ...and \(overdue.count - 5) more\n" }
+                response += "\n"
             }
-            response += "\n"
+
+            let showing = rest.prefix(10)
+            for task in showing {
+                response += "- \(task.title)"
+                if let p = task.priority { response += " [\(p.rawValue)]" }
+                if let due = task.dueDate {
+                    let fmt = DateFormatter()
+                    fmt.dateStyle = .short
+                    response += " (due \(fmt.string(from: due)))"
+                }
+                response += "\n"
+            }
+            if rest.count > 10 { response += "\n...and \(rest.count - 10) more" }
         }
-        if rest.count > 10 { response += "\n...and \(rest.count - 10) more" }
 
         return IntentExecutionResult(data: tasks, conversationalResponse: response, structuredData: nil)
     }
@@ -1135,6 +1172,17 @@ class IntentExecutor {
             )
         }
 
+        // Bug 4 fix: Reject events in the past
+        if startTime < Date() {
+            let dateFmt = DateFormatter()
+            dateFmt.dateFormat = "EEE, MMM d 'at' h:mm a"
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "That time (\(dateFmt.string(from: startTime))) is in the past. When should I block it instead?",
+                structuredData: nil
+            )
+        }
+
         let durationMinutes = filters.eventDurationMinutes ?? 30
         let endTime = startTime.addingTimeInterval(Double(durationMinutes) * 60)
 
@@ -1167,42 +1215,147 @@ class IntentExecutor {
             )
         }
 
-        // Create the event
+        // --- Stage A: Availability check (use RAW events, not filtered) ---
+        let timeFmt = DateFormatter()
+        timeFmt.dateFormat = "h:mm a"
+        let dateFmt = DateFormatter()
+        dateFmt.dateFormat = "EEE, MMM d"
+        let targetDateStr = dateFmt.string(from: startTime)
+
+        do {
+            // Bug 2 fix: fetch raw events from Google Calendar directly (bypasses block/short event filtering)
+            let rawEvents = try await calendarService.fetchEvents(for: startTime)
+
+            // Check if proposed time overlaps with any existing event (skip all-day events)
+            let conflicts = rawEvents.filter { event in
+                !(endTime <= event.startTime || startTime >= event.endTime) && !event.isAllDay
+            }
+
+            if !conflicts.isEmpty {
+                let conflictNames = conflicts.map { $0.title }.joined(separator: ", ")
+
+                // Find next available slot after the proposed time on the same day
+                let requiredDuration = endTime.timeIntervalSince(startTime)
+                let dayEnd = Calendar.current.date(bySettingHour: 21, minute: 0, second: 0, of: startTime)!
+                let sortedEvents = rawEvents.filter { !$0.isAllDay && $0.endTime > startTime && $0.startTime < dayEnd }
+                    .sorted { $0.startTime < $1.startTime }
+
+                // Walk through events to find a gap that fits
+                var cursor = startTime
+                var suggestion: Date? = nil
+                for event in sortedEvents {
+                    if event.startTime > cursor {
+                        let gap = event.startTime.timeIntervalSince(cursor)
+                        if gap >= requiredDuration {
+                            suggestion = cursor
+                            break
+                        }
+                    }
+                    cursor = max(cursor, event.endTime)
+                }
+                // Check after last event
+                if suggestion == nil && cursor < dayEnd && dayEnd.timeIntervalSince(cursor) >= requiredDuration {
+                    suggestion = cursor
+                }
+
+                // Bug 3 fix: reference the actual target date, not "today"
+                var response = "You're blocked at that time — '\(conflictNames)' is on your calendar."
+                if let freeAt = suggestion {
+                    response += " You're free at \(timeFmt.string(from: freeAt)) — want me to book it then instead?"
+                } else {
+                    response += " I don't see a free slot on \(targetDateStr) that fits. Want to try a different day?"
+                }
+
+                return IntentExecutionResult(
+                    data: [:] as [String: Any],
+                    conversationalResponse: response,
+                    structuredData: nil
+                )
+            }
+        } catch {
+            // If availability check fails, proceed anyway (don't block event creation)
+            print("⚠️ Availability check failed, proceeding with creation: \(error)")
+        }
+
+        // --- Stage B: Collect attendee emails ---
+        var allEmails: [String] = filters.eventAttendeeEmails ?? []
+
+        // Always add the user's work email as default invitee
+        let userCalendarEmail = config.user.calendarEmail
+        if !allEmails.map({ $0.lowercased() }).contains(userCalendarEmail.lowercased()) {
+            allEmails.append(userCalendarEmail)
+        }
+
+        // Deduplicate (case-insensitive)
+        var seen = Set<String>()
+        let uniqueEmails = allEmails.filter { email in
+            let lower = email.lowercased()
+            if seen.contains(lower) { return false }
+            seen.insert(lower)
+            return true
+        }
+
+        // Bug 1 fix: detect named attendees without emails
+        let namedAttendees = filters.eventAttendees ?? []
+        let providedEmails = filters.eventAttendeeEmails ?? []
+        let unresolvedNames = namedAttendees.filter { name in
+            // Consider unresolved if no email was explicitly provided for this person
+            !providedEmails.contains { $0.lowercased().contains(name.lowercased()) }
+        }
+
+        // --- Stage C: Create event with attendees ---
         let createdEvent = try await calendarService.createEvent(
             title: title,
             startTime: startTime,
             endTime: endTime,
             location: filters.eventLocation,
-            description: filters.eventDescription
+            description: filters.eventDescription,
+            attendees: uniqueEmails.isEmpty ? nil : uniqueEmails
         )
 
-        // Format times for display
-        let timeFmt = DateFormatter()
-        timeFmt.dateFormat = "h:mm a"
-        let dateFmt = DateFormatter()
-        dateFmt.dateFormat = "EEE, MMM d"
-
+        // --- Stage D: Build response ---
         let timeRange = "\(timeFmt.string(from: startTime)) – \(timeFmt.string(from: endTime))"
         let dateStr = dateFmt.string(from: startTime)
 
         var summary = "Created '\(title)' on \(dateStr), \(timeRange)"
         if let loc = filters.eventLocation { summary += " at \(loc)" }
         summary += "."
+
+        // Mention non-self invitees
+        let externalInvitees = uniqueEmails.filter { $0.lowercased() != userCalendarEmail.lowercased() }
+        if !externalInvitees.isEmpty {
+            summary += "\nInvite sent to: \(externalInvitees.joined(separator: ", "))"
+        }
+
+        // Bug 1 fix: prompt for unresolved attendee emails
+        let hasUnresolvedAttendees = !unresolvedNames.isEmpty
+        if hasUnresolvedAttendees {
+            let names = unresolvedNames.joined(separator: " and ")
+            summary += "\n\nWant to invite \(names)? Share their email\(unresolvedNames.count > 1 ? "s" : "") and I'll send the invite."
+        }
+
         summary += "\n\nShare this link so others can add it to their calendar:\n\(createdEvent.shareableLink)"
+
+        var structuredData: [String: Any] = [
+            "type": "calendar_create",
+            "title": title,
+            "date": dateStr,
+            "timeRange": timeRange,
+            "location": filters.eventLocation ?? "",
+            "shareableLink": createdEvent.shareableLink,
+            "htmlLink": createdEvent.htmlLink,
+            "success": true
+        ]
+        if hasUnresolvedAttendees {
+            structuredData["needsFollowUp"] = true
+            structuredData["unresolvedAttendees"] = unresolvedNames
+            structuredData["eventId"] = createdEvent.id
+        }
 
         return IntentExecutionResult(
             data: createdEvent,
             conversationalResponse: summary,
-            structuredData: [
-                "type": "calendar_create",
-                "title": title,
-                "date": dateStr,
-                "timeRange": timeRange,
-                "location": filters.eventLocation ?? "",
-                "shareableLink": createdEvent.shareableLink,
-                "htmlLink": createdEvent.htmlLink,
-                "success": true
-            ]
+            structuredData: structuredData
         )
     }
 }

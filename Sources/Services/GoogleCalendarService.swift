@@ -191,7 +191,8 @@ class GoogleCalendarService {
         startTime: Date,
         endTime: Date,
         location: String?,
-        description: String?
+        description: String?,
+        attendees: [String]? = nil  // email addresses to invite
     ) async throws -> CreatedEvent {
         guard let accessToken = accessToken else {
             throw CalendarError.notAuthenticated
@@ -215,6 +216,9 @@ class GoogleCalendarService {
         ]
         if let location = location { eventBody["location"] = location }
         if let description = description { eventBody["description"] = description }
+        if let attendees = attendees, !attendees.isEmpty {
+            eventBody["attendees"] = attendees.map { ["email": $0] }
+        }
 
         request.httpBody = try JSONSerialization.data(withJSONObject: eventBody)
 
@@ -222,7 +226,7 @@ class GoogleCalendarService {
 
         if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 401 {
             try await refreshAccessToken()
-            return try await createEvent(title: title, startTime: startTime, endTime: endTime, location: location, description: description)
+            return try await createEvent(title: title, startTime: startTime, endTime: endTime, location: location, description: description, attendees: attendees)
         }
 
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {

@@ -9,6 +9,8 @@ class ContactLearner {
     private let contactsFile: URL
     private var store: ContactStore
     private let queue = DispatchQueue(label: "com.alfred.contactlearner")
+    private var saveTimer: DispatchWorkItem?
+    private let saveDelay: TimeInterval = 5.0
 
     private init() {
         // Use ~/.config/alfred/memory/ for persistent storage
@@ -93,7 +95,7 @@ class ContactLearner {
             thread.lastSeen = today
 
             self.store.threads[key] = thread
-            self.saveContacts()
+            self.scheduleSave()
 
             print("📊 Recorded participation for \(threadName): \(userMessages)/\(totalMessages) messages, classification: \(thread.classification.rawValue)")
         }
@@ -132,7 +134,7 @@ class ContactLearner {
             thread.classification = self.classifyThread(thread)
 
             self.store.threads[key] = thread
-            self.saveContacts()
+            self.scheduleSave()
 
             print("📊 Recorded extraction result for \(thread.threadName): +\(itemsExtracted) extracted, +\(itemsRejected) rejected (total rejection rate: \(Int(thread.extractionStats.rejectionRate * 100))%)")
         }
@@ -243,6 +245,23 @@ class ContactLearner {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)
+    }
+
+    // MARK: - Debounced Save
+
+    private func scheduleSave() {
+        saveTimer?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.saveContacts()
+        }
+        saveTimer = workItem
+        queue.asyncAfter(deadline: .now() + saveDelay, execute: workItem)
+    }
+
+    /// Flush any pending debounced save immediately (for clean shutdown)
+    func flush() {
+        saveTimer?.cancel()
+        saveContacts()
     }
 
     // MARK: - Persistence

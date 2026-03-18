@@ -4,6 +4,8 @@ import SQLite3
 class WhatsAppReader {
     private let dbPath: String
     private var db: OpaquePointer?
+    /// Chat metadata (contactJid -> partnerName) built during fetchMessages to avoid a separate query
+    private var lastFetchChatNames: [String: String] = [:]
 
     init(dbPath: String) {
         self.dbPath = dbPath
@@ -36,6 +38,7 @@ class WhatsAppReader {
         }
 
         var messages: [Message] = []
+        lastFetchChatNames = [:] // Reset; will be rebuilt from query results
         // WhatsApp uses Core Data reference date (Jan 1, 2001)
         let referenceDate = Date(timeIntervalSinceReferenceDate: 0)
         let sinceTimestamp = since.timeIntervalSince(referenceDate)
@@ -60,6 +63,7 @@ class WhatsAppReader {
             AND ZWACHATSESSION.ZSESSIONTYPE IN (0, 1)
             AND LENGTH(COALESCE(ZWAMESSAGE.ZTEXT, '')) > 0
         ORDER BY ZWAMESSAGE.ZMESSAGEDATE DESC
+        LIMIT 5000
         """
 
         var statement: OpaquePointer?
@@ -79,6 +83,10 @@ class WhatsAppReader {
                 let toJid = sqlite3_column_text(statement, 5).flatMap { String(cString: $0) }
                 let contactJid = sqlite3_column_text(statement, 6).flatMap { String(cString: $0) } ?? "unknown"
                 let partnerName = sqlite3_column_text(statement, 7).flatMap { String(cString: $0) }
+                // Build chat name metadata from query results (avoids separate fetchChatMetadata query)
+                if let name = partnerName {
+                    lastFetchChatNames[contactJid] = name
+                }
                 let messageType = sqlite3_column_int(statement, 8)
                 let pushName = sqlite3_column_text(statement, 9).flatMap { String(cString: $0) }
                 let sessionType = sqlite3_column_int(statement, 10)
@@ -130,8 +138,66 @@ class WhatsAppReader {
 
     func fetchThreads(since: Date) throws -> [MessageThread] {
         let messages = try fetchMessages(since: since)
-        let chatMetadata = try fetchChatMetadata()
-        return groupMessagesIntoThreads(messages, chatMetadata: chatMetadata)
+        // Chat metadata (contactJid -> partnerName) is now built during fetchMessages
+        // from the same JOIN query, eliminating the need for a separate fetchChatMetadata() call
+        return groupMessagesIntoThreads(messages, chatMetadata: lastFetchChatNames)
+    }
+
+    /// Fuzzy search for thread names when exact LIKE match fails.
+    /// Splits search into words, scores each thread by how many words match, and returns top candidates.
+    func fuzzySearchThreadNames(_ searchName: String, limit: Int = 5) throws -> [(name: String, score: Double)] {
+        guard let db = db else { return [] }
+
+        let query = "SELECT ZPARTNERNAME FROM ZWACHATSESSION WHERE ZSESSIONTYPE IN (0, 1) AND ZPARTNERNAME IS NOT NULL"
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return [] }
+
+        let searchWords = searchName.lowercased().split(separator: " ").map(String.init)
+        var candidates: [(name: String, score: Double)] = []
+
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            guard let namePtr = sqlite3_column_text(stmt, 0) else { continue }
+            let name = String(cString: namePtr)
+            let nameLower = name.lowercased()
+
+            // Score: fraction of search words found in the name
+            var matched = 0
+            for word in searchWords {
+                if nameLower.contains(word) { matched += 1 }
+            }
+
+            guard matched > 0 else { continue }
+
+            let wordScore = Double(matched) / Double(searchWords.count)
+
+            // Bonus for edit distance on full string (catches typos like Techcruch vs Techcrunch)
+            let editBonus: Double
+            if searchWords.count == 1 {
+                editBonus = 0
+            } else {
+                // Check if the name is close to search (Levenshtein-like: shared prefix ratio)
+                let shorter = min(searchName.count, name.count)
+                let longer = max(searchName.count, name.count)
+                let commonPrefix = zip(searchName.lowercased(), nameLower).prefix(while: { $0 == $1 }).count
+                editBonus = shorter > 0 ? Double(commonPrefix) / Double(longer) * 0.3 : 0
+            }
+
+            let finalScore = wordScore + editBonus
+
+            // Require at least half the words to match
+            if wordScore >= 0.5 {
+                candidates.append((name: name, score: finalScore))
+            }
+        }
+
+        // Sort by score descending, then by name length ascending (prefer shorter/simpler names)
+        candidates.sort { a, b in
+            if abs(a.score - b.score) > 0.01 { return a.score > b.score }
+            return a.name.count < b.name.count
+        }
+
+        return Array(candidates.prefix(limit))
     }
 
     func fetchThreadByName(_ searchName: String, since: Date) throws -> MessageThread? {
@@ -268,38 +334,6 @@ class WhatsAppReader {
             unreadCount: 0,
             lastMessageDate: sortedMessages.first!.timestamp
         )
-    }
-
-    private func fetchChatMetadata() throws -> [String: String] {
-        guard let db = db else {
-            throw MessageReaderError.notConnected
-        }
-
-        var metadata: [String: String] = [:]
-
-        let query = """
-        SELECT ZCONTACTJID, ZPARTNERNAME
-        FROM ZWACHATSESSION
-        WHERE ZSESSIONTYPE IN (0, 1)
-        """
-
-        var statement: OpaquePointer?
-        defer {
-            sqlite3_finalize(statement)
-        }
-
-        if sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK {
-            while sqlite3_step(statement) == SQLITE_ROW {
-                let contactJid = sqlite3_column_text(statement, 0).flatMap { String(cString: $0) } ?? ""
-                let partnerName = sqlite3_column_text(statement, 1).flatMap { String(cString: $0) }
-
-                if let name = partnerName {
-                    metadata[contactJid] = name
-                }
-            }
-        }
-
-        return metadata
     }
 
     private func groupMessagesIntoThreads(_ messages: [Message], chatMetadata: [String: String]) -> [MessageThread] {

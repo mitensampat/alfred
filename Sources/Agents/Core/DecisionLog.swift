@@ -41,6 +41,9 @@ class DecisionLog {
         if sqlite3_open(dbPath, &db) != SQLITE_OK {
             throw DecisionLogError.databaseOpenFailed
         }
+
+        sqlite3_exec(db, "PRAGMA journal_mode=WAL", nil, nil, nil)
+        sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nil, nil, nil)
     }
 
     private func createTables() throws {
@@ -94,6 +97,10 @@ class DecisionLog {
                 throw DecisionLogError.tableCreationFailed
             }
         }
+
+        // Performance indexes
+        sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_decisions_timestamp ON decisions(timestamp)", nil, nil, nil)
+        sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_executions_decision_id ON executions(decision_id)", nil, nil, nil)
     }
 
     // MARK: - Recording Decisions

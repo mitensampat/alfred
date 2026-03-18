@@ -34,8 +34,13 @@ struct SkillDefinition: Codable {
         "tasks_detailed", "messages_detailed", "commitments_by_person"
     ])
 
-    /// Whether this skill can be edited/deleted by the user
-    var isEditable: Bool { origin == .user }
+    /// Whether this skill can be edited/deleted by the user.
+    /// User skills are fully editable. Tenet-only installed skills (frequency "none")
+    /// allow editing tenets only — they're configuration, not authored coaching cards.
+    var isEditable: Bool { origin == .user || isTenetOnly }
+
+    /// Whether this is a tenet-only skill (no coaching card, just tenets injected into overlays)
+    var isTenetOnly: Bool { frequency == "none" && dataSources.isEmpty }
 
     /// Convert to API-friendly dictionary
     func toDictionary() -> [String: Any] {

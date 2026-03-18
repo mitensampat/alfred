@@ -169,10 +169,12 @@ struct Cadence: Codable, Identifiable {
     var enabled: Bool
     var isBuiltIn: Bool
     var createdAt: Date
-    var lastRunDate: String?               // "yyyy-MM-dd" for daily/weekly dedup
-    var lastRunTimestamp: String?           // ISO8601 for display
+    var lastRunDate: String?               // "yyyy-MM-dd" for daily/weekly dedup (scheduled runs only)
+    var lastRunTimestamp: String?           // ISO8601 for display (scheduled runs only)
+    var lastManualRunTimestamp: String?     // ISO8601 for display (manual API runs — does NOT suppress scheduler)
     var failureCooldownUntil: Date?        // Don't retry until this time
     var catchUpWindowHours: Int
+    var weeklyCatchUpDays: Int             // How many days after the scheduled day to still catch up (default 2)
     var notifyOnSuccess: Bool
     var emailOnSuccess: Bool
 
@@ -184,18 +186,43 @@ struct Cadence: Codable, Identifiable {
         case createdAt = "created_at"
         case lastRunDate = "last_run_date"
         case lastRunTimestamp = "last_run_timestamp"
+        case lastManualRunTimestamp = "last_manual_run_timestamp"
         case failureCooldownUntil = "failure_cooldown_until"
         case catchUpWindowHours = "catch_up_window_hours"
+        case weeklyCatchUpDays = "weekly_catch_up_days"
         case notifyOnSuccess = "notify_on_success"
         case emailOnSuccess = "email_on_success"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        icon = try container.decode(String.self, forKey: .icon)
+        actionType = try container.decode(CadenceActionType.self, forKey: .actionType)
+        params = try container.decode([String: JSONValue].self, forKey: .params)
+        schedule = try container.decode(CadenceSchedule.self, forKey: .schedule)
+        enabled = try container.decode(Bool.self, forKey: .enabled)
+        isBuiltIn = try container.decode(Bool.self, forKey: .isBuiltIn)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        lastRunDate = try container.decodeIfPresent(String.self, forKey: .lastRunDate)
+        lastRunTimestamp = try container.decodeIfPresent(String.self, forKey: .lastRunTimestamp)
+        lastManualRunTimestamp = try container.decodeIfPresent(String.self, forKey: .lastManualRunTimestamp)
+        failureCooldownUntil = try container.decodeIfPresent(Date.self, forKey: .failureCooldownUntil)
+        catchUpWindowHours = try container.decodeIfPresent(Int.self, forKey: .catchUpWindowHours) ?? 3
+        weeklyCatchUpDays = try container.decodeIfPresent(Int.self, forKey: .weeklyCatchUpDays) ?? 2
+        notifyOnSuccess = try container.decode(Bool.self, forKey: .notifyOnSuccess)
+        emailOnSuccess = try container.decode(Bool.self, forKey: .emailOnSuccess)
     }
 
     init(id: String, name: String, icon: String, actionType: CadenceActionType,
          params: [String: JSONValue] = [:], schedule: CadenceSchedule,
          enabled: Bool = true, isBuiltIn: Bool = false,
          createdAt: Date = Date(), lastRunDate: String? = nil,
-         lastRunTimestamp: String? = nil, failureCooldownUntil: Date? = nil,
-         catchUpWindowHours: Int = 3, notifyOnSuccess: Bool = true,
+         lastRunTimestamp: String? = nil, lastManualRunTimestamp: String? = nil,
+         failureCooldownUntil: Date? = nil,
+         catchUpWindowHours: Int = 3, weeklyCatchUpDays: Int = 2,
+         notifyOnSuccess: Bool = true,
          emailOnSuccess: Bool = false) {
         self.id = id
         self.name = name
@@ -208,8 +235,10 @@ struct Cadence: Codable, Identifiable {
         self.createdAt = createdAt
         self.lastRunDate = lastRunDate
         self.lastRunTimestamp = lastRunTimestamp
+        self.lastManualRunTimestamp = lastManualRunTimestamp
         self.failureCooldownUntil = failureCooldownUntil
         self.catchUpWindowHours = catchUpWindowHours
+        self.weeklyCatchUpDays = weeklyCatchUpDays
         self.notifyOnSuccess = notifyOnSuccess
         self.emailOnSuccess = emailOnSuccess
     }
@@ -243,6 +272,8 @@ struct Cadence: Codable, Identifiable {
         dict["schedule_display"] = schedule.displayText
         dict["last_run_date"] = lastRunDate ?? NSNull()
         dict["last_run_timestamp"] = lastRunTimestamp ?? NSNull()
+        dict["last_manual_run_timestamp"] = lastManualRunTimestamp ?? NSNull()
+        dict["weekly_catch_up_days"] = weeklyCatchUpDays
 
         return dict
     }

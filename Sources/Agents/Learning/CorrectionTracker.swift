@@ -8,6 +8,9 @@ class CorrectionTracker {
     private let baseDirectory: URL
     private let correctionsFile: URL
     private var store: CorrectionStore
+    private let queue = DispatchQueue(label: "com.alfred.correctiontracker")
+    private var saveTimer: DispatchWorkItem?
+    private let saveDelay: TimeInterval = 5.0
 
     private init() {
         // Use ~/.config/alfred/memory/ for persistent storage
@@ -51,7 +54,7 @@ class CorrectionTracker {
         // Keep only last 100 corrections per type
         trimCorrections()
 
-        saveCorrections()
+        scheduleSave()
 
         print("📝 Recorded false positive: \(title)")
     }
@@ -79,7 +82,7 @@ class CorrectionTracker {
 
         store.corrections.append(correction)
         trimCorrections()
-        saveCorrections()
+        scheduleSave()
 
         print("📝 Recorded edit: \(originalTitle) → \(editedTitle ?? originalTitle)")
     }
@@ -163,6 +166,23 @@ class CorrectionTracker {
             edits: edits,
             byItemType: byType
         )
+    }
+
+    // MARK: - Debounced Save
+
+    private func scheduleSave() {
+        saveTimer?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.saveCorrections()
+        }
+        saveTimer = workItem
+        queue.asyncAfter(deadline: .now() + saveDelay, execute: workItem)
+    }
+
+    /// Flush any pending debounced save immediately (for clean shutdown)
+    func flush() {
+        saveTimer?.cancel()
+        saveCorrections()
     }
 
     // MARK: - Persistence

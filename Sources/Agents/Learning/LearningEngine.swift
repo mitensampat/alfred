@@ -36,6 +36,9 @@ class LearningEngine {
         if sqlite3_open(dbPath, &db) != SQLITE_OK {
             throw LearningError.databaseOpenFailed
         }
+
+        sqlite3_exec(db, "PRAGMA journal_mode=WAL", nil, nil, nil)
+        sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nil, nil, nil)
     }
 
     private func createTables() throws {
@@ -90,6 +93,10 @@ class LearningEngine {
                 throw LearningError.tableCreationFailed
             }
         }
+
+        // Performance indexes
+        sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_patterns_lookup ON patterns(agent_type, action_type, context_hash)", nil, nil, nil)
+        sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_context_signals_pattern ON context_signals(pattern_id)", nil, nil, nil)
     }
 
     // MARK: - Feedback Recording

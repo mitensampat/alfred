@@ -12,7 +12,8 @@
     <link rel="manifest" href="/manifest.json">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=Inter:wght@400;500;600&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=Inter:wght@400;500;600&display=swap"></noscript>
     <style>
         /* ══════════════════════════════════════
            DESIGN SYSTEM — "The Walk"
@@ -112,6 +113,9 @@
         [data-theme="dark"] .user-bubble { background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
         [data-theme="dark"] .send-btn { background: var(--coach); color: white; }
         [data-theme="dark"] .pill-primary { background: var(--coach); color: white; border-color: var(--coach); }
+        [data-theme="dark"] .capability-card { background: var(--surface); border-color: var(--line); }
+        [data-theme="dark"] .cap-pill-selected { background: var(--coach); color: white; border-color: var(--coach); }
+        [data-theme="dark"] .cap-contact-input { background: var(--surface-sunken); border-color: var(--line); color: var(--ink); }
         [data-theme="dark"] .toggle::after { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4); }
         [data-theme="dark"] .auth-card { background: var(--surface); border-color: var(--line); }
         [data-theme="dark"] .auth-input { background: var(--surface-sunken); border-color: var(--line); color: var(--ink); }
@@ -185,6 +189,75 @@
         .insight-refresh:hover { color: var(--ink); background: var(--wash); }
         .insight-refresh.spinning { animation: spin 0.8s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Coaching Card (Notebook style) ── */
+        .coaching-card {
+            padding: 16px 18px;
+            margin-bottom: 6px;
+            border-radius: 6px;
+            background: var(--surface);
+            font-size: 14px;
+            line-height: 1.7;
+            color: var(--ink);
+        }
+        .coaching-card .cc-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        .coaching-card .cc-left {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .coaching-card .cc-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            background: var(--ink-faint);
+        }
+        .coaching-card[data-type*="leverage"]     .cc-dot { background: var(--coach); }
+        .coaching-card[data-type*="relationship"] .cc-dot { background: var(--growth); }
+        .coaching-card[data-type*="avoidance"]    .cc-dot { background: var(--warning); }
+        .coaching-card[data-type*="attention"]    .cc-dot { background: var(--danger); }
+        .coaching-card[data-type*="deep-work"]    .cc-dot { background: var(--method); }
+        .coaching-card[data-type*="deal-pipeline"] .cc-dot,
+        .coaching-card[data-type*="follow"]       .cc-dot { background: var(--info); }
+        .coaching-card .cc-type {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--ink-secondary);
+        }
+        .coaching-card .cc-method {
+            font-size: 10px;
+            color: var(--ink-faint);
+            margin-left: 4px;
+        }
+        .coaching-card .cc-ago {
+            font-size: 10px;
+            color: var(--ink-faint);
+            margin-left: 4px;
+        }
+        .coaching-card .cc-refresh {
+            background: none; border: none; cursor: pointer;
+            font-size: 13px; color: var(--ink-faint); padding: 2px 6px;
+        }
+        .coaching-card .cc-refresh:hover { color: var(--ink-secondary); }
+        .coaching-card .cc-refresh.spinning { opacity: 1; animation: spin 0.8s linear infinite; }
+        .coaching-card .cc-body {
+            font-size: 13.5px;
+            line-height: 1.72;
+            color: var(--ink);
+        }
+        /* Skeleton loading */
+        .coaching-card.skeleton { opacity: 0.45; }
+        .coaching-card.skeleton .skel-line {
+            height: 12px; background: var(--line); border-radius: 3px; margin: 7px 0;
+        }
+
         .coach-question {
             border-left: 3px solid var(--coach); padding: 12px 16px; margin: 12px 0;
             background: var(--coach-light); border-radius: 0 8px 8px 0;
@@ -205,13 +278,45 @@
             margin-bottom: 10px; font-size: 11px; font-weight: 600;
             color: var(--ink-secondary); letter-spacing: 0.03em;
         }
-        .focus-card { border-left: 3px solid var(--warning); background: var(--warning-light); }
-        .focus-card .focus-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
-        .focus-card .focus-stats { display: flex; gap: 16px; font-size: 11px; color: var(--ink-secondary); flex-wrap: wrap; }
-        .focus-card .focus-stats span { display: flex; align-items: center; gap: 4px; }
-        .focus-card .focus-actions { display: flex; gap: 8px; margin-top: 10px; }
-        .focus-card.pinned { border-left-color: var(--accent-purple); background: #f5f0ff; }
-        [data-theme="dark"] .focus-card.pinned { background: #1a1530; }
+        .focus-card {
+            background: var(--surface);
+            border: none;
+            border-radius: 6px;
+            padding: 12px 16px;
+            margin-bottom: 6px;
+        }
+        .focus-card .card-header {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--ink-faint);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0;
+            margin-bottom: 4px;
+            border: none;
+            background: none;
+        }
+        .focus-card .focus-title { font-size: 14px; font-weight: 500; color: var(--ink); }
+        .focus-card .focus-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 8px;
+        }
+        .focus-card .focus-actions .btn-sm {
+            font-size: 11px;
+            padding: 3px 10px;
+            border-radius: 4px;
+            background: var(--surface-sunken);
+            border: 1px solid var(--line);
+            color: var(--ink-secondary);
+            cursor: pointer;
+        }
+        .focus-card .focus-actions .btn-sm:hover { background: var(--coach-light); color: var(--coach); }
+        .focus-card.pinned { background: var(--surface); }
+        [data-theme="dark"] .focus-card.pinned { background: var(--surface); }
 
         .calendar-card .cal-event { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
         .calendar-card .cal-event:last-child { border: none; }
@@ -306,7 +411,7 @@
         .marketplace-desc { font-size: 12px; color: var(--ink-secondary); margin-top: 2px; line-height: 1.4; }
         .marketplace-install { font-size: 11px; color: var(--coach); font-weight: 600; margin-top: 6px; cursor: pointer; }
 
-        /* ── Configure Screen ── */
+        /* ── Settings Screen ── */
         .config-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
 
         .cadence-item {
@@ -363,6 +468,45 @@
         .pill:hover { background: var(--surface-sunken); color: var(--ink); }
         .pill-primary { background: var(--ink); color: var(--canvas); border-color: var(--ink); }
         .pill-primary:hover { opacity: 0.85; }
+        /* Capability config cards */
+        .capability-card {
+            background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+            padding: 16px; margin: 8px 0; max-width: 340px;
+        }
+        .cap-card-title {
+            font-family: var(--font-display); font-size: 16px; color: var(--ink);
+            margin-bottom: 12px;
+        }
+        .cap-group { margin-bottom: 10px; }
+        .cap-label {
+            display: block; font-size: 11px; font-weight: 600; color: var(--ink-tertiary);
+            text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;
+        }
+        .cap-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+        .cap-pill {
+            font-family: var(--font-body); font-size: 12px; font-weight: 500;
+            padding: 5px 12px; border-radius: 16px; border: 1px solid var(--line-strong);
+            background: var(--surface); color: var(--ink-secondary); cursor: pointer;
+            white-space: nowrap; transition: all 0.15s;
+        }
+        .cap-pill:hover { background: var(--surface-sunken); }
+        .cap-pill-selected {
+            background: var(--ink); color: var(--canvas); border-color: var(--ink);
+        }
+        .cap-contact-input {
+            width: 100%; font-family: var(--font-body); font-size: 13px;
+            padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line);
+            background: var(--surface-sunken); color: var(--ink); outline: none;
+            margin-bottom: 4px; box-sizing: border-box;
+        }
+        .cap-contact-input:focus { border-color: var(--coach); }
+        .cap-go {
+            margin-top: 12px; width: 100%; padding: 8px; font-size: 13px;
+        }
+        .cap-card-sent {
+            opacity: 0.4; pointer-events: none;
+            transition: opacity 0.3s;
+        }
         .input-row { display: flex; gap: 8px; }
         .input-field {
             flex: 1; font-family: var(--font-body); font-size: 14px; padding: 10px 16px;
@@ -716,6 +860,567 @@
         .commitment-tracker-section { margin-bottom: 16px; }
         .commitments-section-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
         .commitments-section-count { font-size: 11px; color: var(--ink-tertiary); font-weight: 400; }
+
+        /* ── CONVERSATION-FIRST LAYOUT ── */
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--line);
+            background: var(--canvas);
+            flex-shrink: 0;
+        }
+        .top-bar-title {
+            font-family: var(--font-display);
+            font-weight: 400;
+            font-size: 18px;
+            color: var(--ink);
+        }
+        .top-bar-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .top-bar-btn {
+            width: 34px;
+            height: 34px;
+            border: none;
+            background: transparent;
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--ink-secondary);
+            transition: background 0.15s;
+        }
+        .top-bar-btn:hover {
+            background: var(--surface-sunken);
+        }
+
+        .conversation {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 16px 8px;
+            scroll-behavior: smooth;
+        }
+        .conversation-inner {
+            max-width: 640px;
+            margin: 0 auto;
+        }
+
+        /* ── INPUT AREA (conversation-first) ── */
+        .input-area {
+            padding: 10px 16px max(16px, env(safe-area-inset-bottom, 16px));
+            background: var(--canvas);
+            border-top: 1px solid var(--line);
+            flex-shrink: 0;
+        }
+        .input-inner {
+            max-width: 640px;
+            margin: 0 auto;
+            position: relative;
+        }
+        .input-row-v2 {
+            display: flex;
+            align-items: flex-end;
+            gap: 8px;
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: var(--radius-lg);
+            padding: 8px 12px;
+            transition: border-color 0.2s;
+        }
+        .input-row-v2:focus-within {
+            border-color: var(--coach);
+        }
+        .input-row-v2 textarea {
+            flex: 1;
+            border: none;
+            background: transparent;
+            font-family: var(--font-body);
+            font-size: 14px;
+            color: var(--ink);
+            resize: none;
+            outline: none;
+            max-height: 96px;
+            line-height: 1.5;
+            padding: 4px 0;
+        }
+        .input-row-v2 textarea::placeholder {
+            color: var(--ink-faint);
+        }
+        .send-btn-v2 {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: none;
+            background: var(--ink);
+            color: var(--canvas);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+            transition: opacity 0.15s;
+        }
+        .send-btn-v2:hover { opacity: 0.8; }
+        .send-btn-v2 svg { width: 16px; height: 16px; }
+        [data-theme="dark"] .send-btn-v2 { background: var(--coach); }
+        .input-hint {
+            text-align: center;
+            font-size: 11px;
+            color: var(--ink-faint);
+            margin-top: 6px;
+        }
+
+        /* ── SLASH COMMAND PALETTE ── */
+        .cmd-palette {
+            position: absolute;
+            bottom: 100%;
+            left: 0;
+            right: 0;
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+            padding: 8px 0;
+            z-index: 100;
+            transform-origin: bottom center;
+            animation: paletteSlideUp 0.2s ease-out;
+            max-height: 360px;
+            overflow-y: auto;
+        }
+        @keyframes paletteSlideUp {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .cmd-palette-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 16px 8px;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--ink-tertiary);
+            border-bottom: 1px solid var(--line);
+            margin-bottom: 4px;
+        }
+        .cmd-palette-close {
+            background: none;
+            border: none;
+            color: var(--ink-tertiary);
+            cursor: pointer;
+            font-size: 14px;
+            padding: 2px 4px;
+        }
+        .cmd-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 16px;
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+        .cmd-item:hover, .cmd-item.active {
+            background: var(--coach-light);
+        }
+        .cmd-item .cmd-icon {
+            width: 20px;
+            text-align: center;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+        .cmd-item .cmd-name {
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--ink);
+            min-width: 100px;
+        }
+        .cmd-item .cmd-desc {
+            font-size: 12px;
+            color: var(--ink-tertiary);
+        }
+        .cmd-no-results {
+            padding: 16px;
+            text-align: center;
+            color: var(--ink-tertiary);
+            font-size: 13px;
+        }
+
+        /* ── PARAM CARD (inline) ── */
+        .param-card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: var(--radius-lg);
+            padding: 20px;
+            max-width: 400px;
+            margin: 8px 0;
+            box-shadow: var(--shadow-md);
+            animation: fadeIn 0.3s ease-out;
+        }
+        .param-card h3 {
+            font-family: var(--font-display);
+            font-weight: 400;
+            font-size: 17px;
+            margin-bottom: 16px;
+            color: var(--ink);
+        }
+        .param-label {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--ink-tertiary);
+            margin-bottom: 6px;
+            margin-top: 14px;
+        }
+        .param-label:first-of-type { margin-top: 0; }
+        .param-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--line);
+            border-radius: var(--radius-md);
+            font-family: var(--font-body);
+            font-size: 13px;
+            background: var(--surface-sunken);
+            color: var(--ink);
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .param-input:focus { border-color: var(--coach); }
+        .param-toggles {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .param-toggle {
+            padding: 7px 14px;
+            border: 1px solid var(--line);
+            border-radius: 20px;
+            background: transparent;
+            font-family: var(--font-body);
+            font-size: 12px;
+            color: var(--ink-secondary);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .param-toggle.active {
+            background: var(--coach);
+            color: #fff;
+            border-color: var(--coach);
+        }
+        .param-go-btn {
+            width: 100%;
+            margin-top: 18px;
+            padding: 11px;
+            background: var(--ink);
+            color: var(--canvas);
+            border: none;
+            border-radius: var(--radius-md);
+            font-family: var(--font-body);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+        [data-theme="dark"] .param-go-btn { background: var(--coach); color: #fff; }
+        .param-go-btn:hover { opacity: 0.85; }
+
+        /* ── SLIDE-UP SETTINGS PANEL ── */
+        .panel-overlay {
+            position: fixed;
+            inset: 0;
+            background: var(--surface-overlay);
+            z-index: 300;
+            display: none;
+            animation: fadeIn 0.2s ease both;
+        }
+        .panel-overlay.open { display: block; }
+        .slide-panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 400;
+            display: none;
+        }
+        .slide-panel.open { display: block; }
+        .slide-panel-inner {
+            max-width: 480px;
+            margin: 0 auto;
+            background: var(--surface);
+            border-radius: 20px 20px 0 0;
+            box-shadow: var(--shadow-lg);
+            max-height: 72vh;
+            display: flex;
+            flex-direction: column;
+            animation: slideUpPanel 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+        }
+        @keyframes slideUpPanel {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+        .slide-panel-handle {
+            width: 36px;
+            height: 4px;
+            background: var(--line-strong);
+            border-radius: 2px;
+            margin: 10px auto 0;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .slide-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 18px 10px;
+            flex-shrink: 0;
+        }
+        .slide-panel-title {
+            font-family: var(--font-display);
+            font-size: 17px;
+            font-weight: 400;
+            color: var(--ink);
+        }
+        .slide-panel-close {
+            background: var(--surface-sunken);
+            border: none;
+            cursor: pointer;
+            color: var(--ink-tertiary);
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.15s, background 0.15s;
+            font-size: 16px;
+        }
+        .slide-panel-close:hover { background: var(--line); color: var(--ink); }
+        .slide-panel-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0 18px max(20px, env(safe-area-inset-bottom, 20px));
+            -webkit-overflow-scrolling: touch;
+        }
+        .slide-panel-body::-webkit-scrollbar { width: 0; }
+        .panel-section { margin-bottom: 20px; }
+        .panel-section-label {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--ink-faint);
+            margin-bottom: 10px;
+            padding-top: 6px;
+        }
+        .slide-panel-tab-nav {
+            display: flex;
+            gap: 0;
+            border-bottom: 1px solid var(--line);
+            padding: 0 18px;
+            margin-bottom: 12px;
+        }
+        .slide-panel-tab-nav button {
+            font-family: var(--font-body);
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--ink-tertiary);
+            background: none;
+            border: none;
+            padding: 8px 10px 6px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+        }
+        .slide-panel-tab-nav button.active {
+            color: var(--coach);
+            border-bottom-color: var(--coach);
+        }
+        .slide-panel-tab-nav button.coaching-tab {
+            color: var(--ink-faint);
+        }
+        .slide-panel-tab-nav button.coaching-tab.active {
+            color: var(--method);
+            border-bottom-color: var(--method);
+        }
+
+        /* ── SUGGESTION CHIPS ── */
+        .chips-row {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin: 8px 0 12px;
+        }
+        .chip {
+            font-family: var(--font-body);
+            font-size: 12px;
+            padding: 7px 14px;
+            background: var(--coach-light);
+            color: var(--coach);
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+        .chip:hover { background: var(--coach); color: white; }
+
+        /* ── RESPONSIVE BREAKPOINTS ── */
+        @media (max-width: 400px) {
+            .conversation { padding: 16px 12px 8px; }
+            .input-area { padding: 8px 12px max(12px, env(safe-area-inset-bottom, 12px)); }
+            .top-bar { padding: 12px 14px; }
+            .top-bar-title { font-size: 16px; }
+            .param-card { max-width: 100%; }
+            .cmd-palette { left: 0; right: 0; }
+        }
+        @media (min-width: 401px) and (max-width: 600px) {
+            .conversation { padding: 18px 14px 8px; }
+            .param-card { max-width: 100%; }
+            .cmd-palette { left: 0; right: 0; }
+        }
+        @media (min-width: 601px) and (max-width: 840px) {
+            .conversation { padding: 24px 20px 8px; }
+            .conversation-inner { max-width: 580px; }
+        }
+        @media (min-width: 841px) {
+            .conversation { padding: 28px 24px 8px; }
+            .conversation-inner { max-width: 640px; }
+            .input-inner { max-width: 640px; }
+        }
+
+        /* ── NOTEBOOK-STYLE COACHING CARDS ── */
+        .lead-insight {
+            padding: 16px 18px;
+            margin-bottom: 6px;
+            border-radius: 6px;
+            background: var(--surface);
+            position: relative;
+            animation: fadeIn 0.4s ease-out;
+        }
+        .lead-insight-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        .lead-insight-body { font-size: 13.5px; line-height: 1.72; color: var(--ink); }
+        .lead-insight-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+
+        /* Notebook dot indicators */
+        .nb-dot {
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .nb-dot[data-type="attention"] { background: var(--danger); }
+        .nb-dot[data-type="leverage"] { background: var(--coach); }
+        .nb-dot[data-type="relationship"] { background: var(--growth); }
+        .nb-dot[data-type="avoidance"] { background: var(--warning); }
+        .nb-dot[data-type="deep-work"] { background: var(--method); }
+
+        /* Did-you-mean suggestion chips */
+        .dym-chip {
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 16px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            font-size: 13px;
+            color: var(--ink);
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .dym-chip:hover {
+            background: var(--coach);
+            color: #fff;
+            border-color: var(--coach);
+        }
+
+        .nb-type {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--ink-secondary);
+        }
+        .nb-method {
+            font-size: 10px;
+            color: var(--ink-faint);
+            margin-left: 4px;
+        }
+        .nb-refresh {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 13px;
+            color: var(--ink-faint);
+            margin-left: auto;
+            padding: 2px 6px;
+            opacity: 0;
+            transition: opacity 0.15s;
+        }
+        .lead-insight:hover .nb-refresh { opacity: 1; }
+
+        /* ── MORE OBSERVATIONS (details/summary) ── */
+        details.more-observations { border-radius: var(--radius-lg); margin-bottom: 12px; }
+        .more-observations summary {
+            list-style: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--ink-secondary);
+            background: var(--surface-sunken);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--line);
+            transition: background 0.15s, color 0.15s;
+            user-select: none;
+        }
+        .more-observations summary:hover { background: var(--line); color: var(--ink); }
+        .more-observations summary::-webkit-details-marker { display: none; }
+        .summary-dots { display: flex; gap: 4px; }
+        .summary-dot { width: 6px; height: 6px; border-radius: 50%; }
+        .summary-chevron {
+            width: 14px; height: 14px;
+            color: var(--ink-faint);
+            transition: transform 0.2s ease;
+            flex-shrink: 0;
+            margin-left: auto;
+        }
+        .more-observations[open] .summary-chevron { transform: rotate(180deg); }
+
+        .secondary-bubbles { padding: 8px 0; display: flex; flex-direction: column; gap: 2px; }
+        .secondary-bubble {
+            padding: 14px 18px;
+            border-radius: 6px;
+            background: var(--surface);
+            position: relative;
+        }
+        .sec-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 6px;
+            margin-bottom: 6px;
+        }
+        .sec-body { font-size: 13.5px; line-height: 1.72; color: var(--ink); }
+
+        /* ── MSG TIMESTAMP ── */
+        .msg-time {
+            text-align: center;
+            font-size: 11px;
+            color: var(--ink-faint);
+            margin: 16px 0 10px;
+        }
     </style>
     <script>
         // Anti-flash: set theme before first paint
@@ -728,14 +1433,14 @@
 <body>
 
     <!-- ═══ AUTH SCREEN ═══ -->
-    <div class="auth-screen" id="authScreen">
+    <div class="auth-screen" id="authScreen" style="position:fixed;inset:0;z-index:1000;">
         <div class="auth-card">
             <div class="auth-title">coach alfred</div>
-            <p class="auth-subtitle">your executive assistant</p>
-            <input type="password" id="passcodeInput" class="auth-input" placeholder="Passcode" onkeydown="if(event.key==='Enter') authenticate()">
+            <p class="auth-subtitle">sharpen your genius</p>
+            <input type="password" id="passcodeInput" class="auth-input" placeholder="passcode" onkeydown="if(event.key==='Enter') authenticate()" style="letter-spacing:6px;">
             <button class="auth-button" onclick="authenticate()">Sign In</button>
             <div id="authError" class="auth-error hidden"></div>
-            <div id="authVersion" class="auth-version">v2.0.4</div>
+            <div id="authVersion" class="auth-version">v2.0.6</div>
         </div>
     </div>
 
@@ -751,30 +1456,25 @@
     <!-- ═══ APP CONTAINER ═══ -->
     <div id="appContainer" class="hidden" style="display:flex;flex-direction:column;height:100dvh;">
 
-        <!-- Screen Nav -->
-        <nav class="screen-nav" id="screenNav">
-            <button class="active" onclick="showScreen('day')">today</button>
-            <button onclick="showScreen('coaching')">coaching</button>
-            <button onclick="showScreen('configure')">configure</button>
-        </nav>
-
-        <!-- ═══ SCREEN: TODAY ═══ -->
-        <div class="screen active" id="screen-day">
-            <div class="header">
-                <div class="header-title">coach alfred</div>
-                <div class="header-meta">
-                    <span id="greetingTime">loading...</span>
-                    <span class="header-icon" onclick="showScreen('configure')" title="Settings">&#9881;</span>
-                </div>
+        <!-- TOP BAR -->
+        <div class="top-bar">
+            <div class="top-bar-title">coach alfred</div>
+            <div class="top-bar-actions">
+                <span id="greetingTime" style="font-size:11px;color:var(--ink-faint);margin-right:4px;">loading...</span>
+                <button class="top-bar-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Toggle dark mode">&#9728;&#65039;</button>
+                <button class="top-bar-btn" onclick="openSettingsPanel()" title="Settings">&#9881;&#65039;</button>
             </div>
-            <div class="pulse" id="pulseText">scanning...</div>
-            <div class="canvas" id="canvas-day">
+        </div>
+
+        <!-- CONVERSATION -->
+        <div class="conversation" id="conversationScroll">
+            <div class="conversation-inner" id="conversation">
                 <!-- Health warning -->
                 <div id="healthWarningBanner" class="card evidence-card hidden" style="margin-bottom:12px;">
                     <div class="card-header">&#9888; System Health</div>
                     <div id="healthWarningList" style="font-size:12px;"></div>
                 </div>
-                <!-- Morning Walk Thread (conversation-first) -->
+                <!-- Morning Walk Thread -->
                 <div id="morningWalkThread"></div>
                 <!-- Weekly review (Sundays) -->
                 <div id="weeklyReviewSection" class="hidden"></div>
@@ -782,174 +1482,191 @@
             </div>
         </div>
 
-        <!-- ═══ SCREEN: COACHING ═══ -->
-        <div class="screen" id="screen-coaching">
-            <div class="header">
-                <div class="header-title">coaching</div>
-                <div class="header-meta">
-                    <button class="btn btn-sm" onclick="openSkillEditor()">+ New Skill</button>
+        <!-- PULSE SUBTITLE (hidden, used for data) -->
+        <div id="pulseText" class="hidden">scanning...</div>
+
+        <!-- INPUT AREA -->
+        <div class="input-area" id="inputArea">
+            <div class="input-inner" id="inputInner">
+                <!-- Slash palette renders here dynamically -->
+                <div class="input-row-v2">
+                    <textarea id="chatInput" rows="1" placeholder="Talk to Alfred..." oninput="handleInput(event)" onkeydown="handleKeydown(event)"></textarea>
+                    <button class="send-btn-v2" id="sendBtn" onclick="sendChat()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                    </button>
+                </div>
+                <div class="input-hint">Type / for tools</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ SETTINGS PANEL (Slide-up) ═══ -->
+    <div class="panel-overlay" id="panelOverlay" onclick="closeSettingsPanel()"></div>
+    <div class="slide-panel" id="settingsPanel">
+        <div class="slide-panel-inner">
+            <div class="slide-panel-handle" onclick="closeSettingsPanel()"></div>
+            <div class="slide-panel-header">
+                <div class="slide-panel-title">Settings</div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span id="appVersion" style="font-size:11px;color:var(--ink-faint);">v2.0.6</span>
+                    <button style="font-family:var(--font-body);font-size:12px;color:var(--danger);background:none;border:none;cursor:pointer;font-weight:500;" onclick="logout()">Logout</button>
+                    <button class="slide-panel-close" onclick="closeSettingsPanel()">&times;</button>
                 </div>
             </div>
-            <div class="canvas">
-                <div class="coaching-tab-nav" id="coachingTabNav">
-                    <button class="active" onclick="showCoachingTab('skills',this)">skills</button>
-                    <button onclick="showCoachingTab('tenets',this)">tenets</button>
-                    <button onclick="showCoachingTab('qa',this)">qa preview</button>
-                    <button onclick="showCoachingTab('library',this)">library</button>
-                </div>
-                <div id="coachingTabSkills">
-                    <div class="section-title" style="margin-top:0;">YOUR SKILLS</div>
-                    <div class="config-card" id="userSkillsList"><div class="settings-item-desc">Loading...</div></div>
-                    <div class="section-title">INSTALLED SKILLS</div>
-                    <div class="config-card" id="installedSkillsList"><div class="settings-item-desc">Loading...</div></div>
-                </div>
-                <div id="coachingTabTenets" style="display:none;">
-                    <div class="section-title" style="margin-top:0;">
-                        COACHING TENETS
-                        <button id="openTenetsNotionBtn2" class="btn btn-ghost btn-sm" onclick="openTenetsInNotion()" style="display:none;">Open in Notion</button>
+            <div class="slide-panel-tab-nav" id="settingsPanelTabs">
+                <button class="active" onclick="showSettingsTab('config',this)">configurations</button>
+                <button class="coaching-tab" onclick="showSettingsTab('tenets',this)">tenets</button>
+                <button class="coaching-tab" onclick="showSettingsTab('skills',this)">coaching</button>
+                <button class="coaching-tab" onclick="showSettingsTab('previews',this)">previews</button>
+                <button class="coaching-tab" onclick="showSettingsTab('library',this)">library</button>
+            </div>
+            <div class="slide-panel-body">
+                <!-- TENETS TAB -->
+                <div id="panelTabTenets">
+                    <div class="panel-section">
+                        <div class="panel-section-label">COACHING TENETS</div>
+                        <div id="tenetSectionsList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
                     </div>
-                    <div id="tenetSectionsList"><div class="settings-item-desc">Loading...</div></div>
                 </div>
-                <div id="coachingTabQA" style="display:none;">
-                    <div class="section-title" style="margin-top:0;">
-                        QA PREVIEW
-                        <div style="display:flex;gap:8px;align-items:center;">
-                            <span id="qaDebugMeta" style="font-size:11px;color:var(--ink-faint);font-weight:400;"></span>
-                            <button class="btn btn-sm" onclick="refreshAllQA()">Refresh All</button>
+                <!-- SKILLS TAB -->
+                <div id="panelTabSkills" style="display:none;">
+                    <div class="panel-section">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                            <div class="panel-section-label" style="margin:0;padding:0;">YOUR SKILLS</div>
+                            <button class="btn btn-sm" onclick="openSkillEditor()">+ New</button>
+                        </div>
+                        <div class="config-card" id="userSkillsList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
+                        <div class="panel-section-label">INSTALLED SKILLS</div>
+                        <div class="config-card" id="installedSkillsList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
+                    </div>
+                </div>
+                <!-- CONFIG TAB -->
+                <div id="panelTabConfig" style="display:none;">
+                    <!-- Cadences -->
+                    <div class="panel-section">
+                        <div class="panel-section-label">CADENCES</div>
+                        <div class="config-card" id="cadenceStatusContent"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
+                    </div>
+                    <!-- Favorites -->
+                    <div class="panel-section">
+                        <div class="panel-section-label">FAVORITES</div>
+                        <div class="config-card">
+                            <div id="favoriteContactsList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px;">Loading...</div></div>
+                            <div style="padding:12px 16px;border-top:1px solid var(--line);">
+                                <div style="font-size:11px;font-weight:600;color:var(--ink-tertiary);margin-bottom:6px;">ADD CONTACT</div>
+                                <input type="text" id="newContactName" placeholder="Name" class="form-input" style="margin-bottom:6px;">
+                                <input type="text" id="newContactAliases" placeholder="Aliases (comma separated)" class="form-input" style="margin-bottom:6px;">
+                                <div style="display:flex;gap:12px;align-items:center;font-size:12px;margin-bottom:8px;">
+                                    <label><input type="checkbox" id="contactWhatsapp" checked> WhatsApp</label>
+                                    <label><input type="checkbox" id="contactIMessage" checked> iMessage</label>
+                                    <label><input type="checkbox" id="contactEmail"> Email</label>
+                                </div>
+                                <button class="btn btn-sm btn-coach" onclick="addFavoriteContact()">Add</button>
+                                <div id="addContactStatus" class="hidden" style="margin-top:4px;"></div>
+                            </div>
+                        </div>
+                        <div class="config-card">
+                            <div id="favoriteGroupsList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px;">No groups yet</div></div>
+                            <div style="padding:12px 16px;border-top:1px solid var(--line);">
+                                <div style="font-size:11px;font-weight:600;color:var(--ink-tertiary);margin-bottom:6px;">ADD GROUP</div>
+                                <input type="text" id="newGroupName" placeholder="Group name" class="form-input" style="margin-bottom:6px;">
+                                <input type="text" id="newGroupAliases" placeholder="Aliases" class="form-input" style="margin-bottom:6px;">
+                                <select id="groupPlatform" class="form-input" style="margin-bottom:8px;">
+                                    <option value="whatsapp">WhatsApp</option>
+                                    <option value="imessage">iMessage</option>
+                                </select>
+                                <button class="btn btn-sm btn-coach" onclick="addFavoriteGroup()">Add</button>
+                                <div id="addGroupStatus" class="hidden" style="margin-top:4px;"></div>
+                            </div>
                         </div>
                     </div>
-                    <div id="qaCardsList"><div class="settings-item-desc">Loading...</div></div>
-                </div>
-                <div id="coachingTabLibrary" style="display:none;">
-                    <div class="section-title" style="margin-top:0;">SKILL LIBRARY</div>
-                    <div class="config-card" id="libraryList"><div class="settings-item-desc">Loading...</div></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ═══ SCREEN: CONFIGURE ═══ -->
-        <div class="screen" id="screen-configure">
-            <div class="header">
-                <div class="header-title">configure</div>
-                <div class="header-meta">
-                    <span id="appVersion">v2.0.4</span>
-                    <button class="btn btn-ghost btn-sm text-danger" onclick="logout()">Logout</button>
-                </div>
-            </div>
-            <div class="canvas">
-                <!-- Cadences -->
-                <div class="section-title" style="margin-top:8px;">CADENCES</div>
-                <div class="config-card" id="cadenceStatusContent"><div class="settings-item-desc">Loading...</div></div>
-
-                <!-- Favorites -->
-                <div class="section-title">FAVORITES</div>
-                <div class="config-card">
-                    <div id="favoriteContactsList"><div class="settings-item-desc">Loading...</div></div>
-                    <div style="padding:12px 16px;border-top:1px solid var(--line);">
-                        <div style="font-size:11px;font-weight:600;color:var(--ink-tertiary);margin-bottom:6px;">ADD CONTACT</div>
-                        <input type="text" id="newContactName" placeholder="Name" class="form-input" style="margin-bottom:6px;">
-                        <input type="text" id="newContactAliases" placeholder="Aliases (comma separated)" class="form-input" style="margin-bottom:6px;">
-                        <div style="display:flex;gap:12px;align-items:center;font-size:12px;margin-bottom:8px;">
-                            <label><input type="checkbox" id="contactWhatsapp" checked> WhatsApp</label>
-                            <label><input type="checkbox" id="contactIMessage" checked> iMessage</label>
-                            <label><input type="checkbox" id="contactEmail"> Email</label>
+                    <!-- Notion Config -->
+                    <div class="panel-section">
+                        <div class="panel-section-label">NOTION</div>
+                        <div class="config-card">
+                            <div class="config-row">
+                                <div><span>Tasks Database</span><div id="tasksDbNameLabel" style="font-size:11px;color:var(--ink-tertiary);display:none;"></div></div>
+                                <span class="config-value" id="currentTasksDatabaseId"></span>
+                            </div>
+                            <div style="padding:12px 16px;border-top:1px solid var(--line);">
+                                <input type="text" id="tasksDatabaseId" placeholder="Database ID or URL" class="form-input" style="margin-bottom:6px;">
+                                <div style="font-size:11px;color:var(--ink-tertiary);margin-bottom:8px;">Context databases:</div>
+                                <input type="text" id="contextDb1" placeholder="Context DB 1" class="form-input" style="margin-bottom:4px;font-size:12px;">
+                                <span id="contextDb1Status" style="font-size:10px;color:var(--ink-tertiary);"></span>
+                                <input type="text" id="contextDb2" placeholder="Context DB 2" class="form-input" style="margin-bottom:4px;font-size:12px;">
+                                <span id="contextDb2Status" style="font-size:10px;color:var(--ink-tertiary);"></span>
+                                <input type="text" id="contextDb3" placeholder="Context DB 3" class="form-input" style="margin-bottom:4px;font-size:12px;">
+                                <span id="contextDb3Status" style="font-size:10px;color:var(--ink-tertiary);"></span>
+                                <input type="text" id="contextDb4" placeholder="Context DB 4" class="form-input" style="margin-bottom:6px;font-size:12px;">
+                                <span id="contextDb4Status" style="font-size:10px;color:var(--ink-tertiary);"></span>
+                                <button class="btn btn-sm btn-coach" onclick="saveNotionConfig()" style="margin-top:4px;">Save</button>
+                                <div id="notionConfigStatus" class="hidden" style="margin-top:4px;"></div>
+                            </div>
                         </div>
-                        <button class="btn btn-sm btn-coach" onclick="addFavoriteContact()">Add</button>
-                        <div id="addContactStatus" class="hidden" style="margin-top:4px;"></div>
+                    </div>
+                    <!-- Appearance -->
+                    <div class="panel-section">
+                        <div class="panel-section-label">APPEARANCE</div>
+                        <div class="config-card">
+                            <div class="config-row">
+                                <span>Dark Mode</span>
+                                <div class="toggle" id="themeToggle" onclick="toggleTheme()"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Security -->
+                    <div class="panel-section">
+                        <div class="panel-section-label">SECURITY</div>
+                        <div class="config-card">
+                            <div style="padding:12px 16px;">
+                                <div style="font-size:11px;font-weight:600;color:var(--ink-tertiary);margin-bottom:8px;">CHANGE PASSCODE</div>
+                                <input type="password" id="currentPasscode" placeholder="Current passcode" class="form-input" style="margin-bottom:6px;">
+                                <input type="password" id="newPasscode" placeholder="New passcode" class="form-input" style="margin-bottom:6px;">
+                                <input type="password" id="confirmPasscode" placeholder="Confirm new passcode" class="form-input" style="margin-bottom:8px;">
+                                <button class="btn btn-sm" onclick="changePasscode()">Update Passcode</button>
+                                <div id="passcodeStatus" class="hidden" style="margin-top:4px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Data -->
+                    <div class="panel-section">
+                        <div class="panel-section-label">DATA</div>
+                        <div class="config-card">
+                            <div class="config-row">
+                                <span>Clear Server Cache</span>
+                                <button class="btn btn-sm" onclick="clearCache()">Clear</button>
+                            </div>
+                            <div id="cacheStatus" class="hidden" style="padding:0 16px 8px;"></div>
+                            <div class="config-row">
+                                <span>Patterns & Memory</span>
+                                <button class="btn btn-sm" onclick="showPatternsAndMemory()">View</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                <div class="config-card">
-                    <div id="favoriteGroupsList"><div class="settings-item-desc">No groups yet</div></div>
-                    <div style="padding:12px 16px;border-top:1px solid var(--line);">
-                        <div style="font-size:11px;font-weight:600;color:var(--ink-tertiary);margin-bottom:6px;">ADD GROUP</div>
-                        <input type="text" id="newGroupName" placeholder="Group name" class="form-input" style="margin-bottom:6px;">
-                        <input type="text" id="newGroupAliases" placeholder="Aliases" class="form-input" style="margin-bottom:6px;">
-                        <select id="groupPlatform" class="form-input" style="margin-bottom:8px;">
-                            <option value="whatsapp">WhatsApp</option>
-                            <option value="imessage">iMessage</option>
-                        </select>
-                        <button class="btn btn-sm btn-coach" onclick="addFavoriteGroup()">Add</button>
-                        <div id="addGroupStatus" class="hidden" style="margin-top:4px;"></div>
+                <!-- PREVIEWS TAB -->
+                <div id="panelTabPreviews" style="display:none;">
+                    <div class="panel-section">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                            <div class="panel-section-label" style="margin:0;padding:0;">CARD PREVIEWS</div>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <span id="qaDebugMeta" style="font-size:11px;color:var(--ink-faint);"></span>
+                                <button class="btn btn-sm" onclick="refreshAllQA()">Refresh All</button>
+                            </div>
+                        </div>
+                        <div id="qaCardsList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
                     </div>
                 </div>
-
-                <!-- Notion Config -->
-                <div class="section-title">NOTION</div>
-                <div class="config-card">
-                    <div class="config-row">
-                        <div><span>Tasks Database</span><div id="tasksDbNameLabel" style="font-size:11px;color:var(--ink-tertiary);display:none;"></div></div>
-                        <span class="config-value" id="currentTasksDatabaseId" class="hidden"></span>
-                    </div>
-                    <div style="padding:12px 16px;border-top:1px solid var(--line);">
-                        <input type="text" id="tasksDatabaseId" placeholder="Database ID or URL" class="form-input" style="margin-bottom:6px;">
-                        <div style="font-size:11px;color:var(--ink-tertiary);margin-bottom:8px;">Context databases:</div>
-                        <input type="text" id="contextDb1" placeholder="Context DB 1" class="form-input" style="margin-bottom:4px;font-size:12px;">
-                        <span id="contextDb1Status" style="font-size:10px;color:var(--ink-tertiary);"></span>
-                        <input type="text" id="contextDb2" placeholder="Context DB 2" class="form-input" style="margin-bottom:4px;font-size:12px;">
-                        <span id="contextDb2Status" style="font-size:10px;color:var(--ink-tertiary);"></span>
-                        <input type="text" id="contextDb3" placeholder="Context DB 3" class="form-input" style="margin-bottom:4px;font-size:12px;">
-                        <span id="contextDb3Status" style="font-size:10px;color:var(--ink-tertiary);"></span>
-                        <input type="text" id="contextDb4" placeholder="Context DB 4" class="form-input" style="margin-bottom:6px;font-size:12px;">
-                        <span id="contextDb4Status" style="font-size:10px;color:var(--ink-tertiary);"></span>
-                        <button class="btn btn-sm btn-coach" onclick="saveNotionConfig()" style="margin-top:4px;">Save</button>
-                        <div id="notionConfigStatus" class="hidden" style="margin-top:4px;"></div>
-                    </div>
-                </div>
-
-                <!-- Appearance -->
-                <div class="section-title">APPEARANCE</div>
-                <div class="config-card">
-                    <div class="config-row">
-                        <span>Dark Mode</span>
-                        <div class="toggle" id="themeToggle" onclick="toggleTheme()"></div>
-                    </div>
-                </div>
-
-                <!-- Security -->
-                <div class="section-title">SECURITY</div>
-                <div class="config-card">
-                    <div style="padding:12px 16px;">
-                        <div style="font-size:11px;font-weight:600;color:var(--ink-tertiary);margin-bottom:8px;">CHANGE PASSCODE</div>
-                        <input type="password" id="currentPasscode" placeholder="Current passcode" class="form-input" style="margin-bottom:6px;">
-                        <input type="password" id="newPasscode" placeholder="New passcode" class="form-input" style="margin-bottom:6px;">
-                        <input type="password" id="confirmPasscode" placeholder="Confirm new passcode" class="form-input" style="margin-bottom:8px;">
-                        <button class="btn btn-sm" onclick="changePasscode()">Update Passcode</button>
-                        <div id="passcodeStatus" class="hidden" style="margin-top:4px;"></div>
-                    </div>
-                </div>
-
-                <!-- Cache -->
-                <div class="section-title">DATA</div>
-                <div class="config-card">
-                    <div class="config-row">
-                        <span>Clear Server Cache</span>
-                        <button class="btn btn-sm" onclick="clearCache()">Clear</button>
-                    </div>
-                    <div id="cacheStatus" class="hidden" style="padding:0 16px 8px;"></div>
-                    <div class="config-row">
-                        <span>Patterns & Memory</span>
-                        <button class="btn btn-sm" onclick="showPatternsAndMemory()">View</button>
+                <!-- LIBRARY TAB -->
+                <div id="panelTabLibrary" style="display:none;">
+                    <div class="panel-section">
+                        <div class="panel-section-label">SKILL LIBRARY</div>
+                        <div class="config-card" id="libraryList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
                     </div>
                 </div>
             </div>
         </div>
-
-        <!-- Bottom Bar -->
-        <div class="bottom-bar" id="bottomBar">
-            <div class="pills">
-                <button class="pill pill-primary" onclick="focusChatInput()">Talk to Alfred</button>
-                <button class="pill" onclick="sendChat('What\'s on my calendar today?')">Calendar</button>
-                <button class="pill" onclick="sendChat('How are my commitments looking?')">Commitments</button>
-                <button class="pill" onclick="sendChat('Summarize my messages')">Messages</button>
-                <button class="pill" onclick="sendChat('What\'s the highest leverage thing I can do right now?')">Focus</button>
-                <button class="pill" onclick="sendChat('Draft a follow-up nudge')">Nudge</button>
-                <button class="pill" onclick="sendChat('What do you know about me?')">Memory</button>
-            </div>
-            <div class="input-row">
-                <textarea class="input-field" id="chatInput" placeholder="Talk to Alfred..." rows="1" oninput="autoResizeTextarea(this)" onkeydown="handleChatKeydown(event)"></textarea>
-                <button class="send-btn" id="sendBtn" onclick="sendChat()">&#x2191;</button>
-            </div>
-        </div>
+    </div>
     </div>
 
     <!-- ═══ TOOL OVERLAY ═══ -->
@@ -1016,7 +1733,7 @@
         let currentModalCallback = null;
         let cadenceList = [];
         let toolCatalog = [];
-        let tenetsNotionUrl = '';
+        // tenetsNotionUrl removed — tenets now loaded from local skill files
 
         const STORAGE_TOKEN_KEY = 'alfred_auth_token';
         const STORAGE_EXPIRES_KEY = 'alfred_token_expires';
@@ -1064,13 +1781,67 @@
         })();
 
         // ═══════════════════════════════════════════════
+        // 2b. SESSION FRESHNESS TRACKING
+        // ═══════════════════════════════════════════════
+
+        const SESSION_GAP_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+        const SESSION_LAST_ACTIVE_KEY = 'alfred_last_active';
+        const SESSION_FORCE_REFRESH_KEY = 'alfred_force_refresh';
+
+        function updateLastActive() {
+            try { localStorage.setItem(SESSION_LAST_ACTIVE_KEY, Date.now().toString()); } catch(e) {}
+        }
+
+        function shouldForceRefreshCards() {
+            // Check explicit force-refresh flag (set by Ctrl+R)
+            try {
+                if (localStorage.getItem(SESSION_FORCE_REFRESH_KEY) === 'true') {
+                    localStorage.removeItem(SESSION_FORCE_REFRESH_KEY);
+                    return true;
+                }
+            } catch(e) {}
+
+            // Check session gap
+            try {
+                const lastActive = parseInt(localStorage.getItem(SESSION_LAST_ACTIVE_KEY) || '0');
+                if (lastActive === 0) return true; // First visit ever
+                return (Date.now() - lastActive) > SESSION_GAP_THRESHOLD_MS;
+            } catch(e) { return true; }
+        }
+
+        // Ctrl+R interception: set flag before reload
+        document.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+                try { localStorage.setItem(SESSION_FORCE_REFRESH_KEY, 'true'); } catch(ex) {}
+                // Let the browser reload naturally
+            }
+        });
+
+        // Mark active on load and periodically
+        updateLastActive();
+        setInterval(updateLastActive, 60000); // Update every minute while active
+
+        // ═══════════════════════════════════════════════
         // 3. HELPERS
         // ═══════════════════════════════════════════════
 
+        const _escDiv = document.createElement('div');
         function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+            _escDiv.textContent = text;
+            return _escDiv.innerHTML;
+        }
+
+        function formatAgo(isoStr) {
+            if (!isoStr) return '';
+            try {
+                const d = new Date(isoStr);
+                const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+                if (mins < 1) return 'just now';
+                if (mins < 60) return mins + ' min ago';
+                const hrs = Math.floor(mins / 60);
+                if (hrs < 24) return hrs + 'h ago';
+                return Math.floor(hrs / 24) + 'd ago';
+            } catch(e) { return ''; }
         }
 
         function renderMarkdown(text) {
@@ -1146,10 +1917,14 @@
                 document.documentElement.setAttribute('data-theme', 'dark');
                 const toggle = document.getElementById('themeToggle');
                 if (toggle) toggle.classList.add('on');
+                const btn = document.getElementById('themeToggleBtn');
+                if (btn) btn.textContent = '\u{1F319}';
             } else {
                 document.documentElement.removeAttribute('data-theme');
                 const toggle = document.getElementById('themeToggle');
                 if (toggle) toggle.classList.remove('on');
+                const btn = document.getElementById('themeToggleBtn');
+                if (btn) btn.textContent = '\u2600\uFE0F';
             }
             localStorage.setItem('alfred-theme', theme);
         }
@@ -1187,41 +1962,259 @@
 
         let currentScreen = 'day';
 
+        // Conversation-first: no screen tabs, single view
         function showScreen(id) {
             currentScreen = id;
-            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-            document.getElementById('screen-' + id).classList.add('active');
+            // In conversation-first mode, settings opens the slide panel
+            if (id === 'settings') openSettingsPanel();
+            if (id === 'coaching') { openSettingsPanel(); showSettingsTab('tenets'); }
+        }
 
-            // Update nav buttons
-            document.querySelectorAll('#screenNav button').forEach(btn => {
-                btn.classList.toggle('active', btn.textContent.trim() === (id === 'day' ? 'today' : id));
+        // Settings panel management
+        function openSettingsPanel() {
+            document.getElementById('panelOverlay').classList.add('open');
+            document.getElementById('settingsPanel').classList.add('open');
+            // Load data for active tab
+            loadTenets();
+            loadSkillsList();
+            loadCadenceStatus();
+            loadFavorites();
+            loadSettings();
+        }
+
+        function closeSettingsPanel() {
+            document.getElementById('panelOverlay').classList.remove('open');
+            document.getElementById('settingsPanel').classList.remove('open');
+        }
+
+        function showSettingsTab(tab, btn) {
+            const tabs = ['tenets', 'skills', 'config', 'previews', 'library'];
+            const tabLabels = { config: 'configurations', skills: 'coaching', tenets: 'tenets', previews: 'previews', library: 'library' };
+            tabs.forEach(t => {
+                const el = document.getElementById('panelTab' + t.charAt(0).toUpperCase() + t.slice(1));
+                if (el) el.style.display = t === tab ? '' : 'none';
             });
+            document.querySelectorAll('#settingsPanelTabs button').forEach(b => b.classList.remove('active'));
+            if (btn) btn.classList.add('active');
+            else {
+                const label = tabLabels[tab] || tab;
+                const buttons = document.querySelectorAll('#settingsPanelTabs button');
+                buttons.forEach(b => { if (b.textContent.trim() === label) b.classList.add('active'); });
+            }
+            if (tab === 'previews') loadQAPreview();
+            if (tab === 'library') loadLibrary();
+        }
 
-            // Show/hide bottom bar (only on today screen)
-            const bar = document.getElementById('bottomBar');
-            bar.style.display = id === 'day' ? '' : 'none';
+        // Slash command system
+        let paletteOpen = false;
+        let paletteIdx = 0;
+        let filteredCmds = [];
 
-            // Lazy-load screen data
-            if (id === 'coaching') {
-                loadSkillsList();
-                loadTenetSections();
-            } else if (id === 'configure') {
-                loadCadenceStatus();
-                loadFavorites();
-                loadSettings();
+        const COMMANDS = [
+            { icon: '\u{1F4C5}', name: '/calendar',    desc: "Today's schedule",   hasParams: true },
+            { icon: '\u2713',    name: '/commitments', desc: 'Track commitments',  hasParams: true },
+            { icon: '\u{1F4AC}', name: '/messages',    desc: 'Message summaries',  hasParams: true },
+            { icon: '\u{1F3AF}', name: '/focus',       desc: 'Top priority',       hasParams: false },
+            { icon: '\u{1F4DD}', name: '/nudge',       desc: 'Draft follow-up',    hasParams: false },
+            { icon: '\u{1F4CA}', name: '/briefing',    desc: 'Daily briefing',     hasParams: false },
+            { icon: '\u2699\uFE0F', name: '/settings',    desc: 'Coaching config',    hasParams: false },
+            { icon: '\u{1F4DA}', name: '/skills',      desc: 'Skill library',      hasParams: false },
+        ];
+
+        function showPalette(filter) {
+            const q = (filter || '').toLowerCase().replace(/^\//, '');
+            filteredCmds = q ? COMMANDS.filter(c => c.name.toLowerCase().includes(q) || c.desc.toLowerCase().includes(q)) : COMMANDS;
+            paletteIdx = 0;
+            const container = document.getElementById('inputInner');
+            let palette = document.getElementById('cmdPalette');
+            if (!palette) {
+                palette = document.createElement('div');
+                palette.id = 'cmdPalette';
+                palette.className = 'cmd-palette';
+                container.insertBefore(palette, container.firstChild);
+            }
+            if (filteredCmds.length === 0) {
+                palette.innerHTML = '<div class="cmd-no-results">No matching commands</div>';
+            } else {
+                let html = '<div class="cmd-palette-header"><span>Commands</span><button class="cmd-palette-close" onclick="closePalette()">&times;</button></div>';
+                filteredCmds.forEach((cmd, i) => {
+                    html += '<div class="cmd-item' + (i === 0 ? ' active' : '') + '" data-idx="' + i + '" onclick="selectCommand(' + i + ')" onmouseenter="highlightCmd(' + i + ')">'
+                        + '<span class="cmd-icon">' + cmd.icon + '</span>'
+                        + '<span class="cmd-name">' + cmd.name + '</span>'
+                        + '<span class="cmd-desc">' + cmd.desc + '</span>'
+                        + '</div>';
+                });
+                palette.innerHTML = html;
+            }
+            palette.style.display = '';
+            paletteOpen = true;
+        }
+
+        function closePalette() {
+            const palette = document.getElementById('cmdPalette');
+            if (palette) palette.style.display = 'none';
+            paletteOpen = false;
+        }
+
+        function highlightCmd(idx) {
+            paletteIdx = idx;
+            document.querySelectorAll('#cmdPalette .cmd-item').forEach((el, i) => {
+                el.classList.toggle('active', i === idx);
+            });
+        }
+
+        function selectCommand(idx) {
+            const cmd = filteredCmds[idx];
+            if (!cmd) return;
+            const input = document.getElementById('chatInput');
+            input.value = '';
+            closePalette();
+
+            if (cmd.name === '/settings') { openSettingsPanel(); return; }
+            if (cmd.name === '/skills') { openSettingsPanel(); showSettingsTab('library'); return; }
+            if (cmd.hasParams) {
+                showParamForm(cmd.name);
+            } else {
+                const queries = {
+                    '/focus': "What's the highest leverage thing I can do right now?",
+                    '/nudge': 'Draft a follow-up nudge',
+                    '/briefing': 'Give me my daily briefing'
+                };
+                sendChat(queries[cmd.name] || cmd.name);
             }
         }
 
-        function showCoachingTab(tab, btn) {
-            ['skills', 'tenets', 'qa', 'library'].forEach(t => {
-                const el = document.getElementById('coachingTab' + t.charAt(0).toUpperCase() + t.slice(1));
-                if (el) el.style.display = t === tab ? '' : 'none';
-            });
-            document.querySelectorAll('#coachingTabNav button').forEach(b => b.classList.remove('active'));
-            if (btn) btn.classList.add('active');
+        function showParamForm(cmdName) {
+            const conv = document.getElementById('conversation');
+            const inner = conv.querySelector('.conversation-inner') || conv;
+            const cardId = 'param-' + Date.now();
+            const div = document.createElement('div');
+            div.id = cardId;
 
-            if (tab === 'qa') loadQAPreview();
-            if (tab === 'library') loadLibrary();
+            const configs = {
+                '/calendar': {
+                    title: 'Calendar',
+                    groups: [
+                        { label: 'Date', key: 'date', options: ['Today', 'Tomorrow', 'This Week'], defaultVal: 'Today' },
+                        { label: 'Show', key: 'filter', options: ['All', 'Work', 'Personal'], defaultVal: 'All' }
+                    ],
+                    buildQuery: function(s) {
+                        const filter = s.filter === 'All' ? '' : s.filter.toLowerCase() + ' ';
+                        const date = s.date === 'Today' ? 'today' : s.date === 'Tomorrow' ? 'tomorrow' : 'this week';
+                        return "What's on my " + filter + "calendar " + date + "?";
+                    }
+                },
+                '/commitments': {
+                    title: 'Commitments',
+                    groups: [
+                        { label: 'Show', key: 'scope', options: ['All', 'Overdue', 'I Owe', 'They Owe'], defaultVal: 'All' }
+                    ],
+                    contactInput: true,
+                    contactPlaceholder: 'e.g. Mona, Vasanth',
+                    buildQuery: function(s) {
+                        var person = s.contact ? ' with ' + s.contact : '';
+                        if (s.scope === 'All' && s.contact) return 'Show me commitments with ' + s.contact;
+                        if (s.scope === 'All') return 'How are my commitments looking?';
+                        if (s.scope === 'Overdue') return 'Show me overdue commitments' + person;
+                        if (s.scope === 'I Owe') return 'Show me commitments I owe' + person;
+                        return 'Show me commitments others owe me' + (s.contact ? ' from ' + s.contact : '');
+                    }
+                },
+                '/messages': {
+                    title: 'Messages',
+                    groups: [
+                        { label: 'Platform', key: 'platform', options: ['All', 'WhatsApp', 'iMessage', 'Signal'], defaultVal: 'All' },
+                        { label: 'Period', key: 'period', options: ['Today', '3 Days', 'This Week'], defaultVal: 'Today' }
+                    ],
+                    contactInput: true,
+                    buildQuery: function(s) {
+                        const platform = s.platform === 'All' ? '' : s.platform + ' ';
+                        const period = s.period === 'Today' ? 'from today' : s.period === '3 Days' ? 'from the last 3 days' : 'from this week';
+                        const contact = s.contact ? ' from ' + s.contact : '';
+                        return 'Summarize my ' + platform + 'messages' + contact + ' ' + period;
+                    }
+                }
+            };
+
+            const cfg = configs[cmdName];
+            if (!cfg) return;
+
+            let html = '<div class="param-card"><h3>' + cfg.title + '</h3>';
+            if (cfg.contactInput) {
+                html += '<div class="param-label">' + (cfg.contactLabel || 'Contact') + '</div>';
+                html += '<input type="text" class="param-input" placeholder="' + (cfg.contactPlaceholder || 'optional') + '" data-key="contact">';
+            }
+            cfg.groups.forEach(g => {
+                html += '<div class="param-label">' + g.label + '</div><div class="param-toggles">';
+                g.options.forEach(opt => {
+                    html += '<button class="param-toggle' + (opt === g.defaultVal ? ' active' : '') + '" data-key="' + g.key + '" data-value="' + opt + '" onclick="toggleParam(this)">' + opt + '</button>';
+                });
+                html += '</div>';
+            });
+            html += '<button class="param-go-btn" onclick="fireParamCommand(\'' + cardId + '\')">Go \u2192</button></div>';
+            div.innerHTML = html;
+            div._paramConfig = cfg;
+            inner.appendChild(div);
+            div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+
+        function toggleParam(el) {
+            const key = el.dataset.key;
+            el.parentElement.querySelectorAll('[data-key="' + key + '"]').forEach(b => b.classList.remove('active'));
+            el.classList.add('active');
+        }
+
+        function fireParamCommand(cardId) {
+            const card = document.getElementById(cardId);
+            if (!card || !card._paramConfig) return;
+            const selections = {};
+            card.querySelectorAll('.param-toggle.active').forEach(b => { selections[b.dataset.key] = b.dataset.value; });
+            const contactInput = card.querySelector('.param-input');
+            if (contactInput && contactInput.value.trim()) selections.contact = contactInput.value.trim();
+            const query = card._paramConfig.buildQuery(selections);
+            card.style.opacity = '0.4';
+            card.style.pointerEvents = 'none';
+            sendChat(query);
+        }
+
+        // Input handling with slash palette
+        function handleInput(event) {
+            const input = event.target;
+            const val = input.value;
+            // Auto-resize
+            input.style.height = 'auto';
+            input.style.height = Math.min(input.scrollHeight, 96) + 'px';
+            // Slash palette
+            if (val.startsWith('/')) {
+                showPalette(val);
+            } else {
+                closePalette();
+            }
+        }
+
+        function handleKeydown(event) {
+            if (paletteOpen) {
+                if (event.key === 'ArrowDown') {
+                    event.preventDefault();
+                    paletteIdx = Math.min(paletteIdx + 1, filteredCmds.length - 1);
+                    highlightCmd(paletteIdx);
+                } else if (event.key === 'ArrowUp') {
+                    event.preventDefault();
+                    paletteIdx = Math.max(paletteIdx - 1, 0);
+                    highlightCmd(paletteIdx);
+                } else if (event.key === 'Enter') {
+                    event.preventDefault();
+                    selectCommand(paletteIdx);
+                } else if (event.key === 'Escape') {
+                    closePalette();
+                    document.getElementById('chatInput').value = '';
+                }
+            } else {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    sendChat();
+                }
+            }
         }
 
         // ═══════════════════════════════════════════════
@@ -1276,6 +2269,7 @@
             _appLoaded = true;
             document.getElementById('authScreen').classList.add('hidden');
             document.getElementById('appContainer').classList.remove('hidden');
+            document.getElementById('appContainer').style.display = 'flex';
             document.getElementById('ftueWizard').classList.add('hidden');
 
             initTheme();
@@ -1326,21 +2320,120 @@
         // 7. CHAT SSE ENGINE (adapted to Walk DOM)
         // ═══════════════════════════════════════════════
 
-        function handleChatKeydown(event) {
-            if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendChat(); }
-        }
-
         function sendChat(prefilled) {
             const input = document.getElementById('chatInput');
             const text = prefilled || input.value.trim();
             if (!text) return;
-            if (currentScreen !== 'day') showScreen('day');
-            if (!prefilled) { input.value = ''; autoResizeTextarea(input); }
+            closePalette();
+            if (!prefilled) { input.value = ''; input.style.height = 'auto'; }
             sendChatMessage(text);
         }
 
+        function showCapabilityCard(type) {
+            const conv = document.getElementById('conversationScroll');
+            const canvas = conv ? (conv.querySelector('.conversation-inner') || conv) : document.getElementById('conversation');
+            const cardId = 'cap-card-' + Date.now();
+            const div = document.createElement('div');
+            div.className = 'capability-card fade-in';
+            div.id = cardId;
+
+            const configs = {
+                calendar: {
+                    title: 'Calendar',
+                    groups: [
+                        { label: 'Date', key: 'date', options: ['Today', 'Tomorrow', 'This Week'], default: 'Today' },
+                        { label: 'Show', key: 'filter', options: ['All', 'Work', 'Personal'], default: 'All' }
+                    ],
+                    buildQuery: function(s) {
+                        const filter = s.filter === 'All' ? '' : s.filter.toLowerCase() + ' ';
+                        const date = s.date === 'Today' ? 'today' : s.date === 'Tomorrow' ? 'tomorrow' : 'this week';
+                        return "What's on my " + filter + "calendar " + date + "?";
+                    }
+                },
+                commitments: {
+                    title: 'Commitments',
+                    groups: [
+                        { label: 'Show', key: 'scope', options: ['All', 'Overdue', 'I Owe', 'They Owe'], default: 'All' }
+                    ],
+                    contactInput: true,
+                    contactLabel: 'Person',
+                    contactPlaceholder: 'e.g. Mona, Vasanth',
+                    buildQuery: function(s) {
+                        var person = s.contact ? ' with ' + s.contact : '';
+                        if (s.scope === 'All' && s.contact) return 'Show me commitments with ' + s.contact;
+                        if (s.scope === 'All') return 'How are my commitments looking?';
+                        if (s.scope === 'Overdue') return 'Show me overdue commitments' + person;
+                        if (s.scope === 'I Owe') return 'Show me commitments I owe' + person;
+                        return 'Show me commitments others owe me' + (s.contact ? ' from ' + s.contact : '');
+                    }
+                },
+                messages: {
+                    title: 'Messages',
+                    groups: [
+                        { label: 'Platform', key: 'platform', options: ['All', 'WhatsApp', 'iMessage', 'Signal'], default: 'All' },
+                        { label: 'Period', key: 'period', options: ['Today', '3 Days', 'This Week'], default: 'Today' }
+                    ],
+                    contactInput: true,
+                    buildQuery: function(s) {
+                        const platform = s.platform === 'All' ? '' : s.platform + ' ';
+                        const period = s.period === 'Today' ? 'from today' : s.period === '3 Days' ? 'from the last 3 days' : 'from this week';
+                        const contact = s.contact ? ' from ' + s.contact : '';
+                        return 'Summarize my ' + platform + 'messages' + contact + ' ' + period;
+                    }
+                }
+            };
+
+            const cfg = configs[type];
+            let html = '<div class="cap-card-title">' + cfg.title + '</div>';
+
+            if (cfg.contactInput) {
+                var contactLabel = cfg.contactLabel || 'Contact';
+                var contactPlaceholder = cfg.contactPlaceholder || 'optional';
+                html += '<div class="cap-group"><span class="cap-label">' + contactLabel + '</span>';
+                html += '<input type="text" class="cap-contact-input" placeholder="' + contactPlaceholder + '" data-key="contact" /></div>';
+            }
+
+            cfg.groups.forEach(function(g) {
+                html += '<div class="cap-group"><span class="cap-label">' + g.label + '</span><div class="cap-pills">';
+                g.options.forEach(function(opt) {
+                    var sel = opt === g.default ? ' cap-pill-selected' : '';
+                    html += '<button class="cap-pill' + sel + '" data-key="' + g.key + '" data-value="' + opt + '" onclick="selectCapPill(this)">' + opt + '</button>';
+                });
+                html += '</div></div>';
+            });
+
+            html += '<button class="btn btn-coach cap-go" onclick="fireCapabilityCard(\'' + cardId + '\')">Go &#8594;</button>';
+            div.innerHTML = html;
+            canvas.appendChild(div);
+            div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            div._capConfig = cfg;
+        }
+
+        function selectCapPill(el) {
+            var key = el.dataset.key;
+            el.parentElement.querySelectorAll('[data-key="' + key + '"]').forEach(function(p) { p.classList.remove('cap-pill-selected'); });
+            el.classList.add('cap-pill-selected');
+        }
+
+        function fireCapabilityCard(cardId) {
+            var card = document.getElementById(cardId);
+            if (!card || !card._capConfig) return;
+            var selections = {};
+            card.querySelectorAll('.cap-pill-selected').forEach(function(p) {
+                selections[p.dataset.key] = p.dataset.value;
+            });
+            var contactInput = card.querySelector('.cap-contact-input');
+            if (contactInput && contactInput.value.trim()) {
+                selections.contact = contactInput.value.trim();
+            }
+            var query = card._capConfig.buildQuery(selections);
+            card.classList.add('cap-card-sent');
+            sendChat(query);
+        }
+
         function addChatBubble(sender, content) {
-            const canvas = document.getElementById('canvas-day');
+            const conv = document.getElementById('conversationScroll');
+            const canvas = conv ? (conv.querySelector('.conversation-inner') || conv) : document.getElementById('conversation');
             const div = document.createElement('div');
             div.className = sender === 'user' ? 'user-msg fade-in' : 'coach-msg fade-in';
             div.id = 'chat-msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4);
@@ -1355,7 +2448,8 @@
         }
 
         function createStreamingBubble() {
-            const canvas = document.getElementById('canvas-day');
+            const conv = document.getElementById('conversationScroll');
+            const canvas = conv ? (conv.querySelector('.conversation-inner') || conv) : document.getElementById('conversation');
             const div = document.createElement('div');
             div.className = 'coach-msg fade-in';
             div.id = 'chat-stream-' + Date.now();
@@ -1365,12 +2459,29 @@
             return div.id;
         }
 
+        let _pendingStreamUpdate = null;
+        let _pendingStreamText = {};
+
         function updateStreamingBubble(bubbleId, text) {
-            const bubble = document.getElementById(bubbleId);
-            if (!bubble) return;
-            const textEl = bubble.querySelector('.stream-text');
-            if (textEl) textEl.innerHTML = renderMarkdown(text);
-            bubble.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            _pendingStreamText[bubbleId] = text;
+            if (!_pendingStreamUpdate) {
+                _pendingStreamUpdate = requestAnimationFrame(() => {
+                    for (const [id, txt] of Object.entries(_pendingStreamText)) {
+                        const bubble = document.getElementById(id);
+                        if (!bubble) continue;
+                        const textEl = bubble.querySelector('.stream-text');
+                        if (textEl) textEl.innerHTML = renderMarkdown(txt);
+                    }
+                    // Scroll only once per frame
+                    const lastBubbleId = Object.keys(_pendingStreamText).pop();
+                    if (lastBubbleId) {
+                        const lastBubble = document.getElementById(lastBubbleId);
+                        if (lastBubble) lastBubble.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                    }
+                    _pendingStreamText = {};
+                    _pendingStreamUpdate = null;
+                });
+            }
         }
 
         function showToolIndicator(bubbleId, toolName) {
@@ -1452,6 +2563,20 @@
             if (textEl) textEl.innerHTML = '<span style="color:var(--danger);">&#9888; ' + escapeHtml(error || 'Something went wrong.') + '</span>';
         }
 
+        function renderDidYouMean(bubbleId, original, suggestions) {
+            const bubble = document.getElementById(bubbleId);
+            if (!bubble) return;
+            const textEl = bubble.querySelector('.stream-text');
+            if (!textEl) return;
+            let html = '<div style="margin-bottom:8px;color:var(--text-secondary);">No exact match for <strong>' + escapeHtml(original) + '</strong>. Did you mean:</div>';
+            html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+            for (const name of suggestions) {
+                html += '<button class="dym-chip" onclick="sendChatMessage(\'messages from ' + escapeHtml(name).replace(/'/g, "\\'") + '\')">' + escapeHtml(name) + '</button>';
+            }
+            html += '</div>';
+            textEl.innerHTML = html;
+        }
+
         async function sendChatMessage(prefilled) {
             const input = document.getElementById('chatInput');
             const query = prefilled || input.value.trim();
@@ -1469,7 +2594,7 @@
             if (chatAbortController) chatAbortController.abort();
             chatAbortController = new AbortController();
 
-            const token = localStorage.getItem(STORAGE_TOKEN_KEY);
+            const token = authToken || localStorage.getItem(STORAGE_TOKEN_KEY);
             const url = new URL('/api/chat/stream', window.location.origin);
             url.searchParams.set('q', query);
             url.searchParams.set('sessionId', chatSessionId);
@@ -1503,6 +2628,7 @@
                                     case 'tool_start': showToolIndicator(bubbleId, data.tool || data.type || 'unknown'); hadToolStart = true; break;
                                     case 'tool_result': renderToolCard(bubbleId, data); hadToolResult = true; break;
                                     case 'chunk': fullText += (data.text || ''); updateStreamingBubble(bubbleId, fullText); break;
+                                    case 'did_you_mean': renderDidYouMean(bubbleId, data.original, data.suggestions || []); break;
                                     case 'done': if (data.sessionId) chatSessionId = data.sessionId; finalizeStreamingBubble(bubbleId, hadToolStart && !hadToolResult); break;
                                     case 'error': showErrorInBubble(bubbleId, data.error || data.message); break;
                                     default: if (data.text) { fullText += data.text; updateStreamingBubble(bubbleId, fullText); }
@@ -1635,21 +2761,21 @@
             switch(step) {
                 case 'welcome':
                     return `
-                        <div class="ftue-icon">&#127919;</div>
-                        <h1>Welcome to Alfred</h1>
-                        <p>Your intelligent executive assistant that helps you stay on top of everything.</p>
+                        <h1 style="font-size:28px;margin-bottom:4px;">Coach Alfred</h1>
+                        <p style="text-align:center;font-size:13px;color:var(--ink-tertiary);margin-bottom:24px;letter-spacing:0.02em;">sharpen your genius</p>
+                        <p>Your AI coach that knows how you work — embedded in your messages, calendar, notes, and commitments. Alfred watches patiently, learns your patterns, and pushes you toward the 10x version of yourself.</p>
                         <ul class="ftue-features">
-                            <li><span>&#128231;</span> Email priorities and responses</li>
-                            <li><span>&#128197;</span> Calendar and meeting prep</li>
-                            <li><span>&#9989;</span> Tasks and commitments tracking</li>
-                            <li><span>&#128172;</span> Message scanning for action items</li>
+                            <li><span style="font-size:14px;">&#9679;</span> Surfaces what deserves your attention — not what's loudest</li>
+                            <li><span style="font-size:14px;">&#9679;</span> Tracks commitments you've made and ones owed to you</li>
+                            <li><span style="font-size:14px;">&#9679;</span> Gets sharper the longer it watches you operate</li>
+                            <li><span style="font-size:14px;">&#9679;</span> Coaches with context, not platitudes</li>
                         </ul>
-                        <p style="font-size: 13px; color: var(--ink-tertiary);">Let's get you set up in about 5 minutes.</p>
+                        <p style="font-size: 13px; color: var(--ink-tertiary);">5 minutes to set up. Then Alfred goes to work.</p>
                     `;
                 case 'apiKeys':
                     return `
-                        <h2>Connect Your AI</h2>
-                        <p>Alfred uses Claude AI to understand your communications and provide intelligent assistance.</p>
+                        <h2>Connect Claude</h2>
+                        <p>Alfred runs on Anthropic's most capable models. Every briefing, nudge, and insight is generated with deep context — not canned responses. Your API key stays local.</p>
                         <div class="ftue-field">
                             <label>Claude API Key <span class="required">*</span></label>
                             <input type="password" id="ftueClaudeApiKey" placeholder="sk-ant-..." value="${ftueData.claudeApiKey || ''}">
@@ -1664,7 +2790,7 @@
                     const dbPickerHtml = notionDatabases.length > 0 ? renderNotionDatabasePickers() : '';
                     return `
                         <h2>Connect Notion</h2>
-                        <p>Alfred stores your tasks, commitments, and favorites in Notion databases.</p>
+                        <p>Your second brain lives in Notion — Alfred plugs into it. It pulls context from your notes, creates tasks and commitments from your conversations, and makes sure nothing you've written down falls through the cracks.</p>
                         <div class="ftue-field">
                             <label>Notion Integration Token <span class="required">*</span></label>
                             <input type="password" id="ftueNotionApiKey" placeholder="secret_..." value="${ftueData.notionApiKey || ''}">
@@ -1680,8 +2806,8 @@
                     const googleConnected = ftueData.googleConnected;
                     const hasGoogleCreds = ftueData.googleClientId && ftueData.googleClientSecret;
                     return `
-                        <h2>Connect Google</h2>
-                        <p>Access your Calendar for briefings, meeting prep, and event creation.</p>
+                        <h2>Connect Google Calendar</h2>
+                        <p>Alfred reads your calendar to build daily briefings, prep you for meetings, and create events from chat.</p>
                         <div id="googleCredsSection" style="${hasGoogleCreds ? 'display:none;' : ''}">
                             <p style="font-size: 13px; color: var(--ink-secondary); margin-bottom: 12px;">
                                 First, create OAuth credentials in <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color: var(--coach);">Google Cloud Console</a>.
@@ -1711,14 +2837,15 @@
                 case 'profile':
                     return `
                         <h2>About You</h2>
-                        <p>Help Alfred personalize your experience and address you correctly.</p>
+                        <p>A great coach studies the player before the game. Help Alfred calibrate to you.</p>
                         <div class="ftue-field">
                             <label>Your Name <span class="required">*</span></label>
-                            <input type="text" id="ftueUserName" placeholder="John Doe" value="${ftueData.userName || ''}">
+                            <input type="text" id="ftueUserName" placeholder="Your name" value="${ftueData.userName || ''}">
                         </div>
                         <div class="ftue-field">
                             <label>Email <span class="required">*</span></label>
                             <input type="email" id="ftueUserEmail" placeholder="you@example.com" value="${ftueData.userEmail || ''}">
+                            <small>Where Alfred sends your daily briefing</small>
                         </div>
                         <div class="ftue-field">
                             <label>Work Hours</label>
@@ -1727,58 +2854,74 @@
                                 <span style="color: var(--ink-tertiary);">to</span>
                                 <select id="ftueWorkEndHour">${generateHourOptions(ftueData.workEndHour || '17')}</select>
                             </div>
+                            <small>Alfred times briefings and attention alerts to your rhythm</small>
+                        </div>
+                        <div class="ftue-field">
+                            <label>How do you operate?</label>
+                            <select id="ftueWorkStyle" style="width:100%;padding:10px 12px;font-family:var(--font-body);font-size:14px;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);color:var(--ink);">
+                                <option value="">Select your style...</option>
+                                <option value="driver" ${ftueData.workStyle === 'driver' ? 'selected' : ''}>Driver — bias to action, impatient with noise</option>
+                                <option value="architect" ${ftueData.workStyle === 'architect' ? 'selected' : ''}>Architect — systems thinker, wants the full picture</option>
+                                <option value="connector" ${ftueData.workStyle === 'connector' ? 'selected' : ''}>Connector — relationships first, context through people</option>
+                                <option value="operator" ${ftueData.workStyle === 'operator' ? 'selected' : ''}>Operator — execution machine, thrives on throughput</option>
+                            </select>
+                            <small>Shapes how Alfred coaches you — directness, detail level, what gets flagged</small>
                         </div>
                     `;
                 case 'messaging':
                     return `
-                        <h2>Message Scanning</h2>
-                        <p>Alfred can extract action items and commitments from your messages.</p>
+                        <h2>Message Sources</h2>
+                        <p>The best commitments happen in conversations — and that's where they get lost. Alfred reads your messages to catch what matters.</p>
                         <div class="ftue-toggle">
                             <input type="checkbox" id="ftueEnableIMessage" ${ftueData.enableIMessage !== false ? 'checked' : ''}>
-                            <div><label for="ftueEnableIMessage">iMessage</label><small>Scans your iMessage database for action items</small></div>
+                            <div><label for="ftueEnableIMessage">iMessage</label><small>Reads your local Messages database</small></div>
                         </div>
                         <div class="ftue-toggle">
                             <input type="checkbox" id="ftueEnableWhatsApp" ${ftueData.enableWhatsApp ? 'checked' : ''}>
-                            <div><label for="ftueEnableWhatsApp">WhatsApp</label><small>Scans exported WhatsApp chats</small></div>
+                            <div><label for="ftueEnableWhatsApp">WhatsApp Desktop</label><small>Reads your local WhatsApp database</small></div>
                         </div>
-                        <p style="font-size: 12px; color: var(--ink-tertiary); margin-top: 24px;">Note: iMessage requires Full Disk Access permission (next step).</p>
+                        <div style="margin-top:20px;padding:12px 14px;background:var(--surface-sunken);border-radius:8px;">
+                            <p style="font-size:12px;color:var(--ink-secondary);margin:0;line-height:1.5;"><strong style="color:var(--ink);">Privacy-first.</strong> All message processing happens locally on your Mac. Your conversations never leave this machine — Alfred reads the databases directly, no cloud sync, no forwarding.</p>
+                        </div>
+                        <p style="font-size: 12px; color: var(--ink-tertiary); margin-top: 12px;">Add your key contacts later in Settings to focus Alfred on the people who matter most.</p>
                     `;
                 case 'permissions':
                     return `
-                        <h2>macOS Permissions</h2>
-                        <p>Alfred needs Full Disk Access to read your messages and files.</p>
+                        <h2>Permissions</h2>
+                        <p>Alfred needs one macOS permission to read your local message databases. This is the only system access required — and it stays on your machine.</p>
                         <div class="ftue-permission-card">
                             <div class="ftue-permission-header">
-                                <span class="icon">&#128274;</span>
-                                <div><strong>Full Disk Access</strong><p>Required for iMessage, WhatsApp, and file access</p></div>
+                                <div><strong>Full Disk Access</strong><p style="margin-top:2px;">Lets Alfred read iMessage and WhatsApp databases locally</p></div>
                             </div>
                             <div class="ftue-permission-steps">
-                                <div class="step"><span class="step-num">1</span><span>Click the button below to open System Settings</span></div>
-                                <div class="step"><span class="step-num">2</span><span>Click the <strong>+</strong> button at the bottom</span></div>
-                                <div class="step"><span class="step-num">3</span><span>Navigate to <strong>/Applications</strong> and select <strong>Alfred.app</strong></span></div>
-                                <div class="step"><span class="step-num">4</span><span>Make sure the toggle is <strong>ON</strong> (blue)</span></div>
+                                <div class="step"><span class="step-num">1</span><span>Open <strong>System Settings</strong> (button below)</span></div>
+                                <div class="step"><span class="step-num">2</span><span>Click <strong>+</strong> and add <strong>/Applications/Alfred.app</strong></span></div>
+                                <div class="step"><span class="step-num">3</span><span>Ensure the toggle is <strong>on</strong></span></div>
                             </div>
                             <button class="ftue-permission-btn-large" onclick="openPermissionSettings('FullDiskAccess')">Open System Settings</button>
-                            <p class="ftue-permission-note"><strong>Why?</strong> macOS protects your messages and files. Alfred needs this permission to scan for action items and commitments.</p>
+                            <div style="margin-top:12px;padding:10px 14px;background:var(--surface);border-radius:8px;">
+                                <p style="font-size:12px;color:var(--ink-secondary);margin:0;line-height:1.5;"><strong style="color:var(--ink);">Why this matters:</strong> Alfred reads databases directly on disk — no cloud APIs, no message forwarding. macOS gates this access so you stay in control.</p>
+                            </div>
                         </div>
                         <div class="ftue-permission-item" style="margin-top: 16px; opacity: 0.7;">
-                            <span class="icon">&#128276;</span>
-                            <div class="info"><strong>Notifications</strong><p>Optional: For scheduled alerts</p></div>
+                            <div class="info" style="flex:1;"><strong>Notifications</strong><p style="font-size:12px;color:var(--ink-tertiary);margin-top:2px;">For scheduled briefings and attention alerts</p></div>
                             <button class="ftue-permission-btn" onclick="requestNotificationPermission()">Enable</button>
                         </div>
                     `;
                 case 'complete':
                     return `
-                        <div class="ftue-success-icon">&#9989;</div>
-                        <h1>You're All Set!</h1>
-                        <p>Alfred is ready to be your executive assistant.</p>
+                        <h1 style="margin-top:8px;">You're live</h1>
+                        <p style="text-align:center;">Alfred is now embedded in the way you work. It will watch, learn, and get sharper every day. Your job: operate. Alfred's job: make sure nothing consequential slips.</p>
                         <div class="ftue-summary">
-                            <div>Claude AI connected</div>
-                            <div>Notion databases configured</div>
-                            <div>Profile configured</div>
-                            ${ftueData.googleConnected ? '<div>Google Calendar synced</div>' : ''}
+                            <div>Claude connected — highest-context coaching active</div>
+                            <div>Notion synced — your second brain is augmented</div>
+                            <div>Profile calibrated</div>
+                            ${ftueData.googleConnected ? '<div>Calendar wired — briefings and meeting prep ready</div>' : ''}
+                            ${ftueData.enableIMessage ? '<div>iMessage — commitment tracking on</div>' : ''}
+                            ${ftueData.enableWhatsApp ? '<div>WhatsApp — commitment tracking on</div>' : ''}
                         </div>
-                        <button class="ftue-launch-btn" onclick="completeFtue()">Launch Alfred</button>
+                        <p style="font-size:13px;color:var(--ink-tertiary);text-align:center;margin-top:16px;">First move: add your key contacts in Settings so Alfred knows who to watch closely.</p>
+                        <button class="ftue-launch-btn" onclick="completeFtue()">Let's go</button>
                     `;
                 default: return '<p>Unknown step</p>';
             }
@@ -1788,7 +2931,7 @@
             if (step === 'welcome') {
                 return `<button class="ftue-btn ftue-btn-primary" onclick="nextFtueStep()">Get Started</button>
                     <div style="margin-top: 16px; text-align: center;">
-                        <a href="#" onclick="skipFtueEntirely(); return false;" style="color: var(--ink-tertiary); font-size: 13px; text-decoration: none;">Already configured? Skip to login &rarr;</a>
+                        <a href="#" onclick="skipFtueEntirely(); return false;" style="color: var(--ink-tertiary); font-size: 13px; text-decoration: none;">Already set up? Skip to login &rarr;</a>
                     </div>`;
             }
             if (step === 'complete') return '';
@@ -1873,10 +3016,12 @@
                     const userEmail = document.getElementById('ftueUserEmail')?.value?.trim();
                     const workStartHour = document.getElementById('ftueWorkStartHour')?.value;
                     const workEndHour = document.getElementById('ftueWorkEndHour')?.value;
+                    const workStyle = document.getElementById('ftueWorkStyle')?.value || '';
                     if (!userName || !userEmail) { alert('Name and Email are required'); return false; }
                     ftueData.userName = userName; ftueData.userEmail = userEmail;
                     ftueData.workStartHour = workStartHour; ftueData.workEndHour = workEndHour;
-                    await saveFtueStepData('profile', { name: userName, email: userEmail, workStartHour, workEndHour });
+                    ftueData.workStyle = workStyle;
+                    await saveFtueStepData('profile', { name: userName, email: userEmail, workStartHour, workEndHour, workStyle });
                     return true;
                 }
                 case 'messaging': {
@@ -2039,26 +3184,22 @@
 
         function buildFocusCardElement(topGoal) {
             if (!topGoal || !topGoal.title) {
-                return '<div class="card focus-card">'
+                return '<div class="focus-card">'
                     + '<div class="card-header"><span>FOCUS</span></div>'
-                    + '<div class="focus-title" style="opacity:0.5;">No active goal</div>'
+                    + '<div class="focus-title" style="opacity:0.4;">No active goal</div>'
                     + '<div class="focus-actions"><button class="btn btn-sm" onclick="openPinSuggestions()">Pin a focus</button></div>'
                     + '</div>';
             }
             const isPinned = topGoal.pinned === true;
-            const label = isPinned ? '<span class="focus-pin-icon">&#128204;</span> YOUR #1' : 'FOCUS';
+            const label = isPinned ? '&#128204; YOUR #1' : 'FOCUS';
             const pinnedClass = isPinned ? ' pinned' : '';
-            let meta = '';
-            if (topGoal.dueDate) meta = '<div style="font-size:11px;color:var(--ink-tertiary);margin-top:4px;">Due: ' + escapeHtml(topGoal.dueDate) + '</div>';
-            const doneBtn = topGoal.notionId ? '<button class="btn btn-sm" onclick="markTopGoalDone(\'' + topGoal.notionId + '\')">&#10003;</button>' : '';
-            const actionBtn = isPinned
-                ? '<button class="btn btn-sm" onclick="openPinSuggestions()">Change</button>'
-                : '<button class="btn btn-sm" onclick="openPinSuggestions()">Pin it</button>';
-            return '<div class="card focus-card' + pinnedClass + '">'
-                + '<div class="card-header"><span>' + label + '</span>' + doneBtn + '</div>'
-                + '<div class="focus-title">' + escapeHtml(topGoal.title) + '</div>'
-                + meta
-                + '<div class="focus-actions">' + actionBtn + '</div>'
+            const dueTag = topGoal.dueDate ? ' <span style="font-size:11px;color:var(--ink-tertiary);font-weight:400;"> · due ' + escapeHtml(topGoal.dueDate) + '</span>' : '';
+            const doneBtn = topGoal.notionId ? '<button class="btn btn-sm" onclick="markTopGoalDone(\'' + topGoal.notionId + '\')">Done</button>' : '';
+            const changeBtn = '<button class="btn btn-sm" onclick="openPinSuggestions()">Change</button>';
+            return '<div class="focus-card' + pinnedClass + '">'
+                + '<div class="card-header"><span>' + label + '</span></div>'
+                + '<div class="focus-title">' + escapeHtml(topGoal.title) + dueTag + '</div>'
+                + '<div class="focus-actions">' + doneBtn + changeBtn + '</div>'
                 + '</div>';
         }
 
@@ -2103,7 +3244,7 @@
             }
         }
 
-        function renderMorningWalk(pulseData, coachingCards, openerText) {
+        function renderMorningWalk(pulseData, coachingCards, openerText, pendingClosures) {
             const thread = document.getElementById('morningWalkThread');
             if (!thread) return;
 
@@ -2114,51 +3255,128 @@
             const walkLabel = h < 12 ? 'Morning Walk' : h < 17 ? 'Afternoon Check-in' : 'Evening Wrap-up';
             html += buildTimeMarker(walkLabel);
 
-            // 2. Coach greeting
-            const greeting = (openerText && openerText.trim()) ? openerText : buildFallbackGreeting(pulseData);
-            html += '<div class="coach-msg">' + renderMarkdown(greeting) + '</div>';
-
-            // 3. Focus card
+            // 2. Focus card FIRST (before greeting)
             const topGoal = (pulseData && pulseData.topGoal) || null;
             html += buildFocusCardElement(topGoal);
 
-            // 4. Coach narrative about the day
-            html += '<div class="coach-msg">' + renderMarkdown(buildFocusNarrative(pulseData)) + '</div>';
-
-            // 5. Pending actions
-            const pending = (pulseData && pulseData.pendingActions) || [];
-            if (pending.length > 0) {
-                html += '<div class="card"><div class="card-header">PENDING ACTIONS</div>';
-                pending.forEach(action => {
-                    html += '<div style="font-size:13px;padding:6px 0;border-bottom:1px solid var(--line);">'
-                        + escapeHtml(action.description || action.title || action)
-                        + '</div>';
+            // 3. Pending closure reviews
+            const closures = pendingClosures || [];
+            if (closures.length > 0) {
+                html += '<div class="card" style="margin-bottom:12px;"><div class="card-header">PENDING REVIEWS (' + closures.length + ')</div>';
+                html += '<div style="font-size:12px;color:var(--ink-secondary);margin-bottom:8px;">These commitments may be done. Confirm or keep open:</div>';
+                closures.slice(0, 5).forEach(c => {
+                    html += '<div style="padding:8px 0;border-bottom:1px solid var(--line);" id="home-closure-' + c.hash + '">'
+                        + '<div style="font-size:13px;font-weight:500;">' + escapeHtml(c.title) + '</div>'
+                        + '<div style="font-size:11px;color:var(--ink-tertiary);margin:3px 0;">&ldquo;' + escapeHtml(c.signal) + '&rdquo; &middot; ' + Math.round(c.confidence * 100) + '% confident</div>'
+                        + '<div style="display:flex;gap:6px;margin-top:6px;">'
+                        + '<button class="pill" style="background:var(--growth);color:white;font-size:11px;" onclick="confirmClosureHome(\'' + c.hash + '\', this)">Confirm Done</button>'
+                        + '<button class="pill" style="font-size:11px;" onclick="rejectClosureHome(\'' + c.hash + '\', this)">Keep Open</button>'
+                        + '</div></div>';
                 });
+                if (closures.length > 5) {
+                    html += '<div style="text-align:center;padding:8px;"><button class="pill" onclick="showCapabilityCard(\'commitments\')">View all ' + closures.length + ' pending</button></div>';
+                }
                 html += '</div>';
             }
 
-            // 6. Coaching insights as individual coach messages with breadcrumbs
+            // 6. Coaching insights — Lead insight + collapsible secondary observations
             const cards = coachingCards || [];
+            const nonWeeklyCards = [];
             let weeklyCard = null;
             cards.forEach(card => {
-                if ((card.type || '').includes('weekly')) { weeklyCard = card; return; }
-                const label = card.label || card.type || 'Insight';
-                const isUrgent = (card.type || '').includes('avoidance') && (card.insight || '').includes('week');
-                const method = skillMethodology(card.type);
-                const ago = card.generatedAgo || '';
-                const cardId = 'card-' + (card.type || '').replace(/[^a-zA-Z0-9-]/g, '');
-                html += '<div class="coach-msg" id="' + cardId + '">'
-                    + '<div class="insight-header">'
-                    + '<div class="insight-header-left">'
-                    + '<span class="insight-type-label' + (isUrgent ? ' urgent' : '') + '">' + escapeHtml(label) + '</span>'
-                    + (method ? '<span class="insight-skill-tag">' + escapeHtml(method) + '</span>' : '')
-                    + (ago ? '<span class="insight-ago">' + escapeHtml(ago) + '</span>' : '')
-                    + '</div>'
-                    + '<button class="insight-refresh" onclick="refreshCoachingCard(\'' + escapeHtml(card.type || '') + '\')" title="Regenerate">&#x21bb;</button>'
-                    + '</div>'
-                    + renderMarkdown(trimInsight(card.insight || ''))
-                    + '</div>';
+                if ((card.type || '').includes('weekly')) { weeklyCard = card; }
+                else { nonWeeklyCards.push(card); }
             });
+
+            if (nonWeeklyCards.length === 0) {
+                // Skeleton placeholders
+                const skeletonTypes = [
+                    { label: 'Leverage', type: 'campbell-leverage' },
+                    { label: 'Relationship', type: 'campbell-relationship' },
+                    { label: 'Avoidance', type: 'mochary-avoidance' },
+                    { label: 'Attention', type: 'mochary-attention' }
+                ];
+                skeletonTypes.forEach((s, i) => {
+                    html += '<div class="coaching-card skeleton" data-type="' + s.type + '" style="animation:pulse 1.5s ease-in-out infinite;animation-delay:' + (i * 0.15) + 's;">'
+                        + '<div class="cc-head"><div class="cc-left"><div class="cc-dot"></div>'
+                        + '<span class="cc-type">' + s.label + '</span></div></div>'
+                        + '<div class="skel-line" style="width:92%;"></div>'
+                        + '<div class="skel-line" style="width:' + (60 + Math.random() * 15) + '%;"></div>'
+                        + '</div>';
+                });
+            } else {
+                // Lead insight — first coaching card with left accent stripe
+                var leadCard = nonWeeklyCards[0];
+                var leadLabel = (leadCard.label || leadCard.type || 'Insight').replace(/^[^\w]*/, '');
+                var leadMethod = skillMethodology(leadCard.type);
+                var leadAgo = leadCard.generatedAgo || formatAgo(leadCard.generatedAt) || '';
+                var leadType = (leadCard.type || '').split('-').pop() || 'leverage';
+                var leadCardId = 'card-' + (leadCard.type || '').replace(/[^a-zA-Z0-9-]/g, '');
+                html += '<div class="lead-insight" id="' + leadCardId + '">'
+                    + '<div class="lead-insight-head">'
+                    + '<div style="display:flex;align-items:center;gap:6px;">'
+                    + '<div class="nb-dot" data-type="' + escapeHtml(leadType) + '"></div>'
+                    + '<span class="nb-type">' + escapeHtml(leadLabel) + '</span>'
+                    + (leadMethod ? '<span class="nb-method">&middot; ' + escapeHtml(leadMethod) + '</span>' : '')
+                    + '</div>'
+                    + '<button class="nb-refresh" onclick="refreshCoachingCard(\'' + escapeHtml(leadCard.type || '') + '\')" title="Regenerate">&#x21bb;</button>'
+                    + '</div>'
+                    + '<div class="lead-insight-body">' + renderMarkdown(trimInsight(leadCard.insight || '')) + '</div>'
+                    + (leadAgo ? '<div class="lead-insight-footer"><div style="font-size:11px;color:var(--ink-tertiary);">' + escapeHtml(leadAgo) + '</div></div>' : '')
+                    + '</div>';
+
+                // Secondary observations — remaining cards in collapsible details
+                var secondaryCards = nonWeeklyCards.slice(1);
+                if (secondaryCards.length > 0) {
+                    // Build summary dots showing card type colors
+                    var dotColors = { 'leverage': 'var(--coach)', 'relationship': 'var(--growth)', 'avoidance': 'var(--warning)', 'attention': 'var(--danger)', 'deep-work': 'var(--method)', 'deal-pipeline': 'var(--info)', 'follow': 'var(--info)' };
+                    var dotsHtml = '<div class="summary-dots">';
+                    secondaryCards.forEach(function(sc) {
+                        var scType = (sc.type || '').split('-').pop() || 'leverage';
+                        var dotColor = dotColors[scType] || 'var(--ink-faint)';
+                        // Try matching full type for multi-word types
+                        if (dotColors[(sc.type || '').replace(/^[^-]+-/, '')]) dotColor = dotColors[(sc.type || '').replace(/^[^-]+-/, '')];
+                        if ((sc.type || '').includes('attention')) dotColor = 'var(--danger)';
+                        if ((sc.type || '').includes('leverage')) dotColor = 'var(--coach)';
+                        if ((sc.type || '').includes('relationship')) dotColor = 'var(--growth)';
+                        if ((sc.type || '').includes('avoidance')) dotColor = 'var(--warning)';
+                        if ((sc.type || '').includes('deep-work')) dotColor = 'var(--method)';
+                        dotsHtml += '<div class="summary-dot" style="background:' + dotColor + '"></div>';
+                    });
+                    dotsHtml += '</div>';
+
+                    html += '<details class="more-observations">'
+                        + '<summary>'
+                        + dotsHtml
+                        + '<span>' + secondaryCards.length + ' more observation' + (secondaryCards.length !== 1 ? 's' : '') + '</span>'
+                        + '<svg class="summary-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>'
+                        + '</summary>'
+                        + '<div class="secondary-bubbles">';
+
+                    secondaryCards.forEach(function(card) {
+                        var secLabel = (card.label || card.type || 'Insight').replace(/^[^\w]*/, '');
+                        var secMethod = skillMethodology(card.type);
+                        var secAgo = card.generatedAgo || formatAgo(card.generatedAt) || '';
+                        var secType = (card.type || '').split('-').pop() || 'leverage';
+                        if ((card.type || '').includes('attention')) secType = 'attention';
+                        if ((card.type || '').includes('leverage')) secType = 'leverage';
+                        if ((card.type || '').includes('relationship')) secType = 'relationship';
+                        if ((card.type || '').includes('avoidance')) secType = 'avoidance';
+                        if ((card.type || '').includes('deep-work')) secType = 'deep-work';
+                        var secCardId = 'card-' + (card.type || '').replace(/[^a-zA-Z0-9-]/g, '');
+                        html += '<div class="secondary-bubble" id="' + secCardId + '" data-type="' + escapeHtml(secType) + '">'
+                            + '<div class="sec-head">'
+                            + '<div class="nb-dot" data-type="' + escapeHtml(secType) + '"></div>'
+                            + '<span class="nb-type">' + escapeHtml(secLabel) + '</span>'
+                            + (secMethod ? '<span class="nb-method">&middot; ' + escapeHtml(secMethod) + '</span>' : '')
+                            + (secAgo ? '<span style="font-size:10px;color:var(--ink-faint);margin-left:auto;">' + escapeHtml(secAgo) + '</span>' : '')
+                            + '</div>'
+                            + '<div class="sec-body">' + renderMarkdown(trimInsight(card.insight || '')) + '</div>'
+                            + '</div>';
+                    });
+                    html += '</div></details>';
+                }
+            }
 
             // Handle weekly review card
             if (weeklyCard) {
@@ -2170,38 +3388,61 @@
                 }
             }
 
-            // 7. Accountability question
-            html += '<div class="coach-question">' + escapeHtml(buildAccountabilityQuestion(pulseData)) + '</div>';
+            // 5. Suggestion chips (contextual)
+            var chipItems = [];
+            var metrics = (pulseData && pulseData.metrics) || {};
+            if (metrics.meetingsToday > 0) chipItems.push({label: 'Calendar', query: "What's on my calendar today?"});
+            if (metrics.overdueCount > 0) chipItems.push({label: 'Overdue', query: 'Show me overdue commitments'});
+            else chipItems.push({label: 'Commitments', query: 'How are my commitments looking?'});
+            chipItems.push({label: 'Nudge', query: 'Draft a follow-up nudge'});
+            chipItems.push({label: 'Focus', query: 'What should I focus on?'});
+            if (!metrics.meetingsToday) chipItems.unshift({label: 'Calendar', query: "What's on my calendar today?"});
+
+            html += '<div class="chips-row">';
+            chipItems.forEach(function(c) {
+                html += '<button class="chip" onclick="sendChat(\'' + c.query.replace(/'/g, "\\'") + '\')">' + escapeHtml(c.label) + '</button>';
+            });
+            html += '</div>';
 
             thread.innerHTML = html;
 
-            // 8. Update pulse subtitle
+            // Update pulse subtitle
             updatePulseSubtitle(pulseData ? pulseData.metrics : null);
         }
 
+        let _morningWalkLoading = false;
+        let _lastPulseJSON = '';
+
         async function loadMorningWalk() {
+            if (_morningWalkLoading) return;
+            _morningWalkLoading = true;
+            try {
             checkHealthStatus();
             const thread = document.getElementById('morningWalkThread');
+            const forceCards = shouldForceRefreshCards();
 
             // Show loading state
             if (thread) {
                 thread.innerHTML = buildTimeMarker('Loading...') + '<div class="coach-msg coaching-card-loading">Preparing your walk...</div>';
             }
 
-            // Render from cache first if available
+            // Render from cache first if available (instant shell)
+            // ALWAYS show cached cards — even during force refresh — so the user sees content immediately
             const cachedPulse = cacheGet('pulse');
             const cachedCards = cacheGet('coaching_cards');
             const cachedOpener = cacheGet('coaching_opener');
+            const cachedCardData = (cachedCards && cachedCards.data) ? cachedCards.data : [];
             if (cachedPulse && cachedPulse.data) {
                 renderMorningWalk(
                     cachedPulse.data,
-                    (cachedCards && cachedCards.data) || [],
-                    (cachedOpener && cachedOpener.data) || null
+                    cachedCardData,
+                    (cachedOpener && cachedOpener.data) || null,
+                    []
                 );
             }
 
-            // Fetch all 3 APIs in parallel
-            const [pulseResult, cardsResult, openerResult] = await Promise.allSettled([
+            // Fetch pulse, opener, and pending closures in parallel (fast endpoints)
+            const [pulseResult, openerResult, pendingClosuresResult] = await Promise.allSettled([
                 (async () => {
                     const ctrl = new AbortController();
                     const t = setTimeout(() => ctrl.abort(), 5000);
@@ -2216,18 +3457,6 @@
                 })(),
                 (async () => {
                     const ctrl = new AbortController();
-                    const t = setTimeout(() => ctrl.abort(), 5000);
-                    try {
-                        const r = await authFetch('/api/coaching/debug', { signal: ctrl.signal });
-                        clearTimeout(t);
-                        if (!r.ok) throw new Error('Cards failed: ' + r.status);
-                        const d = await r.json();
-                        cacheSet('coaching_cards', d.cards || []);
-                        return d.cards || [];
-                    } catch (e) { clearTimeout(t); throw e; }
-                })(),
-                (async () => {
-                    const ctrl = new AbortController();
                     const t = setTimeout(() => ctrl.abort(), 12000);
                     try {
                         const r = await authFetch('/api/coaching/opener', { signal: ctrl.signal });
@@ -2238,26 +3467,133 @@
                         if (text) cacheSet('coaching_opener', text);
                         return text;
                     } catch (e) { clearTimeout(t); throw e; }
+                })(),
+                (async () => {
+                    const ctrl = new AbortController();
+                    const t = setTimeout(() => ctrl.abort(), 3000);
+                    try {
+                        const r = await authFetch('/api/commitment-tracker/pending-closures', { signal: ctrl.signal });
+                        clearTimeout(t);
+                        if (!r.ok) throw new Error('Pending closures failed: ' + r.status);
+                        const d = await r.json();
+                        return d.pendingClosures || [];
+                    } catch (e) { clearTimeout(t); throw e; }
                 })()
             ]);
 
             const pulseData = pulseResult.status === 'fulfilled' ? pulseResult.value : (cachedPulse && cachedPulse.data) || {};
-            const cardsData = cardsResult.status === 'fulfilled' ? cardsResult.value : (cachedCards && cachedCards.data) || [];
             const openerData = openerResult.status === 'fulfilled' ? openerResult.value : (cachedOpener && cachedOpener.data) || null;
+            const pendingClosures = pendingClosuresResult.status === 'fulfilled' ? pendingClosuresResult.value : [];
 
-            renderMorningWalk(pulseData, cardsData, openerData);
+            // Stream coaching cards via SSE (progressive loading)
+            const streamedCards = await streamCoachingCards(forceCards, pulseData, openerData, pendingClosures);
+            cacheSet('coaching_cards', streamedCards);
+
+            // Final render with all data
+            const freshJSON = JSON.stringify([pulseData, streamedCards, openerData, pendingClosures]);
+            if (freshJSON !== _lastPulseJSON) {
+                _lastPulseJSON = freshJSON;
+                renderMorningWalk(pulseData, streamedCards, openerData, pendingClosures);
+            }
+
+            updateLastActive();
 
             // Retry on failure after delay
             if (pulseResult.status === 'rejected' && (!cachedPulse || !cachedPulse.data)) {
                 setTimeout(() => loadMorningWalk(), 15000);
             }
+            } finally {
+                _morningWalkLoading = false;
+            }
+        }
+
+        // Stream coaching cards via SSE, rendering each card progressively as it arrives
+        function streamCoachingCards(forceRefresh, pulseData, openerData, pendingClosures) {
+            return new Promise((resolve) => {
+                const url = '/api/coaching/cards/stream' +
+                    '?passcode=' + encodeURIComponent(getPasscode()) +
+                    (forceRefresh ? '&force=true' : '');
+
+                const cards = [];
+                const eventSource = new EventSource(url);
+                let isRefreshing = forceRefresh;
+                let timeout = setTimeout(() => {
+                    removeRefreshingIndicator();
+                    eventSource.close();
+                    resolve(cards.length > 0 ? cards : cachedCardData);
+                }, 45000); // 45s max wait
+
+                // Cached cards to use as fallback
+                const cachedEntry = cacheGet('coaching_cards');
+                const cachedCardData = (cachedEntry && cachedEntry.data) ? cachedEntry.data : [];
+
+                eventSource.addEventListener('manifest', function(e) {
+                    try {
+                        const data = JSON.parse(e.data);
+                        if (isRefreshing && data.skills) {
+                            console.log('[Cards] Streaming ' + data.skills.length + ' skills (force=' + forceRefresh + ')');
+                            // Show refreshing indicator below existing cards
+                            showRefreshingIndicator();
+                        }
+                    } catch(ex) {}
+                });
+
+                eventSource.addEventListener('card', function(e) {
+                    try {
+                        const card = JSON.parse(e.data);
+                        cards.push(card);
+                        // Progressive render: replace cached cards with fresh ones as they arrive
+                        renderMorningWalk(pulseData, cards, openerData, pendingClosures);
+                        _lastPulseJSON = JSON.stringify([pulseData, cards, openerData, pendingClosures]);
+                    } catch(ex) {
+                        console.error('[Cards] Failed to parse card:', ex);
+                    }
+                });
+
+                eventSource.addEventListener('done', function(e) {
+                    clearTimeout(timeout);
+                    removeRefreshingIndicator();
+                    eventSource.close();
+                    resolve(cards.length > 0 ? cards : cachedCardData);
+                });
+
+                eventSource.addEventListener('error', function(e) {
+                    console.error('[Cards] SSE error, falling back to cached');
+                    clearTimeout(timeout);
+                    removeRefreshingIndicator();
+                    eventSource.close();
+                    resolve(cards.length > 0 ? cards : cachedCardData);
+                });
+            });
+        }
+
+        function showRefreshingIndicator() {
+            removeRefreshingIndicator();
+            const thread = document.getElementById('morningWalkThread');
+            if (!thread) return;
+            const indicator = document.createElement('div');
+            indicator.id = 'cards-refreshing-indicator';
+            indicator.style.cssText = 'text-align:center;padding:12px;color:var(--ink-tertiary);font-size:12px;font-style:italic;';
+            indicator.innerHTML = '<span style="display:inline-block;animation:pulse 1.5s ease-in-out infinite;">Refreshing insights...</span>';
+            thread.appendChild(indicator);
+        }
+
+        function removeRefreshingIndicator() {
+            const el = document.getElementById('cards-refreshing-indicator');
+            if (el) el.remove();
+        }
+
+        function getPasscode() {
+            // Extract passcode from URL or stored token
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('passcode') || 'REDACTED_PASSCODE';
         }
 
         function focusChatInput() {
             const input = document.getElementById('chatInput');
             if (input) {
                 input.focus();
-                input.placeholder = 'Ask anything \u2014 calendar, commitments, messages, coaching...';
+                input.placeholder = 'Ask anything — calendar, commitments, messages, coaching...';
             }
         }
 
@@ -2273,25 +3609,28 @@
         async function refreshCoachingCard(skillType) {
             const card = document.getElementById('card-' + skillType.replace(/[^a-zA-Z0-9-]/g, ''));
             if (!card) return;
-            const btn = card.querySelector('.insight-refresh');
+            const btn = card.querySelector('.cc-refresh') || card.querySelector('.insight-refresh');
             if (btn) btn.classList.add('spinning');
             try {
                 const response = await authFetch('/api/coaching/debug/refresh?skill=' + encodeURIComponent(skillType), { method: 'POST' });
                 if (!response.ok) throw new Error('Refresh failed');
                 const data = await response.json();
                 if (data.card) {
-                    // Remove everything after header (the rendered markdown content)
-                    const header = card.querySelector('.insight-header');
-                    if (header) {
-                        let node = header.nextSibling;
-                        while (node) { const next = node.nextSibling; node.remove(); node = next; }
-                        // Append new content
-                        const temp = document.createElement('div');
-                        temp.innerHTML = renderMarkdown(data.card.insight || '');
-                        while (temp.firstChild) card.appendChild(temp.firstChild);
+                    // Update the body content
+                    const body = card.querySelector('.cc-body');
+                    if (body) {
+                        body.innerHTML = renderMarkdown(data.card.insight || '');
+                    } else {
+                        // Legacy fallback
+                        const header = card.querySelector('.insight-header') || card.querySelector('.cc-head');
+                        if (header) {
+                            let node = header.nextSibling;
+                            while (node) { const next = node.nextSibling; node.remove(); node = next; }
+                            const temp = document.createElement('div');
+                            temp.innerHTML = renderMarkdown(data.card.insight || '');
+                            while (temp.firstChild) card.appendChild(temp.firstChild);
+                        }
                     }
-                    const agoEl = card.querySelector('.insight-ago');
-                    if (agoEl) agoEl.textContent = 'just now';
                 }
             } catch (err) {
                 console.error('Failed to refresh card:', err);
@@ -2333,17 +3672,17 @@
 
         function startGreetingClock() {
             function update() {
+                if (document.visibilityState !== 'visible') return;
                 const now = new Date();
                 const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
                 const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
                 const h = String(now.getHours()).padStart(2, '0');
                 const m = String(now.getMinutes()).padStart(2, '0');
-                const s = String(now.getSeconds()).padStart(2, '0');
                 const el = document.getElementById('greetingTime');
-                if (el) el.textContent = days[now.getDay()] + ', ' + months[now.getMonth()] + ' ' + now.getDate() + '  ' + h + ':' + m + ':' + s;
+                if (el) el.textContent = days[now.getDay()] + ', ' + months[now.getMonth()] + ' ' + now.getDate() + '  ' + h + ':' + m;
             }
             update();
-            setInterval(update, 1000);
+            setInterval(update, 60000);
         }
 
         async function markTopGoalDone(notionId) {
@@ -2435,7 +3774,7 @@
                 const data = await response.json();
                 const skills = data.skills || [];
                 const userSkills = skills.filter(s => s.origin === 'user');
-                const installedSkills = skills.filter(s => s.origin === 'installed');
+                const installedSkills = skills.filter(s => s.origin === 'installed' && s.frequency !== 'none');
                 userEl.innerHTML = userSkills.length === 0
                     ? '<div class="settings-item-desc" style="padding: 12px; text-align: center; border: 1px dashed var(--line); border-radius: 8px;">No custom skills yet. Click <strong>+ New Skill</strong> to create one.</div>'
                     : userSkills.map(skill => renderSkillItem(skill, true)).join('');
@@ -2580,42 +3919,75 @@
             try { const response = await authFetch(`/api/skills?id=${encodeURIComponent(id)}`, { method: 'DELETE' }); if (response.ok) loadSkillsList(); } catch (e) {}
         }
 
-        async function loadTenetSections() {
+        async function loadTenets() {
             const container = document.getElementById('tenetSectionsList');
             if (!container) return;
             try {
-                const resp = await authFetch('/api/coaching/tenets/sections');
+                const resp = await authFetch('/api/skills');
+                if (!resp.ok) { container.innerHTML = '<div class="settings-item-desc">Failed to load tenets</div>'; return; }
                 const data = await resp.json();
-                const sections = data.sections || [];
-                if (data.notionUrl) { tenetsNotionUrl = data.notionUrl; const btn = document.getElementById('openTenetsNotionBtn2'); if (btn) btn.style.display = ''; }
-                if (sections.length === 0) { container.innerHTML = '<div class="settings-item-desc">No tenet sections found.</div>'; return; }
-                container.innerHTML = sections.map(section => {
-                    const rulesHtml = section.content.split('\n').map(line => {
-                        if (line.startsWith('- ')) return `<div style="padding-left: 8px; margin: 3px 0; font-size: 12px; color: var(--ink-secondary); line-height: 1.5;">&bull; ${escapeHtml(line.slice(2))}</div>`;
-                        if (line.trim() === '') return '';
-                        return `<div style="font-size: 12px; color: var(--ink-secondary);">${escapeHtml(line)}</div>`;
+                const tenetSkills = (data.skills || []).filter(s => s.frequency === 'none' && s.origin === 'installed');
+                if (tenetSkills.length === 0) { container.innerHTML = '<div class="settings-item-desc">No tenets configured.</div>'; return; }
+                let html = '';
+                for (const skill of tenetSkills) {
+                    const detailResp = await authFetch('/api/skills/detail?id=' + encodeURIComponent(skill.id));
+                    const detailData = detailResp.ok ? await detailResp.json() : {};
+                    const tenetsText = (detailData.skill || detailData).tenets || '';
+                    const tenetsHtml = tenetsText.split('\n').map(line => {
+                        if (line.startsWith('- ')) return '<div style="padding-left:8px;margin:3px 0;font-size:12px;color:var(--ink-secondary);line-height:1.5;">&bull; ' + escapeHtml(line.slice(2)) + '</div>';
+                        return line.trim() ? '<div style="font-size:12px;color:var(--ink-secondary);">' + escapeHtml(line) + '</div>' : '';
                     }).join('');
-                    return `<div class="tenet-section-card ${section.enabled ? '' : 'disabled'}" id="tenet-${escapeHtml(section.id)}">
-                        <div class="tenet-section-header">
-                            <label class="skill-toggle" style="flex-shrink: 0;" onclick="event.stopPropagation()"><input type="checkbox" ${section.enabled ? 'checked' : ''} onchange="toggleTenetSection('${escapeHtml(section.id)}', this)"><span class="skill-toggle-slider"></span></label>
-                            <div class="tenet-section-title" onclick="expandTenetSection(this.closest('.tenet-section-card'))">${escapeHtml(section.title)}</div>
-                            <svg class="tenet-chevron" onclick="expandTenetSection(this.closest('.tenet-section-card'))" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-                        </div><div class="tenet-section-body">${rulesHtml}</div></div>`;
-                }).join('');
-            } catch (err) { container.innerHTML = '<div class="settings-item-desc">Failed to load tenet sections</div>'; }
-        }
-
-        async function toggleTenetSection(id, checkbox) {
-            const card = document.getElementById('tenet-' + id);
-            try {
-                const resp = await authFetch('/api/coaching/tenets/sections/toggle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, enabled: checkbox.checked }) });
-                if (!resp.ok) throw new Error('Toggle failed');
-                if (card) card.classList.toggle('disabled', !checkbox.checked);
-            } catch (e) { checkbox.checked = !checkbox.checked; }
+                    const rawTenets = tenetsText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+                    html += '<div class="tenet-section-card ' + (skill.enabled ? '' : 'disabled') + '" id="tenet-' + escapeHtml(skill.id) + '">'
+                        + '<div class="tenet-section-header">'
+                        + '<label class="skill-toggle" style="flex-shrink:0;" onclick="event.stopPropagation()"><input type="checkbox" ' + (skill.enabled ? 'checked' : '') + ' onchange="toggleSkill(\'' + escapeHtml(skill.id) + '\')"><span class="skill-toggle-slider"></span></label>'
+                        + '<div class="tenet-section-title" onclick="expandTenetSection(this.closest(\'.tenet-section-card\'))">' + escapeHtml(skill.effectiveName || skill.name) + '</div>'
+                        + '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); editTenet(\'' + escapeHtml(skill.id) + '\')" style="font-size:11px;padding:2px 8px;">Edit</button>'
+                        + '<svg class="tenet-chevron" onclick="expandTenetSection(this.closest(\'.tenet-section-card\'))" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>'
+                        + '</div>'
+                        + '<div class="tenet-section-body" id="tenet-display-' + escapeHtml(skill.id) + '">' + tenetsHtml + '</div>'
+                        + '<div class="tenet-section-body" id="tenet-editor-' + escapeHtml(skill.id) + '" style="display:none;">'
+                        + '<textarea id="tenet-textarea-' + escapeHtml(skill.id) + '" style="width:100%;min-height:120px;font-size:12px;font-family:inherit;border:1px solid var(--line);border-radius:6px;padding:8px;resize:vertical;background:var(--surface);color:var(--ink-primary);line-height:1.5;">' + rawTenets + '</textarea>'
+                        + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">'
+                        + '<button class="btn btn-ghost btn-sm" onclick="cancelTenetEdit(\'' + escapeHtml(skill.id) + '\')">Cancel</button>'
+                        + '<button class="btn btn-primary btn-sm" onclick="saveTenet(\'' + escapeHtml(skill.id) + '\')">Save</button>'
+                        + '</div></div></div>';
+                }
+                container.innerHTML = html;
+            } catch (e) { container.innerHTML = '<div class="settings-item-desc">Failed to load tenets</div>'; }
         }
 
         function expandTenetSection(el) { if (el) el.classList.toggle('expanded'); }
-        function openTenetsInNotion() { if (tenetsNotionUrl) window.open(tenetsNotionUrl, '_blank'); }
+
+        function editTenet(skillId) {
+            const card = document.getElementById('tenet-' + skillId);
+            if (card && !card.classList.contains('expanded')) card.classList.add('expanded');
+            const display = document.getElementById('tenet-display-' + skillId);
+            const editor = document.getElementById('tenet-editor-' + skillId);
+            if (display) display.style.display = 'none';
+            if (editor) editor.style.display = 'block';
+        }
+        function cancelTenetEdit(skillId) {
+            const display = document.getElementById('tenet-display-' + skillId);
+            const editor = document.getElementById('tenet-editor-' + skillId);
+            if (display) display.style.display = '';
+            if (editor) editor.style.display = 'none';
+        }
+        async function saveTenet(skillId) {
+            const textarea = document.getElementById('tenet-textarea-' + skillId);
+            if (!textarea) return;
+            const tenets = textarea.value.trim();
+            if (!tenets) { alert('Tenets cannot be empty'); return; }
+            try {
+                const resp = await authFetch('/api/skills?id=' + encodeURIComponent(skillId), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tenets })
+                });
+                if (!resp.ok) { const err = await resp.json(); alert(err.error || 'Failed to save'); return; }
+                await loadTenets();
+            } catch (e) { alert('Failed to save: ' + e.message); }
+        }
 
         async function loadQAPreview(force = false) {
             const container = document.getElementById('qaCardsList');
@@ -2700,7 +4072,7 @@
         }
 
         // ═══════════════════════════════════════════════
-        // 12. CONFIGURE SCREEN LOADERS
+        // 12. SETTINGS SCREEN LOADERS
         // ═══════════════════════════════════════════════
 
         function renderCadenceData(data) {
@@ -3051,12 +4423,13 @@
 
         async function loadCommitmentsDashboardData() {
             try {
-                const [commitmentsResp, statsResp, pendingResp] = await Promise.all([
-                    authFetch('/api/commitments'), authFetch('/api/commitment-tracker/stats'), authFetch('/api/commitment-tracker/pending-closures')
+                const [commitmentsResp, statsResp, pendingResp, recentResp] = await Promise.all([
+                    authFetch('/api/commitments'), authFetch('/api/commitment-tracker/stats'), authFetch('/api/commitment-tracker/pending-closures'), authFetch('/api/commitment-tracker/recent-closures')
                 ]);
                 const commitments = (await commitmentsResp.json()).commitments || [];
                 const stats = await statsResp.json();
                 const pendingClosures = (await pendingResp.json()).pendingClosures || [];
+                const recentClosures = (await recentResp.json()).recentClosures || [];
                 const container = document.getElementById('commitments-container');
                 if (!container) return;
 
@@ -3091,6 +4464,18 @@
                     });
                     html += '</div>';
                 }
+                if (recentClosures.length > 0) {
+                    html += `<div style="margin-bottom:16px;"><div style="font-size:11px;font-weight:600;color:var(--ink-faint);text-transform:uppercase;margin-bottom:8px;">Recently Closed (${recentClosures.length})</div>`;
+                    recentClosures.slice(0, 8).forEach(c => {
+                        const method = c.method === 'auto_closed' ? 'Auto-closed' : 'You confirmed';
+                        const ago = c.closedAt ? formatRelativeDate(c.closedAt) : '';
+                        html += `<div class="card" style="margin-bottom:6px;opacity:0.75;"><div style="display:flex;justify-content:space-between;align-items:start;">`
+                            + `<div style="font-size:13px;flex:1;">${escapeHtml(c.title)}</div>`
+                            + `<div style="font-size:10px;color:var(--ink-faint);white-space:nowrap;margin-left:8px;">${ago}</div></div>`
+                            + `<div style="font-size:11px;color:var(--ink-tertiary);margin-top:2px;">${method} &middot; "${escapeHtml(c.signal)}" &middot; ${Math.round(c.confidence * 100)}%</div></div>`;
+                    });
+                    html += '</div>';
+                }
                 if (commitments.length === 0 && pendingClosures.length === 0) {
                     html = '<div style="text-align:center;padding:40px;"><div style="font-size:32px;margin-bottom:16px;">&#10024;</div><div style="font-size:14px;color:var(--ink-secondary);">No active commitments.</div></div>';
                 }
@@ -3121,9 +4506,34 @@
         async function rejectClosure(hash, btn) {
             if (btn) { btn.disabled = true; btn.textContent = '...'; }
             try {
-                await authFetch('/api/commitment-tracker/confirm-closure', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hash, confirmed: false }) });
+                await authFetch('/api/commitment-tracker/reject-closure', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hash }) });
                 const card = document.getElementById('closure-' + hash);
                 if (card) { card.style.opacity = '0'; setTimeout(() => card.remove(), 300); }
+                showToast('Commitment kept open', 'info');
+            } catch (e) { if (btn) { btn.disabled = false; btn.textContent = 'Keep Open'; } }
+        }
+
+        // Home screen closure handlers (remove from both home + commitments tab)
+        async function confirmClosureHome(hash, btn) {
+            if (btn) { btn.disabled = true; btn.textContent = '...'; }
+            try {
+                await authFetch('/api/commitment-tracker/confirm-closure', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hash, confirmed: true }) });
+                const card = document.getElementById('home-closure-' + hash);
+                if (card) { card.style.opacity = '0'; setTimeout(() => card.remove(), 300); }
+                const tabCard = document.getElementById('closure-' + hash);
+                if (tabCard) { tabCard.style.opacity = '0'; setTimeout(() => tabCard.remove(), 300); }
+                showToast('Commitment closed!', 'success');
+            } catch (e) { if (btn) { btn.disabled = false; btn.textContent = 'Confirm Done'; } }
+        }
+
+        async function rejectClosureHome(hash, btn) {
+            if (btn) { btn.disabled = true; btn.textContent = '...'; }
+            try {
+                await authFetch('/api/commitment-tracker/reject-closure', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hash }) });
+                const card = document.getElementById('home-closure-' + hash);
+                if (card) { card.style.opacity = '0'; setTimeout(() => card.remove(), 300); }
+                const tabCard = document.getElementById('closure-' + hash);
+                if (tabCard) { tabCard.style.opacity = '0'; setTimeout(() => tabCard.remove(), 300); }
                 showToast('Commitment kept open', 'info');
             } catch (e) { if (btn) { btn.disabled = false; btn.textContent = 'Keep Open'; } }
         }

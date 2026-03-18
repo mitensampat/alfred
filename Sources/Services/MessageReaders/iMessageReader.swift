@@ -77,6 +77,7 @@ class iMessageReader {
         LEFT JOIN handle h ON m.handle_id = h.ROWID
         WHERE m.date > ?
         ORDER BY m.date DESC
+        LIMIT 5000
         """
 
         var statement: OpaquePointer?
@@ -158,21 +159,53 @@ class iMessageReader {
     // MARK: - Contact Name Resolution
 
     /// Resolve iMessage chat identifiers (phone numbers, emails) to human-readable names
-    /// using the macOS Contacts framework. Results are cached for the session.
+    /// using the macOS Contacts framework. Batch-loads all contacts once for efficiency.
+    /// Results are cached for the session.
     private func resolveContactNames(for identifiers: Set<String>) -> [String: String] {
-        let store = CNContactStore()
-        var nameMap: [String: String] = [:]
-        let keysToFetch: [CNKeyDescriptor] = [CNContactGivenNameKey as CNKeyDescriptor, CNContactFamilyNameKey as CNKeyDescriptor]
+        var result: [String: String] = [:]
+
+        // Check if all identifiers are already cached
+        let uncachedIdentifiers = identifiers.filter { contactNameCache[$0] == nil }
+
+        // Batch-load all contacts once (only if we have uncached identifiers)
+        var phoneToName: [String: String] = [:]
+        var emailToName: [String: String] = [:]
+
+        if !uncachedIdentifiers.isEmpty {
+            let store = CNContactStore()
+            let keysToFetch: [CNKeyDescriptor] = [
+                CNContactGivenNameKey as CNKeyDescriptor,
+                CNContactFamilyNameKey as CNKeyDescriptor,
+                CNContactEmailAddressesKey as CNKeyDescriptor,
+                CNContactPhoneNumbersKey as CNKeyDescriptor
+            ]
+
+            let fetchRequest = CNContactFetchRequest(keysToFetch: keysToFetch)
+            try? store.enumerateContacts(with: fetchRequest) { contact, _ in
+                let fullName = [contact.givenName, contact.familyName].filter { !$0.isEmpty }.joined(separator: " ")
+                guard !fullName.isEmpty else { return }
+                for phone in contact.phoneNumbers {
+                    let digits = phone.value.stringValue.filter { $0.isNumber }
+                    phoneToName[digits] = fullName
+                    // Also store last 10 digits for matching
+                    if digits.count >= 10 {
+                        phoneToName[String(digits.suffix(10))] = fullName
+                    }
+                }
+                for email in contact.emailAddresses {
+                    emailToName[email.value.lowercased as String] = fullName
+                }
+            }
+        }
 
         for identifier in identifiers {
             // Check cache first
             if let cached = contactNameCache[identifier] {
-                nameMap[identifier] = cached
+                result[identifier] = cached
                 continue
             }
 
             // Strip iMessage chat_identifier prefixes
-            // Format is typically: "+919876543210" or "email@example.com" or "chat123456789"
             let cleaned = identifier
                 .replacingOccurrences(of: "iMessage;-;", with: "")
                 .replacingOccurrences(of: "iMessage;+;", with: "")
@@ -182,41 +215,33 @@ class iMessageReader {
             // Skip group chat identifiers (they use display_name from the DB)
             if cleaned.hasPrefix("chat") { continue }
 
-            do {
-                let contacts: [CNContact]
-                if cleaned.contains("@") {
-                    contacts = try store.unifiedContacts(
-                        matching: CNContact.predicateForContacts(matchingEmailAddress: cleaned),
-                        keysToFetch: keysToFetch
-                    )
-                } else {
-                    // Phone number — extract digits
-                    let digits = cleaned.filter { $0.isNumber || $0 == "+" }
-                    guard !digits.isEmpty else { continue }
-                    contacts = try store.unifiedContacts(
-                        matching: CNContact.predicateForContacts(matching: CNPhoneNumber(stringValue: digits)),
-                        keysToFetch: keysToFetch
-                    )
+            // Try email lookup
+            if cleaned.contains("@") {
+                if let name = emailToName[cleaned.lowercased()] {
+                    contactNameCache[identifier] = name
+                    result[identifier] = name
+                    continue
                 }
-
-                if let contact = contacts.first {
-                    let name = "\(contact.givenName) \(contact.familyName)".trimmingCharacters(in: .whitespaces)
-                    if !name.isEmpty {
-                        nameMap[identifier] = name
-                        contactNameCache[identifier] = name
-                    }
-                }
-            } catch {
-                // Contacts access denied or query failed — skip silently
-                // Threads will fall back to phone number display
             }
+
+            // Try phone lookup
+            let digits = cleaned.filter { $0.isNumber }
+            if let name = phoneToName[digits] ?? phoneToName[String(digits.suffix(10))] {
+                contactNameCache[identifier] = name
+                result[identifier] = name
+                continue
+            }
+
+            // Fallback: no match found, identifier stays as-is
+            result[identifier] = identifier
         }
 
-        if !nameMap.isEmpty {
-            print("  📇 Resolved \(nameMap.count)/\(identifiers.count) iMessage contacts to names")
+        let resolvedCount = result.values.filter { identifiers.contains($0) == false }.count
+        if resolvedCount > 0 {
+            print("  📇 Resolved \(resolvedCount)/\(identifiers.count) iMessage contacts to names")
         }
 
-        return nameMap
+        return result
     }
 }
 
@@ -226,6 +251,7 @@ enum MessageReaderError: Error, LocalizedError {
     case notConnected
     case queryFailed(String)
     case invalidData
+    case didYouMean(original: String, suggestions: [String])
 
     var errorDescription: String? {
         switch self {
@@ -239,6 +265,8 @@ enum MessageReaderError: Error, LocalizedError {
             return "Query failed for \(platform)"
         case .invalidData:
             return "Invalid data format"
+        case .didYouMean(let original, let suggestions):
+            return "No exact match for '\(original)'. Did you mean: \(suggestions.joined(separator: ", "))?"
         }
     }
 }

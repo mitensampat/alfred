@@ -14,11 +14,33 @@ Task {
 RunLoop.main.run()
 
 struct AlfredApp {
-    static let version = "2.0.5"
+    static let version = "2.0.6"
     static var menuBarController: MenuBarController?  // Keep reference to prevent deallocation
 
     static func main() async {
         print("alfred v\(version) starting...")
+
+        // Install graceful shutdown handler for SIGTERM/SIGINT
+        installSignalHandlers()
+
+        // Guard: retry with backoff if port is busy (handles deploy race conditions)
+        let port: UInt16 = 8080
+        let maxRetries = 3
+        var portReady = false
+        for attempt in 1...maxRetries {
+            if !isPortInUse(port: port) {
+                portReady = true
+                break
+            }
+            if attempt < maxRetries {
+                print("⏳ Port \(port) in use — waiting for previous instance to release (attempt \(attempt)/\(maxRetries))...")
+                try? await Task.sleep(nanoseconds: UInt64(attempt) * 2_000_000_000) // 2s, 4s backoff
+            }
+        }
+        if !portReady {
+            print("⚠️ Port \(port) still in use after \(maxRetries) retries — another Alfred instance is running. Exiting.")
+            Foundation.exit(0)
+        }
 
         // Install LaunchAgent if not present (for DMG installs)
         installLaunchAgentIfNeeded()
@@ -197,6 +219,51 @@ struct AlfredApp {
             await runMenuBar(config, orchestrator)
         }
     }
+
+    /// Check if a TCP port is already bound by another process.
+    /// Used on startup to prevent a second Alfred instance from running.
+    static func isPortInUse(port: UInt16) -> Bool {
+        let sock = socket(AF_INET, SOCK_STREAM, 0)
+        guard sock >= 0 else { return false }
+        defer { close(sock) }
+
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = port.bigEndian
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+
+        let result = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                connect(sock, sockPtr, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        return result == 0
+    }
+
+    /// Install SIGTERM/SIGINT handlers for graceful shutdown.
+    /// Ensures the HTTP server releases the port before the process exits.
+    static func installSignalHandlers() {
+        let sigTermSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        sigTermSource.setEventHandler {
+            print("🛑 Received SIGTERM — shutting down gracefully...")
+            Foundation.exit(0)
+        }
+        sigTermSource.resume()
+        // Prevent default SIGTERM handling so our handler runs
+        Darwin.signal(SIGTERM, SIG_IGN)
+
+        let sigIntSource = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
+        sigIntSource.setEventHandler {
+            print("🛑 Received SIGINT — shutting down gracefully...")
+            Foundation.exit(0)
+        }
+        sigIntSource.resume()
+        Darwin.signal(SIGINT, SIG_IGN)
+
+        // Keep references alive for the process lifetime
+        _signalSources = [sigTermSource, sigIntSource]
+    }
+    static var _signalSources: [Any] = []
 
     static func requestNotificationPermissions() async {
         let center = UNUserNotificationCenter.current()

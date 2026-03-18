@@ -120,6 +120,7 @@ struct UserIntent: Codable {
         let eventDurationMinutes: Int?    // 30 (default)
         let eventLocation: String?        // "Home", "Office", etc.
         let eventAttendees: [String]?     // ["Mona", "Nikhil"] — contact names
+        let eventAttendeeEmails: [String]? // ["alice@example.com"] — extracted email addresses
         let eventDescription: String?     // topic/agenda
 
         enum CodingKeys: String, CodingKey {
@@ -145,6 +146,7 @@ struct UserIntent: Codable {
             case eventDurationMinutes = "event_duration_minutes"
             case eventLocation = "event_location"
             case eventAttendees = "event_attendees"
+            case eventAttendeeEmails = "event_attendee_emails"
             case eventDescription = "event_description"
         }
 
@@ -230,6 +232,7 @@ struct UserIntent: Codable {
             eventDurationMinutes = try container.decodeIfPresent(Int.self, forKey: .eventDurationMinutes)
             eventLocation = try container.decodeIfPresent(String.self, forKey: .eventLocation)
             eventAttendees = try container.decodeIfPresent([String].self, forKey: .eventAttendees)
+            eventAttendeeEmails = try container.decodeIfPresent([String].self, forKey: .eventAttendeeEmails)
             eventDescription = try container.decodeIfPresent(String.self, forKey: .eventDescription)
         }
 
@@ -285,6 +288,7 @@ struct UserIntent: Codable {
             self.eventDurationMinutes = nil
             self.eventLocation = nil
             self.eventAttendees = nil
+            self.eventAttendeeEmails = nil
             self.eventDescription = nil
         }
 
@@ -312,6 +316,7 @@ struct UserIntent: Codable {
             eventDurationMinutes: Int? = nil,
             eventLocation: String? = nil,
             eventAttendees: [String]? = nil,
+            eventAttendeeEmails: [String]? = nil,
             eventDescription: String? = nil
         ) {
             self.contactName = contactName
@@ -336,6 +341,7 @@ struct UserIntent: Codable {
             self.eventDurationMinutes = eventDurationMinutes
             self.eventLocation = eventLocation
             self.eventAttendees = eventAttendees
+            self.eventAttendeeEmails = eventAttendeeEmails
             self.eventDescription = eventDescription
         }
     }

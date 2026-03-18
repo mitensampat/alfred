@@ -780,7 +780,7 @@ class NotionService {
         // Query for incomplete tasks
         let body: [String: Any] = [
             "filter": [
-                "or": [
+                "and": [
                     [
                         "property": "Status",
                         "status": [
@@ -790,7 +790,13 @@ class NotionService {
                     [
                         "property": "Status",
                         "status": [
-                            "does_not_equal": "✅ Done"
+                            "does_not_equal": "Complete"
+                        ]
+                    ],
+                    [
+                        "property": "Status",
+                        "status": [
+                            "does_not_equal": "Cancelled"
                         ]
                     ]
                 ]

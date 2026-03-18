@@ -20,10 +20,12 @@ class IntentRecognitionService {
         let systemPrompt = getSystemPrompt()
 
         // Use separate system + user messages for better JSON output
+        // Use Haiku for fast, cost-effective intent recognition
         let response = try await claudeService.generateText(
             prompt: userPrompt,
             system: systemPrompt,
-            maxTokens: 1024
+            maxTokens: 1024,
+            useModel: "claude-haiku-4-5-20251001"
         )
 
         // Extract JSON from response (handle markdown code blocks)
@@ -151,7 +153,14 @@ class IntentRecognitionService {
               "new_due_date": null,
               "note_to_add": null,
               "task_title": null,
-              "task_type": null
+              "task_type": null,
+              "event_title": null,
+              "event_time": null,
+              "event_duration_minutes": null,
+              "event_location": null,
+              "event_attendees": null,
+              "event_attendee_emails": null,
+              "event_description": null
             },
             "confidence": 0.95,
             "original_query": "<the user query>"
@@ -211,6 +220,7 @@ class IntentRecognitionService {
         - event_location: extract if mentioned ("at Home", "at Office", "at Starbucks"), null if not specified
         - event_attendees: list of person names mentioned (["Mona"], ["Nikhil", "Kunal"]), null if no one mentioned
         - event_description: topic or agenda if mentioned, null otherwise
+        - event_attendee_emails: if the user includes email addresses in their message (e.g. "alice@example.com"), extract them into this list. These are DISTINCT from event_attendees (names). Example: "block 3pm with Mona alice@example.com" -> event_attendees: ["Mona"], event_attendee_emails: ["alice@example.com"]. If the message contains ONLY an email (no name), still extract the email and use the local-part as the attendee name. Example: "meeting with nikhil@example.com at 2pm" -> event_attendees: ["nikhil"], event_attendee_emails: ["nikhil@example.com"]
 
         TASK CREATION RULES:
         - "create a task to review the deck" -> action:"create", target:"tasks", filters.task_title:"Review the deck"
@@ -233,9 +243,15 @@ class IntentRecognitionService {
         - "remove the budget review" -> action:"delete", target:"tasks", filters.task_search_term:"budget review"
         - Deletion is soft: tasks are marked as "Cancelled", not permanently removed
 
-        COMMITMENT CHECK RULES:
-        - "do I have overdue commitments?" -> action:"check", target:"commitments"
-        - "what commitments am I behind on?" -> action:"check", target:"commitments"
+        COMMITMENT RULES:
+        - commitment_type: "i_owe" when user asks about things THEY owe to others, "they_owe" when asking about things OTHERS owe them, "all" or null for everything
+        - "show me commitments I owe" -> action:"list", target:"commitments", filters.commitment_type:"i_owe"
+        - "show me commitments others owe me" -> action:"list", target:"commitments", filters.commitment_type:"they_owe"
+        - "show me overdue commitments" -> action:"list", target:"commitments", filters.urgency:"overdue"
+        - "show me commitments with Mona" -> action:"list", target:"commitments", filters.contact_name:"Mona"
+        - "how are my commitments looking?" -> action:"list", target:"commitments"
+        - "do I have overdue commitments?" -> action:"list", target:"commitments", filters.urgency:"overdue"
+        - "what commitments am I behind on?" -> action:"list", target:"commitments", filters.urgency:"overdue"
         - "mark the commitment with Nikhil as done" -> action:"update", target:"commitments", filters.task_search_term:"Nikhil", filters.new_status:"Done"
 
         DRAFT GENERATION RULES:

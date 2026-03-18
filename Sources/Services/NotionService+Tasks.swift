@@ -272,6 +272,55 @@ extension NotionService {
         return results.compactMap { parseTaskFromNotionPage($0) }
     }
 
+    /// Query tasks completed in the last N days (for weekly review context)
+    func queryRecentlyCompletedTasks(days: Int = 7) async throws -> [TaskItem] {
+        guard let dbId = tasksDatabaseId else {
+            throw NSError(domain: "NotionService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Tasks database ID not set"])
+        }
+
+        let url = URL(string: "https://api.notion.com/v1/databases/\(dbId)/query")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        // ISO date for N days ago
+        let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: Date())!
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withFullDate]
+        let cutoffStr = fmt.string(from: cutoff)
+
+        let body: [String: Any] = [
+            "filter": [
+                "and": [
+                    ["property": "Status", "status": ["equals": "Done"]],
+                    ["timestamp": "last_edited_time", "last_edited_time": ["on_or_after": cutoffStr]]
+                ]
+            ],
+            "sorts": [
+                ["timestamp": "last_edited_time", "direction": "descending"]
+            ],
+            "page_size": 20
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw NSError(domain: "NotionService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to query completed tasks"])
+        }
+
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard let results = json?["results"] as? [[String: Any]] else {
+            return []
+        }
+
+        return results.compactMap { parseTaskFromNotionPage($0) }
+    }
+
     /// Update task status
     func updateTaskStatus(notionId: String, status: TaskItem.TaskStatus) async throws {
         let url = URL(string: "https://api.notion.com/v1/pages/\(notionId)")!
@@ -755,6 +804,140 @@ extension NotionService {
         }
 
         return (openCount, closedCount, totalCount)
+    }
+
+    // MARK: - Deduplication Cleanup
+
+    /// Fetch all open commitments from Notion, group by normalized title,
+    /// and archive duplicates (keeping the oldest per group).
+    /// Returns (archived count, groups affected).
+    func deduplicateCommitments() async throws -> (archived: Int, groups: Int) {
+        guard let dbId = tasksDatabaseId else {
+            throw NSError(domain: "NotionService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Tasks database not configured"])
+        }
+
+        // Step 1: Fetch ALL open commitments with pagination
+        var allPages: [(id: String, title: String, createdTime: String)] = []
+        var startCursor: String? = nil
+        var hasMore = true
+
+        while hasMore {
+            let url = URL(string: "https://api.notion.com/v1/databases/\(dbId)/query")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+            var body: [String: Any] = [
+                "filter": [
+                    "and": [
+                        [
+                            "property": "Type",
+                            "select": ["equals": "Commitment"]
+                        ],
+                        [
+                            "property": "Status",
+                            "status": ["does_not_equal": "Done"]
+                        ],
+                        [
+                            "property": "Status",
+                            "status": ["does_not_equal": "Cancelled"]
+                        ]
+                    ]
+                ],
+                "sorts": [
+                    ["timestamp": "created_time", "direction": "ascending"]
+                ],
+                "page_size": 100
+            ]
+
+            if let cursor = startCursor {
+                body["start_cursor"] = cursor
+            }
+
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else { break }
+
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let results = json["results"] as? [[String: Any]] else { break }
+
+            for page in results {
+                guard let pageId = page["id"] as? String,
+                      let createdTime = page["created_time"] as? String,
+                      let properties = page["properties"] as? [String: Any],
+                      let titleProp = properties["Title"] as? [String: Any],
+                      let titleArray = titleProp["title"] as? [[String: Any]],
+                      let firstTitle = titleArray.first,
+                      let title = firstTitle["plain_text"] as? String else { continue }
+                allPages.append((id: pageId, title: title, createdTime: createdTime))
+            }
+
+            hasMore = (json["has_more"] as? Bool) ?? false
+            startCursor = json["next_cursor"] as? String
+            if allPages.count >= 2000 { break }
+        }
+
+        print("🔍 Dedup: found \(allPages.count) open commitments")
+
+        // Step 2: Group by normalized title (same normalization as hash)
+        var groups: [String: [(id: String, title: String, createdTime: String)]] = [:]
+        for page in allPages {
+            let key = Commitment.normalizeForHash(page.title)
+            groups[key, default: []].append(page)
+        }
+
+        // Step 3: For each group with >1 entry, archive all but the oldest
+        var archivedCount = 0
+        var groupsAffected = 0
+
+        for (normalizedTitle, pages) in groups {
+            guard pages.count > 1 else { continue }
+            groupsAffected += 1
+            // Sorted ascending by created_time — keep first, archive rest
+            let sorted = pages.sorted { $0.createdTime < $1.createdTime }
+            let keeper = sorted.first!
+            let dupes = sorted.dropFirst()
+
+            print("🗑️  Dedup group '\(normalizedTitle)': keeping '\(keeper.title)' (\(keeper.id.prefix(8))), archiving \(dupes.count) duplicates")
+
+            for dupe in dupes {
+                do {
+                    try await archiveNotionPage(pageId: dupe.id)
+                    archivedCount += 1
+                    // Rate-limit: Notion API has 3 req/sec limit
+                    try await Task.sleep(nanoseconds: 350_000_000) // 350ms
+                } catch {
+                    print("⚠️  Failed to archive \(dupe.id.prefix(8)): \(error.localizedDescription)")
+                }
+            }
+        }
+
+        print("✅ Dedup complete: archived \(archivedCount) duplicates across \(groupsAffected) groups")
+        return (archived: archivedCount, groups: groupsAffected)
+    }
+
+    /// Archive (soft-delete) a Notion page
+    func archiveNotionPage(pageId: String) async throws {
+        let url = URL(string: "https://api.notion.com/v1/pages/\(pageId)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = ["archived": true]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown"
+            throw NSError(domain: "NotionService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Archive failed: \(errorBody)"])
+        }
     }
 
     // MARK: - Parsing

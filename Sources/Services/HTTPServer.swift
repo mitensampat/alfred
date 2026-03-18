@@ -27,6 +27,14 @@ class HTTPServer {
     // Reusable CoachingEngine (its internal 2h cache is only useful if the instance persists)
     private var coachingEngine: CoachingEngine?
 
+    // Relationship data cache (WhatsApp reads are expensive — 5 min TTL)
+    private var relationshipDataCache: (data: String, timestamp: Date)?
+    private let relationshipCacheTTL: TimeInterval = 300 // 5 minutes
+
+    // AppConfig cache (avoid re-reading JSON from disk on every request)
+    private var _cachedConfig: AppConfig?
+    private var _configLoadTime: Date?
+
     // CadenceRunner for manual cadence execution via API
     private var cadenceRunner: CadenceRunner?
 
@@ -39,6 +47,12 @@ class HTTPServer {
     private static let iso8601DateOnlyFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withFullDate, .withDashSeparatorInDate]
+        return formatter
+    }()
+
+    private static let iso8601FractionalFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
     }()
 
@@ -155,6 +169,21 @@ class HTTPServer {
         memoryCacheLock.lock()
         defer { memoryCacheLock.unlock() }
         memoryCache.removeAll()
+    }
+
+    // MARK: - Cached AppConfig
+
+    /// Returns a cached AppConfig, re-reading from disk at most once per minute
+    private func getConfig() -> AppConfig? {
+        if let config = _cachedConfig,
+           let loadTime = _configLoadTime,
+           Date().timeIntervalSince(loadTime) < 60 {
+            return config
+        }
+        let config = AppConfig.load()
+        _cachedConfig = config
+        _configLoadTime = Date()
+        return config
     }
 
     // MARK: - Session Management
@@ -344,6 +373,9 @@ class HTTPServer {
                     return
                 case ("GET", "/api/chat/stream"):
                     await handleChatStream(request, client: client)
+                    return
+                case ("GET", "/api/coaching/cards/stream"):
+                    await handleStreamingCoachingCards(request, client: client)
                     return
                 default:
                     break
@@ -900,6 +932,12 @@ class HTTPServer {
 
         case ("POST", "/api/commitment-tracker/reject-closure"):
             return handleRejectClosure(request)
+
+        case ("GET", "/api/commitment-tracker/recent-closures"):
+            return handleGetRecentClosures()
+
+        case ("POST", "/api/commitment-tracker/dedup-cleanup"):
+            return await handleDedupCleanup()
 
         // MARK: Cadence CRUD Endpoints (new)
         case ("GET", "/api/cadences"):
@@ -1487,108 +1525,77 @@ class HTTPServer {
         var reliabilityScore = 0
         var pendingActions: [[String: Any]] = []
 
-        // 1. Top Goal — check for user-pinned goal first, fall back to algorithmic
-        if let orchestrator = alfredService.orchestrator {
-            // Check if user has pinned a focus goal
-            let stateInfo = loadSchedulerStateRaw()
-            if let pinnedId = stateInfo["pinnedGoalNotionId"] as? String, !pinnedId.isEmpty {
-                do {
-                    if let task = try await orchestrator.notionServicePublic.fetchTaskById(notionId: pinnedId) {
-                        // Auto-clear if task is done or cancelled
-                        if task.status == .done || task.status == .cancelled {
-                            updateSchedulerState(["pinnedGoalNotionId": "", "pinnedGoalAt": ""])
-                            // Fall through to algorithmic top-priority
-                        } else {
-                            var goalDict: [String: Any] = [
-                                "title": task.title,
-                                "priority": task.priority?.rawValue ?? "None",
-                                "pinned": true
-                            ]
-                            if !task.notionId.isEmpty {
-                                goalDict["notionId"] = task.notionId
-                            }
-                            if let dueDate = task.dueDate {
-                                goalDict["dueDate"] = Self.simpleDateFormatter.string(from: dueDate)
-                            }
-                            topGoal = goalDict
-                        }
-                    } else {
-                        // Pinned task no longer exists — clear pin
-                        updateSchedulerState(["pinnedGoalNotionId": "", "pinnedGoalAt": ""])
-                    }
-                } catch {
-                    print("⚠️ Home pulse: failed to fetch pinned task: \(error)")
-                }
-            }
-
-            // Fall back to algorithmic top-priority if no pin (or pin was cleared)
-            if topGoal == nil {
-                do {
-                    if let task = try await orchestrator.notionServicePublic.getTopPriorityTask() {
-                        var goalDict: [String: Any] = [
-                            "title": task.title,
-                            "priority": task.priority?.rawValue ?? "None",
-                            "pinned": false
-                        ]
-                        if !task.notionId.isEmpty {
-                            goalDict["notionId"] = task.notionId
-                        }
-                        if let dueDate = task.dueDate {
-                            goalDict["dueDate"] = Self.simpleDateFormatter.string(from: dueDate)
-                        }
-                        topGoal = goalDict
-                    }
-                } catch {
-                    print("⚠️ Home pulse: failed to get top priority task: \(error)")
-                }
-            }
-        }
-
-        // 2. Commitment stats (from tracker + Notion)
+        // Run all 4 independent API calls in parallel
         let trackerStats = CommitmentScanTracker.shared.getStats()
+
         if let orchestrator = alfredService.orchestrator {
-            do {
-                let notionStats = try await orchestrator.notionServicePublic.getCommitmentStatsFromNotion()
+            async let topGoalTask = fetchTopGoalForPulse(orchestrator)
+            async let statsTask = orchestrator.notionServicePublic.getCommitmentStatsFromNotion()
+            async let overdueTask = alfredService.fetchOverdueCommitments()
+            async let calendarTask = alfredService.fetchCalendarBriefing(for: Date())
+
+            // Await all results (gracefully handle failures)
+            topGoal = await topGoalTask
+
+            if let notionStats = try? await statsTask {
                 openTasks = notionStats.open
-            } catch {
+            } else {
                 openTasks = trackerStats.openCommitments
+            }
+
+            if let overdue = try? await overdueTask {
+                overdueCount = overdue.count
+                pendingActions = overdue.prefix(3).map { commitment in
+                    var action: [String: Any] = [
+                        "title": commitment.title,
+                        "subtitle": "With \(commitment.committedTo)"
+                    ]
+                    if let id = commitment.notionId {
+                        action["id"] = id
+                    }
+                    if let dueDate = commitment.dueDate {
+                        let daysOverdue = Calendar.current.dateComponents([.day], from: dueDate, to: Date()).day ?? 0
+                        if daysOverdue > 0 {
+                            action["subtitle"] = "Due \(daysOverdue) day\(daysOverdue == 1 ? "" : "s") ago"
+                        }
+                    }
+                    return action
+                }
+            }
+
+            if let calendarBriefing = try? await calendarTask {
+                meetingsToday = calendarBriefing.schedule.events.count
             }
         } else {
             openTasks = trackerStats.openCommitments
-        }
 
-        // 3. Overdue commitments
-        do {
-            let overdue = try await alfredService.fetchOverdueCommitments()
-            overdueCount = overdue.count
+            // No orchestrator — still fetch overdue + calendar in parallel
+            async let overdueTask = alfredService.fetchOverdueCommitments()
+            async let calendarTask = alfredService.fetchCalendarBriefing(for: Date())
 
-            // Top 3 as pending actions
-            pendingActions = overdue.prefix(3).map { commitment in
-                var action: [String: Any] = [
-                    "title": commitment.title,
-                    "subtitle": "With \(commitment.committedTo)"
-                ]
-                if let id = commitment.notionId {
-                    action["id"] = id
-                }
-                if let dueDate = commitment.dueDate {
-                    let daysOverdue = Calendar.current.dateComponents([.day], from: dueDate, to: Date()).day ?? 0
-                    if daysOverdue > 0 {
-                        action["subtitle"] = "Due \(daysOverdue) day\(daysOverdue == 1 ? "" : "s") ago"
+            if let overdue = try? await overdueTask {
+                overdueCount = overdue.count
+                pendingActions = overdue.prefix(3).map { commitment in
+                    var action: [String: Any] = [
+                        "title": commitment.title,
+                        "subtitle": "With \(commitment.committedTo)"
+                    ]
+                    if let id = commitment.notionId {
+                        action["id"] = id
                     }
+                    if let dueDate = commitment.dueDate {
+                        let daysOverdue = Calendar.current.dateComponents([.day], from: dueDate, to: Date()).day ?? 0
+                        if daysOverdue > 0 {
+                            action["subtitle"] = "Due \(daysOverdue) day\(daysOverdue == 1 ? "" : "s") ago"
+                        }
+                    }
+                    return action
                 }
-                return action
             }
-        } catch {
-            print("⚠️ Home pulse: failed to get overdue commitments: \(error)")
-        }
 
-        // 4. Meetings today
-        do {
-            let calendarBriefing = try await alfredService.fetchCalendarBriefing(for: Date())
-            meetingsToday = calendarBriefing.schedule.events.count
-        } catch {
-            print("⚠️ Home pulse: failed to get calendar: \(error)")
+            if let calendarBriefing = try? await calendarTask {
+                meetingsToday = calendarBriefing.schedule.events.count
+            }
         }
 
         // 5. Reliability score
@@ -1617,6 +1624,62 @@ class HTTPServer {
         }
 
         return HTTPResponse(statusCode: 200, body: responseBody)
+    }
+
+    /// Helper: fetch the top goal (pinned or algorithmic) for home pulse
+    private func fetchTopGoalForPulse(_ orchestrator: BriefingOrchestrator) async -> [String: Any]? {
+        let stateInfo = loadSchedulerStateRaw()
+        // Check if user has pinned a focus goal
+        if let pinnedId = stateInfo["pinnedGoalNotionId"] as? String, !pinnedId.isEmpty {
+            do {
+                if let task = try await orchestrator.notionServicePublic.fetchTaskById(notionId: pinnedId) {
+                    // Auto-clear if task is done or cancelled
+                    if task.status == TaskItem.TaskStatus.done || task.status == TaskItem.TaskStatus.cancelled {
+                        updateSchedulerState(["pinnedGoalNotionId": "", "pinnedGoalAt": ""])
+                        // Fall through to algorithmic top-priority
+                    } else {
+                        var goalDict: [String: Any] = [
+                            "title": task.title,
+                            "priority": task.priority?.rawValue ?? "None",
+                            "pinned": true
+                        ]
+                        if !task.notionId.isEmpty {
+                            goalDict["notionId"] = task.notionId
+                        }
+                        if let dueDate = task.dueDate {
+                            goalDict["dueDate"] = Self.simpleDateFormatter.string(from: dueDate)
+                        }
+                        return goalDict
+                    }
+                } else {
+                    // Pinned task no longer exists — clear pin
+                    updateSchedulerState(["pinnedGoalNotionId": "", "pinnedGoalAt": ""])
+                }
+            } catch {
+                print("⚠️ Home pulse: failed to fetch pinned task: \(error)")
+            }
+        }
+
+        // Fall back to algorithmic top-priority if no pin (or pin was cleared)
+        do {
+            if let task = try await orchestrator.notionServicePublic.getTopPriorityTask() {
+                var goalDict: [String: Any] = [
+                    "title": task.title,
+                    "priority": task.priority?.rawValue ?? "None",
+                    "pinned": false
+                ]
+                if !task.notionId.isEmpty {
+                    goalDict["notionId"] = task.notionId
+                }
+                if let dueDate = task.dueDate {
+                    goalDict["dueDate"] = Self.simpleDateFormatter.string(from: dueDate)
+                }
+                return goalDict
+            }
+        } catch {
+            print("⚠️ Home pulse: failed to get top priority task: \(error)")
+        }
+        return nil
     }
 
     // MARK: - Focus Pin
@@ -2119,7 +2182,7 @@ class HTTPServer {
             }
         }
 
-        guard let config = AppConfig.load() else {
+        guard let config = getConfig() else {
             return HTTPResponse(statusCode: 500, body: ["error": "Configuration not loaded"])
         }
 
@@ -3333,8 +3396,7 @@ The Commitment Check feature requires a properly configured Notion database.
         }
 
         if let sync = lastSync {
-            let formatter = ISO8601DateFormatter()
-            response["lastSync"] = formatter.string(from: sync)
+            response["lastSync"] = Self.iso8601Formatter.string(from: sync)
             response["lastSyncFormatted"] = formatRelativeDate(sync)
         }
 
@@ -4179,7 +4241,7 @@ The Commitment Check feature requires a properly configured Notion database.
             let sessionId = json["sessionId"] as? String ?? "default"
 
             // Initialize intent recognition and executor
-            guard let config = AppConfig.load() else {
+            guard let config = getConfig() else {
                 return HTTPResponse(
                     statusCode: 500,
                     body: ["error": "Configuration not loaded"]
@@ -4213,8 +4275,8 @@ The Commitment Check feature requires a properly configured Notion database.
                 )
             }
 
-            // Execute intent
-            let result = try await executor.execute(intentResponse.intent)
+            // Execute intent (pass raw user query for keyword matching)
+            let result = try await executor.execute(intentResponse.intent, rawQuery: query)
 
             // Record turn in shared conversation context
             ConversationContext.shared.addTurn(
@@ -4262,7 +4324,7 @@ The Commitment Check feature requires a properly configured Notion database.
 
         let sessionId = request.queryParams["sessionId"] ?? "default"
 
-        guard let config = AppConfig.load() else {
+        guard let config = getConfig() else {
             client.sendSSEJSON(event: "error", json: ["error": "Configuration not loaded"])
             client.endSSE()
             return
@@ -4280,24 +4342,34 @@ The Commitment Check feature requires a properly configured Notion database.
         }
 
         // Gather base context for coaching prompt
+        // Fast/cached calls — keep sequential
         let coachingContext = CoachingMemoryService.shared.getCoachingContext()
         let agentMemoryRules = gatherAgentMemoryRules()
-        let liveContext = await gatherLiveContext(config: config)
-        let relationshipData = gatherRelationshipData(config: config)
-
-        // Always-on enrichment: coaching insights + follow-ups
         let coachingInsights = gatherAllCoachingInsights()
         let unifiedFollowups = gatherUnifiedFollowups()
+        // Expensive calls — run in parallel
+        async let liveContextTask = gatherLiveContext(config: config)
+        async let relationshipTask = Task { self.gatherRelationshipData(config: config) }.value
 
-        // On-demand: detailed commitments (only when topic/person is relevant)
+        let liveContext = await liveContextTask
+        let relationshipData = await relationshipTask
+
+        // On-demand: detailed commitments + messages (only when topic/person is relevant)
         let knownContacts = getKnownContactNames()
-        let (needsCommitments, mentionedPerson) = ChatContextRouter.detectCommitmentContext(
+        let (needsCommitments, needsMessages, mentionedPerson) = ChatContextRouter.detectContext(
             query: query, knownContacts: knownContacts
         )
         let detailedCommitments = needsCommitments
             ? gatherDetailedCommitments(mentionedPerson: mentionedPerson)
             : ""
 
+        // On-demand: actual messages with mentioned person (for commitment verification)
+        var recentMessages = ""
+        if needsMessages, let person = mentionedPerson {
+            recentMessages = await gatherRecentMessages(for: person, config: config)
+        }
+
+        let currentTrustLevel = TrustStateService.shared.getCurrentLevel()
         let systemPrompt = CoachingPromptBuilder.build(
             userName: userName,
             dateTime: now,
@@ -4307,7 +4379,9 @@ The Commitment Check feature requires a properly configured Notion database.
             relationshipData: relationshipData,
             coachingInsights: coachingInsights,
             detailedCommitments: detailedCommitments,
-            unifiedFollowups: unifiedFollowups
+            recentMessages: recentMessages,
+            unifiedFollowups: unifiedFollowups,
+            trustLevel: currentTrustLevel
         )
 
         // Use shared conversation context (persists across requests for same session)
@@ -4330,26 +4404,37 @@ The Commitment Check feature requires a properly configured Notion database.
                     ])
 
                     let executor = IntentExecutor(orchestrator: orchestrator, config: config)
-                    let result = try await executor.execute(intentResponse.intent)
+                    let result = try await executor.execute(intentResponse.intent, rawQuery: query)
 
                     // Record the turn in shared context
                     sharedContext.addTurn(sessionId: sessionId, query: query, intent: intentResponse.intent, result: result)
 
                     // Emit tool_result with structured data for rich rendering
-                    let structuredPayload = serializeToolResult(toolName: toolName, data: result.data)
+                    var structuredPayload = serializeToolResult(toolName: toolName, data: result.data)
+                    // Merge any extra metadata from structuredData (e.g. needsFollowUp, unresolvedAttendees)
+                    if let extra = result.structuredData {
+                        for (key, value) in extra {
+                            if structuredPayload[key] == nil {
+                                structuredPayload[key] = value
+                            }
+                        }
+                    }
                     client.sendSSEJSON(event: "tool_result", json: structuredPayload)
 
                     let dataSummary = result.conversationalResponse
                     var fullCoachingResponse = ""
 
-                    // For create actions, the card has all the info — no text response needed
+                    // For successful create actions, the card has all the info — no text response needed
                     // For update actions, stream the confirmation directly (no coaching overlay)
-                    let skipCoaching = intentResponse.intent.action == .create || intentResponse.intent.action == .update
+                    // Exception: if needsFollowUp is set (e.g. unresolved attendees), stream the text
+                    let wasRendered = structuredPayload["rendered"] as? Bool != false
+                    let needsFollowUp = structuredPayload["needsFollowUp"] as? Bool == true
+                    let skipCoaching = (intentResponse.intent.action == .create && wasRendered && !needsFollowUp) || intentResponse.intent.action == .update
 
-                    if intentResponse.intent.action == .create {
+                    if intentResponse.intent.action == .create && wasRendered && !needsFollowUp {
                         // Card-only — no text streamed, just record internally
                         fullCoachingResponse = dataSummary
-                    } else if skipCoaching {
+                    } else if skipCoaching || (intentResponse.intent.action == .create && !wasRendered) {
                         // Stream the conversationalResponse directly as chunks
                         let words = dataSummary.split(separator: " ", omittingEmptySubsequences: false)
                         var chunk = ""
@@ -4397,7 +4482,7 @@ The Commitment Check feature requires a properly configured Notion database.
                             try await claudeService.streamChat(
                                 messages: coachingMessages,
                                 system: systemPrompt,
-                                maxTokens: 512,
+                                maxTokens: 1024,
                                 useModel: config.ai.effectiveCoachingModel,
                                 onChunk: { text in
                                     fullCoachingResponse += text
@@ -4447,6 +4532,20 @@ The Commitment Check feature requires a properly configured Notion database.
                     return
                 }
             }
+        } catch let error as MessageReaderError {
+            // Check for "did you mean?" suggestions — surface them as a special SSE event
+            if case .didYouMean(let original, let suggestions) = error {
+                print("💡 Chat: surfacing 'did you mean?' for '\(original)': \(suggestions)")
+                client.sendSSEJSON(event: "did_you_mean", json: [
+                    "original": original,
+                    "suggestions": suggestions
+                ])
+                client.sendSSEJSON(event: "done", json: ["sessionId": sessionId])
+                client.endSSE()
+                return
+            }
+            // Other MessageReaderErrors fall through to general chat
+            print("⚠️ Intent execution failed with message reader error, falling back to general chat: \(error)")
         } catch {
             // Intent recognition failed, fall through to general chat
             print("⚠️ Intent recognition failed, falling back to general chat: \(error)")
@@ -4477,8 +4576,10 @@ The Commitment Check feature requires a properly configured Notion database.
                 relationshipData: relationshipData,
                 coachingInsights: coachingInsights,
                 detailedCommitments: detailedCommitments,
+                recentMessages: recentMessages,
                 unifiedFollowups: unifiedFollowups,
-                activePosture: activePosture
+                activePosture: activePosture,
+                trustLevel: currentTrustLevel
             )
         } else {
             chatSystemPrompt = systemPrompt
@@ -4547,8 +4648,67 @@ The Commitment Check feature requires a properly configured Notion database.
     }
 
     /// Returns debug info: each coaching card with the context data that drove it
+    // MARK: - Streaming Coaching Cards
+
+    private func handleStreamingCoachingCards(_ request: HTTPRequest, client: ClientSocket) async {
+        client.beginSSE()
+
+        guard let config = getConfig() else {
+            client.sendSSEJSON(event: "error", json: ["error": "Configuration not loaded"])
+            client.endSSE()
+            return
+        }
+
+        if coachingEngine == nil {
+            coachingEngine = CoachingEngine(config: config, alfredService: alfredService)
+        }
+
+        guard let engine = coachingEngine else {
+            client.sendSSEJSON(event: "error", json: ["error": "Coaching engine unavailable"])
+            client.endSSE()
+            return
+        }
+
+        let forceRefresh = request.queryParams["force"] == "true"
+        let isoFormatter = Self.iso8601Formatter
+
+        // Emit skill manifest first so frontend knows how many cards to expect
+        let allSkills = SkillLoader.shared.getEnabledSkills().filter { $0.origin == .installed || $0.frequency == "daily" }
+        let skillManifest: [[String: String]] = allSkills.map { ["id": $0.id, "label": "\($0.icon) \($0.effectiveName)"] }
+        client.sendSSEJSON(event: "manifest", json: ["skills": skillManifest, "force": forceRefresh])
+
+        var cardCount = 0
+
+        do {
+            try await engine.streamCoachingCards(forceRefresh: forceRefresh) { card, result in
+                cardCount += 1
+                var cardJson: [String: Any] = [
+                    "type": card.type,
+                    "label": card.label,
+                    "insight": card.insight,
+                    "status": result.status,
+                    "generatedAt": isoFormatter.string(from: result.generatedAt)
+                ]
+                if let error = result.error {
+                    cardJson["error"] = error
+                }
+                client.sendSSEJSON(event: "card", json: cardJson)
+            }
+        } catch {
+            client.sendSSEJSON(event: "error", json: ["error": "Card generation failed: \(error.localizedDescription)"])
+        }
+
+        // Final done event
+        var doneJson: [String: Any] = ["totalCards": cardCount]
+        if let generatedAt = engine.lastGeneratedAt {
+            doneJson["generatedAt"] = isoFormatter.string(from: generatedAt)
+        }
+        client.sendSSEJSON(event: "done", json: doneJson)
+        client.endSSE()
+    }
+
     private func handleCoachingDebug(_ request: HTTPRequest) async -> HTTPResponse {
-        guard let config = AppConfig.load() else {
+        guard let config = getConfig() else {
             return HTTPResponse(statusCode: 500, body: ["error": "Configuration not loaded"])
         }
 
@@ -4573,7 +4733,7 @@ The Commitment Check feature requires a properly configured Notion database.
         }
 
         // Build debug response with per-card context and skill run results
-        let isoFormatter = ISO8601DateFormatter()
+        let isoFormatter = Self.iso8601Formatter
         let relativeFormatter = RelativeDateTimeFormatter()
         relativeFormatter.unitsStyle = .full
 
@@ -4646,7 +4806,7 @@ The Commitment Check feature requires a properly configured Notion database.
         var response: [String: Any] = ["content": content]
 
         // Include Notion URL if configured
-        if let config = AppConfig.load(),
+        if let config = getConfig(),
            let pageId = config.notion.tenetsPageId, !pageId.isEmpty {
             response["notionUrl"] = "https://www.notion.so/\(pageId.replacingOccurrences(of: "-", with: ""))"
             response["notionPageId"] = pageId
@@ -4693,7 +4853,7 @@ The Commitment Check feature requires a properly configured Notion database.
         var response: [String: Any] = ["sections": sectionDicts]
 
         // Include Notion URL if configured
-        if let config = AppConfig.load(),
+        if let config = getConfig(),
            let pageId = config.notion.tenetsPageId, !pageId.isEmpty {
             response["notionUrl"] = "https://www.notion.so/\(pageId.replacingOccurrences(of: "-", with: ""))"
         }
@@ -4740,7 +4900,7 @@ The Commitment Check feature requires a properly configured Notion database.
             return HTTPResponse(statusCode: 400, body: ["error": "Missing 'skill' query parameter"])
         }
 
-        guard let config = AppConfig.load() else {
+        guard let config = getConfig() else {
             return HTTPResponse(statusCode: 500, body: ["error": "Configuration not loaded"])
         }
 
@@ -4784,13 +4944,15 @@ The Commitment Check feature requires a properly configured Notion database.
 
     // MARK: - Skill Library Handlers
 
-    /// Returns the library catalog with install status
+    /// Returns the library catalog with install status, including already-installed skills
     private func handleGetSkillLibrary() -> HTTPResponse {
         let templates = SkillLibrary.catalog
         let existingSkills = SkillLoader.shared.loadSkills()
         let existingIds = Set(existingSkills.map { $0.id })
+        let templateIds = Set(templates.map { $0.id })
 
-        let templateDicts: [[String: Any]] = templates.map { template in
+        // Library templates with install status
+        var allDicts: [[String: Any]] = templates.map { template in
             [
                 "id": template.id,
                 "name": template.name,
@@ -4803,7 +4965,22 @@ The Commitment Check feature requires a properly configured Notion database.
             ]
         }
 
-        return HTTPResponse(statusCode: 200, body: ["templates": templateDicts, "count": templates.count])
+        // Add installed/user skills not already in library catalog (excluding tenet-only skills)
+        let extraSkills = existingSkills.filter { !templateIds.contains($0.id) && $0.frequency != "none" }
+        for skill in extraSkills {
+            allDicts.insert([
+                "id": skill.id,
+                "name": skill.effectiveName,
+                "description": skill.description,
+                "icon": skill.icon,
+                "author": skill.author ?? (skill.origin == .installed ? "Alfred Core" : "Custom"),
+                "dataSources": skill.dataSources,
+                "frequency": skill.frequency,
+                "installed": true
+            ] as [String: Any], at: 0)
+        }
+
+        return HTTPResponse(statusCode: 200, body: ["templates": allDicts, "count": allDicts.count])
     }
 
     /// Install a library skill template as a user skill
@@ -4964,6 +5141,20 @@ The Commitment Check feature requires a properly configured Notion database.
 
         let body = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
 
+        // Tenet-only installed skills: only allow editing tenets
+        if existing.origin == .installed && existing.isTenetOnly {
+            guard let newTenets = body["tenets"] as? String, !newTenets.isEmpty else {
+                return HTTPResponse(statusCode: 400, body: ["error": "Tenet-only skills can only update tenets"])
+            }
+            guard let updated = SkillLoader.shared.updateInstalledSkillTenets(id: skillId, tenets: newTenets) else {
+                return HTTPResponse(statusCode: 500, body: ["error": "Failed to update skill tenets"])
+            }
+            coachingEngine = nil
+            invalidateMemoryCache("coaching_cards")
+            cache.deleteByEndpoint("/api/coaching/cards")
+            return HTTPResponse(statusCode: 200, body: updated.toDictionary())
+        }
+
         guard let updated = SkillLoader.shared.updateSkill(
             id: skillId,
             name: body["name"] as? String,
@@ -5011,13 +5202,64 @@ The Commitment Check feature requires a properly configured Notion database.
     /// Returns a contextual welcome opener for the Chat tab
     private var openerCache: (text: String, timestamp: Date)? = nil
 
+    /// Disk path for pre-generated opener
+    private var openerDiskPath: String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return "\(home)/.alfred/coaching_opener_today.json"
+    }
+
+    /// Load a same-day opener from disk. Returns nil if absent, stale (>4h), or wrong day.
+    private func loadOpenerFromDisk() -> String? {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let todayStr = dateFormatter.string(from: Date())
+
+        guard FileManager.default.fileExists(atPath: openerDiskPath),
+              let data = try? Data(contentsOf: URL(fileURLWithPath: openerDiskPath)),
+              let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+
+        guard let date = payload["date"] as? String, date == todayStr else { return nil }
+
+        if let generatedAtStr = payload["generatedAt"] as? String,
+           let generatedAt = ISO8601DateFormatter().date(from: generatedAtStr) {
+            if Date().timeIntervalSince(generatedAt) > 14400 {
+                return nil  // >4h old — stale
+            }
+        }
+
+        return payload["opener"] as? String
+    }
+
+    /// Build a time-of-day label and posture hint for the opener prompt.
+    private func timeOfDayContext() -> String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 0..<10:
+            return "It is early morning. The person is starting their day — help them set up for success."
+        case 10..<14:
+            return "It is mid-day. The person is in the thick of things — help them see what's slipping."
+        case 14..<17:
+            return "It is afternoon. Help them identify what would make today a genuine win."
+        default:
+            return "It is evening. Help them reflect on the day and prepare for tomorrow."
+        }
+    }
+
     private func handleCoachingOpener() async -> HTTPResponse {
-        // Check 1-hour cache
+        // Layer 1: in-memory cache (1-hour TTL)
         if let cached = openerCache, Date().timeIntervalSince(cached.timestamp) < 3600 {
             return HTTPResponse(statusCode: 200, body: ["opener": cached.text])
         }
 
-        guard let config = AppConfig.load() else {
+        // Layer 2: disk cache (pre-generated during morning briefing, 4-hour TTL)
+        if let diskOpener = loadOpenerFromDisk() {
+            openerCache = (diskOpener, Date())
+            return HTTPResponse(statusCode: 200, body: ["opener": diskOpener])
+        }
+
+        guard let config = getConfig() else {
             return HTTPResponse(statusCode: 200, body: ["opener": "What's on your mind?"])
         }
 
@@ -5035,6 +5277,7 @@ The Commitment Check feature requires a properly configured Notion database.
         let unifiedFollowups = gatherUnifiedFollowups()
 
         var contextForOpener = ""
+        contextForOpener += "Time of day: \(timeOfDayContext())\n"
         if !followups.isEmpty {
             contextForOpener += "Open follow-ups from past coaching:\n" + followups.map { "- \($0)" }.joined(separator: "\n") + "\n"
         }
@@ -5059,6 +5302,7 @@ The Commitment Check feature requires a properly configured Notion database.
         \(contextForOpener)
 
         Rules:
+        - Adapt your posture to the time of day (morning = set up the day, mid-day = what's slipping, afternoon = what would make today a win, evening = reflect and prepare tomorrow)
         - If there are open follow-ups, reference one naturally ("Last time we talked about X. Did you follow through?")
         - Otherwise, be a Day Lens — tell them what their calendar and task data reveals that they might not see themselves:
           • If back-to-back chains exist, name the cost ("4 back-to-backs from 10-2 means zero thinking time before your 3pm board prep")
@@ -5133,8 +5377,7 @@ The Commitment Check feature requires a properly configured Notion database.
                 pinnedTitle = task.title
             }
             // Calculate time since pinned
-            let isoFmt = ISO8601DateFormatter()
-            isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let isoFmt = Self.iso8601FractionalFormatter
             let timeAgo: String
             if let pinnedDate = isoFmt.date(from: pinnedAtStr) {
                 let interval = Date().timeIntervalSince(pinnedDate)
@@ -5145,10 +5388,11 @@ The Commitment Check feature requires a properly configured Notion database.
             parts.append("USER'S DECLARED #1 FOCUS: \"\(pinnedTitle)\" (pinned \(timeAgo)). This is their deliberate choice — reference it when relevant. If they seem distracted from it, gently redirect. If they've been ignoring it, ask why.")
         }
 
-        // Calendar: full event list + structural analysis for Day Lens
+        // Calendar: lightweight event fetch (skip expensive meeting briefings)
         do {
-            let calBriefing = try await alfredService.fetchCalendarBriefing(for: Date())
-            let events = calBriefing.schedule.events
+            guard let orchestrator = alfredService.orchestrator else { throw ServiceError.notInitialized }
+            let schedule = try await orchestrator.calendarServicePublic.fetchEventsFromAllCalendars(for: Date(), userSettings: config.user)
+            let events = schedule.events
             let timedEvents = events.filter { !$0.isAllDay }
             let meetingCount = timedEvents.count
             let remaining = timedEvents.filter { $0.startTime > Date() }
@@ -5233,6 +5477,7 @@ The Commitment Check feature requires a properly configured Notion database.
         }
 
         // Active tasks (top 8 by priority)
+        var notionAvailable = true
         if let orchestrator = alfredService.orchestrator {
             do {
                 let allTasks = try await orchestrator.notionServicePublic.queryActiveTasks()
@@ -5273,13 +5518,18 @@ The Commitment Check feature requires a properly configured Notion database.
                     parts.append(taskStr)
                 }
             } catch {
-                // Not critical
+                notionAvailable = false
+                parts.append("Tasks: unavailable (Notion sync failing — task data may be stale)")
             }
         }
 
         // Open commitments count
         let trackerStats = CommitmentScanTracker.shared.getStats()
-        parts.append("Open commitments: \(trackerStats.openCommitments)")
+        var commitmentLine = "Open commitments: \(trackerStats.openCommitments)"
+        if !notionAvailable {
+            commitmentLine += " (warning: Notion sync failing, commitment data may be stale)"
+        }
+        parts.append(commitmentLine)
 
         // Reliability score
         let lifecycleStats = TaskLifecycleTracker.shared.getStats()
@@ -5290,6 +5540,12 @@ The Commitment Check feature requires a properly configured Notion database.
 
     /// Gather relationship data (counterparty stats + recent message interactions)
     private func gatherRelationshipData(config: AppConfig) -> String {
+        // Check cache first (WhatsApp reads are expensive)
+        if let cached = relationshipDataCache,
+           Date().timeIntervalSince(cached.timestamp) < relationshipCacheTTL {
+            return cached.data
+        }
+
         var lines: [String] = []
 
         // Commitment stats by counterparty
@@ -5324,7 +5580,9 @@ The Commitment Check feature requires a properly configured Notion database.
             // Non-fatal — message data is supplementary
         }
 
-        return lines.joined(separator: "\n")
+        let result = lines.joined(separator: "\n")
+        relationshipDataCache = (data: result, timestamp: Date())
+        return result
     }
 
     // MARK: - Chat Context Enrichment (Highest-Context Chat)
@@ -5366,7 +5624,7 @@ The Commitment Check feature requires a properly configured Notion database.
         guard !allOpen.isEmpty else { return "No open commitments." }
 
         // If a person is mentioned, filter to their commitments
-        let filtered: [(hash: String, title: String, type: String, counterparty: String)]
+        let filtered: [(hash: String, title: String, type: String, counterparty: String, extractedAt: String)]
         if let person = mentionedPerson {
             let personLower = person.lowercased()
             filtered = allOpen.filter { $0.counterparty.lowercased().contains(personLower) }
@@ -5374,31 +5632,61 @@ The Commitment Check feature requires a properly configured Notion database.
             filtered = allOpen
         }
 
+        // Date formatter for extracted_at timestamps
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoFormatterNoFrac = ISO8601DateFormatter()
+        let relativeFmt = DateFormatter()
+        relativeFmt.dateFormat = "MMM d"
+
+        func formatExtractedDate(_ dateStr: String) -> String {
+            let date = isoFormatter.date(from: dateStr)
+                ?? isoFormatterNoFrac.date(from: dateStr)
+                ?? Self.iso8601FractionalFormatter.date(from: dateStr)
+            guard let d = date else { return "" }
+            let daysAgo = Int(Date().timeIntervalSince(d) / 86400)
+            if daysAgo == 0 { return " (detected today)" }
+            if daysAgo == 1 { return " (detected yesterday)" }
+            return " (detected \(relativeFmt.string(from: d)))"
+        }
+
+        // If filtering by person and no results, return explicit zero-data warning
+        if let person = mentionedPerson, filtered.isEmpty {
+            return """
+            COMMITMENT DATA FOR \(person.uppercased()): NONE FOUND.
+            You have \(allOpen.count) open commitments total, but ZERO involve \(person).
+            CRITICAL: Do NOT fabricate or guess any task names, commitment titles, or details for \(person). You have NO data. Say "I don't have any tracked commitments with \(person)" if asked.
+            """
+        }
+
         var lines: [String] = []
         let header = mentionedPerson != nil
             ? "Open commitments (\(allOpen.count) total, showing \(filtered.count) for \(mentionedPerson!)):"
             : "Open commitments (\(allOpen.count) total):"
         lines.append(header)
+        lines.append("  NOTE: These are auto-detected from messages. If the user says an item is done, trust them — the data may be stale.")
 
         let iOwe = filtered.filter { $0.type == "i_owe" }
         let theyOwe = filtered.filter { $0.type == "they_owe" }
 
         if !iOwe.isEmpty {
             lines.append("  I owe (\(iOwe.count)):")
-            for c in iOwe.prefix(5) {
+            for c in iOwe.prefix(8) {
                 let who = c.counterparty.isEmpty ? "" : " → \(c.counterparty)"
-                lines.append("    - \(c.title)\(who)")
+                let dateNote = formatExtractedDate(c.extractedAt)
+                lines.append("    - \(c.title)\(who)\(dateNote)")
             }
-            if iOwe.count > 5 { lines.append("    ... and \(iOwe.count - 5) more") }
+            if iOwe.count > 8 { lines.append("    ... and \(iOwe.count - 8) more") }
         }
 
         if !theyOwe.isEmpty {
             lines.append("  They owe me (\(theyOwe.count)):")
-            for c in theyOwe.prefix(5) {
+            for c in theyOwe.prefix(8) {
                 let who = c.counterparty.isEmpty ? "" : " ← \(c.counterparty)"
-                lines.append("    - \(c.title)\(who)")
+                let dateNote = formatExtractedDate(c.extractedAt)
+                lines.append("    - \(c.title)\(who)\(dateNote)")
             }
-            if theyOwe.count > 5 { lines.append("    ... and \(theyOwe.count - 5) more") }
+            if theyOwe.count > 8 { lines.append("    ... and \(theyOwe.count - 8) more") }
         }
 
         // Pending closure confirmations
@@ -5408,6 +5696,52 @@ The Commitment Check feature requires a properly configured Notion database.
         }
 
         return lines.joined(separator: "\n")
+    }
+
+    /// Gather recent messages with a specific person (last 48 hours).
+    /// On-demand: only called when ChatContextRouter detects a person mention + message/commitment context.
+    /// This gives Claude actual evidence to verify commitment status instead of relying on stale tracker data.
+    private func gatherRecentMessages(for contactName: String, config: AppConfig) async -> String {
+        guard let orchestrator = alfredService.orchestrator else { return "" }
+
+        do {
+            let since = Calendar.current.date(byAdding: .hour, value: -48, to: Date())!
+            let allMessages = try await orchestrator.fetchMessagesForContact(contactName, since: since)
+
+            guard !allMessages.isEmpty else {
+                return "No messages with \(contactName) in the last 48 hours."
+            }
+
+            // Sort by timestamp, most recent last
+            let sorted = allMessages.sorted { $0.message.timestamp < $1.message.timestamp }
+
+            let timeFmt = DateFormatter()
+            timeFmt.dateFormat = "MMM d, h:mm a"
+
+            var lines: [String] = []
+            lines.append("Recent messages with \(contactName) (last 48h, \(sorted.count) messages):")
+
+            // Take the most recent 30 messages to stay within token budget
+            for item in sorted.suffix(30) {
+                let msg = item.message
+                let direction = msg.direction == .outgoing ? "You" : (msg.senderName ?? contactName)
+                let time = timeFmt.string(from: msg.timestamp)
+                let platform = item.platform.rawValue
+                // Truncate very long messages
+                let content = msg.content.count > 200
+                    ? String(msg.content.prefix(200)) + "..."
+                    : msg.content
+                lines.append("  [\(time)] [\(platform)] \(direction): \(content)")
+            }
+
+            if sorted.count > 30 {
+                lines.append("  ... (\(sorted.count - 30) earlier messages omitted)")
+            }
+
+            return lines.joined(separator: "\n")
+        } catch {
+            return "Messages with \(contactName): unavailable (\(error.localizedDescription))"
+        }
     }
 
     /// Gather unified follow-ups from coaching memory AND scheduled reminders.
@@ -5471,7 +5805,13 @@ The Commitment Check feature requires a properly configured Notion database.
             "avoid", "delegate", "prioritiz", "focus", "relationship", "neglect",
             "should i", "what am i", "feedback", "hard truth", "procrastinat",
             "commit", "follow up", "follow-up", "drop", "say no", "leverage",
-            "roast", "truth", "avoiding", "neglecting", "coaching", "reflect"
+            "roast", "truth", "avoiding", "neglecting", "coaching", "reflect",
+            "struggling", "overwhelm", "stressed", "behind on", "falling behind",
+            "pattern", "habit", "always do", "keep doing", "afraid", "scared",
+            "decision", "trade-off", "tradeoff", "what do you think",
+            "wrong", "mistake", "failed", "hallucin", "incorrect", "stale",
+            "already done", "already closed", "already sent", "already finished",
+            "help me", "advice", "perspective", "honest", "direct"
         ]
 
         let combined = (userMessage + " " + assistantResponse).lowercased()
@@ -5507,7 +5847,8 @@ The Commitment Check feature requires a properly configured Notion database.
             let response = try await claudeService.generateText(
                 prompt: extractionPrompt,
                 system: "You are a coaching session analyzer. Extract structured summaries from coaching conversations. Be concise.",
-                maxTokens: 300
+                maxTokens: 300,
+                useModel: "claude-haiku-4-5-20251001"
             )
 
             // Parse the JSON response
@@ -5679,6 +6020,30 @@ The Commitment Check feature requires a properly configured Notion database.
             // Disambiguation case — data is already a dict
             if let dict = data as? [String: Any], let type = dict["type"] as? String, type == "disambiguation" {
                 return dict
+            }
+            // Task list case — [TaskItem] from list/search/completed queries
+            if let tasks = data as? [TaskItem] {
+                let isCompleted = tasks.first?.status == .done
+                let taskList: [[String: Any]] = tasks.prefix(15).map { task in
+                    var item: [String: Any] = [
+                        "title": task.title,
+                        "status": task.status.rawValue
+                    ]
+                    if let p = task.priority { item["priority"] = p.rawValue }
+                    if let due = task.dueDate {
+                        let fmt = DateFormatter()
+                        fmt.dateStyle = .short
+                        item["dueDate"] = fmt.string(from: due)
+                    }
+                    if task.isOverdue { item["overdue"] = true }
+                    return item
+                }
+                return [
+                    "type": isCompleted ? "completed_tasks" : "tasks",
+                    "tasks": taskList,
+                    "count": tasks.count,
+                    "rendered": false
+                ]
             }
 
         case "attention":
@@ -6436,7 +6801,7 @@ class ServerSocket {
         }
 
         // Listen
-        guard Darwin.listen(socket, 5) >= 0 else {
+        guard Darwin.listen(socket, 128) >= 0 else {
             Darwin.close(socket)
             throw NSError(domain: "HTTPServer", code: -3, userInfo: [NSLocalizedDescriptionKey: "Failed to listen on socket"])
         }
@@ -7157,6 +7522,10 @@ extension HTTPServer {
     // MARK: - Hot Reload Handlers
 
     private func handleReloadConfig() -> HTTPResponse {
+        // Invalidate the config cache so next request reads fresh from disk
+        _cachedConfig = nil
+        _configLoadTime = nil
+
         if HotReloadManager.shared.reloadConfig() != nil {
             return HTTPResponse(
                 statusCode: 200,
@@ -7432,6 +7801,26 @@ extension HTTPServer {
         )
     }
 
+    private func handleGetRecentClosures() -> HTTPResponse {
+        let recentClosures = CommitmentScanTracker.shared.getRecentAutoClosures(limit: 15)
+
+        let response: [[String: Any]] = recentClosures.map { closure in
+            [
+                "hash": closure.hash,
+                "title": closure.title,
+                "signal": closure.signal,
+                "confidence": closure.confidence,
+                "closedAt": closure.closedAt,
+                "method": closure.reason
+            ]
+        }
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: ["recentClosures": response, "count": recentClosures.count]
+        )
+    }
+
     private func handleConfirmClosure(_ request: HTTPRequest) async -> HTTPResponse {
         guard let body = request.body,
               let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
@@ -7512,6 +7901,44 @@ extension HTTPServer {
             statusCode: 200,
             body: ["success": true, "message": "Closure suggestion rejected"]
         )
+    }
+
+    // MARK: - Dedup Cleanup
+
+    /// Deduplicate open commitments in Notion and reset local tracker DB
+    private func handleDedupCleanup() async -> HTTPResponse {
+        guard let orchestrator = alfredService.orchestrator else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Service not initialized"])
+        }
+
+        do {
+            // Step 1: Archive duplicate Notion pages
+            let (archived, groups) = try await orchestrator.notionServicePublic.deduplicateCommitments()
+
+            // Step 2: Reset local commitment tracker DB so new hashes take effect
+            let tracker = CommitmentScanTracker.shared
+            tracker.resetExtractions()
+
+            // Invalidate caches
+            invalidateMemoryCache("tracker_stats")
+            invalidateMemoryCache("home_pulse")
+            cache.deleteByEndpoint("/api/home/pulse")
+
+            return HTTPResponse(
+                statusCode: 200,
+                body: [
+                    "success": true,
+                    "archived": archived,
+                    "groups_affected": groups,
+                    "local_db_reset": true
+                ]
+            )
+        } catch {
+            return HTTPResponse(
+                statusCode: 500,
+                body: ["error": "Dedup cleanup failed: \(error.localizedDescription)"]
+            )
+        }
     }
 
     // MARK: - Cadence Helpers
@@ -7680,11 +8107,9 @@ extension HTTPServer {
         Task {
             do {
                 let summary = try await runner.run(cadence)
-                let dateFormatter = DateFormatter()
-                dateFormatter.dateFormat = "yyyy-MM-dd"
-                let todayDate = dateFormatter.string(from: Date())
-                let timestamp = ISO8601DateFormatter().string(from: Date())
-                CadenceService.shared.markRunSuccess(id: cadence.id, date: todayDate, timestamp: timestamp)
+                let timestamp = Self.iso8601Formatter.string(from: Date())
+                // Manual runs update display timestamp only — don't suppress the scheduled run
+                CadenceService.shared.markManualRunSuccess(id: cadence.id, timestamp: timestamp)
                 print("✅ [API] Manual cadence run \(cadence.name): \(summary)")
             } catch {
                 CadenceService.shared.markRunFailure(id: cadence.id, cooldownMinutes: 5)
@@ -7791,7 +8216,7 @@ extension HTTPServer {
 
     private func handleRunGroupAnalysis() async -> HTTPResponse {
         do {
-            guard let config = AppConfig.load() else {
+            guard let config = getConfig() else {
                 return HTTPResponse(statusCode: 500, body: ["error": "Config not available"])
             }
 
@@ -8008,7 +8433,7 @@ extension HTTPServer {
             return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' parameter"])
         }
 
-        let config = AppConfig.load()
+        let config = getConfig()
         await ConversationHistoryService.shared.closeConversation(id: id, aiConfig: config?.ai)
 
         return HTTPResponse(statusCode: 200, body: [
@@ -8344,7 +8769,7 @@ extension HTTPServer {
         }
 
         let memoryService = AgentMemoryService.shared
-        let dateFormatter = ISO8601DateFormatter()
+        let dateFormatter = Self.iso8601Formatter
 
         var taughtRules: [[String: Any]] = []
         var observedPatterns: [[String: Any]] = []
@@ -8683,7 +9108,7 @@ extension HTTPServer {
 
     private func handleGetNotionDatabases() async -> HTTPResponse {
         // Load config to get Notion API key
-        guard let config = AppConfig.load(),
+        guard let config = getConfig(),
               !config.notion.apiKey.isEmpty else {
             return HTTPResponse(statusCode: 400, body: ["error": "Notion API key not configured"])
         }

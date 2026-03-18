@@ -45,19 +45,24 @@ struct IntentCoachingRouter {
 
     /// Get the installed skill IDs most relevant to this posture.
     /// Tenets from these skills are injected into the coaching overlay.
+    /// Core skill IDs injected into every posture (always-on tenets)
+    private static let coreSkillIds = ["alfred-voice", "alfred-rules", "campbell-rules", "mochary-rules"]
+
     static func relevantSkillIds(for posture: CoachingPosture) -> [String] {
+        let postureSkills: [String]
         switch posture {
         case .reflection:
-            return ["mochary-attention", "campbell-relationship"]
+            postureSkills = ["mochary-attention", "campbell-relationship"]
         case .prioritization:
-            return ["campbell-leverage", "mochary-avoidance"]
+            postureSkills = ["campbell-leverage", "mochary-avoidance"]
         case .accountability:
-            return ["campbell-relationship", "mochary-avoidance"]
+            postureSkills = ["campbell-relationship", "mochary-avoidance"]
         case .planning:
-            return ["mochary-attention"]
+            postureSkills = ["mochary-attention"]
         case .operational, .general:
-            return []  // All or none
+            postureSkills = []
         }
+        return coreSkillIds + postureSkills
     }
 
     // MARK: - Coaching Overlay Prompts
@@ -90,7 +95,7 @@ struct IntentCoachingRouter {
         switch posture {
         case .reflection:
             return base + """
-            Now respond as Coach Alfred — 2-4 sentences max. Reflect on what this data reveals about their communication dynamics, energy allocation, or relationship patterns. Reference patterns visible in the data above (message counts, response ratios, key quotes, tone). Only cite specific quotes or timestamps that appear in the data. Do NOT redirect to their task list or #1 goal — the user is exploring this thread's dynamics right now. Stay with them on this topic. If the data reveals something about how they're showing up in this conversation (reactive vs proactive, responsive vs silent), name it.
+            Now respond as Coach Alfred — 2-4 sentences max. Lead with a concise, factual summary of what the data shows (key topics discussed, decisions made, action items, who said what). Be informative first, coach second. Only add a coaching observation if the data reveals something genuinely notable — a clear pattern worth flagging, not a forced insight. Do NOT psychoanalyze the user's communication style unless they explicitly ask for feedback on it. Reference only data, quotes, and timestamps that appear above. Stay on this topic — do NOT redirect to their task list or #1 goal.
             \(tenetsBlock)
             """
 
@@ -131,7 +136,7 @@ struct IntentCoachingRouter {
     static func followUpHint(for posture: CoachingPosture) -> String {
         switch posture {
         case .reflection:
-            return "[Context: The user is continuing a reflection on communication dynamics and messaging patterns. Stay with them on this topic — coach on what the conversations reveal about their energy, relationships, and communication style. Do not redirect to tasks, goals, or prioritization unless they explicitly shift topics.]"
+            return "[Context: The user is reviewing message threads. Stay factual — summarize what was discussed, decisions made, and open items. Only add coaching observations if they ask for feedback or a clear pattern jumps out. Do not redirect to tasks, goals, or prioritization unless they explicitly shift topics.]"
         case .prioritization:
             return "[Context: The user is thinking about priorities, tasks, and focus. Coach on what they should prioritize, what they're avoiding, and where their leverage is highest.]"
         case .accountability:

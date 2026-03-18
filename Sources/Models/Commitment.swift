@@ -91,27 +91,24 @@ struct Commitment: Codable, Identifiable {
         self.lastUpdated = lastUpdated
 
         // Generate unique hash for deduplication
+        // Hash is based on normalized text + date only — NOT thread or counterparty.
+        // The same commitment discussed in multiple threads or attributed to different
+        // people by the LLM should still be deduplicated.
         self.uniqueHash = Self.generateHash(
             commitmentText: commitmentText,
-            sourceThread: sourceThread,
-            committedBy: committedBy,
             dueDate: dueDate
         )
     }
 
     // MARK: - Hash Generation
 
-    /// Generate a unique hash for deduplication
-    /// Uses normalized text to handle AI extraction variations
-    static func generateHash(commitmentText: String, sourceThread: String, committedBy: String, dueDate: Date?) -> String {
-        // Normalize commitment text to handle AI extraction variations
+    /// Generate a unique hash for deduplication.
+    /// Based on normalized text + date bucket ONLY.
+    /// Thread and counterparty are intentionally excluded — the same commitment
+    /// discussed across multiple threads or attributed to different people
+    /// by the LLM should produce the same hash.
+    static func generateHash(commitmentText: String, dueDate: Date?) -> String {
         let normalizedText = normalizeForHash(commitmentText)
-
-        // Normalize committed by (lowercase, trim)
-        let normalizedBy = committedBy.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-
-        // Normalize thread (lowercase, trim)
-        let normalizedThread = sourceThread.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Use date bucket (same day = same bucket) instead of exact timestamp
         let dateBucket: String
@@ -123,8 +120,27 @@ struct Commitment: Codable, Identifiable {
             dateBucket = "no-date"
         }
 
-        let combined = "\(normalizedText)|\(normalizedThread)|\(normalizedBy)|\(dateBucket)"
+        let combined = "\(normalizedText)|\(dateBucket)"
 
+        let data = Data(combined.utf8)
+        let hash = SHA256.hash(data: data)
+        return hash.compactMap { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Legacy hash for migration — matches the old 4-field hash used before v2.0.5
+    static func generateLegacyHash(commitmentText: String, sourceThread: String, committedBy: String, dueDate: Date?) -> String {
+        let normalizedText = normalizeForHash(commitmentText)
+        let normalizedBy = committedBy.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedThread = sourceThread.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let dateBucket: String
+        if let dueDate = dueDate {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            dateBucket = formatter.string(from: dueDate)
+        } else {
+            dateBucket = "no-date"
+        }
+        let combined = "\(normalizedText)|\(normalizedThread)|\(normalizedBy)|\(dateBucket)"
         let data = Data(combined.utf8)
         let hash = SHA256.hash(data: data)
         return hash.compactMap { String(format: "%02x", $0) }.joined()
@@ -135,7 +151,7 @@ struct Commitment: Codable, Identifiable {
     /// - Remove punctuation and extra whitespace
     /// - Extract key nouns/verbs (simplified approach: keep words >= 3 chars)
     /// - Sort words to handle word order variations
-    private static func normalizeForHash(_ text: String) -> String {
+    static func normalizeForHash(_ text: String) -> String {
         // Common words to ignore (articles, prepositions, common verbs)
         let stopWords: Set<String> = [
             "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",

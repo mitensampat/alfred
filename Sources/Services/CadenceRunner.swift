@@ -52,7 +52,126 @@ class CadenceRunner {
         let emailTo = cadence.emailOnSuccess ? loadEmailTo() : nil
         let today = Date()
         let briefing = try await orchestrator.generateBriefing(for: today, sendNotifications: true, toAddress: emailTo)
+
+        // Pre-generate coaching cards and persist to disk
+        await preGenerateCoachingCards()
+
+        // Pre-generate coaching opener and persist to disk
+        await preGenerateCoachingOpener(briefing: briefing)
+
         return "Morning briefing generated with \(briefing.actionItems.count) action items"
+    }
+
+    /// Pre-generate coaching cards during the morning briefing cadence and persist to disk.
+    private func preGenerateCoachingCards() async {
+        guard let config = AppConfig.load(), let svc = alfredService else {
+            print("[CadenceRunner] Cannot pre-generate coaching cards: config or service unavailable")
+            return
+        }
+        do {
+            print("[CadenceRunner] Pre-generating coaching cards for today...")
+            let engine = CoachingEngine(config: config, alfredService: svc)
+            let cards = try await engine.generateCoachingCards(forceRefresh: true)
+            print("[CadenceRunner] Pre-generated \(cards.count) coaching card(s)")
+        } catch {
+            print("[CadenceRunner] Failed to pre-generate coaching cards: \(error)")
+        }
+    }
+
+    /// Pre-generate the coaching opener and persist to disk.
+    private func preGenerateCoachingOpener(briefing: DailyBriefing) async {
+        guard let config = AppConfig.load() else {
+            print("[CadenceRunner] Cannot pre-generate opener: config unavailable")
+            return
+        }
+
+        let events = briefing.calendarBriefing.schedule.events.filter { !$0.isAllDay }
+        let timedSorted = events.sorted { $0.startTime < $1.startTime }
+        let timeFmt = DateFormatter()
+        timeFmt.dateFormat = "h:mm a"
+
+        var contextParts: [String] = []
+        contextParts.append("Today: \(events.count) meetings")
+
+        // Back-to-back detection
+        var backToBackCount = 0
+        if timedSorted.count > 1 {
+            for i in 1..<timedSorted.count {
+                if timedSorted[i].startTime.timeIntervalSince(timedSorted[i-1].endTime) < 900 {
+                    backToBackCount += 1
+                }
+            }
+        }
+        if backToBackCount > 0 {
+            let first = timedSorted.first.map { timeFmt.string(from: $0.startTime) } ?? "morning"
+            let last = timedSorted.last.map { timeFmt.string(from: $0.endTime) } ?? "afternoon"
+            contextParts.append("Back-to-back meetings: \(backToBackCount) (spanning \(first)–\(last))")
+        }
+
+        // Overdue tasks
+        let overdueItems = briefing.actionItems.filter {
+            if let due = $0.dueDate { return due < Date() } else { return false }
+        }
+        if !overdueItems.isEmpty {
+            let topOverdue = overdueItems.prefix(3).map { $0.title }.joined(separator: ", ")
+            contextParts.append("Overdue tasks: \(overdueItems.count) (\(topOverdue))")
+        } else {
+            contextParts.append("No overdue tasks")
+        }
+
+        let focusHours = Int(briefing.calendarBriefing.focusTime / 3600)
+        let focusMins = Int((briefing.calendarBriefing.focusTime.truncatingRemainder(dividingBy: 3600)) / 60)
+        contextParts.append("Focus time available: \(focusHours)h \(focusMins)m")
+
+        let liveContext = contextParts.joined(separator: "\n")
+
+        let prompt = """
+        Generate a brief, sharp coaching observation about this person's day. This is the first thing they see when they open Alfred — make it count. 1-2 sentences max.
+
+        Context (morning snapshot):
+        \(liveContext)
+
+        Rules:
+        - Be a Day Lens — tell them what their calendar and task data reveals that they might not see themselves
+        - Channel Matt Mochary: energy awareness, zone of genius vs. grinding, radical prioritization
+        - Be warm but direct. No emojis. No generic greetings.
+        - Just the observation text, nothing else.
+        """
+
+        do {
+            print("[CadenceRunner] Pre-generating coaching opener...")
+            let claudeService = ClaudeAIService(config: config.ai)
+            let opener = try await claudeService.generateText(
+                prompt: prompt,
+                system: "You are Coach Alfred, a warm but direct executive coach. Generate a single sharp coaching observation.",
+                maxTokens: 150
+            )
+            let trimmed = opener.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            saveOpenerToDisk(trimmed)
+            print("[CadenceRunner] Pre-generated coaching opener saved to disk")
+        } catch {
+            print("[CadenceRunner] Failed to pre-generate coaching opener: \(error)")
+        }
+    }
+
+    /// Write opener to ~/.alfred/coaching_opener_today.json
+    private func saveOpenerToDisk(_ opener: String) {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let path = "\(home)/.alfred/coaching_opener_today.json"
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let payload: [String: Any] = [
+            "date": dateFormatter.string(from: Date()),
+            "opener": opener,
+            "generatedAt": ISO8601DateFormatter().string(from: Date())
+        ]
+        do {
+            let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted])
+            try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+        } catch {
+            print("[CadenceRunner] Failed to save opener to disk: \(error)")
+        }
     }
 
     private func runAttentionCheck(cadence: Cadence) async throws -> String {
@@ -78,7 +197,7 @@ class CadenceRunner {
             throw CadenceError.serviceUnavailable("AlfredService")
         }
         let scanMode = cadence.params["scan_mode"]?.stringValue ?? "all"
-        let result = try await alfredService.scanCommitments(contactName: nil, lookbackDays: 1, scanMode: scanMode)
+        let result = try await alfredService.scanCommitments(contactName: nil, lookbackDays: 3, scanMode: scanMode)
         return "Commitment scan: \(result.totalFound) found, \(result.saved) saved"
     }
 
@@ -189,7 +308,7 @@ class CadenceRunner {
                             body += "\n\nKey Points:\n" + result.keyPoints.map { "• \($0)" }.joined(separator: "\n")
                         }
                         try await notifService.sendLearningDigest(
-                            subject: "Alfred: \(groupName) Daily Summary",
+                            subject: "Coach Alfred: \(groupName) Daily Summary",
                             body: body
                         )
                     }
@@ -361,7 +480,7 @@ class CadenceRunner {
         <body style="font-family: -apple-system, system-ui, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #333; background: #fafafa;">
         <div style="background: white; padding: 24px; border-radius: 8px;">
         <h2 style="color: #2c3e50; font-family: Georgia, serif; font-weight: 400; margin-bottom: 4px;">Weekly Reflection</h2>
-        <p style="color: #999; font-size: 12px; margin-top: 0;">\(todayDate) · from Alfred</p>
+        <p style="color: #999; font-size: 12px; margin-top: 0;">\(todayDate) · from Coach Alfred</p>
         <div style="font-size: 14px;">
         <p style='line-height: 1.6; margin: 8px 0;'>\(formattedBody)</p>
         </div>
@@ -373,7 +492,7 @@ class CadenceRunner {
 
         let notifService = NotificationService(config: config.notifications)
         try await notifService.sendLearningDigest(
-            subject: "Alfred: Weekly Reflection — \(todayDate)",
+            subject: "Coach Alfred: Weekly Reflection — \(todayDate)",
             body: htmlBody
         )
 
@@ -415,7 +534,7 @@ class CadenceRunner {
                     body += "\n\nKey Points:\n" + result.keyPoints.map { "• \($0)" }.joined(separator: "\n")
                 }
                 try await notifService.sendLearningDigest(
-                    subject: "Alfred: \(contact) Summary (\(timeframe))",
+                    subject: "Coach Alfred: \(contact) Summary (\(timeframe))",
                     body: body
                 )
             }

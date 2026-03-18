@@ -36,6 +36,9 @@ class ConversationHistoryService {
     private let maxContentLength = 2000
 
     private var conversations: [ConversationRecord] = []
+    private let saveQueue = DispatchQueue(label: "com.alfred.conversationhistory")
+    private var saveTimer: DispatchWorkItem?
+    private let saveDelay: TimeInterval = 5.0
 
     init() {
         let homeDir = NSHomeDirectory()
@@ -119,7 +122,7 @@ class ConversationHistoryService {
             evictIfNeeded()
         }
 
-        saveToDisk()
+        scheduleSave()
     }
 
     /// Close a conversation and generate title + summary via Claude
@@ -233,6 +236,23 @@ class ConversationHistoryService {
         fileLock.lock()
         defer { fileLock.unlock() }
         return conversations.first { $0.id == id }?.turns ?? []
+    }
+
+    // MARK: - Debounced Save
+
+    private func scheduleSave() {
+        saveTimer?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.saveToDiskSafe()
+        }
+        saveTimer = workItem
+        saveQueue.asyncAfter(deadline: .now() + saveDelay, execute: workItem)
+    }
+
+    /// Flush any pending debounced save immediately (for clean shutdown)
+    func flush() {
+        saveTimer?.cancel()
+        saveToDiskSafe()
     }
 
     // MARK: - Persistence

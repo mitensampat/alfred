@@ -149,6 +149,47 @@ class SkillLoader {
         }
     }
 
+    /// Update tenets for an installed tenet-only skill. Only updates the tenets field.
+    func updateInstalledSkillTenets(id: String, tenets: String) -> SkillDefinition? {
+        let filePath = (installedDirectory as NSString).appendingPathComponent("\(id).md")
+        guard FileManager.default.fileExists(atPath: filePath) else {
+            print("[SkillLoader] Cannot update installed skill: '\(id)' not found")
+            return nil
+        }
+
+        guard let current = parseSkillFile(path: filePath, origin: .installed) else { return nil }
+        guard current.isTenetOnly else {
+            print("[SkillLoader] Refusing to update installed skill '\(id)' — not a tenet-only skill")
+            return nil
+        }
+
+        let updated = SkillDefinition(
+            id: id,
+            name: current.name,
+            description: current.description,
+            icon: current.icon,
+            dataSources: current.dataSources,
+            frequency: current.frequency,
+            tenets: tenets,
+            prompt: current.prompt,
+            fallback: current.fallback,
+            enabled: current.enabled,
+            displayName: current.displayName,
+            origin: .installed,
+            author: current.author,
+            version: current.version
+        )
+
+        let content = updated.toMarkdown()
+        do {
+            try content.write(toFile: filePath, atomically: true, encoding: .utf8)
+            return updated
+        } catch {
+            print("[SkillLoader] Failed to update installed skill file: \(error)")
+            return nil
+        }
+    }
+
     /// Delete a user skill. Returns true if deleted. Refuses to delete installed skills.
     func deleteSkill(id: String) -> Bool {
         let filePath = (userDirectory as NSString).appendingPathComponent("\(id).md")

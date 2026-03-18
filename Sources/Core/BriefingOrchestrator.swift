@@ -65,20 +65,22 @@ class BriefingOrchestrator {
     func generateBriefing(for date: Date, sendNotifications: Bool = false, toAddress: String? = nil) async throws -> DailyBriefing {
         print("\n🚀 Generating briefing for \(date.formatted(date: .abbreviated, time: .omitted))...\n")
 
-        // 1. Fetch messages from last 24 hours
-        print("💬 Analyzing messages from last 24 hours...")
-        let messagingSummary = try await fetchAndAnalyzeMessages()
-        print("✓ Message analysis complete\n")
+        // 1 & 2. Fetch messages and calendar IN PARALLEL
+        print("💬 Analyzing messages + 📅 Fetching calendar in parallel...")
 
-        // 2. Fetch calendar for specified date from all calendars (graceful — briefing continues without calendar)
-        var schedule: DailySchedule
-        do {
-            schedule = try await calendarService.fetchEventsFromAllCalendars(for: date, userSettings: config.user)
-            print("")
-        } catch {
-            print("⚠️ Failed to fetch calendar: \(error). Continuing without calendar data.\n")
-            schedule = DailySchedule(date: date, events: [], totalMeetingTime: 0, freeSlots: [], externalMeetings: [])
-        }
+        async let messagingTask = fetchAndAnalyzeMessages()
+        async let calendarTask: DailySchedule = {
+            do {
+                return try await self.calendarService.fetchEventsFromAllCalendars(for: date, userSettings: self.config.user)
+            } catch {
+                print("⚠️ Failed to fetch calendar: \(error). Continuing without calendar data.\n")
+                return DailySchedule(date: date, events: [], totalMeetingTime: 0, freeSlots: [], externalMeetings: [])
+            }
+        }()
+
+        let messagingSummary = try await messagingTask
+        print("✓ Message analysis complete\n")
+        let schedule = await calendarTask
 
         // 3. Generate meeting briefings for external meetings - PARALLEL for performance
         var meetingBriefings: [MeetingBriefing] = []
@@ -625,6 +627,13 @@ class BriefingOrchestrator {
         print("  ↳ Searching for contact/group: \"\(contactName)\"...")
         guard let thread = try whatsappReader.fetchThreadByName(contactName, since: since) else {
             print("  ✗ No matching WhatsApp thread found for \"\(contactName)\"")
+            // Try fuzzy search for suggestions
+            let fuzzyResults = try whatsappReader.fuzzySearchThreadNames(contactName, limit: 5)
+            if !fuzzyResults.isEmpty {
+                let suggestions = fuzzyResults.map { $0.name }
+                print("  💡 Did you mean: \(suggestions.joined(separator: ", "))")
+                throw MessageReaderError.didYouMean(original: contactName, suggestions: suggestions)
+            }
             throw MessageReaderError.queryFailed("No WhatsApp thread found matching '\(contactName)'")
         }
 
@@ -868,27 +877,36 @@ class BriefingOrchestrator {
         let today = Date()
         let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: today)!
 
-        // Step 1: Fetch calendar for today (graceful — alert continues without calendar)
-        await sendProgress("calendar_today", "📅 Loading today's calendar...", 10)
-        var todaySchedule: DailySchedule
-        do {
-            todaySchedule = try await calendarService.fetchEventsFromAllCalendars(for: today, userSettings: config.user)
-            print("✓ Loaded \(todaySchedule.events.count) events for today")
-        } catch {
-            print("⚠️ Failed to fetch today's calendar: \(error). Continuing without calendar data.")
-            todaySchedule = DailySchedule(date: today, events: [], totalMeetingTime: 0, freeSlots: [], externalMeetings: [])
-        }
+        // Steps 1-2: Fetch calendar for today AND tomorrow in parallel (graceful — alert continues without calendar)
+        await sendProgress("calendar", "📅 Loading today's & tomorrow's calendar...", 10)
 
-        // Step 2: Fetch calendar for tomorrow (graceful — alert continues without calendar)
-        await sendProgress("calendar_tomorrow", "📅 Loading tomorrow's calendar...", 20)
-        var tomorrowSchedule: DailySchedule
-        do {
-            tomorrowSchedule = try await calendarService.fetchEventsFromAllCalendars(for: tomorrow, userSettings: config.user)
-            print("✓ Loaded \(tomorrowSchedule.events.count) events for tomorrow")
-        } catch {
-            print("⚠️ Failed to fetch tomorrow's calendar: \(error). Continuing without calendar data.")
-            tomorrowSchedule = DailySchedule(date: tomorrow, events: [], totalMeetingTime: 0, freeSlots: [], externalMeetings: [])
-        }
+        let emptyToday = DailySchedule(date: today, events: [], totalMeetingTime: 0, freeSlots: [], externalMeetings: [])
+        let emptyTomorrow = DailySchedule(date: tomorrow, events: [], totalMeetingTime: 0, freeSlots: [], externalMeetings: [])
+
+        async let todayTask: DailySchedule = {
+            do {
+                let schedule = try await self.calendarService.fetchEventsFromAllCalendars(for: today, userSettings: self.config.user)
+                print("✓ Loaded \(schedule.events.count) events for today")
+                return schedule
+            } catch {
+                print("⚠️ Failed to fetch today's calendar: \(error). Continuing without calendar data.")
+                return emptyToday
+            }
+        }()
+
+        async let tomorrowTask: DailySchedule = {
+            do {
+                let schedule = try await self.calendarService.fetchEventsFromAllCalendars(for: tomorrow, userSettings: self.config.user)
+                print("✓ Loaded \(schedule.events.count) events for tomorrow")
+                return schedule
+            } catch {
+                print("⚠️ Failed to fetch tomorrow's calendar: \(error). Continuing without calendar data.")
+                return emptyTomorrow
+            }
+        }()
+
+        let todaySchedule = await todayTask
+        let tomorrowSchedule = await tomorrowTask
 
         // Step 3: Fetch active tasks from Notion (limit to 25 for attention check to keep AI response manageable)
         await sendProgress("tasks", "📓 Fetching tasks from Notion...", 35)
@@ -931,61 +949,122 @@ class BriefingOrchestrator {
 
     // MARK: - Private Helpers
 
+    // Cache for fetchAndAnalyzeMessages to avoid double-fetch in streaming briefing flow
+    private var _messageSummaryCache: (data: MessagingSummary, timestamp: Date)?
+    private let _messageSummaryCacheTTL: TimeInterval = 120 // 2 minutes
+
     private func fetchAndAnalyzeMessages() async throws -> MessagingSummary {
+        // Return cached result if fresh (prevents double-fetch in streaming briefing)
+        if let cached = _messageSummaryCache,
+           Date().timeIntervalSince(cached.timestamp) < _messageSummaryCacheTTL {
+            print("  ⚡ Using cached message summary (age: \(Int(Date().timeIntervalSince(cached.timestamp)))s)")
+            return cached.data
+        }
+
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
         let twoDaysAgo = Calendar.current.date(byAdding: .hour, value: -48, to: Date())!
 
+        // Parallel container for messaging vs email threads
         var messagingThreads: [MessageThread] = []
         var emailThreads: [MessageThread] = []
 
-        // Fetch from all enabled messaging platforms
-        if config.messaging.imessage.enabled {
-            print("  ↳ Reading iMessage database...")
-            do {
-                try imessageReader.connect()
-                let threads = try imessageReader.fetchThreads(since: yesterday)
-                messagingThreads.append(contentsOf: threads)
-                imessageReader.disconnect()
-                let namedCount = threads.filter { $0.contactName != nil }.count
-                print("  ✅ iMessage: \(threads.count) thread(s), \(namedCount) with resolved names")
-            } catch {
-                print("  ❌ iMessage fetch failed: \(error)")
-            }
+        // Fetch from all enabled messaging platforms IN PARALLEL
+        // Each platform gets its own reader instance since SQLite connections are not thread-safe
+        print("  ↳ Fetching messages from all platforms in parallel...")
+
+        // Capture config values needed inside tasks
+        let imessageEnabled = config.messaging.imessage.enabled
+        let imessageDbPath = config.messaging.imessage.dbPath
+        let whatsappEnabled = config.messaging.whatsapp.enabled
+        let whatsappDbPath = config.messaging.whatsapp.dbPath
+        let signalEnabled = config.messaging.signal.enabled
+        let signalDbPath = config.messaging.signal.dbPath
+        let emailConfig = config.messaging.email
+        let gmailReaderRef = self.gmailReader
+
+        // Use a struct to tag results by source
+        struct PlatformResult {
+            let platform: String
+            let threads: [MessageThread]
+            let isEmail: Bool
         }
 
-        if config.messaging.whatsapp.enabled {
-            print("  ↳ Reading WhatsApp database...")
-            do {
-                try whatsappReader.connect()
-                let threads = try whatsappReader.fetchThreads(since: yesterday)
-                messagingThreads.append(contentsOf: threads)
-                whatsappReader.disconnect()
-                print("  ✅ WhatsApp: \(threads.count) thread(s)")
-            } catch {
-                print("  ❌ WhatsApp fetch failed: \(error)")
+        let results = await withTaskGroup(of: PlatformResult.self) { group in
+            if imessageEnabled {
+                group.addTask {
+                    do {
+                        let reader = iMessageReader(dbPath: imessageDbPath)
+                        try reader.connect()
+                        let threads = try reader.fetchThreads(since: yesterday)
+                        reader.disconnect()
+                        let namedCount = threads.filter { $0.contactName != nil }.count
+                        print("  ✅ iMessage: \(threads.count) thread(s), \(namedCount) with resolved names")
+                        return PlatformResult(platform: "iMessage", threads: threads, isEmail: false)
+                    } catch {
+                        print("  ❌ iMessage fetch failed: \(error)")
+                        return PlatformResult(platform: "iMessage", threads: [], isEmail: false)
+                    }
+                }
             }
+
+            if whatsappEnabled {
+                group.addTask {
+                    do {
+                        let reader = WhatsAppReader(dbPath: whatsappDbPath)
+                        try reader.connect()
+                        let threads = try reader.fetchThreads(since: yesterday)
+                        reader.disconnect()
+                        print("  ✅ WhatsApp: \(threads.count) thread(s)")
+                        return PlatformResult(platform: "WhatsApp", threads: threads, isEmail: false)
+                    } catch {
+                        print("  ❌ WhatsApp fetch failed: \(error)")
+                        return PlatformResult(platform: "WhatsApp", threads: [], isEmail: false)
+                    }
+                }
+            }
+
+            if signalEnabled {
+                group.addTask {
+                    do {
+                        let reader = SignalReader(dbPath: signalDbPath)
+                        try reader.connect()
+                        let threads = try reader.fetchThreads(since: yesterday)
+                        reader.disconnect()
+                        return PlatformResult(platform: "Signal", threads: threads, isEmail: false)
+                    } catch {
+                        print("Warning: Failed to fetch Signal messages: \(error)")
+                        return PlatformResult(platform: "Signal", threads: [], isEmail: false)
+                    }
+                }
+            }
+
+            if let emailCfg = emailConfig,
+               emailCfg.enabled && emailCfg.shouldAnalyze,
+               let gmail = gmailReaderRef {
+                group.addTask {
+                    do {
+                        let threads = try await gmail.fetchThreads(since: twoDaysAgo)
+                        return PlatformResult(platform: "Gmail", threads: threads, isEmail: true)
+                    } catch {
+                        print("Warning: Failed to fetch emails: \(error)")
+                        return PlatformResult(platform: "Gmail", threads: [], isEmail: true)
+                    }
+                }
+            }
+
+            var collected: [PlatformResult] = []
+            for await result in group {
+                collected.append(result)
+            }
+            return collected
         }
 
-        if config.messaging.signal.enabled {
-            do {
-                try signalReader.connect()
-                let threads = try signalReader.fetchThreads(since: yesterday)
-                messagingThreads.append(contentsOf: threads)
-                signalReader.disconnect()
-            } catch {
-                print("Warning: Failed to fetch Signal messages: \(error)")
-            }
-        }
-
-        // Fetch from email (48 hour lookback) - only if user wants email analysis in briefing
-        if let gmailReader = gmailReader,
-           let emailConfig = config.messaging.email,
-           emailConfig.enabled && emailConfig.shouldAnalyze {
-            do {
-                let threads = try await gmailReader.fetchThreads(since: twoDaysAgo)
-                emailThreads.append(contentsOf: threads)
-            } catch {
-                print("Warning: Failed to fetch emails: \(error)")
+        // Separate messaging vs email threads from parallel results
+        for result in results {
+            if result.isEmail {
+                emailThreads.append(contentsOf: result.threads)
+            } else {
+                messagingThreads.append(contentsOf: result.threads)
             }
         }
 
@@ -1017,12 +1096,17 @@ class BriefingOrchestrator {
                 .mapValues { $0.flatMap { $0.messages }.count }
         )
 
-        return MessagingSummary(
+        let result = MessagingSummary(
             keyInteractions: Array(keyInteractions),
             needsResponse: Array(needsResponse),
             criticalMessages: Array(criticalMessages),
             stats: stats
         )
+
+        // Cache the result to avoid double-fetch in streaming briefing flow
+        _messageSummaryCache = (data: result, timestamp: Date())
+
+        return result
     }
 
     private func prioritizeThreads(_ threads: [MessageThread], maxCount: Int) -> [MessageThread] {

@@ -125,14 +125,23 @@ class GmailReader {
         // Get list of message IDs
         let messageIds = try await listMessages(query: query, maxResults: limit)
 
-        // Fetch full message details in parallel
-        var messages: [Message] = []
-        for messageId in messageIds {
-            if let message = try? await fetchMessage(messageId: messageId) {
-                messages.append(message)
+        // Fetch full message details in parallel using TaskGroup
+        let messages = await withTaskGroup(of: Message?.self, returning: [Message].self) { group in
+            for messageId in messageIds {
+                group.addTask {
+                    try? await self.fetchMessage(messageId: messageId)
+                }
             }
+            var results: [Message] = []
+            for await msg in group {
+                if let msg = msg {
+                    results.append(msg)
+                }
+            }
+            return results
         }
 
+        // Sort by date descending to maintain original ordering
         return messages.sorted { $0.timestamp > $1.timestamp }
     }
 

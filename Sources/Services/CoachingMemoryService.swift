@@ -25,6 +25,13 @@ class CoachingMemoryService {
     private let maxPatterns = 20
     private let maxFollowups = 10
 
+    // Cached parsed sections to avoid re-reading file on every operation
+    private var cachedSections: [String: String]?
+
+    // Debounce Notion sync (at most once per 5 minutes)
+    private var lastNotionSync: Date?
+    private let notionSyncInterval: TimeInterval = 300
+
     init() {
         let homeDir = NSHomeDirectory()
         self.filePath = "\(homeDir)/.alfred/coaching_context.md"
@@ -56,6 +63,55 @@ class CoachingMemoryService {
             .components(separatedBy: "\n")
             .filter { $0.starts(with: "- [ ] ") }
             .map { String($0.dropFirst(6)) }
+    }
+
+    /// Count total recorded sessions (used for trust level computation)
+    func getTotalSessionCount() -> Int {
+        fileLock.lock()
+        defer { fileLock.unlock() }
+
+        let sections = parseSections()
+        guard let sessionLog = sections["Session Log"],
+              !sessionLog.contains("_No sessions yet._") else { return 0 }
+
+        return sessionLog.components(separatedBy: "\n")
+            .filter { $0.starts(with: "### ") }.count
+    }
+
+    /// Count resolved coaching themes (used for trust level computation)
+    func getResolvedThemeCount() -> Int {
+        fileLock.lock()
+        defer { fileLock.unlock() }
+
+        let sections = parseSections()
+        guard let themes = sections["Coaching Themes"],
+              let resolvedRange = themes.range(of: "### Resolved") else { return 0 }
+
+        let resolvedSection = String(themes[resolvedRange.upperBound...])
+        return resolvedSection.components(separatedBy: "\n")
+            .filter { $0.starts(with: "- [") }.count
+    }
+
+    /// Oldest session date parsed from the Session Log (used for trust level computation)
+    func getOldestSessionDate() -> Date? {
+        fileLock.lock()
+        defer { fileLock.unlock() }
+
+        let sections = parseSections()
+        guard let sessionLog = sections["Session Log"],
+              !sessionLog.contains("_No sessions yet._") else { return nil }
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd HH:mm"
+
+        // Find first ### header line with a valid date
+        for line in sessionLog.components(separatedBy: "\n") where line.starts(with: "### ") {
+            let dateStr = String(line.dropFirst(4)).trimmingCharacters(in: .whitespaces)
+            if let date = dateFormatter.date(from: dateStr) {
+                return date
+            }
+        }
+        return nil
     }
 
     /// Get the last N session summaries
@@ -92,7 +148,8 @@ class CoachingMemoryService {
     /// Record a new coaching session summary
     func recordSession(topic: String, insight: String, action: String?, followUp: String?) {
         fileLock.lock()
-        defer { fileLock.unlock() }
+        // Note: lock is released explicitly before trust recompute to avoid deadlock
+        // (recompute calls getTotalSessionCount etc. which re-acquire the lock)
 
         var sections = parseSections()
 
@@ -191,7 +248,20 @@ class CoachingMemoryService {
         }
 
         saveSections(sections)
+        fileLock.unlock()
         print("📝 [Coaching] Recorded session: \(topic)")
+
+        // Recompute trust level after every session (lock already released above)
+        let sessionCount = getTotalSessionCount()
+        let resolvedThemes = getResolvedThemeCount()
+        let oldestDate = getOldestSessionDate()
+        let trustState = TrustStateService.shared.loadState()
+        TrustStateService.shared.recompute(
+            sessions: sessionCount,
+            turns: trustState.totalTurns,
+            resolvedThemes: resolvedThemes,
+            oldestSessionDate: oldestDate
+        )
     }
 
     /// Update or add a coaching theme
@@ -339,6 +409,10 @@ class CoachingMemoryService {
     // MARK: - Private Helpers
 
     private func parseSections() -> [String: String] {
+        if let cached = cachedSections {
+            return cached
+        }
+
         guard let content = try? String(contentsOfFile: filePath, encoding: .utf8) else {
             return [:]
         }
@@ -364,10 +438,13 @@ class CoachingMemoryService {
             sections[section] = currentContent.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
+        cachedSections = sections
         return sections
     }
 
     private func saveSections(_ sections: [String: String]) {
+        cachedSections = sections
+
         let timestamp = ISO8601DateFormatter().string(from: Date())
 
         var content = "# Coach Alfred Context\n\n"
@@ -388,9 +465,12 @@ class CoachingMemoryService {
 
         try? content.write(toFile: filePath, atomically: true, encoding: .utf8)
 
-        // Fire-and-forget: sync to Notion (debounced internally)
-        Task {
-            try? await CoachingNotionSyncService.shared.syncToNotion()
+        // Debounced Notion sync: at most once per 5 minutes
+        if lastNotionSync == nil || Date().timeIntervalSince(lastNotionSync!) > notionSyncInterval {
+            lastNotionSync = Date()
+            Task {
+                try? await CoachingNotionSyncService.shared.syncToNotion()
+            }
         }
     }
 

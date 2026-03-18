@@ -99,6 +99,19 @@ class CadenceService {
         }
     }
 
+    /// Mark a manual (API-triggered) run — updates display timestamp but does NOT set lastRunDate,
+    /// so the scheduler will still fire the cadence at its scheduled time.
+    func markManualRunSuccess(id: String, timestamp: String) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if let index = cadences.firstIndex(where: { $0.id == id }) {
+            cadences[index].lastManualRunTimestamp = timestamp
+            cadences[index].failureCooldownUntil = nil
+            try? save()
+        }
+    }
+
     func markRunFailure(id: String, cooldownMinutes: Int) {
         lock.lock()
         defer { lock.unlock() }

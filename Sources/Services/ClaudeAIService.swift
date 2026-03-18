@@ -483,6 +483,7 @@ class ClaudeAIService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.setValue("prompt-caching-2024-07-31", forHTTPHeaderField: "anthropic-beta")
         request.timeoutInterval = 120
 
         var body: [String: Any] = [
@@ -495,7 +496,7 @@ class ClaudeAIService {
         ]
 
         if let system = system {
-            body["system"] = system
+            body["system"] = [["type": "text", "text": system, "cache_control": ["type": "ephemeral"]]]
         }
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -584,6 +585,7 @@ class ClaudeAIService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.setValue("prompt-caching-2024-07-31", forHTTPHeaderField: "anthropic-beta")
         request.timeoutInterval = 120
 
         var body: [String: Any] = [
@@ -594,7 +596,7 @@ class ClaudeAIService {
         ]
 
         if let system = system {
-            body["system"] = system
+            body["system"] = [["type": "text", "text": system, "cache_control": ["type": "ephemeral"]]]
         }
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -663,6 +665,7 @@ class ClaudeAIService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.setValue("prompt-caching-2024-07-31", forHTTPHeaderField: "anthropic-beta")
         request.timeoutInterval = 120 // 2 minutes for AI calls (default 60s is too short)
 
         var body: [String: Any] = [
@@ -674,7 +677,7 @@ class ClaudeAIService {
         ]
 
         if let system = system {
-            body["system"] = system
+            body["system"] = [["type": "text", "text": system, "cache_control": ["type": "ephemeral"]]]
         }
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
