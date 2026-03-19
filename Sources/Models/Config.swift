@@ -133,6 +133,7 @@ struct UserSettings: Codable {
     let workEmail: String?  // Configurable work email for calendar invites; falls back to `email`
     let companyDomain: String
     let companyDomains: [String]
+    let workStyle: String?
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -140,6 +141,7 @@ struct UserSettings: Codable {
         case workEmail = "work_email"
         case companyDomain = "company_domain"
         case companyDomains = "company_domains"
+        case workStyle = "work_style"
     }
 
     func isInternal(email: String) -> Bool {

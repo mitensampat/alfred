@@ -193,6 +193,32 @@ struct CoachingPromptBuilder {
 
         """
 
+        // WORK STYLE — calibrates coaching delivery based on user's self-identified style
+        if let workStyle = AppConfig.load()?.user.workStyle, !workStyle.isEmpty {
+            let styleGuidance: String
+            switch workStyle.lowercased() {
+            case "driver":
+                styleGuidance = "User is a Driver: bias to action, impatient with noise. Be direct, skip preamble, flag only what needs immediate action."
+            case "architect":
+                styleGuidance = "User is an Architect: systems thinker, wants full picture. Provide context, show connections between items, explain the 'why'."
+            case "connector":
+                styleGuidance = "User is a Connector: relationships first, context through people. Frame everything through relationships, highlight social dynamics."
+            case "operator":
+                styleGuidance = "User is an Operator: execution machine, thrives on throughput. Focus on actionable items, progress metrics, and clearing blockers."
+            default:
+                styleGuidance = ""
+            }
+            if !styleGuidance.isEmpty {
+                prompt += """
+
+                ## WORK STYLE CALIBRATION
+
+                \(styleGuidance)
+
+                """
+            }
+        }
+
         // COACHING MEMORY (~600-800 tokens, truncated if needed)
         if !coachingContext.isEmpty {
             // Extract the most relevant sections, skip the header
@@ -284,6 +310,33 @@ struct CoachingPromptBuilder {
 
             ## RELATIONSHIP SIGNALS
             \(relationshipData)
+
+            """
+        }
+
+        // LEARNED PATTERNS (Learning System v2 — injected from WorkflowLearningService)
+        let learningContext = WorkflowLearningService.shared.getContextForEndpoint("chat")
+        if !learningContext.isEmpty {
+            prompt += """
+
+            \(learningContext)
+            These are patterns Alfred has learned from your past interactions. Follow explicit preferences strictly. Use communication style observations to calibrate your tone. If a pattern seems wrong, the user will correct you — that correction itself becomes a learning signal.
+
+            """
+        }
+
+        // PENDING PATTERN REVIEWS — surface for Coach to ask about
+        let pendingReviews = WorkflowLearningService.shared.getPendingPatternReviews()
+        if !pendingReviews.isEmpty {
+            let reviewItems = pendingReviews.prefix(2).map { "- \($0.question)" }.joined(separator: "\n")
+            prompt += """
+
+            ## PATTERNS TO VERIFY WITH USER
+            You have learned some new patterns but haven't confirmed them yet. When there's a natural moment in conversation (not as the very first thing you say), casually surface ONE of these:
+
+            \(reviewItems)
+
+            If the user confirms, great. If they correct you, update your understanding. If they dismiss it, move on. Don't force it — only bring it up if there's a natural segue.
 
             """
         }

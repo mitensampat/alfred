@@ -4,10 +4,12 @@ import Foundation
 class IntentRecognitionService {
     private let claudeService: ClaudeAIService
     private let conversationContext: ConversationContext
+    private let userTimezone: String
 
     init(config: AppConfig, conversationContext: ConversationContext? = nil) {
         self.claudeService = ClaudeAIService(config: config.ai)
         self.conversationContext = conversationContext ?? ConversationContext.shared
+        self.userTimezone = config.app.timezone.isEmpty ? TimeZone.current.identifier : config.app.timezone
     }
 
     /// Parse a natural language query into a structured intent (with conversation context)
@@ -215,7 +217,7 @@ class IntentRecognitionService {
         - "schedule a meeting with Nikhil at 2PM on Friday for 1 hour" -> action:"create", target:"calendar"
         - "set up a call with Kunal tomorrow morning" -> action:"create", target:"calendar"
         - event_title: null (leave blank — the app auto-generates the title from attendees + topic)
-        - event_time: MUST be an ISO8601 datetime string (e.g. "2026-02-28T16:00:00+05:30"). Compute the ACTUAL date from relative terms like "tomorrow", "Friday", "next Monday". Use the user's timezone (Asia/Kolkata, +05:30).
+        - event_time: MUST be an ISO8601 datetime string (e.g. "2026-02-28T16:00:00\(timezoneOffsetString())"). Compute the ACTUAL date from relative terms like "tomorrow", "Friday", "next Monday". Use the user's timezone (\(userTimezone)).
         - event_duration_minutes: integer, default 30 if not specified. "1 hour" = 60, "45 min" = 45
         - event_location: extract if mentioned ("at Home", "at Office", "at Starbucks"), null if not specified
         - event_attendees: list of person names mentioned (["Mona"], ["Nikhil", "Kunal"]), null if no one mentioned
@@ -266,6 +268,15 @@ class IntentRecognitionService {
 
         Output the JSON object now. Nothing else.
         """
+    }
+
+    private func timezoneOffsetString() -> String {
+        let tz = TimeZone(identifier: userTimezone) ?? TimeZone.current
+        let seconds = tz.secondsFromGMT()
+        let hours = abs(seconds) / 3600
+        let minutes = (abs(seconds) % 3600) / 60
+        let sign = seconds >= 0 ? "+" : "-"
+        return String(format: "%@%02d:%02d", sign, hours, minutes)
     }
 
     private func buildIntentRecognitionPrompt(query: String, conversationTurns: [ConversationTurn], session: ConversationSession) -> String {

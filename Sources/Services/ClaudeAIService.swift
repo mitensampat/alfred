@@ -47,7 +47,15 @@ class ClaudeAIService {
 
     func analyzeFocusedThread(_ thread: MessageThread) async throws -> FocusedThreadAnalysis {
         let messagesText = thread.messages.map { msg in
-            "[\(msg.timestamp.formatted())] \(msg.direction == .incoming ? thread.contactName ?? "Unknown" : "You"): \(msg.content)"
+            let sender: String
+            if msg.direction == .outgoing {
+                sender = "You"
+            } else if let name = msg.senderName, !name.isEmpty {
+                sender = name  // Individual sender in group chats
+            } else {
+                sender = thread.contactName ?? "Unknown"
+            }
+            return "[\(msg.timestamp.formatted())] \(sender): \(msg.content)"
         }.joined(separator: "\n")
 
         // Calculate user participation
@@ -114,10 +122,24 @@ class ClaudeAIService {
             """
         }
 
+        // Detect group chat and list participants for attribution clarity
+        let incomingSenders = Set(thread.messages.compactMap { $0.direction == .incoming ? ($0.senderName ?? $0.sender) : nil })
+        let isGroupChat = incomingSenders.count > 1
+        let participantList = isGroupChat ? "\nParticipants in this group: \(incomingSenders.sorted().joined(separator: ", ")), and You (Miten)." : ""
+
         var prompt = """
         Analyze this entire WhatsApp message thread and provide a detailed analysis.
 
-        IMPORTANT: In this thread, "You" refers to the user (Miten), and "\(thread.contactName ?? "Unknown")" is the other person/group.
+        IMPORTANT: In this thread, "You" refers to the user (Miten)\(isGroupChat ? ". This is a GROUP CHAT named \"\(thread.contactName ?? "Unknown")\" with multiple participants" : ", and \"\(thread.contactName ?? "Unknown")\" is the other person").\(participantList)
+        \(isGroupChat ? """
+
+        CRITICAL — PARTICIPANT ATTRIBUTION:
+        - Each message is prefixed with the sender's name. Pay close attention to WHO said what.
+        - When summarizing, ALWAYS attribute statements, requests, and directives to the correct person by name.
+        - Do NOT confuse who made a request with who received it. "Kunal asked Miten to call Vinayak" is very different from "Vinayak asked Kunal to call Miten".
+        - Track the direction of actions: who is asking, who is being asked, and who is the subject.
+        - When people disagree, clearly state who holds which position.
+        """ : "")
 
         \(participationContext)
 
@@ -174,7 +196,15 @@ class ClaudeAIService {
     private func analyzeThread(_ thread: MessageThread, useModel: String? = nil, favoriteNames: [String] = []) async throws -> MessageSummary {
         let recentMessages = Array(thread.messages.prefix(20))
         let messagesText = recentMessages.map { msg in
-            "[\(msg.timestamp.formatted())] \(msg.direction == .incoming ? thread.contactName ?? "Unknown" : "You"): \(msg.content)"
+            let sender: String
+            if msg.direction == .outgoing {
+                sender = "You"
+            } else if let name = msg.senderName, !name.isEmpty {
+                sender = name  // Individual sender in group chats
+            } else {
+                sender = thread.contactName ?? "Unknown"
+            }
+            return "[\(msg.timestamp.formatted())] \(sender): \(msg.content)"
         }.joined(separator: "\n")
 
         // Calculate user participation
@@ -232,6 +262,15 @@ class ClaudeAIService {
         PRIORITY CONTACT: This is a priority contact/group for the user. Weight urgency assessment accordingly - messages from priority contacts warrant faster response times and higher attention.
         """ : ""
 
+        // Detect group chat for attribution guidance
+        let incomingSendersQuick = Set(recentMessages.compactMap { $0.direction == .incoming ? ($0.senderName ?? $0.sender) : nil })
+        let isGroupChatQuick = incomingSendersQuick.count > 1
+        let groupAttribution = isGroupChatQuick ? """
+
+        IMPORTANT: This is a GROUP CHAT with multiple participants: \(incomingSendersQuick.sorted().joined(separator: ", ")), and You (Miten).
+        Each message is labeled with the sender's name. Attribute statements and requests to the correct person — do not confuse who said what.
+        """ : ""
+
         var prompt = """
         Analyze this message thread and provide:
         1. A concise summary (2-3 sentences max)
@@ -240,7 +279,7 @@ class ClaudeAIService {
         4. Sentiment (positive/neutral/negative/urgent)
         5. Whether it needs a response and suggested response if applicable
 
-        \(participationContext)\(priorityContext)
+        \(participationContext)\(priorityContext)\(groupAttribution)
         """
 
         // Add historical context if available

@@ -11,11 +11,15 @@
 cd "/Users/mitensampat/Documents/Claude apps/Alfred"
 swift build -c release
 
-# 2. Stop the running instance
+# 2. Stop the running instance AND force-kill the old process
+#    (launchctl unload alone does NOT reliably kill the process)
 launchctl unload ~/Library/LaunchAgents/com.msfoundry.alfred.plist
+sleep 1
+pkill -f "Alfred.app/Contents/MacOS/Alfred"
+sleep 2
 
 # 3. Install new binary
-cp .build/release/Alfred /Applications/Alfred.app/Contents/MacOS/Alfred
+cp .build/release/alfred /Applications/Alfred.app/Contents/MacOS/Alfred
 
 # 4. Re-sign with stable bundle identifier (CRITICAL for Full Disk Access / TCC permissions)
 codesign --force --sign - --identifier com.msfoundry.alfred /Applications/Alfred.app/Contents/MacOS/Alfred
@@ -35,6 +39,7 @@ launchctl load ~/Library/LaunchAgents/com.msfoundry.alfred.plist
 - LaunchAgent at `~/Library/LaunchAgents/com.msfoundry.alfred.plist` has `KeepAlive: true`
 - If you `kill` the process, launchd will respawn it immediately
 - If you start a debug binary while the release binary is running, the debug binary will FAIL to bind port 8080
+- `launchctl unload` does NOT reliably kill the old process — the binary can survive and hold the port. Always follow with `pkill -f` and a sleep to ensure the old process is dead before installing the new binary. Without this, you'll deploy a new binary but the OLD process keeps running, and your changes appear to not work.
 - Always use `launchctl unload/load` to stop/start, never just `kill`
 
 ## Port & Server
@@ -61,7 +66,7 @@ launchctl load ~/Library/LaunchAgents/com.msfoundry.alfred.plist
 | `~/.alfred/scheduler_state.json` | Tracks last briefing/attention run dates |
 | `~/.alfred/agents/` | Agent memory files |
 | `~/.alfred/commitment_scan.db` | Commitment extractions, closure detections, pending confirmations |
-| `~/.alfred/workflow_learning.db` | User feedback on closures, computed signal accuracy patterns |
+| `~/.alfred/workflow_learning.db` | Learning System v2: events, patterns, reviews + v1 workflow patterns |
 | `~/.config/alfred/memory/contacts.json` | Thread classification, extraction acceptance rates |
 | `~/Library/LaunchAgents/com.msfoundry.alfred.plist` | LaunchAgent (auto-start, keep-alive) |
 | `/Applications/Alfred.app/Contents/MacOS/Alfred` | The production binary |
@@ -113,17 +118,43 @@ config.json:
 - `POST /api/commitment-tracker/reject-closure?hash=X` - Reject an auto-closure
 - `GET /api/playbook/status` - Playbook sync status
 - `GET /api/config/notion` - Notion configuration
+- `GET /api/learning/status` - Learning v2 stats (events, patterns, reviews)
+- `POST /api/learning/compute` - Trigger pattern computation
+- `GET /api/learning/patterns` - Active learned patterns
+- `POST /api/learning/review?id=X&action=confirmed|corrected|dismissed` - Resolve pattern review
+- `POST /api/commitment-tracker/cleanup-orphans` - Clean orphaned closure detections
+- `POST /api/commitment-tracker/sync-from-notion` - Bidirectional sync (Notion→local)
 
 All endpoints require `?passcode=REDACTED_PASSCODE` query parameter.
 
-## Learning System
+## Learning System v2
 
-Alfred's commitment tracker is self-improving. See `docs/internal/COMMITMENT_LIFECYCLE_LEARNING.md` for the full architecture. Key points:
-- Auto-closure uses confidence thresholds: ≥0.85 auto-closes, 0.6-0.84 asks user, <0.6 ignored
-- User confirm/reject actions are stored in `workflow_learning.db` as training signal
-- Signal accuracy patterns (e.g. "Got it" = 92% reliable) are computed from feedback
-- These patterns are injected into Claude's prompts on future closure detection runs
-- Over time, reliable signals graduate from "pending" to "auto-close" automatically
+Alfred's learning system has 3 layers:
+
+### Layer 1: Signal Collection (passive, always-on)
+- Records corrections, explicit preferences, extraction feedback, closure feedback from every chat
+- Stored in `workflow_learning.db` → `learning_events` table
+- Direct instructions ("always do X", "never do Y") bypass graduation — permanent immediately
+- Keyword detection in `detectAndRecordCorrections()` wired into both chat paths
+
+### Layer 2: Pattern Computation (daily + on-demand)
+- Runs via `computeLearnedPatterns()` — called from pattern learning cadence + `/api/learning/compute`
+- Communication style patterns: Haiku extracts patterns from corrections
+- Direct instructions: processed into `learned_patterns` with confidence=1.0
+- Staleness: 30 days → stale flag, 90 days → archived
+- Conflict resolution: contradictions decay confidence by 30%
+- New patterns queued for Coach review in `pending_pattern_reviews`
+
+### Layer 3: Knowledge Application (per-request)
+- `getContextForEndpoint("chat"|"briefing"|"commitment_scan"|"extraction")` returns tailored pattern injection
+- Injected into `CoachingPromptBuilder.build()` as "What Alfred Has Learned About You"
+- Pending pattern reviews surfaced to Coach for natural verification in conversation
+- Max 500 tokens per injection
+
+### v1 (still active)
+- Auto-closure confidence thresholds: ≥0.85 auto-closes, 0.6-0.84 asks user, <0.6 ignored
+- Signal accuracy patterns injected via `getPatternContextForAI()`
+- 164 computed patterns from workflow data
 
 ## Git State Notes
 

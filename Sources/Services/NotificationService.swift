@@ -235,73 +235,23 @@ class NotificationService {
         }
     }
 
-    // MARK: - Shared Email Design System (Ralph Lauren Navy)
+    // MARK: - Shared Email Design System (Inline Styles — Email-Safe)
+    //
+    // Design tokens from home.html "The Walk" design system:
+    //   Canvas:    #f8f7f4   Surface:  #ffffff   Sunken: #f0eeea
+    //   Ink:       #1b2a4a   Ink-2:    #5c6370   Ink-3:  #8890a0
+    //   Line:      #e4e2dc   Coach:    #1b2a4a   Growth: #2d5a3d
+    //   Warning:   #c49a3c   Danger:   #8b2332   Info:   #3d6888
+    //   Method:    #6b4c3b
+    //   Display:   Playfair Display, Georgia, serif
+    //   Body:      Inter, -apple-system, sans-serif
 
-    /// Single source of truth for all email styling.
-    /// Matches the app's Ralph Lauren Navy palette from home.html :root variables.
-    static let emailCSS = """
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
-            line-height: 1.6;
-            color: #1b2a4a;
-            max-width: 700px;
-            margin: 0 auto;
-            padding: 20px;
-            background: #f8f7f4;
-        }
-        .brand { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; }
-        h1 { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-size: 28px; font-weight: 600; margin-bottom: 24px; color: #1b2a4a; }
-        h2 { font-size: 14px; font-weight: 600; color: #5c6370; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 28px; margin-bottom: 12px; border-bottom: 1px solid #e4e2dc; padding-bottom: 8px; }
-        h3 { font-size: 15px; font-weight: 600; color: #1b2a4a; margin-top: 16px; margin-bottom: 8px; }
-        p { margin: 12px 0; font-size: 14px; }
-        hr { border: none; border-top: 1px solid #e4e2dc; margin: 24px 0; }
-        strong { color: #1b2a4a; }
-        .stat { display: inline-block; margin-right: 24px; margin-bottom: 8px; }
-        .stat-label { color: #5c6370; font-size: 13px; }
-        .stat-value { font-size: 18px; font-weight: 600; color: #1b2a4a; }
-        .stat-grid { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
-        .stat-grid .stat { flex: 1; min-width: 100px; background: #f0eeea; border-radius: 6px; padding: 12px; text-align: center; margin-right: 0; }
-        .stat-grid .stat-value { font-size: 24px; }
-        .stat-grid .stat-label { font-size: 12px; margin-top: 4px; }
-        .item { background: #f0eeea; border-radius: 6px; padding: 12px 16px; margin-bottom: 10px; }
-        .item-title { font-weight: 600; color: #1b2a4a; margin-bottom: 4px; }
-        .item-meta { font-size: 13px; color: #5c6370; }
-        .item-desc { font-size: 14px; color: #1b2a4a; margin-top: 6px; }
-        .priority-critical { border-left: 3px solid #8b2332; background: #f4e4e6; }
-        .priority-high { border-left: 3px solid #8b2332; }
-        .priority-medium { border-left: 3px solid #c49a3c; }
-        .priority-low { border-left: 3px solid #2d5a3d; }
-        .coaching-leverage { border-left: 3px solid #3d6888; background: #e4eef4; }
-        .coaching-relationship { border-left: 3px solid #2d5a3d; background: #e4efe7; }
-        .coaching-avoidance { border-left: 3px solid #c49a3c; background: #faf1dd; }
-        .coaching-attention { border-left: 3px solid #c49a3c; background: #faf1dd; }
-        .coaching-weekly { border-left: 3px solid #6b4c3b; background: #f4ece3; }
-        .coaching-skill { border-left: 3px solid #3d6888; background: #e4eef4; }
-        .coaching-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-        .coaching-leverage .coaching-label { color: #3d6888; }
-        .coaching-relationship .coaching-label { color: #2d5a3d; }
-        .coaching-avoidance .coaching-label { color: #c49a3c; }
-        .coaching-attention .coaching-label { color: #c49a3c; }
-        .coaching-weekly .coaching-label { color: #6b4c3b; }
-        .coaching-skill .coaching-label { color: #3d6888; }
-        .event { padding: 10px 14px; border-left: 3px solid #3d6888; background: #e4eef4; border-radius: 4px; margin-bottom: 8px; }
-        .event-time { font-size: 13px; color: #3d6888; font-weight: 500; }
-        .event-title { font-weight: 600; color: #1b2a4a; }
-        .event-location { font-size: 13px; color: #5c6370; margin-top: 2px; }
-        .tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-right: 6px; }
-        .tag-external { background: #faf1dd; color: #92400e; }
-        .can-push { border-left: 3px solid #2d5a3d; background: #e4efe7; }
-        .overdue { border-left: 3px solid #8b2332; }
-        .recommendation { padding: 8px 12px; background: #e4eef4; border-radius: 4px; margin-bottom: 6px; color: #3d6888; font-size: 14px; }
-        .agent-card { background: #f0eeea; border-radius: 8px; padding: 14px; margin-bottom: 10px; }
-        .agent-name { font-weight: 600; color: #1b2a4a; margin-bottom: 8px; }
-        .agent-stats { display: flex; gap: 16px; font-size: 13px; color: #5c6370; }
-        .agent-insight { font-size: 14px; color: #1b2a4a; margin-top: 8px; padding: 8px; background: #ffffff; border-radius: 4px; }
-        .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e4e2dc; font-size: 12px; color: #8890a0; text-align: center; }
-        .footer .brand { font-size: 14px; font-weight: 500; color: #1b2a4a; }
-    """
+    // Shared inline style constants
+    private static let fontBody = "font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;"
+    private static let fontDisplay = "font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;"
 
-    /// Standard HTML email preamble using the shared design system
+    /// Wraps email content in a table-based layout matching home.html:
+    /// cream canvas background → centered white card → content → footer
     static func emailHead() -> String {
         return """
         <!DOCTYPE html>
@@ -310,77 +260,179 @@ class NotificationService {
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
-            <style>
-                \(emailCSS)
-            </style>
         </head>
-        <body>
+        <body style="margin: 0; padding: 0; background-color: #f8f7f4; \(fontBody) color: #1b2a4a;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8f7f4;">
+        <tr><td align="center" style="padding: 24px 16px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px;">
+        <!-- Brand header -->
+        <tr><td style="padding: 0 0 20px; text-align: left;">
+            <span style="\(fontDisplay) font-size: 16px; font-weight: 400; color: #1b2a4a; letter-spacing: 0.02em;">alfred</span>
+        </td></tr>
+        <!-- Main content card -->
+        <tr><td style="background-color: #ffffff; border-radius: 8px; border: 1px solid #e4e2dc; padding: 32px 28px;">
         """
     }
 
-    /// Standard HTML email footer
+    /// Closes the white card, adds footer, closes tables
     static func emailFoot() -> String {
         return """
-            <div class="footer">
-                Generated by <span class="brand">alfred</span> v\(AlfredApp.version) • \(Date().formatted(date: .abbreviated, time: .shortened))
-            </div>
+        </td></tr>
+        <!-- Footer -->
+        <tr><td style="padding: 20px 0 0; text-align: center;">
+            <span style="\(fontBody) font-size: 11px; color: #8890a0;">Generated by <span style="\(fontDisplay) font-size: 12px; font-weight: 500; color: #5c6370;">alfred</span> v\(AlfredApp.version) · \(Date().formatted(date: .abbreviated, time: .shortened))</span>
+        </td></tr>
+        </table>
+        </td></tr>
+        </table>
         </body>
         </html>
+        """
+    }
+
+    // MARK: - Inline Style Helpers
+
+    /// Section header — matches home.html's time-marker style
+    private static func sectionHeader(_ text: String) -> String {
+        return """
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top: 28px; margin-bottom: 14px;">
+        <tr>
+            <td style="\(fontBody) font-size: 11px; font-weight: 600; color: #5c6370; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; padding-right: 12px;">\(text)</td>
+            <td style="width: 100%;"><div style="height: 1px; background-color: #e4e2dc;"></div></td>
+        </tr>
+        </table>
+        """
+    }
+
+    /// Stat pill — used for metrics (meetings, focus time, etc.)
+    private static func statRow(_ stats: [(value: String, label: String)]) -> String {
+        var cells = ""
+        for stat in stats {
+            cells += """
+            <td style="background-color: #f0eeea; border-radius: 6px; padding: 12px 8px; text-align: center; width: \(100 / max(stats.count, 1))%;">
+                <div style="\(fontBody) font-size: 20px; font-weight: 600; color: #1b2a4a;">\(stat.value)</div>
+                <div style="\(fontBody) font-size: 11px; color: #5c6370; margin-top: 2px;">\(stat.label)</div>
+            </td>
+            """
+        }
+        return """
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 16px; border-spacing: 8px; border-collapse: separate;">
+        <tr>\(cells)</tr>
+        </table>
+        """
+    }
+
+    /// Coaching card — white card with colored dot, matching home.html .coaching-card
+    private static func coachingCard(emoji: String, label: String, insight: String, dotColor: String) -> String {
+        return """
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 8px;">
+        <tr><td style="background-color: #f8f7f4; border-radius: 6px; border: 1px solid #e4e2dc; padding: 14px 16px;">
+            <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+                <td style="width: 8px; vertical-align: top; padding-top: 2px;"><div style="width: 7px; height: 7px; border-radius: 50%; background-color: \(dotColor);"></div></td>
+                <td style="padding-left: 8px;">
+                    <div style="\(fontBody) font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #5c6370; margin-bottom: 4px;">\(emoji) \(label)</div>
+                    <div style="\(fontBody) font-size: 14px; line-height: 1.65; color: #1b2a4a;">\(insight)</div>
+                </td>
+            </tr></table>
+        </td></tr>
+        </table>
+        """
+    }
+
+    /// Event card — clean timeline item
+    private static func eventCard(time: String, title: String, location: String?, isExternal: Bool) -> String {
+        var locationHtml = ""
+        if let loc = location, !loc.isEmpty {
+            locationHtml = "<div style=\"\(fontBody) font-size: 12px; color: #5c6370; margin-top: 3px;\">📍 \(loc)</div>"
+        }
+        let externalTag = isExternal ? " <span style=\"\(fontBody) display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 3px; background-color: #faf1dd; color: #92400e;\">External</span>" : ""
+
+        return """
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 6px;">
+        <tr><td style="background-color: #f8f7f4; border-radius: 6px; border-left: 3px solid #3d6888; padding: 10px 14px;">
+            <div style="\(fontBody) font-size: 12px; color: #3d6888; font-weight: 500;">\(time)\(externalTag)</div>
+            <div style="\(fontBody) font-size: 14px; font-weight: 600; color: #1b2a4a; margin-top: 2px;">\(title)</div>
+            \(locationHtml)
+        </td></tr>
+        </table>
+        """
+    }
+
+    /// Action/task item card with priority indicator
+    private static func itemCard(title: String, description: String, meta: String, accentColor: String, emoji: String) -> String {
+        return """
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 8px;">
+        <tr><td style="background-color: #f8f7f4; border-radius: 6px; border-left: 3px solid \(accentColor); padding: 12px 16px;">
+            <div style="\(fontBody) font-size: 14px; font-weight: 600; color: #1b2a4a;">\(emoji) \(title)</div>
+            <div style="\(fontBody) font-size: 13px; line-height: 1.55; color: #1b2a4a; margin-top: 4px;">\(description)</div>
+            <div style="\(fontBody) font-size: 12px; color: #8890a0; margin-top: 6px;">\(meta)</div>
+        </td></tr>
+        </table>
+        """
+    }
+
+    /// Simple card (no accent border)
+    private static func simpleCard(content: String) -> String {
+        return """
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 6px;">
+        <tr><td style="background-color: #f0eeea; border-radius: 6px; padding: 10px 14px;">
+            <div style="\(fontBody) font-size: 13px; line-height: 1.55; color: #1b2a4a;">\(content)</div>
+        </td></tr>
+        </table>
+        """
+    }
+
+    /// Recommendation card
+    private static func recCard(_ text: String) -> String {
+        return """
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 6px;">
+        <tr><td style="background-color: #e4eef4; border-radius: 6px; padding: 10px 14px;">
+            <div style="\(fontBody) font-size: 13px; line-height: 1.5; color: #3d6888;">\(text)</div>
+        </td></tr>
+        </table>
         """
     }
 
     // MARK: - Formatting
 
     private func formatBriefing(_ briefing: DailyBriefing) -> (markdown: String, html: String) {
-        // Build both markdown and HTML simultaneously for consistency
-        // Layout order: Coach Says → Calendar → Messages → Action Items
         var markdown = "# Daily Briefing - \(briefing.date.formatted(date: .long, time: .omitted))\n\n"
 
-        // HTML using shared Ralph Lauren Navy design system
         var html = Self.emailHead()
-        html += "<h1>📅 Daily Briefing for \(briefing.date.formatted(date: .long, time: .omitted))</h1>"
 
-        // ── Section 1: Coach Says ──────────────────────────────────────
+        // Title
+        html += "<div style=\"\(Self.fontDisplay) font-size: 22px; font-weight: 400; color: #1b2a4a; margin-bottom: 4px;\">Daily Briefing</div>"
+        html += "<div style=\"\(Self.fontBody) font-size: 12px; color: #8890a0; margin-bottom: 8px;\">\(briefing.date.formatted(date: .long, time: .omitted))</div>"
+
+        // ── Section 1: Coach Says ──
         if let cards = briefing.coachingCards, !cards.isEmpty {
             markdown += "## Your Coach Says\n\n"
-            html += "<h2>🧭 Your Coach Says</h2>"
+            html += Self.sectionHeader("Your Coach Says")
 
             for card in cards {
                 let emoji: String
-                let cssClass: String
+                let dotColor: String
                 let cardType = card.type.lowercased()
                 if cardType.contains("leverage") {
-                    emoji = "🎯"
-                    cssClass = "coaching-leverage"
+                    emoji = "🎯"; dotColor = "#1b2a4a"
                 } else if cardType.contains("relationship") {
-                    emoji = "👤"
-                    cssClass = "coaching-relationship"
+                    emoji = "👤"; dotColor = "#2d5a3d"
                 } else if cardType.contains("avoidance") {
-                    emoji = "🪞"
-                    cssClass = "coaching-avoidance"
+                    emoji = "🪞"; dotColor = "#c49a3c"
                 } else if cardType.contains("attention") {
-                    emoji = "📡"
-                    cssClass = "coaching-attention"
+                    emoji = "📡"; dotColor = "#c49a3c"
                 } else if cardType.contains("weekly") {
-                    emoji = "📋"
-                    cssClass = "coaching-weekly"
+                    emoji = "📋"; dotColor = "#6b4c3b"
                 } else {
-                    emoji = "💡"
-                    cssClass = "coaching-skill"
+                    emoji = "💡"; dotColor = "#3d6888"
                 }
 
                 markdown += "**\(emoji) \(card.label):** \(card.insight)\n\n"
-
-                html += """
-                    <div class="item \(cssClass)" style="border-radius: 6px;">
-                        <div class="coaching-label">\(emoji) \(card.label)</div>
-                        <div class="item-desc">\(card.insight)</div>
-                    </div>
-                """
+                html += Self.coachingCard(emoji: emoji, label: card.label, insight: card.insight, dotColor: dotColor)
             }
         }
 
-        // ── Section 2: Calendar ────────────────────────────────────────
+        // ── Section 2: Calendar ──
         let meetingHours = Int(briefing.calendarBriefing.schedule.totalMeetingTime / 3600)
         let meetingMins = Int((briefing.calendarBriefing.schedule.totalMeetingTime.truncatingRemainder(dividingBy: 3600)) / 60)
         let focusHours = Int(briefing.calendarBriefing.focusTime / 3600)
@@ -391,19 +443,16 @@ class NotificationService {
         markdown += "- Focus Time: \(focusHours)h \(focusMins)m\n"
         markdown += "- External Meetings: \(briefing.calendarBriefing.schedule.externalMeetings.count)\n\n"
 
-        html += """
-            <h2>📅 Today's Schedule</h2>
-            <div style="margin-bottom: 16px;">
-                <span class="stat"><span class="stat-value">\(meetingHours)h \(meetingMins)m</span><br><span class="stat-label">Meeting Time</span></span>
-                <span class="stat"><span class="stat-value">\(focusHours)h \(focusMins)m</span><br><span class="stat-label">Focus Time</span></span>
-                <span class="stat"><span class="stat-value">\(briefing.calendarBriefing.schedule.externalMeetings.count)</span><br><span class="stat-label">External Meetings</span></span>
-            </div>
-        """
+        html += Self.sectionHeader("Today's Schedule")
+        html += Self.statRow([
+            (value: "\(meetingHours)h \(meetingMins)m", label: "Meeting Time"),
+            (value: "\(focusHours)h \(focusMins)m", label: "Focus Time"),
+            (value: "\(briefing.calendarBriefing.schedule.externalMeetings.count)", label: "External")
+        ])
 
         // Events
         if !briefing.calendarBriefing.schedule.events.isEmpty {
             markdown += "### Events\n"
-            html += "<h3>Events</h3>"
 
             for event in briefing.calendarBriefing.schedule.events {
                 let startTime = event.startTime.formatted(date: .omitted, time: .shortened)
@@ -413,86 +462,82 @@ class NotificationService {
                     markdown += "  Location: \(location)\n"
                 }
 
-                var locationHtml = ""
-                if let location = event.location, !location.isEmpty {
-                    locationHtml = "<div class=\"event-location\">📍 \(location)</div>"
-                }
-                var externalTag = ""
-                if event.hasExternalAttendees {
-                    externalTag = "<span class=\"tag tag-external\">👥 External</span>"
-                }
-
-                html += """
-                    <div class="event">
-                        <div class="event-time">\(startTime) - \(endTime) \(externalTag)</div>
-                        <div class="event-title">\(event.title)</div>
-                        \(locationHtml)
-                    </div>
-                """
+                html += Self.eventCard(
+                    time: "\(startTime) – \(endTime)",
+                    title: event.title,
+                    location: event.location,
+                    isExternal: event.hasExternalAttendees
+                )
             }
             markdown += "\n"
         }
 
-        // ── Section 3: Messages ────────────────────────────────────────
+        // ── Section 3: Messages ──
         markdown += "## Messages Summary\n"
         markdown += "- Total Messages: \(briefing.messagingSummary.stats.totalMessages)\n"
         markdown += "- Unread: \(briefing.messagingSummary.stats.unreadMessages)\n"
         markdown += "- Need Response: \(briefing.messagingSummary.stats.threadsNeedingResponse)\n\n"
 
-        html += """
-            <h2>💬 Messages Summary</h2>
-            <div style="margin-bottom: 16px;">
-                <span class="stat"><span class="stat-value">\(briefing.messagingSummary.stats.totalMessages)</span><br><span class="stat-label">Total Messages</span></span>
-                <span class="stat"><span class="stat-value">\(briefing.messagingSummary.stats.unreadMessages)</span><br><span class="stat-label">Unread</span></span>
-                <span class="stat"><span class="stat-value">\(briefing.messagingSummary.stats.threadsNeedingResponse)</span><br><span class="stat-label">Need Response</span></span>
-            </div>
-        """
+        html += Self.sectionHeader("Messages")
+        html += Self.statRow([
+            (value: "\(briefing.messagingSummary.stats.totalMessages)", label: "Total"),
+            (value: "\(briefing.messagingSummary.stats.unreadMessages)", label: "Unread"),
+            (value: "\(briefing.messagingSummary.stats.threadsNeedingResponse)", label: "Need Response")
+        ])
 
         // Critical Messages
         if !briefing.messagingSummary.criticalMessages.isEmpty {
             markdown += "### Critical Messages\n"
-            html += "<h3>🔴 Critical Messages</h3>"
 
             for summary in briefing.messagingSummary.criticalMessages.prefix(5) {
                 let contactName = summary.thread.contactName ?? "Unknown"
                 let platform = summary.thread.platform.rawValue
                 markdown += "- \(contactName) (\(platform)): \(summary.summary)\n"
 
-                html += """
-                    <div class="item priority-critical">
-                        <div class="item-title">\(contactName) <span class="item-meta">(\(platform))</span></div>
-                        <div class="item-desc">\(summary.summary)</div>
-                    </div>
-                """
+                html += Self.itemCard(
+                    title: contactName,
+                    description: summary.summary,
+                    meta: platform,
+                    accentColor: "#8b2332",
+                    emoji: "🔴"
+                )
             }
             markdown += "\n"
         }
 
-        // ── Section 4: Action Items ────────────────────────────────────
+        // ── Section 4: Action Items ──
         if !briefing.actionItems.isEmpty {
             markdown += "## Action Items (\(briefing.actionItems.count))\n"
-            html += "<h2>✅ Action Items (\(briefing.actionItems.count))</h2>"
+            html += Self.sectionHeader("Action Items · \(briefing.actionItems.count)")
 
             for item in briefing.actionItems.prefix(10) {
                 let dueStr = item.dueDate?.formatted(date: .abbreviated, time: .shortened) ?? "No deadline"
-                let priorityClass = item.priority == .critical ? "priority-critical" : item.priority == .high ? "priority-high" : item.priority == .medium ? "priority-medium" : "priority-low"
-                let priorityEmoji = item.priority == .critical ? "🔴" : item.priority == .high ? "🟠" : item.priority == .medium ? "🟡" : "🟢"
+                let accentColor: String
+                let priorityEmoji: String
+                switch item.priority {
+                case .critical:
+                    accentColor = "#8b2332"; priorityEmoji = "🔴"
+                case .high:
+                    accentColor = "#8b2332"; priorityEmoji = "🟠"
+                case .medium:
+                    accentColor = "#c49a3c"; priorityEmoji = "🟡"
+                default:
+                    accentColor = "#2d5a3d"; priorityEmoji = "🟢"
+                }
 
                 markdown += "- [\(item.priority.rawValue)] \(item.title): \(item.description)\n"
 
-                html += """
-                    <div class="item \(priorityClass)">
-                        <div class="item-title">\(priorityEmoji) \(item.title)</div>
-                        <div class="item-desc">\(item.description)</div>
-                        <div class="item-meta">Due: \(dueStr)</div>
-                    </div>
-                """
+                html += Self.itemCard(
+                    title: item.title,
+                    description: item.description,
+                    meta: "Due: \(dueStr)",
+                    accentColor: accentColor,
+                    emoji: priorityEmoji
+                )
             }
         }
 
-        // Footer
         html += Self.emailFoot()
-
         return (markdown, html)
     }
 
@@ -500,58 +545,55 @@ class NotificationService {
         var markdown = "# Attention Defense Report - \(report.currentTime.formatted(date: .omitted, time: .shortened))\n\n"
 
         var html = Self.emailHead()
-        html += """
-            <h1>⚡ Attention Defense Report</h1>
-            <p style="color: #5c6370; margin-top: -16px; margin-bottom: 24px;">Generated at \(report.currentTime.formatted(date: .omitted, time: .shortened))</p>
-        """
+        html += "<div style=\"\(Self.fontDisplay) font-size: 22px; font-weight: 400; color: #1b2a4a; margin-bottom: 4px;\">Attention Defense</div>"
+        html += "<div style=\"\(Self.fontBody) font-size: 12px; color: #8890a0; margin-bottom: 8px;\">Generated at \(report.currentTime.formatted(date: .omitted, time: .shortened))</div>"
 
         // Must Do Today
         markdown += "## Must Complete Before EOD (\(report.mustDoToday.count))\n"
-        html += "<h2>🔴 Must Complete Before EOD (\(report.mustDoToday.count))</h2>"
+        html += Self.sectionHeader("Must Complete Before EOD · \(report.mustDoToday.count)")
 
         for item in report.mustDoToday {
             let estTime = item.estimatedDuration.map { "\(Int($0/60))min" } ?? "unknown"
             markdown += "- \(item.title): \(item.description) (Priority: \(item.priority.rawValue), Est: \(estTime))\n"
 
-            let priorityClass = item.priority == .high ? "priority-high" : "priority-medium"
-            html += """
-                <div class="item \(priorityClass)">
-                    <div class="item-title">\(item.title)</div>
-                    <div class="item-desc">\(item.description)</div>
-                    <div class="item-meta">Priority: \(item.priority.rawValue) • Est: \(estTime)</div>
-                </div>
-            """
+            let accentColor = item.priority == .high ? "#8b2332" : "#c49a3c"
+            html += Self.itemCard(
+                title: item.title,
+                description: item.description,
+                meta: "Priority: \(item.priority.rawValue) · Est: \(estTime)",
+                accentColor: accentColor,
+                emoji: "⚡"
+            )
         }
         markdown += "\n"
 
         // Can Push
         markdown += "## Can Push to Tomorrow (\(report.canPushOff.count))\n"
-        html += "<h2>🟢 Can Push to Tomorrow (\(report.canPushOff.count))</h2>"
+        html += Self.sectionHeader("Can Push to Tomorrow · \(report.canPushOff.count)")
 
         for suggestion in report.canPushOff {
             markdown += "- \(suggestion.item.title): \(suggestion.reason) (Impact: \(suggestion.impact.rawValue))\n"
 
-            html += """
-                <div class="item can-push">
-                    <div class="item-title">\(suggestion.item.title)</div>
-                    <div class="item-desc">\(suggestion.reason)</div>
-                    <div class="item-meta">Impact if delayed: \(suggestion.impact.rawValue)</div>
-                </div>
-            """
+            html += Self.itemCard(
+                title: suggestion.item.title,
+                description: suggestion.reason,
+                meta: "Impact if delayed: \(suggestion.impact.rawValue)",
+                accentColor: "#2d5a3d",
+                emoji: "↗️"
+            )
         }
         markdown += "\n"
 
         // Recommendations
         markdown += "## Recommendations\n"
-        html += "<h2>💡 Recommendations</h2>"
+        html += Self.sectionHeader("Recommendations")
 
         for rec in report.recommendations {
             markdown += "- \(rec)\n"
-            html += "<div class=\"recommendation\">\(rec)</div>"
+            html += Self.recCard(rec)
         }
 
         html += Self.emailFoot()
-
         return (markdown, html)
     }
 
@@ -562,10 +604,8 @@ class NotificationService {
         var markdown = "# Alfred Agent Digest - \(dateFormatter.string(from: digest.date))\n\n"
 
         var html = Self.emailHead()
-        html += """
-            <h1>🤖 <span class="brand">alfred</span> Agent Digest</h1>
-            <p style="color: #5c6370; margin-top: -16px; margin-bottom: 24px;">\(dateFormatter.string(from: digest.date))</p>
-        """
+        html += "<div style=\"\(Self.fontDisplay) font-size: 22px; font-weight: 400; color: #1b2a4a; margin-bottom: 4px;\">Agent Digest</div>"
+        html += "<div style=\"\(Self.fontBody) font-size: 12px; color: #8890a0; margin-bottom: 8px;\">\(dateFormatter.string(from: digest.date))</div>"
 
         // Summary Stats
         markdown += "## Summary\n"
@@ -574,19 +614,17 @@ class NotificationService {
         markdown += "- Pending Review: \(digest.summary.decisionsPending)\n"
         markdown += "- New Learnings: \(digest.summary.newLearningsCount)\n\n"
 
-        html += """
-            <h2>📊 Summary</h2>
-            <div class="stat-grid">
-                <div class="stat"><div class="stat-value">\(digest.summary.totalDecisions)</div><div class="stat-label">Decisions</div></div>
-                <div class="stat"><div class="stat-value">\(digest.summary.decisionsExecuted)</div><div class="stat-label">Executed</div></div>
-                <div class="stat"><div class="stat-value">\(digest.summary.decisionsPending)</div><div class="stat-label">Pending</div></div>
-                <div class="stat"><div class="stat-value">\(digest.summary.newLearningsCount)</div><div class="stat-label">Learnings</div></div>
-            </div>
-        """
+        html += Self.sectionHeader("Summary")
+        html += Self.statRow([
+            (value: "\(digest.summary.totalDecisions)", label: "Decisions"),
+            (value: "\(digest.summary.decisionsExecuted)", label: "Executed"),
+            (value: "\(digest.summary.decisionsPending)", label: "Pending"),
+            (value: "\(digest.summary.newLearningsCount)", label: "Learnings")
+        ])
 
         // Agent Activity
         markdown += "## Agent Activity\n"
-        html += "<h2>🧠 Agent Activity</h2>"
+        html += Self.sectionHeader("Agent Activity")
 
         for activity in digest.agentActivity {
             let successPct = Int(activity.successRate * 100)
@@ -595,18 +633,17 @@ class NotificationService {
 
             var insightHtml = ""
             if let insight = activity.keyInsight {
-                insightHtml = "<div class=\"agent-insight\">💡 \(insight)</div>"
+                insightHtml = "<div style=\"\(Self.fontBody) font-size: 13px; color: #1b2a4a; margin-top: 8px; padding: 8px 10px; background-color: #ffffff; border-radius: 4px;\">💡 \(insight)</div>"
             }
 
             html += """
-                <div class="agent-card">
-                    <div class="agent-name">\(activity.agentType.displayName) Agent</div>
-                    <div class="agent-stats">
-                        <span>\(activity.decisionsCount) decisions</span>
-                        <span>\(successPct)% success</span>
-                    </div>
-                    \(insightHtml)
-                </div>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 8px;">
+            <tr><td style="background-color: #f0eeea; border-radius: 6px; padding: 14px 16px;">
+                <div style="\(Self.fontBody) font-size: 14px; font-weight: 600; color: #1b2a4a; margin-bottom: 6px;">\(activity.agentType.displayName) Agent</div>
+                <div style="\(Self.fontBody) font-size: 12px; color: #5c6370;">\(activity.decisionsCount) decisions · \(successPct)% success</div>
+                \(insightHtml)
+            </td></tr>
+            </table>
             """
         }
         markdown += "\n"
@@ -617,15 +654,13 @@ class NotificationService {
         markdown += "- They Owe Me: \(digest.commitmentStatus.activeTheyOwe)\n"
         markdown += "- Overdue: \(digest.commitmentStatus.overdueCount)\n\n"
 
-        html += """
-            <h2>✅ Commitment Status</h2>
-            <div class="stat-grid">
-                <div class="stat"><div class="stat-value">\(digest.commitmentStatus.activeIOwe)</div><div class="stat-label">I Owe</div></div>
-                <div class="stat"><div class="stat-value">\(digest.commitmentStatus.activeTheyOwe)</div><div class="stat-label">They Owe Me</div></div>
-                <div class="stat"><div class="stat-value">\(digest.commitmentStatus.overdueCount)</div><div class="stat-label">Overdue</div></div>
-                <div class="stat"><div class="stat-value">\(digest.commitmentStatus.upcomingThisWeek)</div><div class="stat-label">Due This Week</div></div>
-            </div>
-        """
+        html += Self.sectionHeader("Commitment Status")
+        html += Self.statRow([
+            (value: "\(digest.commitmentStatus.activeIOwe)", label: "I Owe"),
+            (value: "\(digest.commitmentStatus.activeTheyOwe)", label: "They Owe"),
+            (value: "\(digest.commitmentStatus.overdueCount)", label: "Overdue"),
+            (value: "\(digest.commitmentStatus.upcomingThisWeek)", label: "Due This Week")
+        ])
 
         // Upcoming Follow-ups
         if !digest.upcomingFollowups.isEmpty {
@@ -634,19 +669,20 @@ class NotificationService {
             timeFormatter.timeStyle = .short
 
             markdown += "## Upcoming Follow-ups (\(digest.upcomingFollowups.count))\n"
-            html += "<h2>📌 Upcoming Follow-ups (\(digest.upcomingFollowups.count))</h2>"
+            html += Self.sectionHeader("Upcoming Follow-ups · \(digest.upcomingFollowups.count)")
 
             for followup in digest.upcomingFollowups.prefix(5) {
                 let overdueTag = followup.isOverdue ? " ⚠️ OVERDUE" : ""
-                let overdueClass = followup.isOverdue ? "overdue" : ""
                 markdown += "- \(followup.title)\(overdueTag) (Due: \(timeFormatter.string(from: followup.scheduledFor)))\n"
 
-                html += """
-                    <div class="item \(overdueClass)">
-                        <div class="item-title">\(followup.title)\(overdueTag)</div>
-                        <div class="item-meta">Due: \(timeFormatter.string(from: followup.scheduledFor))</div>
-                    </div>
-                """
+                let accentColor = followup.isOverdue ? "#8b2332" : "#e4e2dc"
+                html += Self.itemCard(
+                    title: "\(followup.title)\(overdueTag)",
+                    description: "",
+                    meta: "Due: \(timeFormatter.string(from: followup.scheduledFor))",
+                    accentColor: accentColor,
+                    emoji: "📌"
+                )
             }
             markdown += "\n"
         }
@@ -654,16 +690,15 @@ class NotificationService {
         // Recommendations
         if !digest.recommendations.isEmpty {
             markdown += "## Recommendations\n"
-            html += "<h2>💡 Recommendations</h2>"
+            html += Self.sectionHeader("Recommendations")
 
             for rec in digest.recommendations {
                 markdown += "- \(rec)\n"
-                html += "<div class=\"recommendation\">\(rec)</div>"
+                html += Self.recCard(rec)
             }
         }
 
         html += Self.emailFoot()
-
         return (markdown, html)
     }
 }

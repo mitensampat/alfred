@@ -443,6 +443,59 @@ class CommitmentScanTracker {
         print("❌ User rejected closure for commitment: \(hash.prefix(8))...")
     }
 
+    /// Clean up orphaned closure detections that reference non-existent commitment extractions
+    func cleanupOrphanedData() -> (orphanedClosures: Int, stalePending: Int) {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        // Count orphaned closure_detections
+        var orphanedCount = 0
+        let countSql = """
+        SELECT COUNT(*) FROM closure_detections cd
+        LEFT JOIN commitment_extractions ce ON cd.commitment_hash = ce.commitment_hash
+        WHERE ce.commitment_hash IS NULL
+        """
+        var countStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, countSql, -1, &countStmt, nil) == SQLITE_OK {
+            if sqlite3_step(countStmt) == SQLITE_ROW {
+                orphanedCount = Int(sqlite3_column_int(countStmt, 0))
+            }
+        }
+        sqlite3_finalize(countStmt)
+
+        // Delete orphaned closure_detections
+        let deleteSql = """
+        DELETE FROM closure_detections WHERE commitment_hash NOT IN (
+            SELECT commitment_hash FROM commitment_extractions
+        )
+        """
+        sqlite3_exec(db, deleteSql, nil, nil, nil)
+
+        // Count and clean stale pending (user_confirmed IS NULL but older than 30 days)
+        var staleCount = 0
+        let staleCountSql = """
+        SELECT COUNT(*) FROM closure_detections
+        WHERE user_confirmed IS NULL AND detected_at < datetime('now', '-30 days')
+        """
+        var staleStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, staleCountSql, -1, &staleStmt, nil) == SQLITE_OK {
+            if sqlite3_step(staleStmt) == SQLITE_ROW {
+                staleCount = Int(sqlite3_column_int(staleStmt, 0))
+            }
+        }
+        sqlite3_finalize(staleStmt)
+
+        // Auto-reject stale pending closures (30+ days old)
+        let staleCleanSql = """
+        UPDATE closure_detections SET user_confirmed = 0
+        WHERE user_confirmed IS NULL AND detected_at < datetime('now', '-30 days')
+        """
+        sqlite3_exec(db, staleCleanSql, nil, nil, nil)
+
+        print("🧹 Cleaned \(orphanedCount) orphaned closure detections, \(staleCount) stale pending")
+        return (orphanedClosures: orphanedCount, stalePending: staleCount)
+    }
+
     /// Get pending closure detections that need user confirmation
     func getPendingClosureConfirmations() -> [(hash: String, title: String, signal: String, confidence: Double)] {
         dbLock.lock()
@@ -565,6 +618,25 @@ class CommitmentScanTracker {
         stats.activeThreadsCount = activeThreads.count
 
         return stats
+    }
+
+    /// Get all open commitment hashes (for bidirectional Notion sync)
+    func getOpenCommitmentHashes() -> [String] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let query = "SELECT commitment_hash FROM commitment_extractions WHERE was_closed = 0"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+
+        var hashes: [String] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let hashPtr = sqlite3_column_text(stmt, 0) {
+                hashes.append(String(cString: hashPtr))
+            }
+        }
+        return hashes
     }
 
     // MARK: - Helpers

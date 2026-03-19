@@ -2780,10 +2780,7 @@ struct AlfredApp {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
         let plistPath = "\(homeDir)/Library/LaunchAgents/com.msfoundry.alfred.plist"
 
-        guard !FileManager.default.fileExists(atPath: plistPath) else {
-            return  // Already installed
-        }
-
+        // Always write the plist to self-heal if config drifts (e.g. KeepAlive changed manually)
         let launchAgentsDir = "\(homeDir)/Library/LaunchAgents"
         try? FileManager.default.createDirectory(atPath: launchAgentsDir, withIntermediateDirectories: true)
 
@@ -2808,6 +2805,11 @@ struct AlfredApp {
             <string>\(homeDir)/.alfred/alfred.log</string>
             <key>WorkingDirectory</key>
             <string>\(homeDir)</string>
+            <key>EnvironmentVariables</key>
+            <dict>
+                <key>PATH</key>
+                <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+            </dict>
         </dict>
         </plist>
         """

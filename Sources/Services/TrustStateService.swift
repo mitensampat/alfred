@@ -73,6 +73,16 @@ struct TrustStateService {
         return state
     }
 
+    // MARK: - Increment Turns
+
+    /// Increment the turn count by 1 (called on every user↔assistant exchange).
+    /// Persists immediately so turns survive restarts.
+    func incrementTurns() {
+        var state = loadState()
+        state.totalTurns += 1
+        saveState(state)
+    }
+
     // MARK: - Current Level (with recency decay)
 
     /// Returns the effective trust level for prompt calibration.

@@ -125,8 +125,59 @@ class WorkflowLearningService {
         );
         """
 
+        // Learning events - unified signal collection (Learning System v2)
+        let createLearningEvents = """
+        CREATE TABLE IF NOT EXISTS learning_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type TEXT NOT NULL,
+            context TEXT,
+            signal_value TEXT,
+            metadata_json TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_learning_event_type ON learning_events(event_type);
+        CREATE INDEX IF NOT EXISTS idx_learning_timestamp ON learning_events(timestamp);
+        """
+
+        // Learned patterns v2 - with confidence, staleness, conflict tracking
+        let createLearnedPatterns = """
+        CREATE TABLE IF NOT EXISTS learned_patterns (
+            pattern_id TEXT PRIMARY KEY,
+            pattern_type TEXT NOT NULL,
+            description TEXT NOT NULL,
+            confidence REAL DEFAULT 0.5,
+            reinforcement_count INTEGER DEFAULT 1,
+            contradiction_count INTEGER DEFAULT 0,
+            source_event_types TEXT,
+            is_direct_instruction INTEGER DEFAULT 0,
+            is_stale INTEGER DEFAULT 0,
+            is_archived INTEGER DEFAULT 0,
+            last_reinforced DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            metadata_json TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_learned_type ON learned_patterns(pattern_type);
+        CREATE INDEX IF NOT EXISTS idx_learned_active ON learned_patterns(is_archived, is_stale);
+        """
+
+        // Pending pattern reviews - queue for Coach to surface
+        let createPendingReviews = """
+        CREATE TABLE IF NOT EXISTS pending_pattern_reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pattern_id TEXT NOT NULL,
+            review_type TEXT NOT NULL,
+            question TEXT NOT NULL,
+            status TEXT DEFAULT 'pending',
+            user_response TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            reviewed_at DATETIME,
+            FOREIGN KEY (pattern_id) REFERENCES learned_patterns(pattern_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_review_status ON pending_pattern_reviews(status);
+        """
+
         // Execute all create statements
-        for sql in [createScanFeedback, createCommitmentLifecycle, createClosureFeedback, createTaskTriage, createComputedPatterns] {
+        for sql in [createScanFeedback, createCommitmentLifecycle, createClosureFeedback, createTaskTriage, createComputedPatterns, createLearningEvents, createLearnedPatterns, createPendingReviews] {
             var errMsg: UnsafeMutablePointer<CChar>?
             if sqlite3_exec(db, sql, nil, nil, &errMsg) != SQLITE_OK {
                 if let err = errMsg {
@@ -877,7 +928,7 @@ class WorkflowLearningService {
 
     // MARK: - Email Digest
 
-    /// Generate a learning digest suitable for email
+    /// Generate a learning digest suitable for email (HTML formatted)
     func generateLearningDigest() -> (subject: String, body: String)? {
         let patterns = getComputedPatterns()
         let summary = getSummary()
@@ -887,28 +938,19 @@ class WorkflowLearningService {
 
         let subject = "🧠 Coach Alfred: Learning Digest - \(totalPatterns) patterns observed"
 
-        var body = """
-        # Coach Alfred: Learning Digest
-
-        Here's what I've learned from observing your workflows over the past 30 days.
-
-        ---
-
-        """
-
         // Summary stats
         let scanCount = summary["scanFeedbackCount"] as? Int ?? 0
         let commitmentCount = summary["commitmentEventsCount"] as? Int ?? 0
         let taskCount = summary["taskTriageCount"] as? Int ?? 0
 
-        body += "## Activity Summary\n\n"
-        body += "- 📊 \(scanCount) scan decisions analyzed\n"
-        body += "- 🤝 \(commitmentCount) commitment lifecycle events tracked\n"
-        body += "- ✅ \(taskCount) task status changes observed\n\n"
+        // v2 learned patterns
+        let learnedPatterns = getLearnedPatterns()
+        let directCount = learnedPatterns.filter { $0.isDirect }.count
+        let commCount = learnedPatterns.filter { $0.type == "communication_style" }.count
 
-        // Patterns by category
+        var patternRows = ""
         for (category, categoryPatterns) in patterns.sorted(by: { $0.key < $1.key }) {
-            body += "## \(category)\n\n"
+            patternRows += "<tr><td colspan='3' style='padding:12px 0 6px;font-weight:600;font-size:15px;color:#1b2a4a;border-bottom:1px solid #e4e2dc;'>\(category)</td></tr>"
 
             for pattern in categoryPatterns.prefix(5) {
                 let icon = pattern["icon"] as? String ?? "📊"
@@ -916,25 +958,934 @@ class WorkflowLearningService {
                 let description = pattern["description"] as? String ?? ""
                 let metricLabel = pattern["metricLabel"] as? String ?? ""
 
-                body += "\(icon) **\(title)**\n"
-                if !description.isEmpty {
-                    body += "   \(description)"
-                }
-                if !metricLabel.isEmpty {
-                    body += " (\(metricLabel))"
-                }
-                body += "\n\n"
+                patternRows += """
+                <tr>
+                    <td style='padding:6px 8px 6px 0;font-size:18px;vertical-align:top;width:28px;'>\(icon)</td>
+                    <td style='padding:6px 0;'>
+                        <div style='font-weight:500;color:#1b2a4a;'>\(title)</div>
+                        \(!description.isEmpty ? "<div style='color:#5c6370;font-size:13px;'>\(description)</div>" : "")
+                    </td>
+                    <td style='padding:6px 0 6px 8px;color:#8890a0;font-size:12px;text-align:right;white-space:nowrap;vertical-align:top;'>\(metricLabel)</td>
+                </tr>
+                """
             }
         }
 
-        body += """
-        ---
+        // v2 learned patterns section
+        var learnedRows = ""
+        if !learnedPatterns.isEmpty {
+            let displayPatterns = learnedPatterns.prefix(8)
+            for p in displayPatterns {
+                let badge = p.isDirect ? "⚡" : (p.type == "communication_style" ? "💬" : "🔍")
+                let confPct = Int(p.confidence * 100)
+                learnedRows += """
+                <tr>
+                    <td style='padding:4px 8px 4px 0;font-size:16px;vertical-align:top;width:24px;'>\(badge)</td>
+                    <td style='padding:4px 0;color:#1b2a4a;font-size:13px;'>\(p.description)</td>
+                    <td style='padding:4px 0 4px 8px;color:#8890a0;font-size:12px;text-align:right;white-space:nowrap;'>\(confPct)%</td>
+                </tr>
+                """
+            }
+        }
 
-        These patterns help me provide better suggestions and prioritization for your commitments and tasks.
+        let fontBody = "font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;"
+        let fontDisplay = "font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;"
 
-        — Alfred 🎩
+        let body = NotificationService.emailHead()
+        + "<div style=\"\(fontDisplay) font-size: 22px; font-weight: 400; color: #1b2a4a; margin-bottom: 4px;\">Learning Digest</div>"
+        + "<div style=\"\(fontBody) font-size: 12px; color: #8890a0; margin-bottom: 16px;\">What Alfred learned from observing your workflows (last 30 days)</div>"
+        + """
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 16px; border-spacing: 8px; border-collapse: separate;">
+            <tr>
+                <td style="background-color: #f0eeea; border-radius: 6px; padding: 12px 8px; text-align: center; width: 33%;">
+                    <div style="\(fontBody) font-size: 20px; font-weight: 600; color: #1b2a4a;">\(commitmentCount)</div>
+                    <div style="\(fontBody) font-size: 11px; color: #5c6370; margin-top: 2px;">Commitment Events</div>
+                </td>
+                <td style="background-color: #f0eeea; border-radius: 6px; padding: 12px 8px; text-align: center; width: 33%;">
+                    <div style="\(fontBody) font-size: 20px; font-weight: 600; color: #1b2a4a;">\(taskCount)</div>
+                    <div style="\(fontBody) font-size: 11px; color: #5c6370; margin-top: 2px;">Task Changes</div>
+                </td>
+                <td style="background-color: #f0eeea; border-radius: 6px; padding: 12px 8px; text-align: center; width: 33%;">
+                    <div style="\(fontBody) font-size: 20px; font-weight: 600; color: #1b2a4a;">\(scanCount)</div>
+                    <div style="\(fontBody) font-size: 11px; color: #5c6370; margin-top: 2px;">Scan Decisions</div>
+                </td>
+            </tr>
+            </table>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top: 28px; margin-bottom: 14px;">
+            <tr>
+                <td style="\(fontBody) font-size: 11px; font-weight: 600; color: #5c6370; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; padding-right: 12px;">Workflow Patterns</td>
+                <td style="width: 100%;"><div style="height: 1px; background-color: #e4e2dc;"></div></td>
+            </tr>
+            </table>
+            <table style='width:100%;border-collapse:collapse;' role="presentation">
+                \(patternRows)
+            </table>
         """
+        + (!learnedRows.isEmpty ? """
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top: 28px; margin-bottom: 14px;">
+            <tr>
+                <td style="\(fontBody) font-size: 11px; font-weight: 600; color: #5c6370; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; padding-right: 12px;">Learned Preferences · \(learnedPatterns.count) active</td>
+                <td style="width: 100%;"><div style="height: 1px; background-color: #e4e2dc;"></div></td>
+            </tr>
+            </table>
+            <div style="\(fontBody) margin: 0 0 8px; font-size: 11px; color: #8890a0;">⚡ = explicit instruction &nbsp; 💬 = communication style &nbsp; 🔍 = observed</div>
+            <table style='width:100%;border-collapse:collapse;' role="presentation">
+                \(learnedRows)
+            </table>
+        """ : "")
+        + NotificationService.emailFoot()
 
         return (subject, body)
+    }
+
+    // MARK: - Learning System v2: Signal Collection (Phase 1)
+
+    /// Record a learning event — the universal signal collector
+    func recordLearningEvent(
+        eventType: String,
+        context: String? = nil,
+        signalValue: String? = nil,
+        metadata: [String: Any]? = nil
+    ) {
+        queue.async { [weak self] in
+            guard let self = self else { return }
+
+            self.dbLock.lock()
+            defer { self.dbLock.unlock() }
+
+            let sql = """
+            INSERT INTO learning_events (event_type, context, signal_value, metadata_json)
+            VALUES (?, ?, ?, ?)
+            """
+
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(self.db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            defer { sqlite3_finalize(stmt) }
+
+            sqlite3_bind_text(stmt, 1, eventType, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+
+            if let ctx = context {
+                sqlite3_bind_text(stmt, 2, ctx, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            } else {
+                sqlite3_bind_null(stmt, 2)
+            }
+
+            if let val = signalValue {
+                sqlite3_bind_text(stmt, 3, val, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            } else {
+                sqlite3_bind_null(stmt, 3)
+            }
+
+            if let meta = metadata, let jsonData = try? JSONSerialization.data(withJSONObject: meta),
+               let jsonStr = String(data: jsonData, encoding: .utf8) {
+                sqlite3_bind_text(stmt, 4, jsonStr, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            } else {
+                sqlite3_bind_null(stmt, 4)
+            }
+
+            if sqlite3_step(stmt) == SQLITE_DONE {
+                print("🧠 Learning: Recorded \(eventType) event")
+            }
+        }
+    }
+
+    /// Detect and record corrections from a chat exchange
+    func detectAndRecordCorrections(userMessage: String, assistantResponse: String) {
+        let lower = userMessage.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // False positive exclusions — common phrases that look like corrections but aren't
+        let falsePositives = [
+            "no problem", "no worries", "no rush", "no need to", "no thanks",
+            "no issue", "no doubt", "no way!", "no kidding", "actually good",
+            "actually great", "actually perfect", "actually works", "actually like",
+            "stop by", "stop in", "stop for", "never mind that", "i said yes",
+            "i said sure", "i said ok", "i said thanks"
+        ]
+
+        let isFalsePositive = falsePositives.contains { lower.contains($0) }
+
+        // Correction signals — require start-of-message or strong phrasing
+        let startOfMessageCorrections = [
+            "no, ", "no that's", "nope,", "wrong.", "wrong,", "incorrect"
+        ]
+
+        let anywhereCorrections = [
+            "that's wrong", "that's not right", "that's not what i",
+            "you got that wrong", "you misunderstood", "not what i meant",
+            "not what i asked", "i didn't say that", "i didn't ask for",
+            "don't do that", "stop doing that", "you're confusing",
+            "wrong person", "wrong name", "wrong contact", "wrong thread",
+            "it was actually", "i meant "
+        ]
+
+        let startsWithCorrection = startOfMessageCorrections.contains { lower.hasPrefix($0) }
+        let containsCorrection = anywhereCorrections.contains { lower.contains($0) }
+        let isCorrection = !isFalsePositive && (startsWithCorrection || containsCorrection)
+
+        if isCorrection {
+            recordLearningEvent(
+                eventType: "chat_correction",
+                context: userMessage,
+                signalValue: String(assistantResponse.prefix(500)),
+                metadata: ["detected_by": "keyword_match"]
+            )
+        }
+
+        // Explicit preference signals — these skip graduation and become permanent
+        let preferencePatterns: [(pattern: String, type: String)] = [
+            ("always ", "explicit_preference"),
+            ("never ", "explicit_preference"),
+            ("don't ever ", "explicit_preference"),
+            ("stop ", "explicit_preference"),
+            ("from now on", "explicit_preference"),
+            ("going forward", "explicit_preference"),
+            ("i prefer ", "explicit_preference"),
+            ("i don't like ", "explicit_preference"),
+            ("i want you to ", "explicit_preference"),
+            ("remember that ", "explicit_preference"),
+            ("keep in mind ", "explicit_preference")
+        ]
+
+        for pref in preferencePatterns {
+            if lower.contains(pref.pattern) {
+                recordLearningEvent(
+                    eventType: "direct_instruction",
+                    context: userMessage,
+                    signalValue: pref.pattern.trimmingCharacters(in: .whitespaces),
+                    metadata: [
+                        "trigger_phrase": pref.pattern,
+                        "full_message": userMessage
+                    ]
+                )
+                break // One event per message
+            }
+        }
+    }
+
+    /// Record briefing engagement (which section user follows up on)
+    func recordBriefingEngagement(section: String, action: String) {
+        recordLearningEvent(
+            eventType: "briefing_engagement",
+            context: section,
+            signalValue: action
+        )
+    }
+
+    /// Record intent accuracy (did the recognized intent match what user wanted?)
+    func recordIntentAccuracy(recognizedIntent: String, wasCorrect: Bool, userQuery: String) {
+        recordLearningEvent(
+            eventType: "intent_accuracy",
+            context: recognizedIntent,
+            signalValue: wasCorrect ? "correct" : "incorrect",
+            metadata: ["query": userQuery]
+        )
+    }
+
+    // MARK: - Learning System v2: Pattern Computation (Phase 2)
+
+    /// Compute v2 learned patterns from raw learning events
+    /// Called daily at midnight + on-demand
+    func computeLearnedPatterns(config: AppConfig) async {
+        print("🧠 Learning v2: Computing learned patterns...")
+
+        // 1. Process direct instructions (immediate, no AI needed)
+        processDirectInstructions()
+
+        // 2. Compute communication style patterns (needs Haiku)
+        await computeCommunicationPatterns(config: config)
+
+        // 3. Update existing workflow patterns (already working)
+        computePatterns()
+
+        // 4. Apply staleness rules
+        applyPatternStaleness()
+
+        // 5. Deduplicate patterns with overlapping descriptions
+        deduplicatePatterns()
+
+        // 6. Queue new/changed patterns for Coach review
+        queuePatternsForReview()
+
+        print("✅ Learning v2: Pattern computation complete")
+    }
+
+    /// Process direct instructions — skip graduation, become permanent immediately
+    private func processDirectInstructions() {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        // Get unprocessed direct instructions
+        let sql = """
+        SELECT id, context, signal_value, metadata_json
+        FROM learning_events
+        WHERE event_type = 'direct_instruction'
+          AND id NOT IN (
+            SELECT CAST(json_extract(metadata_json, '$.source_event_id') AS INTEGER)
+            FROM learned_patterns
+            WHERE json_extract(metadata_json, '$.source_event_id') IS NOT NULL
+          )
+        ORDER BY timestamp DESC
+        LIMIT 20
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+
+        var instructions: [(id: Int, context: String, signal: String, metadata: String)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let id = Int(sqlite3_column_int(stmt, 0))
+            let context = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
+            let signal = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
+            let metadata = sqlite3_column_text(stmt, 3).map { String(cString: $0) } ?? "{}"
+            instructions.append((id, context, signal, metadata))
+        }
+        sqlite3_finalize(stmt)
+
+        for instruction in instructions {
+            // Create a stable pattern ID from the instruction content
+            let patternId = "direct_\(instruction.context.hashValue)"
+
+            let insertSql = """
+            INSERT OR REPLACE INTO learned_patterns
+            (pattern_id, pattern_type, description, confidence, reinforcement_count,
+             is_direct_instruction, source_event_types, last_reinforced, metadata_json)
+            VALUES (?, 'explicit_preference', ?, 1.0, 1, 1, 'direct_instruction', datetime('now'), ?)
+            """
+
+            var insertStmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, insertSql, -1, &insertStmt, nil) == SQLITE_OK else { continue }
+
+            sqlite3_bind_text(insertStmt, 1, patternId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(insertStmt, 2, instruction.context, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+
+            let meta = "{\"source_event_id\": \(instruction.id), \"trigger\": \"\(instruction.signal)\"}"
+            sqlite3_bind_text(insertStmt, 3, meta, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+
+            sqlite3_step(insertStmt)
+            sqlite3_finalize(insertStmt)
+
+            print("🧠 Learning: Direct instruction recorded as permanent pattern")
+        }
+    }
+
+    /// Compute communication style patterns from conversation history + corrections
+    private func computeCommunicationPatterns(config: AppConfig) async {
+        // Gather recent corrections and conversation signals
+        dbLock.lock()
+        var corrections: [(context: String, signal: String)] = []
+        var stmt: OpaquePointer?
+        let sql = """
+        SELECT context, signal_value FROM learning_events
+        WHERE event_type IN ('chat_correction', 'direct_instruction')
+          AND timestamp > datetime('now', '-30 days')
+        ORDER BY timestamp DESC
+        LIMIT 30
+        """
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let context = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
+                let signal = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
+                corrections.append((context, signal))
+            }
+            sqlite3_finalize(stmt)
+        }
+        dbLock.unlock()
+
+        guard corrections.count >= 3 else {
+            print("🧠 Learning: Not enough corrections for communication pattern extraction (\(corrections.count)/3)")
+            return
+        }
+
+        // Use Haiku to extract communication patterns
+        let claudeService = ClaudeAIService(config: config.ai)
+        let correctionsList = corrections.prefix(15).map { "- User said: \"\($0.context)\"" }.joined(separator: "\n")
+
+        let prompt = """
+        Analyze these user corrections and instructions to their AI assistant. Extract communication/behavior patterns.
+
+        \(correctionsList)
+
+        Return ONLY valid JSON (no markdown fences):
+        {
+            "patterns": [
+                {
+                    "id": "short_snake_case_id",
+                    "description": "One sentence describing the user's preference or behavioral pattern",
+                    "confidence": 0.7,
+                    "type": "communication_style"
+                }
+            ]
+        }
+
+        Rules:
+        - Extract 1-5 patterns max
+        - Only extract patterns you're confident about (confidence 0.6+)
+        - Focus on actionable preferences (how they want to be communicated with, what they value/dislike)
+        - Do NOT extract trivial observations
+        """
+
+        do {
+            let response = try await claudeService.generateText(
+                prompt: prompt,
+                system: "You extract behavioral patterns from user corrections. Be concise and specific.",
+                maxTokens: 500,
+                useModel: "claude-haiku-4-5-20251001"
+            )
+
+            guard let jsonData = response.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                  let patterns = json["patterns"] as? [[String: Any]] else {
+                return
+            }
+
+            dbLock.lock()
+            defer { dbLock.unlock() }
+
+            for pattern in patterns {
+                guard let id = pattern["id"] as? String,
+                      let description = pattern["description"] as? String,
+                      let confidence = pattern["confidence"] as? Double else { continue }
+
+                let patternId = "comm_\(id)"
+
+                // Check if pattern exists — if so, reinforce or handle contradiction
+                let checkSql = "SELECT confidence, reinforcement_count, description FROM learned_patterns WHERE pattern_id = ?"
+                var checkStmt: OpaquePointer?
+                if sqlite3_prepare_v2(db, checkSql, -1, &checkStmt, nil) == SQLITE_OK {
+                    sqlite3_bind_text(checkStmt, 1, patternId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                    if sqlite3_step(checkStmt) == SQLITE_ROW {
+                        // Pattern exists — reinforce
+                        let existingConfidence = sqlite3_column_double(checkStmt, 0)
+                        let count = sqlite3_column_int(checkStmt, 1)
+                        sqlite3_finalize(checkStmt)
+
+                        let newConfidence = min(1.0, existingConfidence + 0.1)
+                        let updateSql = """
+                        UPDATE learned_patterns SET confidence = ?, reinforcement_count = ?,
+                               last_reinforced = datetime('now'), is_stale = 0
+                        WHERE pattern_id = ?
+                        """
+                        var updateStmt: OpaquePointer?
+                        if sqlite3_prepare_v2(db, updateSql, -1, &updateStmt, nil) == SQLITE_OK {
+                            sqlite3_bind_double(updateStmt, 1, newConfidence)
+                            sqlite3_bind_int(updateStmt, 2, count + 1)
+                            sqlite3_bind_text(updateStmt, 3, patternId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                            sqlite3_step(updateStmt)
+                            sqlite3_finalize(updateStmt)
+                        }
+                    } else {
+                        sqlite3_finalize(checkStmt)
+
+                        // New pattern — insert
+                        let insertSql = """
+                        INSERT INTO learned_patterns
+                        (pattern_id, pattern_type, description, confidence, reinforcement_count,
+                         source_event_types, last_reinforced)
+                        VALUES (?, 'communication_style', ?, ?, 1, 'chat_correction', datetime('now'))
+                        """
+                        var insertStmt: OpaquePointer?
+                        if sqlite3_prepare_v2(db, insertSql, -1, &insertStmt, nil) == SQLITE_OK {
+                            sqlite3_bind_text(insertStmt, 1, patternId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                            sqlite3_bind_text(insertStmt, 2, description, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                            sqlite3_bind_double(insertStmt, 3, confidence)
+                            sqlite3_step(insertStmt)
+                            sqlite3_finalize(insertStmt)
+                        }
+                    }
+                } else {
+                    sqlite3_finalize(checkStmt)
+                }
+            }
+
+            print("🧠 Learning: Computed \(patterns.count) communication style patterns")
+        } catch {
+            print("⚠️ Learning: Communication pattern extraction failed: \(error)")
+        }
+    }
+
+    /// Apply staleness rules: 30 days = stale flag, 90 days = archived
+    private func applyPatternStaleness() {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        // Mark stale (30+ days without reinforcement, not direct instructions)
+        sqlite3_exec(db, """
+        UPDATE learned_patterns SET is_stale = 1
+        WHERE last_reinforced < datetime('now', '-30 days')
+          AND is_direct_instruction = 0
+          AND is_archived = 0
+          AND is_stale = 0
+        """, nil, nil, nil)
+
+        // Archive (90+ days without reinforcement, not direct instructions)
+        sqlite3_exec(db, """
+        UPDATE learned_patterns SET is_archived = 1
+        WHERE last_reinforced < datetime('now', '-90 days')
+          AND is_direct_instruction = 0
+          AND is_archived = 0
+        """, nil, nil, nil)
+    }
+
+    /// Deduplicate learned patterns with overlapping descriptions
+    private func deduplicatePatterns() {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        // Get all active patterns grouped by type
+        let query = "SELECT pattern_id, pattern_type, description, confidence FROM learned_patterns WHERE is_stale = 0 ORDER BY pattern_type, confidence DESC"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+
+        struct PatternRow {
+            let id: String
+            let type: String
+            let description: String
+            let confidence: Double
+        }
+
+        var patterns: [PatternRow] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let id = String(cString: sqlite3_column_text(stmt, 0))
+            let type = String(cString: sqlite3_column_text(stmt, 1))
+            let desc = String(cString: sqlite3_column_text(stmt, 2))
+            let conf = sqlite3_column_double(stmt, 3)
+            patterns.append(PatternRow(id: id, type: type, description: desc, confidence: conf))
+        }
+
+        // Group by type
+        var byType: [String: [PatternRow]] = [:]
+        for p in patterns {
+            byType[p.type, default: []].append(p)
+        }
+
+        var toDelete: Set<String> = []
+
+        for (_, group) in byType {
+            // Compare each pair within the group
+            for i in 0..<group.count {
+                if toDelete.contains(group[i].id) { continue }
+                for j in (i+1)..<group.count {
+                    if toDelete.contains(group[j].id) { continue }
+
+                    let words1 = Set(group[i].description.lowercased().split(separator: " ").map(String.init))
+                    let words2 = Set(group[j].description.lowercased().split(separator: " ").map(String.init))
+
+                    guard !words1.isEmpty && !words2.isEmpty else { continue }
+
+                    let intersection = words1.intersection(words2).count
+                    let union = words1.union(words2).count
+                    let similarity = Double(intersection) / Double(union)
+
+                    if similarity > 0.8 {
+                        // Keep higher confidence (sorted DESC, so group[i] wins)
+                        toDelete.insert(group[j].id)
+                    }
+                }
+            }
+        }
+
+        if !toDelete.isEmpty {
+            for id in toDelete {
+                let deleteSql = "DELETE FROM learned_patterns WHERE pattern_id = ?"
+                var delStmt: OpaquePointer?
+                if sqlite3_prepare_v2(db, deleteSql, -1, &delStmt, nil) == SQLITE_OK {
+                    sqlite3_bind_text(delStmt, 1, (id as NSString).utf8String, -1, nil)
+                    sqlite3_step(delStmt)
+                }
+                sqlite3_finalize(delStmt)
+            }
+            print("🧹 Learning v2: Deduplicated \(toDelete.count) similar patterns")
+        }
+    }
+
+    /// Queue new or significantly changed patterns for Coach review
+    private func queuePatternsForReview() {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        // Find patterns that haven't been reviewed yet
+        let sql = """
+        SELECT lp.pattern_id, lp.pattern_type, lp.description, lp.confidence
+        FROM learned_patterns lp
+        WHERE lp.is_archived = 0
+          AND lp.is_direct_instruction = 0
+          AND lp.confidence >= 0.6
+          AND lp.pattern_id NOT IN (
+            SELECT pattern_id FROM pending_pattern_reviews
+          )
+        ORDER BY lp.created_at DESC
+        LIMIT 5
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+
+        var newPatterns: [(id: String, type: String, desc: String, confidence: Double)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let id = String(cString: sqlite3_column_text(stmt, 0))
+            let type = String(cString: sqlite3_column_text(stmt, 1))
+            let desc = String(cString: sqlite3_column_text(stmt, 2))
+            let confidence = sqlite3_column_double(stmt, 3)
+            newPatterns.append((id, type, desc, confidence))
+        }
+        sqlite3_finalize(stmt)
+
+        for pattern in newPatterns {
+            let question = "I've noticed a pattern: \"\(pattern.desc)\" — does that sound right to you?"
+
+            let insertSql = """
+            INSERT INTO pending_pattern_reviews (pattern_id, review_type, question)
+            VALUES (?, 'new_pattern', ?)
+            """
+            var insertStmt: OpaquePointer?
+            if sqlite3_prepare_v2(db, insertSql, -1, &insertStmt, nil) == SQLITE_OK {
+                sqlite3_bind_text(insertStmt, 1, pattern.id, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                sqlite3_bind_text(insertStmt, 2, question, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                sqlite3_step(insertStmt)
+                sqlite3_finalize(insertStmt)
+            }
+        }
+
+        if !newPatterns.isEmpty {
+            print("🧠 Learning: Queued \(newPatterns.count) patterns for Coach review")
+        }
+    }
+
+    // MARK: - Learning System v2: Knowledge Application (Phase 3)
+
+    /// Get learning context tailored for a specific endpoint
+    func getContextForEndpoint(_ endpoint: String) -> String {
+        let patterns = getLearnedPatterns()
+        guard !patterns.isEmpty else { return "" }
+
+        var context = "## What Alfred Has Learned About You\n\n"
+        var tokenEstimate = 0
+        let maxTokens = 500
+
+        // Direct instructions first (always include, all endpoints)
+        let directInstructions = patterns.filter { $0.type == "explicit_preference" && !$0.isArchived }
+        if !directInstructions.isEmpty {
+            context += "### Your Explicit Preferences\n"
+            for p in directInstructions.prefix(10) {
+                let line = "- \(p.description)\n"
+                tokenEstimate += line.count / 4
+                if tokenEstimate > maxTokens { break }
+                context += line
+            }
+            context += "\n"
+        }
+
+        // Endpoint-specific patterns
+        switch endpoint {
+        case "chat", "coaching":
+            let commPatterns = patterns.filter { $0.type == "communication_style" && !$0.isArchived }
+            if !commPatterns.isEmpty {
+                context += "### Communication Style\n"
+                for p in commPatterns.prefix(5) {
+                    let staleMark = p.isStale ? " (older observation)" : ""
+                    let line = "- \(p.description)\(staleMark)\n"
+                    tokenEstimate += line.count / 4
+                    if tokenEstimate > maxTokens { break }
+                    context += line
+                }
+                context += "\n"
+            }
+
+        case "briefing":
+            let briefingPatterns = patterns.filter { $0.type == "briefing_relevance" && !$0.isArchived }
+            if !briefingPatterns.isEmpty {
+                context += "### Briefing Preferences\n"
+                for p in briefingPatterns.prefix(5) {
+                    context += "- \(p.description)\n"
+                }
+                context += "\n"
+            }
+            // Also include contact intelligence
+            let contactPatterns = patterns.filter { $0.type == "contact_intelligence" && !$0.isArchived }
+            if !contactPatterns.isEmpty {
+                context += "### Contact Preferences\n"
+                for p in contactPatterns.prefix(5) {
+                    context += "- \(p.description)\n"
+                }
+                context += "\n"
+            }
+
+        case "commitment_scan":
+            // Include AI accuracy patterns (already from computePatterns)
+            let existingAI = getPatternContextForAI()
+            if !existingAI.isEmpty {
+                context += existingAI
+            }
+
+        case "extraction":
+            // Include correction history
+            let corrPatterns = patterns.filter { $0.type == "extraction_accuracy" && !$0.isArchived }
+            if !corrPatterns.isEmpty {
+                context += "### Extraction Preferences\n"
+                for p in corrPatterns.prefix(5) {
+                    context += "- \(p.description)\n"
+                }
+                context += "\n"
+            }
+
+        default:
+            break
+        }
+
+        return context
+    }
+
+    /// Get all active learned patterns
+    func getLearnedPatterns() -> [(id: String, type: String, description: String, confidence: Double, isStale: Bool, isArchived: Bool, isDirect: Bool, reinforcements: Int, lastReinforced: String)] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let sql = """
+        SELECT pattern_id, pattern_type, description, confidence, is_stale, is_archived,
+               is_direct_instruction, reinforcement_count, last_reinforced
+        FROM learned_patterns
+        WHERE is_archived = 0
+        ORDER BY is_direct_instruction DESC, confidence DESC, last_reinforced DESC
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+
+        var patterns: [(id: String, type: String, description: String, confidence: Double, isStale: Bool, isArchived: Bool, isDirect: Bool, reinforcements: Int, lastReinforced: String)] = []
+
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            patterns.append((
+                id: String(cString: sqlite3_column_text(stmt, 0)),
+                type: String(cString: sqlite3_column_text(stmt, 1)),
+                description: String(cString: sqlite3_column_text(stmt, 2)),
+                confidence: sqlite3_column_double(stmt, 3),
+                isStale: sqlite3_column_int(stmt, 4) == 1,
+                isArchived: sqlite3_column_int(stmt, 5) == 1,
+                isDirect: sqlite3_column_int(stmt, 6) == 1,
+                reinforcements: Int(sqlite3_column_int(stmt, 7)),
+                lastReinforced: sqlite3_column_text(stmt, 8).map { String(cString: $0) } ?? ""
+            ))
+        }
+
+        return patterns
+    }
+
+    // MARK: - Learning System v2: Pattern Review (Phase 5)
+
+    /// Get pending pattern reviews for Coach to surface
+    func getPendingPatternReviews() -> [(id: Int, patternId: String, question: String, reviewType: String)] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let sql = """
+        SELECT pr.id, pr.pattern_id, pr.question, pr.review_type
+        FROM pending_pattern_reviews pr
+        WHERE pr.status = 'pending'
+        ORDER BY pr.created_at ASC
+        LIMIT 3
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+
+        var reviews: [(id: Int, patternId: String, question: String, reviewType: String)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            reviews.append((
+                id: Int(sqlite3_column_int(stmt, 0)),
+                patternId: String(cString: sqlite3_column_text(stmt, 1)),
+                question: String(cString: sqlite3_column_text(stmt, 2)),
+                reviewType: String(cString: sqlite3_column_text(stmt, 3))
+            ))
+        }
+        return reviews
+    }
+
+    /// Handle user response to a pattern review
+    func resolvePatternReview(reviewId: Int, action: String, userResponse: String? = nil) {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        // Get the pattern_id for this review
+        let getSql = "SELECT pattern_id FROM pending_pattern_reviews WHERE id = ?"
+        var getStmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, getSql, -1, &getStmt, nil) == SQLITE_OK else { return }
+        sqlite3_bind_int(getStmt, 1, Int32(reviewId))
+
+        var patternId: String?
+        if sqlite3_step(getStmt) == SQLITE_ROW {
+            patternId = String(cString: sqlite3_column_text(getStmt, 0))
+        }
+        sqlite3_finalize(getStmt)
+
+        guard let pid = patternId else { return }
+
+        // Update review status
+        let updateReviewSql = """
+        UPDATE pending_pattern_reviews
+        SET status = ?, user_response = ?, reviewed_at = datetime('now')
+        WHERE id = ?
+        """
+        var updateStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, updateReviewSql, -1, &updateStmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(updateStmt, 1, action, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            if let response = userResponse {
+                sqlite3_bind_text(updateStmt, 2, response, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            } else {
+                sqlite3_bind_null(updateStmt, 2)
+            }
+            sqlite3_bind_int(updateStmt, 3, Int32(reviewId))
+            sqlite3_step(updateStmt)
+            sqlite3_finalize(updateStmt)
+        }
+
+        // Update the pattern based on action
+        switch action {
+        case "confirmed":
+            // Boost confidence
+            let boostSql = """
+            UPDATE learned_patterns
+            SET confidence = MIN(1.0, confidence + 0.15),
+                reinforcement_count = reinforcement_count + 1,
+                last_reinforced = datetime('now')
+            WHERE pattern_id = ?
+            """
+            var boostStmt: OpaquePointer?
+            if sqlite3_prepare_v2(db, boostSql, -1, &boostStmt, nil) == SQLITE_OK {
+                sqlite3_bind_text(boostStmt, 1, pid, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                sqlite3_step(boostStmt)
+                sqlite3_finalize(boostStmt)
+            }
+
+        case "corrected":
+            // Update description with user's words, reset confidence
+            if let newDesc = userResponse {
+                let correctSql = """
+                UPDATE learned_patterns
+                SET description = ?, confidence = 0.8,
+                    reinforcement_count = reinforcement_count + 1,
+                    last_reinforced = datetime('now')
+                WHERE pattern_id = ?
+                """
+                var correctStmt: OpaquePointer?
+                if sqlite3_prepare_v2(db, correctSql, -1, &correctStmt, nil) == SQLITE_OK {
+                    sqlite3_bind_text(correctStmt, 1, newDesc, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                    sqlite3_bind_text(correctStmt, 2, pid, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                    sqlite3_step(correctStmt)
+                    sqlite3_finalize(correctStmt)
+                }
+            }
+
+        case "dismissed":
+            // Archive the pattern
+            let archiveSql = "UPDATE learned_patterns SET is_archived = 1 WHERE pattern_id = ?"
+            var archiveStmt: OpaquePointer?
+            if sqlite3_prepare_v2(db, archiveSql, -1, &archiveStmt, nil) == SQLITE_OK {
+                sqlite3_bind_text(archiveStmt, 1, pid, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                sqlite3_step(archiveStmt)
+                sqlite3_finalize(archiveStmt)
+            }
+
+        default:
+            break
+        }
+
+        // Record as learning event for meta-learning
+        recordLearningEvent(
+            eventType: "pattern_review_\(action)",
+            context: pid,
+            signalValue: userResponse
+        )
+
+        print("🧠 Learning: Pattern review \(action) for \(pid)")
+    }
+
+    /// Decay confidence for a pattern (when a contradictory signal is detected)
+    func decayPatternConfidence(patternId: String, reason: String) {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let sql = """
+        UPDATE learned_patterns
+        SET confidence = MAX(0.1, confidence * 0.7),
+            contradiction_count = contradiction_count + 1,
+            metadata_json = json_set(COALESCE(metadata_json, '{}'), '$.last_contradiction', ?)
+        WHERE pattern_id = ? AND is_direct_instruction = 0
+        """
+
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, reason, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(stmt, 2, patternId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_step(stmt)
+            sqlite3_finalize(stmt)
+        }
+    }
+
+    /// Get learning system v2 statistics
+    func getLearningV2Stats() -> [String: Any] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        var stats: [String: Any] = [:]
+
+        // Total learning events
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM learning_events", -1, &stmt, nil) == SQLITE_OK {
+            if sqlite3_step(stmt) == SQLITE_ROW { stats["totalEvents"] = Int(sqlite3_column_int(stmt, 0)) }
+            sqlite3_finalize(stmt)
+        }
+
+        // Events by type (last 30 days)
+        if sqlite3_prepare_v2(db, """
+            SELECT event_type, COUNT(*) FROM learning_events
+            WHERE timestamp > datetime('now', '-30 days')
+            GROUP BY event_type
+        """, -1, &stmt, nil) == SQLITE_OK {
+            var byType: [String: Int] = [:]
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let type = String(cString: sqlite3_column_text(stmt, 0))
+                byType[type] = Int(sqlite3_column_int(stmt, 1))
+            }
+            stats["eventsByType"] = byType
+            sqlite3_finalize(stmt)
+        }
+
+        // Active learned patterns
+        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM learned_patterns WHERE is_archived = 0", -1, &stmt, nil) == SQLITE_OK {
+            if sqlite3_step(stmt) == SQLITE_ROW { stats["activePatterns"] = Int(sqlite3_column_int(stmt, 0)) }
+            sqlite3_finalize(stmt)
+        }
+
+        // Stale patterns
+        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM learned_patterns WHERE is_stale = 1 AND is_archived = 0", -1, &stmt, nil) == SQLITE_OK {
+            if sqlite3_step(stmt) == SQLITE_ROW { stats["stalePatterns"] = Int(sqlite3_column_int(stmt, 0)) }
+            sqlite3_finalize(stmt)
+        }
+
+        // Direct instructions
+        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM learned_patterns WHERE is_direct_instruction = 1", -1, &stmt, nil) == SQLITE_OK {
+            if sqlite3_step(stmt) == SQLITE_ROW { stats["directInstructions"] = Int(sqlite3_column_int(stmt, 0)) }
+            sqlite3_finalize(stmt)
+        }
+
+        // Pending reviews
+        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM pending_pattern_reviews WHERE status = 'pending'", -1, &stmt, nil) == SQLITE_OK {
+            if sqlite3_step(stmt) == SQLITE_ROW { stats["pendingReviews"] = Int(sqlite3_column_int(stmt, 0)) }
+            sqlite3_finalize(stmt)
+        }
+
+        // Last computation time
+        if sqlite3_prepare_v2(db, "SELECT MAX(last_reinforced) FROM learned_patterns", -1, &stmt, nil) == SQLITE_OK {
+            if sqlite3_step(stmt) == SQLITE_ROW, let text = sqlite3_column_text(stmt, 0) {
+                stats["lastComputed"] = String(cString: text)
+            }
+            sqlite3_finalize(stmt)
+        }
+
+        return stats
     }
 }

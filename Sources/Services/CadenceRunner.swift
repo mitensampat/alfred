@@ -198,7 +198,17 @@ class CadenceRunner {
         }
         let scanMode = cadence.params["scan_mode"]?.stringValue ?? "all"
         let result = try await alfredService.scanCommitments(contactName: nil, lookbackDays: 3, scanMode: scanMode)
-        return "Commitment scan: \(result.totalFound) found, \(result.saved) saved"
+
+        // Bidirectional sync: check Notion for manually-closed commitments
+        let synced = (try? await alfredService.syncCommitmentsFromNotion()) ?? 0
+
+        // Clean up orphaned data
+        let cleanup = CommitmentScanTracker.shared.cleanupOrphanedData()
+
+        var summary = "Commitment scan: \(result.totalFound) found, \(result.saved) saved"
+        if synced > 0 { summary += ", \(synced) synced from Notion" }
+        if cleanup.orphanedClosures > 0 { summary += ", \(cleanup.orphanedClosures) orphans cleaned" }
+        return summary
     }
 
     private func runPatternLearning(cadence: Cadence) async throws -> String {
@@ -206,8 +216,8 @@ class CadenceRunner {
             throw CadenceError.serviceUnavailable("AppConfig")
         }
 
-        // 1. Recompute all patterns from feedback data
-        WorkflowLearningService.shared.computePatterns()
+        // 1. Compute v2 learned patterns (includes v1 pattern computation)
+        await WorkflowLearningService.shared.computeLearnedPatterns(config: config)
 
         // 2. Generate and email learning digest
         if let digest = WorkflowLearningService.shared.generateLearningDigest() {
@@ -221,7 +231,12 @@ class CadenceRunner {
         // 4. Sync coaching context to Notion
         try await CoachingNotionSyncService.shared.syncToNotion(force: true)
 
-        return "Pattern learning complete: patterns recomputed, digest emailed, playbook & coaching synced"
+        let stats = WorkflowLearningService.shared.getLearningV2Stats()
+        let activePatterns = stats["activePatterns"] as? Int ?? 0
+        let totalEvents = stats["totalEvents"] as? Int ?? 0
+        let pendingReviews = stats["pendingReviews"] as? Int ?? 0
+
+        return "Pattern learning complete: \(activePatterns) active patterns from \(totalEvents) events, \(pendingReviews) pending reviews, playbook & coaching synced"
     }
 
     private func runGroupAnalysis(cadence: Cadence) async throws -> String {
@@ -303,13 +318,21 @@ class CadenceRunner {
                 if !result.summary.isEmpty {
                     if let config = AppConfig.load() {
                         let notifService = NotificationService(config: config.notifications)
-                        var body = result.summary
+                        let fontBody = "font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;"
+                        let fontDisplay = "font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;"
+                        var bodyHtml = NotificationService.emailHead()
+                        bodyHtml += "<div style=\"\(fontDisplay) font-size: 22px; font-weight: 400; color: #1b2a4a; margin-bottom: 12px;\">\(groupName) Daily Summary</div>"
+                        bodyHtml += "<div style=\"\(fontBody) font-size: 14px; line-height: 1.65; color: #1b2a4a; background-color: #f8f7f4; border-radius: 6px; border: 1px solid #e4e2dc; padding: 14px 16px;\">\(result.summary.replacingOccurrences(of: "\n\n", with: "<br><br>"))</div>"
                         if !result.keyPoints.isEmpty {
-                            body += "\n\nKey Points:\n" + result.keyPoints.map { "• \($0)" }.joined(separator: "\n")
+                            bodyHtml += "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin-top: 20px; margin-bottom: 10px;\"><tr><td style=\"\(fontBody) font-size: 11px; font-weight: 600; color: #5c6370; text-transform: uppercase; letter-spacing: 0.06em; padding-right: 12px; white-space: nowrap;\">Key Points</td><td style=\"width: 100%;\"><div style=\"height: 1px; background-color: #e4e2dc;\"></div></td></tr></table>"
+                            for point in result.keyPoints {
+                                bodyHtml += "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin-bottom: 6px;\"><tr><td style=\"background-color: #e4eef4; border-radius: 6px; padding: 10px 14px;\"><div style=\"\(fontBody) font-size: 13px; line-height: 1.5; color: #3d6888;\">• \(point)</div></td></tr></table>"
+                            }
                         }
+                        bodyHtml += NotificationService.emailFoot()
                         try await notifService.sendLearningDigest(
                             subject: "Coach Alfred: \(groupName) Daily Summary",
-                            body: body
+                            body: bodyHtml
                         )
                     }
                 }
@@ -339,25 +362,27 @@ class CadenceRunner {
         // Task metrics
         if let orchestrator = orchestrator {
             let allTasks = try await orchestrator.notionServicePublic.queryActiveTasks()
+            let sevenDaysAgoTasks = calendar.date(byAdding: .day, value: -7, to: today)!
             let completed = allTasks.filter { $0.status == .done }
+            let completedThisWeek = completed.filter { $0.lastUpdated >= sevenDaysAgoTasks }
             let open = allTasks.filter { $0.status != .done }
             let overdue = open.filter { $0.isOverdue }
             let fourteenDaysAgo = calendar.date(byAdding: .day, value: -14, to: today)!
             let stale = open.filter { $0.status == .notStarted && $0.createdDate < fourteenDaysAgo }
 
-            metrics["tasksCompleted"] = completed.count
+            metrics["tasksCompleted"] = completedThisWeek.count
             metrics["tasksOpen"] = open.count
             metrics["tasksOverdue"] = overdue.count
 
             contextParts.append("TASK SUMMARY:")
-            contextParts.append("- Completed: \(completed.count)")
+            contextParts.append("- Completed this week: \(completedThisWeek.count)")
             contextParts.append("- Open: \(open.count)")
             contextParts.append("- Overdue: \(overdue.count)")
             contextParts.append("- Stale (14+ days, not started): \(stale.count)")
 
-            if !completed.isEmpty {
-                contextParts.append("\nCOMPLETED THIS PERIOD:")
-                for task in completed.prefix(15) {
+            if !completedThisWeek.isEmpty {
+                contextParts.append("\nCOMPLETED THIS WEEK:")
+                for task in completedThisWeek.prefix(15) {
                     contextParts.append("- \(task.title) [\(task.priority?.rawValue ?? "none")]")
                 }
             }
@@ -400,6 +425,21 @@ class CadenceRunner {
         let completionRate = Int(lifecycleStats.completionRate * 100)
         metrics["completionRate"] = completionRate
         contextParts.append("\nOVERALL: \(completionRate)% completion rate, \(Int(lifecycleStats.overdueRate * 100))% overdue rate")
+
+        // Calendar meetings this week
+        if let orchestrator = orchestrator {
+            var weeklyMeetingCount = 0
+            for dayOffset in (-6...0) {
+                if let dayDate = calendar.date(byAdding: .day, value: dayOffset, to: today) {
+                    do {
+                        let schedule = try await orchestrator.calendarServicePublic.fetchEventsFromAllCalendars(for: dayDate, userSettings: config.user)
+                        weeklyMeetingCount += schedule.events.count
+                    } catch { }
+                }
+            }
+            metrics["meetingsThisWeek"] = weeklyMeetingCount
+            contextParts.append("\nMEETINGS: \(weeklyMeetingCount) events this week")
+        }
 
         // Messaging velocity
         do {
@@ -467,28 +507,23 @@ class CadenceRunner {
         dateFormatter.dateFormat = "yyyy-MM-dd"
         let todayDate = dateFormatter.string(from: today)
 
-        // Format as HTML email
-        let formattedBody = reviewText.trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "## WINS", with: "<h3 style='color: #6b4c9a; margin-top: 20px; font-size: 14px; letter-spacing: 1px;'>WINS</h3>")
-            .replacingOccurrences(of: "## ACCOUNTABILITY", with: "<h3 style='color: #6b4c9a; margin-top: 20px; font-size: 14px; letter-spacing: 1px;'>ACCOUNTABILITY</h3>")
-            .replacingOccurrences(of: "## PATTERNS", with: "<h3 style='color: #6b4c9a; margin-top: 20px; font-size: 14px; letter-spacing: 1px;'>PATTERNS</h3>")
-            .replacingOccurrences(of: "## THIS WEEK", with: "<h3 style='color: #6b4c9a; margin-top: 20px; font-size: 14px; letter-spacing: 1px;'>THIS WEEK</h3>")
-            .replacingOccurrences(of: "\n\n", with: "</p><p style='line-height: 1.6; margin: 8px 0;'>")
+        // Format as HTML email using inline styles (email-safe)
+        let fontBody = "font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;"
+        let fontDisplay = "font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;"
 
-        let htmlBody = """
-        <html>
-        <body style="font-family: -apple-system, system-ui, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #333; background: #fafafa;">
-        <div style="background: white; padding: 24px; border-radius: 8px;">
-        <h2 style="color: #2c3e50; font-family: Georgia, serif; font-weight: 400; margin-bottom: 4px;">Weekly Reflection</h2>
-        <p style="color: #999; font-size: 12px; margin-top: 0;">\(todayDate) · from Coach Alfred</p>
-        <div style="font-size: 14px;">
-        <p style='line-height: 1.6; margin: 8px 0;'>\(formattedBody)</p>
-        </div>
-        </div>
-        <p style="font-size: 11px; color: #bbb; text-align: center; margin-top: 16px;">Open Alfred to see your full dashboard →</p>
-        </body>
-        </html>
-        """
+        let sectionStyle = "\(fontBody) font-size: 11px; font-weight: 600; color: #5c6370; text-transform: uppercase; letter-spacing: 0.06em;"
+        let formattedBody = reviewText.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "## WINS", with: "</div><div style=\"\(sectionStyle) margin-top: 24px; padding-bottom: 6px; border-bottom: 1px solid #e4e2dc;\">🏆 Wins</div><div style=\"\(fontBody) font-size: 14px; line-height: 1.65; color: #1b2a4a; margin-top: 8px;\">")
+            .replacingOccurrences(of: "## ACCOUNTABILITY", with: "</div><div style=\"\(sectionStyle) margin-top: 24px; padding-bottom: 6px; border-bottom: 1px solid #e4e2dc;\">📋 Accountability</div><div style=\"\(fontBody) font-size: 14px; line-height: 1.65; color: #1b2a4a; margin-top: 8px;\">")
+            .replacingOccurrences(of: "## PATTERNS", with: "</div><div style=\"\(sectionStyle) margin-top: 24px; padding-bottom: 6px; border-bottom: 1px solid #e4e2dc;\">🔍 Patterns</div><div style=\"\(fontBody) font-size: 14px; line-height: 1.65; color: #1b2a4a; margin-top: 8px;\">")
+            .replacingOccurrences(of: "## THIS WEEK", with: "</div><div style=\"\(sectionStyle) margin-top: 24px; padding-bottom: 6px; border-bottom: 1px solid #e4e2dc;\">🎯 This Week</div><div style=\"\(fontBody) font-size: 14px; line-height: 1.65; color: #1b2a4a; margin-top: 8px;\">")
+            .replacingOccurrences(of: "\n\n", with: "<br><br>")
+
+        let htmlBody = NotificationService.emailHead()
+        + "<div style=\"\(fontDisplay) font-size: 22px; font-weight: 400; color: #1b2a4a; margin-bottom: 4px;\">Weekly Reflection</div>"
+        + "<div style=\"\(fontBody) font-size: 12px; color: #8890a0; margin-bottom: 8px;\">\(todayDate) · from Coach Alfred</div>"
+        + "<div style=\"\(fontBody) font-size: 14px; line-height: 1.65; color: #1b2a4a;\">\(formattedBody)</div>"
+        + NotificationService.emailFoot()
 
         let notifService = NotificationService(config: config.notifications)
         try await notifService.sendLearningDigest(
@@ -529,13 +564,22 @@ class CadenceRunner {
         if cadence.emailOnSuccess && !result.summary.isEmpty {
             if let config = AppConfig.load() {
                 let notifService = NotificationService(config: config.notifications)
-                var body = result.summary
+                let fontBody = "font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;"
+                let fontDisplay = "font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;"
+                var bodyHtml = NotificationService.emailHead()
+                bodyHtml += "<div style=\"\(fontDisplay) font-size: 22px; font-weight: 400; color: #1b2a4a; margin-bottom: 4px;\">\(contact) Summary</div>"
+                bodyHtml += "<div style=\"\(fontBody) font-size: 12px; color: #8890a0; margin-bottom: 12px;\">Timeframe: \(timeframe)</div>"
+                bodyHtml += "<div style=\"\(fontBody) font-size: 14px; line-height: 1.65; color: #1b2a4a; background-color: #f8f7f4; border-radius: 6px; border: 1px solid #e4e2dc; padding: 14px 16px;\">\(result.summary.replacingOccurrences(of: "\n\n", with: "<br><br>"))</div>"
                 if !result.keyPoints.isEmpty {
-                    body += "\n\nKey Points:\n" + result.keyPoints.map { "• \($0)" }.joined(separator: "\n")
+                    bodyHtml += "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin-top: 20px; margin-bottom: 10px;\"><tr><td style=\"\(fontBody) font-size: 11px; font-weight: 600; color: #5c6370; text-transform: uppercase; letter-spacing: 0.06em; padding-right: 12px; white-space: nowrap;\">Key Points</td><td style=\"width: 100%;\"><div style=\"height: 1px; background-color: #e4e2dc;\"></div></td></tr></table>"
+                    for point in result.keyPoints {
+                        bodyHtml += "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin-bottom: 6px;\"><tr><td style=\"background-color: #e4eef4; border-radius: 6px; padding: 10px 14px;\"><div style=\"\(fontBody) font-size: 13px; line-height: 1.5; color: #3d6888;\">• \(point)</div></td></tr></table>"
+                    }
                 }
+                bodyHtml += NotificationService.emailFoot()
                 try await notifService.sendLearningDigest(
                     subject: "Coach Alfred: \(contact) Summary (\(timeframe))",
-                    body: body
+                    body: bodyHtml
                 )
             }
         }
@@ -579,17 +623,162 @@ class CadenceRunner {
         let weekLabel = "Week of \(weekFormatter.string(from: date))"
 
         let overdue = (metrics["tasksOverdue"] as? Int) ?? 0
-        let completionRate = (metrics["completionRate"] as? Int) ?? 0
+        let completedThisWeek = (metrics["tasksCompleted"] as? Int) ?? 0
+        let totalActive = ((metrics["tasksOpen"] as? Int) ?? 0) + completedThisWeek
+        let weeklyCompletionRate = totalActive > 0 ? Int((Double(completedThisWeek) / Double(totalActive)) * 100) : 0
+
         let mood: String
-        if completionRate >= 85 && overdue <= 3 { mood = "Strong" }
-        else if completionRate >= 70 && overdue <= 6 { mood = "Steady" }
-        else if overdue > 8 || completionRate < 50 { mood = "Overwhelmed" }
+        if weeklyCompletionRate >= 70 && overdue <= 3 { mood = "Strong" }
+        else if weeklyCompletionRate >= 40 && overdue <= 8 { mood = "Steady" }
+        else if overdue > 15 || weeklyCompletionRate < 20 { mood = "Overwhelmed" }
         else { mood = "Struggling" }
 
         let inbound = (metrics["messagesInbound"] as? Int) ?? 0
         let outbound = (metrics["messagesOutbound"] as? Int) ?? 0
         let ratioStr = outbound > 0 ? String(format: "%.1f:1", Double(inbound) / Double(outbound)) : "N/A"
 
+        // Dedup: check if a reflection for this week already exists, and update it instead of creating a duplicate
+        let existingPageId = await findExistingReflection(dbId: dbId, apiKey: apiKey, weekLabel: weekLabel)
+
+        let properties: [String: Any] = [
+            "Week": ["title": [["text": ["content": weekLabel]]]],
+            "Date": ["date": ["start": dateStr]],
+            "Tasks Completed": ["number": completedThisWeek],
+            "Tasks Overdue": ["number": overdue],
+            "Completion Rate": ["number": Double(weeklyCompletionRate) / 100.0],
+            "Meetings": ["number": (metrics["meetingsThisWeek"] as? Int) ?? 0],
+            "Open Commitments": ["number": (metrics["commitmentsOpen"] as? Int) ?? 0],
+            "In/Out Ratio": ["rich_text": [["text": ["content": ratioStr]]]],
+            "Mood": ["select": ["name": mood]]
+        ]
+
+        let contentBlocks: [[String: Any]] = narrative.components(separatedBy: "\n").prefix(90).map { line -> [String: Any] in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("## ") {
+                return [
+                    "object": "block",
+                    "type": "heading_2",
+                    "heading_2": ["rich_text": [["type": "text", "text": ["content": String(trimmed.dropFirst(3))]]]]
+                ]
+            } else if trimmed.isEmpty {
+                return [
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": ["rich_text": [] as [[String: Any]]]
+                ]
+            } else {
+                return [
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": ["rich_text": [["type": "text", "text": ["content": trimmed]]]]
+                ]
+            }
+        }
+
+        if let pageId = existingPageId {
+            // Update existing page properties
+            await updateReflectionPage(pageId: pageId, apiKey: apiKey, properties: properties, contentBlocks: contentBlocks)
+        } else {
+            // Create new page
+            await createReflectionPage(dbId: dbId, apiKey: apiKey, properties: properties, contentBlocks: contentBlocks)
+        }
+    }
+
+    private func findExistingReflection(dbId: String, apiKey: String, weekLabel: String) async -> String? {
+        let url = URL(string: "https://api.notion.com/v1/databases/\(dbId)/query")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let filter: [String: Any] = [
+            "filter": [
+                "property": "Week",
+                "title": ["equals": weekLabel]
+            ]
+        ]
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: filter)
+            let (data, _) = try await URLSession.shared.data(for: request)
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let results = json["results"] as? [[String: Any]],
+               let first = results.first,
+               let id = first["id"] as? String {
+                return id
+            }
+        } catch { }
+        return nil
+    }
+
+    private func updateReflectionPage(pageId: String, apiKey: String, properties: [String: Any], contentBlocks: [[String: Any]]) async {
+        // Update properties
+        let url = URL(string: "https://api.notion.com/v1/pages/\(pageId)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = ["properties": properties]
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let (_, response) = try await URLSession.shared.data(for: request)
+
+            // Delete existing content blocks and replace with new ones
+            await replacePageContent(pageId: pageId, apiKey: apiKey, newBlocks: contentBlocks)
+
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                print("  ✓ Weekly reflection updated in Notion (dedup)")
+            } else {
+                print("  ⚠️ Notion update failed: HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+            }
+        } catch {
+            print("  ⚠️ Notion update error: \(error)")
+        }
+    }
+
+    private func replacePageContent(pageId: String, apiKey: String, newBlocks: [[String: Any]]) async {
+        // First, get existing blocks
+        let listUrl = URL(string: "https://api.notion.com/v1/blocks/\(pageId)/children?page_size=100")!
+        var listRequest = URLRequest(url: listUrl)
+        listRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        listRequest.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+
+        do {
+            let (data, _) = try await URLSession.shared.data(for: listRequest)
+            if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let results = json["results"] as? [[String: Any]] {
+                // Delete each existing block
+                for block in results {
+                    if let blockId = block["id"] as? String {
+                        let deleteUrl = URL(string: "https://api.notion.com/v1/blocks/\(blockId)")!
+                        var deleteRequest = URLRequest(url: deleteUrl)
+                        deleteRequest.httpMethod = "DELETE"
+                        deleteRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+                        deleteRequest.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+                        _ = try? await URLSession.shared.data(for: deleteRequest)
+                    }
+                }
+            }
+
+            // Append new blocks
+            let appendUrl = URL(string: "https://api.notion.com/v1/blocks/\(pageId)/children")!
+            var appendRequest = URLRequest(url: appendUrl)
+            appendRequest.httpMethod = "PATCH"
+            appendRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            appendRequest.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+            appendRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let appendBody: [String: Any] = ["children": newBlocks]
+            appendRequest.httpBody = try JSONSerialization.data(withJSONObject: appendBody)
+            _ = try await URLSession.shared.data(for: appendRequest)
+        } catch {
+            print("  ⚠️ Notion content replace error: \(error)")
+        }
+    }
+
+    private func createReflectionPage(dbId: String, apiKey: String, properties: [String: Any], contentBlocks: [[String: Any]]) async {
         let url = URL(string: "https://api.notion.com/v1/pages")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -599,39 +788,8 @@ class CadenceRunner {
 
         let body: [String: Any] = [
             "parent": ["database_id": dbId],
-            "properties": [
-                "Week": ["title": [["text": ["content": weekLabel]]]],
-                "Date": ["date": ["start": dateStr]],
-                "Tasks Completed": ["number": (metrics["tasksCompleted"] as? Int) ?? 0],
-                "Tasks Overdue": ["number": overdue],
-                "Completion Rate": ["number": Double(completionRate) / 100.0],
-                "Meetings": ["number": (metrics["meetingsToday"] as? Int) ?? 0],
-                "Open Commitments": ["number": (metrics["commitmentsOpen"] as? Int) ?? 0],
-                "In/Out Ratio": ["rich_text": [["text": ["content": ratioStr]]]],
-                "Mood": ["select": ["name": mood]]
-            ],
-            "children": narrative.components(separatedBy: "\n").prefix(90).map { line -> [String: Any] in
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                if trimmed.hasPrefix("## ") {
-                    return [
-                        "object": "block",
-                        "type": "heading_2",
-                        "heading_2": ["rich_text": [["type": "text", "text": ["content": String(trimmed.dropFirst(3))]]]]
-                    ]
-                } else if trimmed.isEmpty {
-                    return [
-                        "object": "block",
-                        "type": "paragraph",
-                        "paragraph": ["rich_text": [] as [[String: Any]]]
-                    ]
-                } else {
-                    return [
-                        "object": "block",
-                        "type": "paragraph",
-                        "paragraph": ["rich_text": [["type": "text", "text": ["content": trimmed]]]]
-                    ]
-                }
-            }
+            "properties": properties,
+            "children": contentBlocks
         ]
 
         do {

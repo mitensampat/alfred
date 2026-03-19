@@ -862,14 +862,22 @@
         .commitments-section-count { font-size: 11px; color: var(--ink-tertiary); font-weight: 400; }
 
         /* ── CONVERSATION-FIRST LAYOUT ── */
+        .top-bar-wrapper {
+            border-bottom: 1px solid var(--line);
+            background: var(--canvas);
+            flex-shrink: 0;
+        }
         .top-bar {
             display: flex;
             align-items: center;
             justify-content: space-between;
             padding: 14px 20px;
-            border-bottom: 1px solid var(--line);
             background: var(--canvas);
             flex-shrink: 0;
+            max-width: 640px;
+            margin: 0 auto;
+            width: 100%;
+            box-sizing: border-box;
         }
         .top-bar-title {
             font-family: var(--font-display);
@@ -1457,6 +1465,7 @@
     <div id="appContainer" class="hidden" style="display:flex;flex-direction:column;height:100dvh;">
 
         <!-- TOP BAR -->
+        <div class="top-bar-wrapper">
         <div class="top-bar">
             <div class="top-bar-title">coach alfred</div>
             <div class="top-bar-actions">
@@ -1464,6 +1473,7 @@
                 <button class="top-bar-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Toggle dark mode">&#9728;&#65039;</button>
                 <button class="top-bar-btn" onclick="openSettingsPanel()" title="Settings">&#9881;&#65039;</button>
             </div>
+        </div>
         </div>
 
         <!-- CONVERSATION -->
@@ -1522,7 +1532,7 @@
             </div>
             <div class="slide-panel-body">
                 <!-- TENETS TAB -->
-                <div id="panelTabTenets">
+                <div id="panelTabTenets" style="display:none;">
                     <div class="panel-section">
                         <div class="panel-section-label">COACHING TENETS</div>
                         <div id="tenetSectionsList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
@@ -1541,7 +1551,7 @@
                     </div>
                 </div>
                 <!-- CONFIG TAB -->
-                <div id="panelTabConfig" style="display:none;">
+                <div id="panelTabConfig">
                     <!-- Cadences -->
                     <div class="panel-section">
                         <div class="panel-section-label">CADENCES</div>
@@ -1980,6 +1990,8 @@
             loadCadenceStatus();
             loadFavorites();
             loadSettings();
+            // Ensure configurations tab is active on open
+            showSettingsTab('config');
         }
 
         function closeSettingsPanel() {
@@ -2544,6 +2556,27 @@
             toolsEl.style.display = 'block';
         }
 
+        function updateTrustIndicator(level) {
+            let indicator = document.getElementById('trust-indicator');
+            if (!indicator) {
+                // Create subtle trust indicator in the chat input area
+                const inputArea = document.querySelector('.chat-input-container') || document.querySelector('#chatInput')?.parentElement;
+                if (inputArea) {
+                    const el = document.createElement('div');
+                    el.id = 'trust-indicator';
+                    el.style.cssText = 'position:absolute;top:-18px;right:8px;font-size:10px;color:#999;letter-spacing:0.5px;';
+                    inputArea.style.position = 'relative';
+                    inputArea.appendChild(el);
+                    indicator = el;
+                }
+            }
+            if (indicator) {
+                const labels = {new:'new',developing:'developing',established:'established',deep:'deep'};
+                const dots = {new:'○○○○',developing:'●○○○',established:'●●○○',deep:'●●●●'};  // was missing from line — adding back
+                indicator.textContent = `trust: ${labels[level] || level} ${dots[level] || ''}`;
+            }
+        }
+
         function finalizeStreamingBubble(bubbleId, hideToolIndicator) {
             const bubble = document.getElementById(bubbleId);
             if (!bubble) return;
@@ -2629,7 +2662,7 @@
                                     case 'tool_result': renderToolCard(bubbleId, data); hadToolResult = true; break;
                                     case 'chunk': fullText += (data.text || ''); updateStreamingBubble(bubbleId, fullText); break;
                                     case 'did_you_mean': renderDidYouMean(bubbleId, data.original, data.suggestions || []); break;
-                                    case 'done': if (data.sessionId) chatSessionId = data.sessionId; finalizeStreamingBubble(bubbleId, hadToolStart && !hadToolResult); break;
+                                    case 'done': if (data.sessionId) chatSessionId = data.sessionId; if (data.trustLevel) updateTrustIndicator(data.trustLevel); finalizeStreamingBubble(bubbleId, hadToolStart && !hadToolResult); break;
                                     case 'error': showErrorInBubble(bubbleId, data.error || data.message); break;
                                     default: if (data.text) { fullText += data.text; updateStreamingBubble(bubbleId, fullText); }
                                 }
@@ -3696,32 +3729,81 @@
             } catch (err) { console.error('Failed to mark done:', err); }
         }
 
+        let _pinAllSuggestions = [];
+        let _pinShowingAll = false;
+
         async function openPinSuggestions() {
             const overlay = document.getElementById('pinSuggestionsOverlay');
             const content = document.getElementById('pinSuggestionsContent');
             content.innerHTML = '<div class="pin-suggestions-loading">Loading suggestions...</div>';
             overlay.classList.remove('hidden');
+            _pinShowingAll = false;
             requestAnimationFrame(() => overlay.classList.add('visible'));
             try {
                 const response = await authFetch('/api/focus-pin/suggestions');
                 if (!response.ok) throw new Error('Failed to load suggestions');
                 const data = await response.json();
-                let html = '';
-                if (data.currentPin && data.currentPin.notionId) {
-                    html += '<div class="pin-unpin-row"><button class="pin-unpin-btn" onclick="unpinFocus()">Unpin current: ' + escapeHtml(data.currentPin.title) + '</button></div>';
-                }
-                const suggestions = data.suggestions || [];
-                if (suggestions.length === 0) { html += '<div class="pin-suggestions-loading">No active tasks to suggest</div>'; }
-                else {
-                    suggestions.forEach(s => {
-                        html += '<div class="pin-suggestion-row" onclick="pinFocus(\'' + s.notionId + '\')">';
-                        html += '<div class="pin-suggestion-info"><div class="pin-suggestion-title">' + escapeHtml(s.title) + '</div>';
-                        html += '<div class="pin-suggestion-reason">' + escapeHtml(s.reason) + '</div></div>';
-                        html += '<div class="pin-suggestion-action">Pin</div></div>';
-                    });
-                }
-                content.innerHTML = html;
+                _pinAllSuggestions = data.suggestions || [];
+                renderPinSuggestions(data, _pinAllSuggestions, '');
             } catch (err) { content.innerHTML = '<div class="pin-suggestions-loading">Couldn\'t load suggestions</div>'; }
+        }
+
+        function renderPinSuggestions(data, suggestions, filter) {
+            const content = document.getElementById('pinSuggestionsContent');
+            let html = '';
+            // Search field
+            html += '<div style="padding:10px 12px 6px;"><input type="text" id="pinSearchInput" placeholder="Search all tasks..." '
+                + 'style="width:100%;padding:8px 12px;font-family:var(--font-body);font-size:13px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);outline:none;box-sizing:border-box;" '
+                + 'oninput="filterPinSuggestions(this.value)" value="' + escapeHtml(filter) + '"></div>';
+            if (data && data.currentPin && data.currentPin.notionId && !filter) {
+                html += '<div class="pin-unpin-row"><button class="pin-unpin-btn" onclick="unpinFocus()">Unpin current: ' + escapeHtml(data.currentPin.title) + '</button></div>';
+            }
+            const filtered = filter
+                ? suggestions.filter(s => s.title.toLowerCase().includes(filter.toLowerCase()))
+                : suggestions;
+            if (filtered.length === 0) {
+                html += '<div class="pin-suggestions-loading">' + (filter ? 'No matches' : 'No active tasks') + '</div>';
+            } else {
+                filtered.forEach(s => {
+                    html += '<div class="pin-suggestion-row" onclick="pinFocus(\'' + s.notionId + '\')">';
+                    html += '<div class="pin-suggestion-info"><div class="pin-suggestion-title">' + escapeHtml(s.title) + '</div>';
+                    html += '<div class="pin-suggestion-reason">' + escapeHtml(s.reason) + '</div></div>';
+                    html += '<div class="pin-suggestion-action">Pin</div></div>';
+                });
+            }
+            if (!_pinShowingAll && !filter) {
+                html += '<div style="text-align:center;padding:10px;"><button style="font-family:var(--font-body);font-size:12px;color:var(--coach);background:none;border:none;cursor:pointer;font-weight:600;" onclick="loadAllPinSuggestions()">Show all tasks</button></div>';
+            }
+            content.innerHTML = html;
+            // Re-focus search input and restore cursor
+            const input = document.getElementById('pinSearchInput');
+            if (input && filter) { input.focus(); input.setSelectionRange(filter.length, filter.length); }
+        }
+
+        async function loadAllPinSuggestions() {
+            _pinShowingAll = true;
+            const content = document.getElementById('pinSuggestionsContent');
+            content.innerHTML = '<div class="pin-suggestions-loading">Loading all tasks...</div>';
+            try {
+                const response = await authFetch('/api/focus-pin/suggestions?all=true');
+                if (!response.ok) throw new Error('Failed');
+                const data = await response.json();
+                _pinAllSuggestions = data.suggestions || [];
+                renderPinSuggestions(data, _pinAllSuggestions, '');
+            } catch (err) { content.innerHTML = '<div class="pin-suggestions-loading">Couldn\'t load tasks</div>'; }
+        }
+
+        function filterPinSuggestions(query) {
+            if (!_pinShowingAll && query.length > 0) {
+                // Auto-load all when user starts typing
+                _pinShowingAll = true;
+                authFetch('/api/focus-pin/suggestions?all=true').then(r => r.json()).then(data => {
+                    _pinAllSuggestions = data.suggestions || [];
+                    renderPinSuggestions(data, _pinAllSuggestions, query);
+                });
+                return;
+            }
+            renderPinSuggestions(null, _pinAllSuggestions, query);
         }
 
         function closePinSuggestions(event) {

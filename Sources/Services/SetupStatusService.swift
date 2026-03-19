@@ -221,6 +221,9 @@ class SetupStatusService {
                 if let email = data["email"] as? String {
                     user["email"] = email
                 }
+                if let workStyle = data["workStyle"] as? String, !workStyle.isEmpty {
+                    user["work_style"] = workStyle
+                }
                 configDict["user"] = user
             }
 

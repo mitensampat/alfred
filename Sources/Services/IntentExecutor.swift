@@ -498,8 +498,55 @@ class IntentExecutor {
     // These will format the data into conversational responses
 
     private func formatBriefingResponse(_ briefing: DailyBriefing, query: String) -> IntentExecutionResult {
-        // TODO: Implement conversational formatting
-        return IntentExecutionResult(data: briefing, conversationalResponse: "Here's your briefing", structuredData: nil)
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        let dateStr = dateFormatter.string(from: briefing.date)
+
+        var parts: [String] = []
+        parts.append("**Daily Briefing — \(dateStr)**\n")
+
+        // Coaching cards
+        if let cards = briefing.coachingCards, !cards.isEmpty {
+            for card in cards {
+                parts.append("**\(card.label):** \(card.insight)")
+            }
+            parts.append("")
+        }
+
+        // Calendar
+        let eventCount = briefing.calendarBriefing.schedule.events.count
+        if eventCount > 0 {
+            parts.append("**Schedule:** \(eventCount) event\(eventCount == 1 ? "" : "s") today")
+            let timeFormatter = DateFormatter()
+            timeFormatter.dateFormat = "h:mm a"
+            for event in briefing.calendarBriefing.schedule.events.prefix(5) {
+                let time = timeFormatter.string(from: event.startTime)
+                parts.append("• \(time) — \(event.title)")
+            }
+            parts.append("")
+        } else {
+            parts.append("**Schedule:** No meetings today\n")
+        }
+
+        // Action items
+        if !briefing.actionItems.isEmpty {
+            parts.append("**Action Items:** \(briefing.actionItems.count) items")
+            for item in briefing.actionItems.prefix(5) {
+                let priority = item.priority.rawValue.lowercased()
+                parts.append("• [\(priority)] \(item.title)")
+            }
+            parts.append("")
+        }
+
+        // Messages
+        let allMsgSummaries = briefing.messagingSummary.keyInteractions + briefing.messagingSummary.needsResponse + briefing.messagingSummary.criticalMessages
+        let msgCount = allMsgSummaries.count
+        if msgCount > 0 {
+            parts.append("**Messages:** \(msgCount) threads flagged (\(briefing.messagingSummary.criticalMessages.count) critical, \(briefing.messagingSummary.needsResponse.count) need response)")
+        }
+
+        let response = parts.joined(separator: "\n")
+        return IntentExecutionResult(data: briefing, conversationalResponse: response, structuredData: nil)
     }
 
     private func formatCalendarResponse(_ calendar: CalendarBriefing, query: String) -> IntentExecutionResult {

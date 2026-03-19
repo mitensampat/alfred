@@ -20,6 +20,21 @@ class CadenceService {
            let loaded = try? decoder.decode([Cadence].self, from: data) {
             cadences = loaded
             print("✓ Loaded \(cadences.count) cadences from cadences.json")
+
+            // Ensure any new built-in cadences are injected (e.g. added in a later version)
+            let builtInCadences = CadenceService.migrateFromOldConfig()
+            let existingIds = Set(cadences.map { $0.id })
+            var added = 0
+            for builtIn in builtInCadences {
+                if !existingIds.contains(builtIn.id) {
+                    cadences.append(builtIn)
+                    added += 1
+                }
+            }
+            if added > 0 {
+                print("  + Injected \(added) new built-in cadence(s)")
+                try? save()
+            }
         } else {
             // First run: migrate from old config
             cadences = CadenceService.migrateFromOldConfig()
@@ -320,6 +335,22 @@ class CadenceService {
                 catchUpWindowHours: 3,
                 notifyOnSuccess: true,
                 emailOnSuccess: true
+            ),
+            Cadence(
+                id: "builtin-playbook-sync",
+                name: "Playbook Sync",
+                icon: "📖",
+                actionType: .playbookSync,
+                params: [:],
+                schedule: .weekly(day: "thursday", time: "18:30"),
+                enabled: true,
+                isBuiltIn: true,
+                createdAt: now,
+                lastRunDate: nil,
+                lastRunTimestamp: nil,
+                catchUpWindowHours: 0,
+                notifyOnSuccess: false,
+                emailOnSuccess: false
             )
         ]
     }

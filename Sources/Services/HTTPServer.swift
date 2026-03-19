@@ -632,6 +632,9 @@ class HTTPServer {
         case ("GET", "/api/health/detailed"):
             return await handleDetailedHealth()
 
+        case ("GET", "/api/trust"):
+            return handleTrustState()
+
         case ("GET", "/api/commitments"):
             return await handleGetCommitments(request)
 
@@ -681,7 +684,7 @@ class HTTPServer {
             return handleUnpinFocus()
 
         case ("GET", "/api/focus-pin/suggestions"):
-            return await handleFocusPinSuggestions()
+            return await handleFocusPinSuggestions(request)
 
         case ("GET", "/api/weekly-reflection"):
             return await handleWeeklyReflection()
@@ -870,6 +873,18 @@ class HTTPServer {
         case ("GET", "/api/memory/unified"):
             return handleGetUnifiedMemory()
 
+        case ("GET", "/api/learning/status"):
+            return handleGetLearningStatus()
+
+        case ("POST", "/api/learning/compute"):
+            return await handleComputeLearnedPatterns()
+
+        case ("GET", "/api/learning/patterns"):
+            return handleGetLearnedPatterns()
+
+        case ("POST", "/api/learning/review"):
+            return handlePatternReview(request)
+
         case ("GET", "/api/workflow-patterns"):
             return handleGetWorkflowPatterns()
 
@@ -938,6 +953,12 @@ class HTTPServer {
 
         case ("POST", "/api/commitment-tracker/dedup-cleanup"):
             return await handleDedupCleanup()
+
+        case ("POST", "/api/commitment-tracker/cleanup-orphans"):
+            return handleCleanupOrphans()
+
+        case ("POST", "/api/commitment-tracker/sync-from-notion"):
+            return await handleSyncFromNotion()
 
         // MARK: Cadence CRUD Endpoints (new)
         case ("GET", "/api/cadences"):
@@ -1743,7 +1764,7 @@ class HTTPServer {
     }
 
     /// Generate ranked suggestions for what to pin as #1
-    private func handleFocusPinSuggestions() async -> HTTPResponse {
+    private func handleFocusPinSuggestions(_ request: HTTPRequest) async -> HTTPResponse {
         guard let orchestrator = alfredService.orchestrator else {
             return HTTPResponse(statusCode: 500, body: ["error": "Service unavailable"])
         }
@@ -1833,8 +1854,10 @@ class HTTPServer {
                 }
             }
 
-            // Sort by score descending, take top 5
-            let top = scored.sorted { $0.score > $1.score }.prefix(5)
+            // Sort by score descending
+            let sorted = scored.sorted { $0.score > $1.score }
+            let showAll = request.queryParams["all"] == "true"
+            let top = showAll ? Array(sorted) : Array(sorted.prefix(5))
 
             let suggestions: [[String: Any]] = top.map { item in
                 var dict: [String: Any] = [
@@ -2085,6 +2108,35 @@ class HTTPServer {
         let weekFormatter = DateFormatter()
         weekFormatter.dateFormat = "MMM d, yyyy"
         let weekLabel = "Week of \(weekFormatter.string(from: date))"
+
+        // Dedup check — don't create duplicate weekly reflections
+        do {
+            let checkUrl = URL(string: "https://api.notion.com/v1/databases/\(dbId)/query")!
+            var checkReq = URLRequest(url: checkUrl)
+            checkReq.httpMethod = "POST"
+            checkReq.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            checkReq.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+            checkReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+            let filterBody: [String: Any] = [
+                "filter": [
+                    "property": "Week",
+                    "title": ["equals": weekLabel]
+                ],
+                "page_size": 1
+            ]
+            checkReq.httpBody = try? JSONSerialization.data(withJSONObject: filterBody)
+
+            let (checkData, _) = try await URLSession.shared.data(for: checkReq)
+            if let checkJson = try? JSONSerialization.jsonObject(with: checkData) as? [String: Any],
+               let results = checkJson["results"] as? [[String: Any]],
+               !results.isEmpty {
+                print("📊 Weekly reflection for '\(weekLabel)' already exists in Notion — skipping duplicate")
+                return
+            }
+        } catch {
+            print("⚠️ Could not check for duplicate reflection: \(error) — proceeding with creation")
+        }
 
         // Determine mood based on metrics
         let overdue = (metrics["tasksOverdue"] as? Int) ?? 0
@@ -4392,8 +4444,16 @@ The Commitment Check feature requires a properly configured Notion database.
         do {
             let intentResponse = try await intentService.recognizeIntent(query, sessionId: sessionId)
 
+            // If clarification needed, stream it as a question back to the user
+            if intentResponse.clarificationNeeded, let question = intentResponse.clarificationQuestion {
+                client.sendSSEJSON(event: "chunk", json: ["text": question])
+                client.sendSSEJSON(event: "done", json: ["sessionId": sessionId])
+                client.endSSE()
+                return
+            }
+
             // If high confidence structured intent, execute it and stream the result
-            if intentResponse.intent.confidence > 0.8 && !intentResponse.clarificationNeeded {
+            if intentResponse.intent.confidence > 0.8 {
                 if let orchestrator = alfredService.orchestrator {
                     let toolName = intentResponse.intent.target?.rawValue ?? "unknown"
 
@@ -4523,11 +4583,24 @@ The Commitment Check feature requires a properly configured Notion database.
                         )
                     }
 
+                    // Learning v2: Record signals from this exchange
+                    WorkflowLearningService.shared.detectAndRecordCorrections(
+                        userMessage: query,
+                        assistantResponse: finalResponse
+                    )
+
                     // Persist turns to conversation history
                     ConversationHistoryService.shared.addTurn(sessionId: sessionId, role: "user", content: query)
                     ConversationHistoryService.shared.addTurn(sessionId: sessionId, role: "assistant", content: finalResponse)
 
-                    client.sendSSEJSON(event: "done", json: ["sessionId": sessionId])
+                    // Increment trust turns counter (persisted to disk)
+                    TrustStateService.shared.incrementTurns()
+
+                    let trustLevel = TrustStateService.shared.getCurrentLevel()
+                    client.sendSSEJSON(event: "done", json: [
+                        "sessionId": sessionId,
+                        "trustLevel": trustLevel.rawValue
+                    ])
                     client.endSSE()
                     return
                 }
@@ -4619,6 +4692,9 @@ The Commitment Check feature requires a properly configured Notion database.
             ConversationHistoryService.shared.addTurn(sessionId: sessionId, role: "user", content: query)
             ConversationHistoryService.shared.addTurn(sessionId: sessionId, role: "assistant", content: fullResponse)
 
+            // Increment trust turns counter (persisted to disk)
+            TrustStateService.shared.incrementTurns()
+
             // Fire-and-forget: update coaching memory if this was a coaching exchange
             let capturedQuery = query
             let capturedResponse = fullResponse
@@ -4631,7 +4707,17 @@ The Commitment Check feature requires a properly configured Notion database.
                 )
             }
 
-            client.sendSSEJSON(event: "done", json: ["sessionId": sessionId])
+            // Learning v2: Record signals from this exchange
+            WorkflowLearningService.shared.detectAndRecordCorrections(
+                userMessage: query,
+                assistantResponse: fullResponse
+            )
+
+            let trustLevelFinal = TrustStateService.shared.getCurrentLevel()
+            client.sendSSEJSON(event: "done", json: [
+                "sessionId": sessionId,
+                "trustLevel": trustLevelFinal.rawValue
+            ])
         } catch {
             client.sendSSEJSON(event: "error", json: ["error": "Failed to generate response: \(error.localizedDescription)"])
         }
@@ -4640,6 +4726,29 @@ The Commitment Check feature requires a properly configured Notion database.
     }
 
     // MARK: - Coaching Endpoint Handlers
+
+    /// Returns the current trust state
+    private func handleTrustState() -> HTTPResponse {
+        let state = TrustStateService.shared.loadState()
+        let effectiveLevel = TrustStateService.shared.getCurrentLevel()
+        let dateFormatter = ISO8601DateFormatter()
+        return HTTPResponse(statusCode: 200, body: [
+            "level": effectiveLevel.rawValue,
+            "displayName": effectiveLevel.displayName,
+            "storedLevel": state.level.rawValue,
+            "totalSessions": state.totalSessions,
+            "totalTurns": state.totalTurns,
+            "resolvedThemes": state.resolvedThemes,
+            "levelSince": dateFormatter.string(from: state.levelSince),
+            "lastComputedAt": dateFormatter.string(from: state.lastComputedAt),
+            "oldestSessionDate": state.oldestSessionDate.map { dateFormatter.string(from: $0) } as Any,
+            "thresholds": [
+                "developing": "5 sessions, 7 days, 1 resolved theme",
+                "established": "20 sessions, 30 days, 3 resolved themes, 50 turns",
+                "deep": "50 sessions, 90 days, 5 resolved themes, 150 turns"
+            ]
+        ])
+    }
 
     /// Returns the raw coaching context file contents
     private func handleCoachingContext() -> HTTPResponse {
@@ -7941,6 +8050,53 @@ extension HTTPServer {
         }
     }
 
+    // MARK: - Orphan Cleanup
+
+    private func handleCleanupOrphans() -> HTTPResponse {
+        let result = CommitmentScanTracker.shared.cleanupOrphanedData()
+
+        // Invalidate caches
+        invalidateMemoryCache("tracker_stats")
+        invalidateMemoryCache("home_pulse")
+        cache.deleteByEndpoint("/api/home/pulse")
+
+        return HTTPResponse(
+            statusCode: 200,
+            body: [
+                "success": true,
+                "orphaned_closures_removed": result.orphanedClosures,
+                "stale_pending_rejected": result.stalePending
+            ]
+        )
+    }
+
+    // MARK: - Bidirectional Notion Sync
+
+    private func handleSyncFromNotion() async -> HTTPResponse {
+        do {
+            let synced = try await alfredService.syncCommitmentsFromNotion()
+
+            if synced > 0 {
+                invalidateMemoryCache("tracker_stats")
+                invalidateMemoryCache("home_pulse")
+                cache.deleteByEndpoint("/api/home/pulse")
+            }
+
+            return HTTPResponse(
+                statusCode: 200,
+                body: [
+                    "success": true,
+                    "synced_from_notion": synced
+                ]
+            )
+        } catch {
+            return HTTPResponse(
+                statusCode: 500,
+                body: ["error": "Notion sync failed: \(error.localizedDescription)"]
+            )
+        }
+    }
+
     // MARK: - Cadence Helpers
 
     /// Update keys in ~/.alfred/scheduler_state.json (used by cadence handlers to record last-run time)
@@ -8584,6 +8740,93 @@ extension HTTPServer {
         )
     }
 
+    // MARK: - Learning System v2 Handlers
+
+    private func handleGetLearningStatus() -> HTTPResponse {
+        let learningService = WorkflowLearningService.shared
+        let v2Stats = learningService.getLearningV2Stats()
+        let v1Stats = learningService.getSummary()
+
+        var combined: [String: Any] = [:]
+        combined["v2"] = v2Stats
+        combined["v1"] = v1Stats
+
+        // Merge key metrics
+        combined["totalEvents"] = v2Stats["totalEvents"] as? Int ?? 0
+        combined["activePatterns"] = v2Stats["activePatterns"] as? Int ?? 0
+        combined["pendingReviews"] = v2Stats["pendingReviews"] as? Int ?? 0
+        combined["lastComputed"] = v2Stats["lastComputed"] as? String ?? "never"
+
+        return HTTPResponse(statusCode: 200, body: combined)
+    }
+
+    private func handleComputeLearnedPatterns() async -> HTTPResponse {
+        guard let config = getConfig() else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Configuration not loaded"])
+        }
+
+        let learningService = WorkflowLearningService.shared
+        await learningService.computeLearnedPatterns(config: config)
+
+        let stats = learningService.getLearningV2Stats()
+        return HTTPResponse(statusCode: 200, body: [
+            "status": "computed",
+            "activePatterns": stats["activePatterns"] as Any,
+            "pendingReviews": stats["pendingReviews"] as Any,
+            "totalEvents": stats["totalEvents"] as Any
+        ])
+    }
+
+    private func handleGetLearnedPatterns() -> HTTPResponse {
+        let learningService = WorkflowLearningService.shared
+        let patterns = learningService.getLearnedPatterns()
+
+        let serialized: [[String: Any]] = patterns.map { p in
+            [
+                "id": p.id,
+                "type": p.type,
+                "description": p.description,
+                "confidence": p.confidence,
+                "isStale": p.isStale,
+                "isDirect": p.isDirect,
+                "reinforcements": p.reinforcements,
+                "lastReinforced": p.lastReinforced
+            ]
+        }
+
+        return HTTPResponse(statusCode: 200, body: [
+            "patterns": serialized,
+            "count": patterns.count
+        ])
+    }
+
+    private func handlePatternReview(_ request: HTTPRequest) -> HTTPResponse {
+        guard let reviewIdStr = request.queryParams["id"],
+              let reviewId = Int(reviewIdStr),
+              let action = request.queryParams["action"] else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' or 'action' parameter"])
+        }
+
+        let validActions = ["confirmed", "corrected", "dismissed"]
+        guard validActions.contains(action) else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Action must be: confirmed, corrected, or dismissed"])
+        }
+
+        let userResponse = request.queryParams["response"]
+
+        WorkflowLearningService.shared.resolvePatternReview(
+            reviewId: reviewId,
+            action: action,
+            userResponse: userResponse
+        )
+
+        return HTTPResponse(statusCode: 200, body: [
+            "status": "resolved",
+            "action": action,
+            "reviewId": reviewId
+        ])
+    }
+
     // MARK: - Workflow Patterns Handlers
 
     private func handleGetWorkflowPatterns() -> HTTPResponse {
@@ -8714,50 +8957,34 @@ extension HTTPServer {
     }
 
     private func convertMarkdownToHtml(_ markdown: String) -> String {
-        // Simple markdown to HTML conversion
+        let fontBody = "font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;"
+        let sectionStyle = "\(fontBody) font-size: 11px; font-weight: 600; color: #5c6370; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 24px; padding-bottom: 6px; border-bottom: 1px solid #e4e2dc;"
+
+        // Simple markdown to HTML conversion with inline styles
         var html = markdown
 
-        // Headers
-        html = html.replacingOccurrences(of: "# ", with: "<h1>")
-        html = html.replacingOccurrences(of: "## ", with: "<h2>")
-        html = html.replacingOccurrences(of: "---", with: "<hr>")
+        // Headers — use inline styles matching the email design system
+        let h1Regex = try? NSRegularExpression(pattern: "^# (.+)$", options: .anchorsMatchLines)
+        html = h1Regex?.stringByReplacingMatches(in: html, range: NSRange(html.startIndex..., in: html), withTemplate: "<div style=\"font-family: 'Playfair Display', Georgia, serif; font-size: 22px; font-weight: 400; color: #1b2a4a; margin-bottom: 12px;\">$1</div>") ?? html
+
+        let h2Regex = try? NSRegularExpression(pattern: "^## (.+)$", options: .anchorsMatchLines)
+        html = h2Regex?.stringByReplacingMatches(in: html, range: NSRange(html.startIndex..., in: html), withTemplate: "<div style=\"\(sectionStyle)\">$1</div>") ?? html
+
+        html = html.replacingOccurrences(of: "---", with: "<div style=\"height: 1px; background-color: #e4e2dc; margin: 20px 0;\"></div>")
 
         // Bold
         let boldRegex = try? NSRegularExpression(pattern: "\\*\\*(.+?)\\*\\*", options: [])
-        html = boldRegex?.stringByReplacingMatches(in: html, range: NSRange(html.startIndex..., in: html), withTemplate: "<strong>$1</strong>") ?? html
+        html = boldRegex?.stringByReplacingMatches(in: html, range: NSRange(html.startIndex..., in: html), withTemplate: "<strong style=\"color: #1b2a4a;\">$1</strong>") ?? html
 
         // Line breaks
-        html = html.replacingOccurrences(of: "\n\n", with: "</p><p>")
+        html = html.replacingOccurrences(of: "\n\n", with: "<br><br>")
         html = html.replacingOccurrences(of: "\n- ", with: "<br>• ")
         html = html.replacingOccurrences(of: "\n", with: "<br>")
 
-        // Wrap in body — matching Alfred's Notion-like email design system
-        return """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
-            <style>
-                body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; line-height: 1.6; color: #37352f; max-width: 700px; margin: 0 auto; padding: 20px; background: #ffffff; }
-                .brand { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; }
-                h1 { font-family: 'Playfair Display', Georgia, 'Times New Roman', serif; font-size: 28px; font-weight: 600; margin-bottom: 24px; color: #37352f; }
-                h2 { font-size: 16px; font-weight: 600; color: #787774; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 28px; margin-bottom: 12px; border-bottom: 1px solid #e9e9e7; padding-bottom: 8px; }
-                hr { border: none; border-top: 1px solid #e9e9e7; margin: 24px 0; }
-                strong { color: #37352f; }
-                p { margin: 12px 0; font-size: 14px; }
-                .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e9e9e7; font-size: 12px; color: #9b9a97; text-align: center; }
-                .footer .brand { font-size: 14px; font-weight: 500; }
-            </style>
-        </head>
-        <body>
-            <p>\(html)</p>
-            <div class="footer">
-                Generated by <span class="brand">alfred</span> v\(AlfredApp.version) • \(Date().formatted(date: .abbreviated, time: .shortened))
-            </div>
-        </body>
-        </html>
-        """
+        // Wrap in shared email layout (table-based, inline styles)
+        return NotificationService.emailHead()
+            + "<div style=\"\(fontBody) font-size: 14px; line-height: 1.65; color: #1b2a4a;\">\(html)</div>"
+            + NotificationService.emailFoot()
     }
 
     // MARK: - Unified Memory Handlers

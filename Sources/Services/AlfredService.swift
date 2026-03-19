@@ -567,6 +567,44 @@ class AlfredService: ObservableObject {
         return Array(contacts)
     }
 
+    // MARK: - Bidirectional Notion Sync
+
+    /// Sync commitment status from Notion back to local tracker
+    /// Detects when user manually marks a commitment as "Done" in Notion
+    /// Returns count of commitments synced
+    func syncCommitmentsFromNotion() async throws -> Int {
+        guard let orchestrator = orchestrator else {
+            throw ServiceError.notInitialized
+        }
+
+        let tracker = CommitmentScanTracker.shared
+        let openCommitments = tracker.getOpenCommitmentHashes()
+
+        var syncedCount = 0
+
+        for hash in openCommitments {
+            do {
+                if let result = try await orchestrator.notionServicePublic.findCommitmentWithStatusByHash(hash) {
+                    // Check if Notion status is "Done" but local tracker still shows open
+                    if result.status == "Done" {
+                        tracker.markCommitmentClosed(hash: hash, closureMethod: "notion-manual")
+                        syncedCount += 1
+                        print("🔄 Synced from Notion: commitment \(hash.prefix(8))... marked Done")
+                    }
+                }
+            } catch {
+                // Skip individual failures — don't let one bad hash break the whole sync
+                continue
+            }
+        }
+
+        if syncedCount > 0 {
+            print("🔄 Bidirectional sync: \(syncedCount) commitment(s) synced from Notion")
+        }
+
+        return syncedCount
+    }
+
     // MARK: - Drafts
 
     func fetchDrafts() async throws -> [MessageDraft] {
