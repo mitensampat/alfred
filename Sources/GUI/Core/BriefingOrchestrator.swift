@@ -459,7 +459,8 @@ class BriefingOrchestrator {
                 keyInteractions: needsResponse,
                 needsResponse: needsResponse,
                 criticalMessages: summaries.filter { $0.urgency == .critical },
-                stats: stats
+                stats: stats,
+                warnings: nil
             )
         )
 
@@ -484,26 +485,77 @@ class BriefingOrchestrator {
         let hours = parseTimeframe(timeframe)
         let since = Calendar.current.date(byAdding: .hour, value: -hours, to: Date())!
 
-        print("💬 Searching for WhatsApp thread: \"\(contactName)\" (last \(timeframe))...\n")
+        print("💬 Searching for thread: \"\(contactName)\" across all platforms (last \(timeframe))...\n")
 
-        guard config.messaging.whatsapp.enabled else {
-            throw MessageReaderError.notConnected
+        var bestThread: MessageThread?
+
+        // 1. Try WhatsApp (has dedicated fetchThreadByName with fuzzy search)
+        if config.messaging.whatsapp.enabled {
+            print("  ↳ Searching WhatsApp...")
+            do {
+                try whatsappReader.connect()
+                if let thread = try whatsappReader.fetchThreadByName(contactName, since: since) {
+                    print("  ✓ Found WhatsApp thread: \(thread.contactName ?? contactName) (\(thread.messages.count) messages)")
+                    bestThread = thread
+                }
+                whatsappReader.disconnect()
+            } catch {
+                print("  ✗ WhatsApp search failed: \(error)")
+            }
         }
 
-        print("  ↳ Connecting to WhatsApp database...")
-        try whatsappReader.connect()
-        defer {
-            whatsappReader.disconnect()
+        // 2. Try iMessage (search all threads by name match)
+        if config.messaging.imessage.enabled {
+            print("  ↳ Searching iMessage...")
+            do {
+                let reader = iMessageReader(dbPath: config.messaging.imessage.dbPath)
+                try reader.connect()
+                let threads = try reader.fetchThreads(since: since)
+                reader.disconnect()
+                let searchLower = contactName.lowercased()
+                if let match = threads.first(where: { thread in
+                    guard let name = thread.contactName else { return false }
+                    return name.lowercased().contains(searchLower)
+                }) {
+                    print("  ✓ Found iMessage thread: \(match.contactName ?? contactName) (\(match.messages.count) messages)")
+                    if bestThread == nil || match.messages.count > (bestThread?.messages.count ?? 0) {
+                        bestThread = match
+                    }
+                }
+            } catch {
+                print("  ✗ iMessage search failed: \(error)")
+            }
         }
 
-        print("  ↳ Searching for contact/group: \"\(contactName)\"...")
-        guard let thread = try whatsappReader.fetchThreadByName(contactName, since: since) else {
-            print("  ✗ No matching WhatsApp thread found for \"\(contactName)\"")
-            throw MessageReaderError.queryFailed("No WhatsApp thread found matching '\(contactName)'")
+        // 3. Try Signal
+        if config.messaging.signal.enabled {
+            print("  ↳ Searching Signal...")
+            do {
+                let reader = SignalReader(dbPath: config.messaging.signal.dbPath)
+                try reader.connect()
+                let threads = try reader.fetchThreads(since: since)
+                reader.disconnect()
+                let searchLower = contactName.lowercased()
+                if let match = threads.first(where: { thread in
+                    guard let name = thread.contactName else { return false }
+                    return name.lowercased().contains(searchLower)
+                }) {
+                    print("  ✓ Found Signal thread: \(match.contactName ?? contactName) (\(match.messages.count) messages)")
+                    if bestThread == nil || match.messages.count > (bestThread?.messages.count ?? 0) {
+                        bestThread = match
+                    }
+                }
+            } catch {
+                print("  ✗ Signal search failed: \(error)")
+            }
         }
 
-        print("  ✓ Found thread with \(thread.messages.count) message(s)")
-        print("  ✓ Contact: \(thread.contactName ?? "Unknown")\n")
+        guard let thread = bestThread else {
+            print("  ✗ No matching thread found for \"\(contactName)\" on any platform")
+            throw MessageReaderError.queryFailed("No thread found matching '\(contactName)' on any platform")
+        }
+
+        print("  ✓ Best match: \(thread.contactName ?? "Unknown") on \(thread.platform.rawValue) (\(thread.messages.count) messages)\n")
 
         print("🤖 Analyzing thread with AI...")
         let analysis = try await aiService.analyzeFocusedThread(thread)
@@ -556,7 +608,8 @@ class BriefingOrchestrator {
                 keyInteractions: [summary],
                 needsResponse: [summary],
                 criticalMessages: urgency == .critical ? [summary] : [],
-                stats: stats
+                stats: stats,
+                warnings: nil
             )
         )
 
@@ -878,7 +931,8 @@ class BriefingOrchestrator {
             keyInteractions: Array(keyInteractions),
             needsResponse: Array(needsResponse),
             criticalMessages: Array(criticalMessages),
-            stats: stats
+            stats: stats,
+            warnings: nil
         )
     }
 

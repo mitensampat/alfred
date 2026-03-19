@@ -491,18 +491,7 @@ class AlfredService: ObservableObject {
             throw ServiceError.notInitialized
         }
 
-        // Only WhatsApp is currently supported for focused thread analysis
-        guard platform.lowercased() == "whatsapp" else {
-            return (
-                summary: "Platform '\(platform)' is not yet supported for message summaries. Currently only WhatsApp is available.",
-                keyPoints: ["WhatsApp is the only supported platform at this time"],
-                needsResponse: false,
-                messageCount: 0,
-                actionItems: []
-            )
-        }
-
-        // Use the existing getFocusedWhatsAppThread method
+        // getFocusedWhatsAppThread now searches across all platforms (WhatsApp, iMessage, Signal)
         let analysis = try await orchestrator.getFocusedWhatsAppThread(contactName: contact, timeframe: timeframe)
 
         // Extract key points from action items

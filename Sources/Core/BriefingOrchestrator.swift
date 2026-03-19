@@ -587,7 +587,8 @@ class BriefingOrchestrator {
                 keyInteractions: needsResponse,
                 needsResponse: needsResponse,
                 criticalMessages: summaries.filter { $0.urgency == .critical },
-                stats: stats
+                stats: stats,
+                warnings: nil
             )
         )
 
@@ -612,33 +613,95 @@ class BriefingOrchestrator {
         let hours = parseTimeframe(timeframe)
         let since = Calendar.current.date(byAdding: .hour, value: -hours, to: Date())!
 
-        print("💬 Searching for WhatsApp thread: \"\(contactName)\" (last \(timeframe))...\n")
+        print("💬 Searching for thread: \"\(contactName)\" across all platforms (last \(timeframe))...\n")
 
-        guard config.messaging.whatsapp.enabled else {
-            throw MessageReaderError.notConnected
-        }
+        var bestThread: MessageThread?
 
-        print("  ↳ Connecting to WhatsApp database...")
-        try whatsappReader.connect()
-        defer {
-            whatsappReader.disconnect()
-        }
-
-        print("  ↳ Searching for contact/group: \"\(contactName)\"...")
-        guard let thread = try whatsappReader.fetchThreadByName(contactName, since: since) else {
-            print("  ✗ No matching WhatsApp thread found for \"\(contactName)\"")
-            // Try fuzzy search for suggestions
-            let fuzzyResults = try whatsappReader.fuzzySearchThreadNames(contactName, limit: 5)
-            if !fuzzyResults.isEmpty {
-                let suggestions = fuzzyResults.map { $0.name }
-                print("  💡 Did you mean: \(suggestions.joined(separator: ", "))")
-                throw MessageReaderError.didYouMean(original: contactName, suggestions: suggestions)
+        // 1. Try WhatsApp (has dedicated fetchThreadByName with fuzzy search)
+        if config.messaging.whatsapp.enabled {
+            print("  ↳ Searching WhatsApp...")
+            do {
+                try whatsappReader.connect()
+                if let thread = try whatsappReader.fetchThreadByName(contactName, since: since) {
+                    print("  ✓ Found WhatsApp thread: \(thread.contactName ?? contactName) (\(thread.messages.count) messages)")
+                    bestThread = thread
+                }
+                whatsappReader.disconnect()
+            } catch {
+                print("  ✗ WhatsApp search failed: \(error)")
             }
-            throw MessageReaderError.queryFailed("No WhatsApp thread found matching '\(contactName)'")
         }
 
-        print("  ✓ Found thread with \(thread.messages.count) message(s)")
-        print("  ✓ Contact: \(thread.contactName ?? "Unknown")\n")
+        // 2. Try iMessage (search all threads by name match)
+        if config.messaging.imessage.enabled {
+            print("  ↳ Searching iMessage...")
+            do {
+                let reader = iMessageReader(dbPath: config.messaging.imessage.dbPath)
+                try reader.connect()
+                let threads = try reader.fetchThreads(since: since)
+                reader.disconnect()
+                let searchLower = contactName.lowercased()
+                if let match = threads.first(where: { thread in
+                    guard let name = thread.contactName else { return false }
+                    return name.lowercased().contains(searchLower)
+                }) {
+                    print("  ✓ Found iMessage thread: \(match.contactName ?? contactName) (\(match.messages.count) messages)")
+                    // Prefer the thread with more messages, or iMessage if no WhatsApp match
+                    if bestThread == nil || match.messages.count > (bestThread?.messages.count ?? 0) {
+                        bestThread = match
+                    }
+                }
+            } catch {
+                print("  ✗ iMessage search failed: \(error)")
+            }
+        }
+
+        // 3. Try Signal
+        if config.messaging.signal.enabled {
+            print("  ↳ Searching Signal...")
+            do {
+                let reader = SignalReader(dbPath: config.messaging.signal.dbPath)
+                try reader.connect()
+                let threads = try reader.fetchThreads(since: since)
+                reader.disconnect()
+                let searchLower = contactName.lowercased()
+                if let match = threads.first(where: { thread in
+                    guard let name = thread.contactName else { return false }
+                    return name.lowercased().contains(searchLower)
+                }) {
+                    print("  ✓ Found Signal thread: \(match.contactName ?? contactName) (\(match.messages.count) messages)")
+                    if bestThread == nil || match.messages.count > (bestThread?.messages.count ?? 0) {
+                        bestThread = match
+                    }
+                }
+            } catch {
+                print("  ✗ Signal search failed: \(error)")
+            }
+        }
+
+        guard let thread = bestThread else {
+            print("  ✗ No matching thread found for \"\(contactName)\" on any platform")
+            // Try WhatsApp fuzzy search for suggestions
+            if config.messaging.whatsapp.enabled {
+                do {
+                    try whatsappReader.connect()
+                    let fuzzyResults = try whatsappReader.fuzzySearchThreadNames(contactName, limit: 5)
+                    whatsappReader.disconnect()
+                    if !fuzzyResults.isEmpty {
+                        let suggestions = fuzzyResults.map { $0.name }
+                        print("  💡 Did you mean: \(suggestions.joined(separator: ", "))")
+                        throw MessageReaderError.didYouMean(original: contactName, suggestions: suggestions)
+                    }
+                } catch let e as MessageReaderError {
+                    throw e
+                } catch {
+                    // Ignore fuzzy search errors
+                }
+            }
+            throw MessageReaderError.queryFailed("No thread found matching '\(contactName)' on any platform")
+        }
+
+        print("  ✓ Best match: \(thread.contactName ?? "Unknown") on \(thread.platform.rawValue) (\(thread.messages.count) messages)\n")
 
         print("🤖 Analyzing thread with AI...")
         let analysis = try await aiService.analyzeFocusedThread(thread)
@@ -691,7 +754,8 @@ class BriefingOrchestrator {
                 keyInteractions: [summary],
                 needsResponse: [summary],
                 criticalMessages: urgency == .critical ? [summary] : [],
-                stats: stats
+                stats: stats,
+                warnings: nil
             )
         )
 
@@ -987,6 +1051,7 @@ class BriefingOrchestrator {
             let platform: String
             let threads: [MessageThread]
             let isEmail: Bool
+            let warning: String?
         }
 
         let results = await withTaskGroup(of: PlatformResult.self) { group in
@@ -999,10 +1064,15 @@ class BriefingOrchestrator {
                         reader.disconnect()
                         let namedCount = threads.filter { $0.contactName != nil }.count
                         print("  ✅ iMessage: \(threads.count) thread(s), \(namedCount) with resolved names")
-                        return PlatformResult(platform: "iMessage", threads: threads, isEmail: false)
+                        return PlatformResult(platform: "iMessage", threads: threads, isEmail: false, warning: nil)
                     } catch {
-                        print("  ❌ iMessage fetch failed: \(error)")
-                        return PlatformResult(platform: "iMessage", threads: [], isEmail: false)
+                        let errorStr = "\(error)"
+                        let isFDA = errorStr.contains("Full Disk Access")
+                        let warning = isFDA
+                            ? "iMessage unavailable: Full Disk Access revoked. Re-grant to /Applications/Alfred.app in System Settings → Privacy & Security → Full Disk Access"
+                            : "iMessage fetch failed: \(errorStr)"
+                        print("  ❌ \(warning)")
+                        return PlatformResult(platform: "iMessage", threads: [], isEmail: false, warning: warning)
                     }
                 }
             }
@@ -1015,10 +1085,10 @@ class BriefingOrchestrator {
                         let threads = try reader.fetchThreads(since: yesterday)
                         reader.disconnect()
                         print("  ✅ WhatsApp: \(threads.count) thread(s)")
-                        return PlatformResult(platform: "WhatsApp", threads: threads, isEmail: false)
+                        return PlatformResult(platform: "WhatsApp", threads: threads, isEmail: false, warning: nil)
                     } catch {
                         print("  ❌ WhatsApp fetch failed: \(error)")
-                        return PlatformResult(platform: "WhatsApp", threads: [], isEmail: false)
+                        return PlatformResult(platform: "WhatsApp", threads: [], isEmail: false, warning: "WhatsApp fetch failed: \(error)")
                     }
                 }
             }
@@ -1030,10 +1100,10 @@ class BriefingOrchestrator {
                         try reader.connect()
                         let threads = try reader.fetchThreads(since: yesterday)
                         reader.disconnect()
-                        return PlatformResult(platform: "Signal", threads: threads, isEmail: false)
+                        return PlatformResult(platform: "Signal", threads: threads, isEmail: false, warning: nil)
                     } catch {
                         print("Warning: Failed to fetch Signal messages: \(error)")
-                        return PlatformResult(platform: "Signal", threads: [], isEmail: false)
+                        return PlatformResult(platform: "Signal", threads: [], isEmail: false, warning: "Signal fetch failed: \(error)")
                     }
                 }
             }
@@ -1044,10 +1114,10 @@ class BriefingOrchestrator {
                 group.addTask {
                     do {
                         let threads = try await gmail.fetchThreads(since: twoDaysAgo)
-                        return PlatformResult(platform: "Gmail", threads: threads, isEmail: true)
+                        return PlatformResult(platform: "Gmail", threads: threads, isEmail: true, warning: nil)
                     } catch {
                         print("Warning: Failed to fetch emails: \(error)")
-                        return PlatformResult(platform: "Gmail", threads: [], isEmail: true)
+                        return PlatformResult(platform: "Gmail", threads: [], isEmail: true, warning: "Gmail fetch failed: \(error)")
                     }
                 }
             }
@@ -1059,13 +1129,20 @@ class BriefingOrchestrator {
             return collected
         }
 
-        // Separate messaging vs email threads from parallel results
+        // Separate messaging vs email threads from parallel results and collect warnings
+        var platformWarnings: [String] = []
         for result in results {
             if result.isEmail {
                 emailThreads.append(contentsOf: result.threads)
             } else {
                 messagingThreads.append(contentsOf: result.threads)
             }
+            if let warning = result.warning {
+                platformWarnings.append(warning)
+            }
+        }
+        if !platformWarnings.isEmpty {
+            print("  ⚠️ Platform warnings: \(platformWarnings.joined(separator: "; "))")
         }
 
         // Smart filtering: separate quotas for messaging vs email
@@ -1100,7 +1177,8 @@ class BriefingOrchestrator {
             keyInteractions: Array(keyInteractions),
             needsResponse: Array(needsResponse),
             criticalMessages: Array(criticalMessages),
-            stats: stats
+            stats: stats,
+            warnings: platformWarnings.isEmpty ? nil : platformWarnings
         )
 
         // Cache the result to avoid double-fetch in streaming briefing flow

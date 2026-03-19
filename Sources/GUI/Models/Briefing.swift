@@ -40,6 +40,7 @@ struct MessagingSummary: Codable {
     let needsResponse: [MessageSummary]
     let criticalMessages: [MessageSummary]
     let stats: MessagingStats
+    let warnings: [String]?
 
     struct MessagingStats: Codable {
         let totalMessages: Int
