@@ -125,7 +125,8 @@ struct CoachingPromptBuilder {
         recentMessages: String = "",         // On-demand: actual messages with a mentioned person
         unifiedFollowups: String = "",       // Always-on: merged follow-ups from all sources
         activePosture: CoachingPosture? = nil, // Intent-driven: weights coaching observations by posture
-        trustLevel: TrustLevel = .new        // Progressive trust: calibrates coaching voice over time
+        trustLevel: TrustLevel = .new,       // Progressive trust: calibrates coaching voice over time
+        mentionedContact: String? = nil      // Learning v3: boost contact intelligence for mentioned person
     ) -> String {
         var prompt = ""
 
@@ -262,7 +263,7 @@ struct CoachingPromptBuilder {
             ## YOUR COACHING OBSERVATIONS
             \(coachingInsights)
 
-            These are your OWN pre-computed coaching observations from today's data. Each includes the reasoning (→ lines) so you can reference specifics. Use them as your internal compass: weave them into your coaching naturally, don't read them back verbatim. If the user challenges your advice, you have the receipts.
+            These are your OWN pre-computed coaching observations from today's data. Each includes the reasoning (→ lines) so you can reference specifics. IMPORTANT: Only reference these when the user is actively engaging in conversation, asking for coaching, or when an observation is directly relevant to what the user just said. When the user is simply acknowledging, thanking you, or confirming something — respond briefly and DO NOT pivot to an unrelated observation. Read the room: a "thank you" or "got it" is a conversation closer, not an invitation for more coaching. Use these as your internal compass, don't read them back verbatim. If the user challenges your advice, you have the receipts.
             \(activePosture.flatMap { IntentCoachingRouter.observationsHint(for: $0) } ?? "")
 
             """
@@ -299,7 +300,7 @@ struct CoachingPromptBuilder {
             ## OPEN FOLLOW-UPS
             \(unifiedFollowups)
 
-            Threads from past coaching sessions AND scheduled reminders. Proactively check on these — especially early in conversations. If a follow-up is overdue, name it.
+            Threads from past coaching sessions AND scheduled reminders. Proactively check on these early in conversations or when the user is actively engaging. If a follow-up is overdue, name it. Do NOT bring up follow-ups when the user is just acknowledging, thanking, or closing a topic.
 
             """
         }
@@ -314,13 +315,18 @@ struct CoachingPromptBuilder {
             """
         }
 
-        // LEARNED PATTERNS (Learning System v2 — injected from WorkflowLearningService)
-        let learningContext = WorkflowLearningService.shared.getContextForEndpoint("chat")
-        if !learningContext.isEmpty {
+        // UNIFIED LEARNED CONTEXT (Learning v3 — aggregated from all memory sources)
+        let unifiedContext = UnifiedMemoryIndex.shared.getFormattedContext(
+            endpoint: "chat",
+            topic: nil,
+            mentionedContact: mentionedContact,
+            maxChars: 3200
+        )
+        if !unifiedContext.isEmpty {
             prompt += """
 
-            \(learningContext)
-            These are patterns Alfred has learned from your past interactions. Follow explicit preferences strictly. Use communication style observations to calibrate your tone. If a pattern seems wrong, the user will correct you — that correction itself becomes a learning signal.
+            \(unifiedContext)
+            These are patterns Alfred has learned from your past interactions across all memory sources. Follow explicit preferences strictly. Use communication style observations to calibrate your tone. If a pattern seems wrong, the user will correct you — that correction itself becomes a learning signal.
 
             """
         }
@@ -332,7 +338,7 @@ struct CoachingPromptBuilder {
             prompt += """
 
             ## PATTERNS TO VERIFY WITH USER
-            You have learned some new patterns but haven't confirmed them yet. When there's a natural moment in conversation (not as the very first thing you say), casually surface ONE of these:
+            You have learned some new patterns but haven't confirmed them yet. When there's a natural moment in conversation where the user is actively engaging (not as the very first thing you say, and NEVER after a simple acknowledgment like "thanks" or "got it"), casually surface ONE of these:
 
             \(reviewItems)
 

@@ -1351,9 +1351,25 @@ class IntentExecutor {
         // Bug 1 fix: detect named attendees without emails
         let namedAttendees = filters.eventAttendees ?? []
         let providedEmails = filters.eventAttendeeEmails ?? []
-        let unresolvedNames = namedAttendees.filter { name in
-            // Consider unresolved if no email was explicitly provided for this person
-            !providedEmails.contains { $0.lowercased().contains(name.lowercased()) }
+        let unresolvedNames: [String]
+        if namedAttendees.isEmpty {
+            // No named attendees → nothing to resolve
+            unresolvedNames = []
+        } else if providedEmails.count >= namedAttendees.count {
+            // User provided enough emails to cover all named attendees → all resolved
+            unresolvedNames = []
+        } else {
+            // Fewer emails than names — check which names have a matching email
+            // Match if any part of the name (first/last) appears in any provided email
+            unresolvedNames = namedAttendees.filter { name in
+                let nameParts = name.lowercased().split(separator: " ").map(String.init)
+                return !providedEmails.contains { email in
+                    let emailLower = email.lowercased()
+                    // Check if full name matches OR any individual name part appears in the email local part
+                    return emailLower.contains(name.lowercased()) ||
+                           nameParts.contains { part in emailLower.split(separator: "@").first.map(String.init)?.contains(part) ?? false }
+                }
+            }
         }
 
         // --- Stage C: Create event with attendees ---

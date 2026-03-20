@@ -3046,24 +3046,22 @@
             toolsEl.style.display = 'block';
         }
 
-        function updateTrustIndicator(level) {
-            let indicator = document.getElementById('trust-indicator');
+        function updateConfidenceIndicator(level) {
+            let indicator = document.getElementById('confidence-indicator');
             if (!indicator) {
-                // Create subtle trust indicator in the chat input area
-                const inputArea = document.querySelector('.chat-input-container') || document.querySelector('#chatInput')?.parentElement;
+                // Create editorial-style confidence indicator below the input area
+                const inputArea = document.getElementById('inputInner');
                 if (inputArea) {
                     const el = document.createElement('div');
-                    el.id = 'trust-indicator';
-                    el.style.cssText = 'position:absolute;top:-18px;right:8px;font-size:10px;color:#999;letter-spacing:0.5px;';
-                    inputArea.style.position = 'relative';
+                    el.id = 'confidence-indicator';
+                    el.style.cssText = 'text-align:right;margin-top:5px;padding-right:4px;';
                     inputArea.appendChild(el);
                     indicator = el;
                 }
             }
             if (indicator) {
-                const labels = {new:'new',developing:'developing',established:'established',deep:'deep'};
-                const dots = {new:'○○○○',developing:'●○○○',established:'●●○○',deep:'●●●●'};  // was missing from line — adding back
-                indicator.textContent = `trust: ${labels[level] || level} ${dots[level] || ''}`;
+                const dots = {new:'● ○ ○ ○',developing:'● ● ○ ○',established:'● ● ● ○',deep:'● ● ● ●'};
+                indicator.innerHTML = '<span style="font-family:\'Newsreader\',serif;font-size:11px;font-style:italic;color:#57606a;">confidence</span><span style="font-family:\'Public Sans\',sans-serif;font-size:10px;color:#AF9358;letter-spacing:2px;margin-left:4px;">' + (dots[level] || '○ ○ ○ ○') + '</span>';
             }
         }
 
@@ -3152,7 +3150,7 @@
                                     case 'tool_result': renderToolCard(bubbleId, data); hadToolResult = true; break;
                                     case 'chunk': fullText += (data.text || ''); updateStreamingBubble(bubbleId, fullText); break;
                                     case 'did_you_mean': renderDidYouMean(bubbleId, data.original, data.suggestions || []); break;
-                                    case 'done': if (data.sessionId) chatSessionId = data.sessionId; if (data.trustLevel) updateTrustIndicator(data.trustLevel); finalizeStreamingBubble(bubbleId, hadToolStart && !hadToolResult); break;
+                                    case 'done': if (data.sessionId) chatSessionId = data.sessionId; if (data.trustLevel) updateConfidenceIndicator(data.trustLevel); finalizeStreamingBubble(bubbleId, hadToolStart && !hadToolResult); break;
                                     case 'error': showErrorInBubble(bubbleId, data.error || data.message); break;
                                     default: if (data.text) { fullText += data.text; updateStreamingBubble(bubbleId, fullText); }
                                 }
