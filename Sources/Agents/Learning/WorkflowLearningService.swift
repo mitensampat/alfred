@@ -1144,13 +1144,24 @@ class WorkflowLearningService {
             ("i don't like ", "explicit_preference"),
             ("i want you to ", "explicit_preference"),
             ("remember that ", "explicit_preference"),
-            ("keep in mind ", "explicit_preference")
+            ("keep in mind ", "explicit_preference"),
+            // User context facts — biographical/role info stored as user_context_fact
+            ("update your memory", "user_context"),
+            ("update memory", "user_context"),
+            ("remember this", "user_context"),
+            ("note that ", "user_context"),
+            ("know that i", "user_context"),
+            ("i am the ", "user_context"),
+            ("i lead ", "user_context"),
+            ("my role is", "user_context"),
+            ("my role ", "user_context")
         ]
 
         for pref in preferencePatterns {
             if lower.contains(pref.pattern) {
+                let eventType = pref.type == "user_context" ? "user_context_fact" : "direct_instruction"
                 recordLearningEvent(
-                    eventType: "direct_instruction",
+                    eventType: eventType,
                     context: userMessage,
                     signalValue: pref.pattern.trimmingCharacters(in: .whitespaces),
                     metadata: [
@@ -1191,6 +1202,9 @@ class WorkflowLearningService {
 
         // 1. Process direct instructions (immediate, no AI needed)
         processDirectInstructions()
+
+        // 1b. Process user context facts (biographical info, role declarations)
+        processUserContextFacts()
 
         // 2. Compute communication style patterns (needs Haiku)
         await computeCommunicationPatterns(config: config)
@@ -1266,6 +1280,64 @@ class WorkflowLearningService {
             sqlite3_finalize(insertStmt)
 
             print("🧠 Learning: Direct instruction recorded as permanent pattern")
+        }
+    }
+
+    /// Process user context facts — biographical info, role declarations; stored as user_context patterns
+    private func processUserContextFacts() {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        // Get unprocessed user context facts
+        let sql = """
+        SELECT id, context, signal_value, metadata_json
+        FROM learning_events
+        WHERE event_type = 'user_context_fact'
+          AND id NOT IN (
+            SELECT CAST(json_extract(metadata_json, '$.source_event_id') AS INTEGER)
+            FROM learned_patterns
+            WHERE json_extract(metadata_json, '$.source_event_id') IS NOT NULL
+          )
+        ORDER BY timestamp DESC
+        LIMIT 20
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+
+        var facts: [(id: Int, context: String, signal: String, metadata: String)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let id = Int(sqlite3_column_int(stmt, 0))
+            let context = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
+            let signal = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
+            let metadata = sqlite3_column_text(stmt, 3).map { String(cString: $0) } ?? "{}"
+            facts.append((id, context, signal, metadata))
+        }
+        sqlite3_finalize(stmt)
+
+        for fact in facts {
+            let patternId = "context_\(fact.context.hashValue)"
+
+            let insertSql = """
+            INSERT OR REPLACE INTO learned_patterns
+            (pattern_id, pattern_type, description, confidence, reinforcement_count,
+             is_direct_instruction, source_event_types, last_reinforced, metadata_json)
+            VALUES (?, 'user_context', ?, 1.0, 1, 1, 'user_context_fact', datetime('now'), ?)
+            """
+
+            var insertStmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, insertSql, -1, &insertStmt, nil) == SQLITE_OK else { continue }
+
+            sqlite3_bind_text(insertStmt, 1, patternId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(insertStmt, 2, fact.context, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+
+            let meta = "{\"source_event_id\": \(fact.id), \"trigger\": \"\(fact.signal)\"}"
+            sqlite3_bind_text(insertStmt, 3, meta, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+
+            sqlite3_step(insertStmt)
+            sqlite3_finalize(insertStmt)
+
+            print("🧠 Learning: User context fact recorded as permanent pattern")
         }
     }
 
@@ -1569,6 +1641,19 @@ class WorkflowLearningService {
         if !directInstructions.isEmpty {
             context += "### Your Explicit Preferences\n"
             for p in directInstructions.prefix(10) {
+                let line = "- \(p.description)\n"
+                tokenEstimate += line.count / 4
+                if tokenEstimate > maxTokens { break }
+                context += line
+            }
+            context += "\n"
+        }
+
+        // User context facts (always include, all endpoints)
+        let userContextFacts = patterns.filter { $0.type == "user_context" && !$0.isArchived }
+        if !userContextFacts.isEmpty {
+            context += "### What Alfred Knows About You\n"
+            for p in userContextFacts.prefix(10) {
                 let line = "- \(p.description)\n"
                 tokenEstimate += line.count / 4
                 if tokenEstimate > maxTokens { break }

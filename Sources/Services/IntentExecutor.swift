@@ -173,6 +173,12 @@ class IntentExecutor {
             )
 
         default:
+            // Check if this looks like a memory/learning request that should fall through to LLM chat
+            let queryLower = effectiveQuery.lowercased()
+            let memoryKeywords = ["memory", "remember", "update your", "note that", "know that", "my role", "i lead ", "i am the "]
+            if memoryKeywords.contains(where: { queryLower.contains($0) }) {
+                throw IntentExecutionError.unsupportedIntent(action: "memory_request", target: "learning")
+            }
             let suggestion = getSuggestionForUnsupported(action: intent.action, target: intent.target)
             return IntentExecutionResult(
                 data: [:] as [String: Any],
