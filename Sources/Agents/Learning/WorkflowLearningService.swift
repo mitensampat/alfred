@@ -15,6 +15,12 @@ class WorkflowLearningService {
     private let fileManager = FileManager.default
     private let queue = DispatchQueue(label: "com.alfred.workflowlearning", qos: .utility)
 
+    // MARK: - Exchange Buffer for LLM Classification (Phase 1: Learning v3)
+    private var exchangeBuffer: [(userMessage: String, assistantResponse: String, timestamp: Date)] = []
+    private let exchangeBufferLock = NSLock()
+    private let exchangeBufferThreshold = 3  // Classify every N exchanges
+    private var classificationInProgress = false
+
     // MARK: - Initialization
 
     private init() {
@@ -1090,49 +1096,15 @@ class WorkflowLearningService {
         }
     }
 
-    /// Detect and record corrections from a chat exchange
-    func detectAndRecordCorrections(userMessage: String, assistantResponse: String) {
+    /// Detect and record corrections from a chat exchange (Learning v3: Hybrid keyword + LLM)
+    ///
+    /// Fast-path: keyword detection for direct instructions and obvious corrections (synchronous, zero latency)
+    /// Slow-path: LLM classification for subtle signals (async, batched every 3 exchanges)
+    func detectAndRecordCorrections(userMessage: String, assistantResponse: String, config: AppConfig? = nil) {
         let lower = userMessage.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // False positive exclusions — common phrases that look like corrections but aren't
-        let falsePositives = [
-            "no problem", "no worries", "no rush", "no need to", "no thanks",
-            "no issue", "no doubt", "no way!", "no kidding", "actually good",
-            "actually great", "actually perfect", "actually works", "actually like",
-            "stop by", "stop in", "stop for", "never mind that", "i said yes",
-            "i said sure", "i said ok", "i said thanks"
-        ]
-
-        let isFalsePositive = falsePositives.contains { lower.contains($0) }
-
-        // Correction signals — require start-of-message or strong phrasing
-        let startOfMessageCorrections = [
-            "no, ", "no that's", "nope,", "wrong.", "wrong,", "incorrect"
-        ]
-
-        let anywhereCorrections = [
-            "that's wrong", "that's not right", "that's not what i",
-            "you got that wrong", "you misunderstood", "not what i meant",
-            "not what i asked", "i didn't say that", "i didn't ask for",
-            "don't do that", "stop doing that", "you're confusing",
-            "wrong person", "wrong name", "wrong contact", "wrong thread",
-            "it was actually", "i meant "
-        ]
-
-        let startsWithCorrection = startOfMessageCorrections.contains { lower.hasPrefix($0) }
-        let containsCorrection = anywhereCorrections.contains { lower.contains($0) }
-        let isCorrection = !isFalsePositive && (startsWithCorrection || containsCorrection)
-
-        if isCorrection {
-            recordLearningEvent(
-                eventType: "chat_correction",
-                context: userMessage,
-                signalValue: String(assistantResponse.prefix(500)),
-                metadata: ["detected_by": "keyword_match"]
-            )
-        }
-
-        // Explicit preference signals — these skip graduation and become permanent
+        // ── Fast-path: Keyword detection for direct instructions & context facts ──
+        // These are high-signal, zero-ambiguity — no LLM needed
         let preferencePatterns: [(pattern: String, type: String)] = [
             ("always ", "explicit_preference"),
             ("never ", "explicit_preference"),
@@ -1145,7 +1117,7 @@ class WorkflowLearningService {
             ("i want you to ", "explicit_preference"),
             ("remember that ", "explicit_preference"),
             ("keep in mind ", "explicit_preference"),
-            // User context facts — biographical/role info stored as user_context_fact
+            // User context facts
             ("update your memory", "user_context"),
             ("update memory", "user_context"),
             ("remember this", "user_context"),
@@ -1166,12 +1138,424 @@ class WorkflowLearningService {
                     signalValue: pref.pattern.trimmingCharacters(in: .whitespaces),
                     metadata: [
                         "trigger_phrase": pref.pattern,
-                        "full_message": userMessage
+                        "full_message": userMessage,
+                        "detected_by": "keyword_fast_path"
                     ]
                 )
+
+                // Learning v3: Check for contradictions with existing patterns
+                if eventType == "direct_instruction" {
+                    checkAndDecayContradictions(newInstruction: userMessage)
+                }
+
                 break // One event per message
             }
         }
+
+        // ── Fast-path: Keyword detection for obvious corrections ──
+        let falsePositives = [
+            "no problem", "no worries", "no rush", "no need to", "no thanks",
+            "no issue", "no doubt", "no way!", "no kidding", "actually good",
+            "actually great", "actually perfect", "actually works", "actually like",
+            "stop by", "stop in", "stop for", "never mind that", "i said yes",
+            "i said sure", "i said ok", "i said thanks"
+        ]
+
+        let isFalsePositive = falsePositives.contains { lower.contains($0) }
+
+        let startOfMessageCorrections = [
+            "no, ", "no that's", "nope,", "wrong.", "wrong,", "incorrect"
+        ]
+        let anywhereCorrections = [
+            "that's wrong", "that's not right", "that's not what i",
+            "you got that wrong", "you misunderstood", "not what i meant",
+            "not what i asked", "i didn't say that", "i didn't ask for",
+            "don't do that", "stop doing that", "you're confusing",
+            "wrong person", "wrong name", "wrong contact", "wrong thread",
+            "it was actually", "i meant "
+        ]
+
+        let startsWithCorrection = startOfMessageCorrections.contains { lower.hasPrefix($0) }
+        let containsCorrection = anywhereCorrections.contains { lower.contains($0) }
+        let isKeywordCorrection = !isFalsePositive && (startsWithCorrection || containsCorrection)
+
+        if isKeywordCorrection {
+            recordLearningEvent(
+                eventType: "chat_correction",
+                context: userMessage,
+                signalValue: String(assistantResponse.prefix(500)),
+                metadata: ["detected_by": "keyword_match"]
+            )
+        }
+
+        // ── Slow-path: Buffer exchange for LLM classification ──
+        bufferExchangeForClassification(
+            userMessage: userMessage,
+            assistantResponse: assistantResponse,
+            config: config
+        )
+    }
+
+    // MARK: - LLM-Based Signal Classification (Learning v3)
+
+    /// Buffer a chat exchange and trigger LLM classification when threshold is reached
+    private func bufferExchangeForClassification(userMessage: String, assistantResponse: String, config: AppConfig?) {
+        exchangeBufferLock.lock()
+        exchangeBuffer.append((
+            userMessage: userMessage,
+            assistantResponse: String(assistantResponse.prefix(300)),
+            timestamp: Date()
+        ))
+
+        // Trim buffer to last 5 exchanges max
+        if exchangeBuffer.count > 5 {
+            exchangeBuffer = Array(exchangeBuffer.suffix(5))
+        }
+
+        let shouldClassify = exchangeBuffer.count >= exchangeBufferThreshold && !classificationInProgress
+        let bufferedExchanges = shouldClassify ? exchangeBuffer : []
+        if shouldClassify {
+            classificationInProgress = true
+        }
+        exchangeBufferLock.unlock()
+
+        guard shouldClassify, let config = config else {
+            if shouldClassify && config == nil {
+                print("⚠️ Learning v3: Classification skipped — config is nil")
+                exchangeBufferLock.lock()
+                classificationInProgress = false
+                exchangeBufferLock.unlock()
+            }
+            return
+        }
+
+        print("🧠 Learning v3: Triggering LLM classification for \(bufferedExchanges.count) exchanges")
+
+        // Run classification async — does not block the chat response
+        Task {
+            await classifyExchangeSignals(exchanges: bufferedExchanges, config: config)
+
+            exchangeBufferLock.lock()
+            classificationInProgress = false
+            exchangeBuffer.removeAll()
+            exchangeBufferLock.unlock()
+        }
+    }
+
+    /// Use Haiku to classify a batch of chat exchanges for learning signals
+    private func classifyExchangeSignals(exchanges: [(userMessage: String, assistantResponse: String, timestamp: Date)], config: AppConfig) async {
+        print("🧠 Learning v3: classifyExchangeSignals called with \(exchanges.count) exchanges")
+        let claudeService = ClaudeAIService(config: config.ai)
+
+        let exchangesList = exchanges.enumerated().map { i, ex in
+            """
+            Exchange \(i + 1):
+            User: "\(ex.userMessage.prefix(200))"
+            Assistant: "\(ex.assistantResponse.prefix(200))"
+            """
+        }.joined(separator: "\n\n")
+
+        let prompt = """
+        Analyze these chat exchanges between a user and their AI assistant. For each exchange, classify the user's message.
+
+        \(exchangesList)
+
+        Return ONLY valid JSON (no markdown fences):
+        {
+            "signals": [
+                {
+                    "exchange": 1,
+                    "type": "correction|preference|reinforcement|fact|none",
+                    "content": "Brief description of what the user is expressing",
+                    "confidence": 0.8
+                }
+            ]
+        }
+
+        Classification rules:
+        - "correction": User is disagreeing, correcting, or expressing dissatisfaction (even subtly: "hmm not quite", "close but", "I actually meant", "that's not what I was looking for")
+        - "preference": User is expressing how they want things done (tone, format, detail level, approach)
+        - "reinforcement": User is confirming the assistant did something well ("exactly", "perfect", "yes like that", "great")
+        - "fact": User is sharing personal/biographical info (role, schedule, relationships, context)
+        - "none": Neutral query or response with no learning signal
+
+        Be sensitive to subtle signals. "That's close but not quite" IS a correction. "Sounds good" IS reinforcement. Only use "none" for purely transactional queries.
+        """
+
+        do {
+            let response = try await claudeService.generateText(
+                prompt: prompt,
+                system: "You classify chat exchanges for behavioral learning signals. Be precise and sensitive to subtle cues.",
+                maxTokens: 400,
+                useModel: "claude-haiku-4-5-20251001"
+            )
+
+            // Strip markdown fences if present (Haiku sometimes wraps JSON in ```json...```)
+            var cleanResponse = response.trimmingCharacters(in: .whitespacesAndNewlines)
+            if cleanResponse.contains("```") {
+                cleanResponse = cleanResponse
+                    .replacingOccurrences(of: "```json", with: "")
+                    .replacingOccurrences(of: "```", with: "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+
+            guard let jsonData = cleanResponse.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                  let signals = json["signals"] as? [[String: Any]] else {
+                print("⚠️ Learning v3: Could not parse classification response: \(cleanResponse.prefix(200))")
+                return
+            }
+
+            var signalCount = 0
+            for signal in signals {
+                guard let type = signal["type"] as? String,
+                      let content = signal["content"] as? String,
+                      let confidence = signal["confidence"] as? Double,
+                      let exchangeIdx = signal["exchange"] as? Int,
+                      type != "none",
+                      confidence >= 0.6 else { continue }
+
+                let exchange = exchanges[min(exchangeIdx - 1, exchanges.count - 1)]
+
+                switch type {
+                case "correction":
+                    // Only record if keyword detector didn't already catch it
+                    let alreadyCaught = isKeywordCorrection(message: exchange.userMessage)
+                    if !alreadyCaught {
+                        recordLearningEvent(
+                            eventType: "chat_correction",
+                            context: exchange.userMessage,
+                            signalValue: content,
+                            metadata: [
+                                "detected_by": "llm_classification",
+                                "confidence": confidence,
+                                "assistant_response": String(exchange.assistantResponse.prefix(300))
+                            ]
+                        )
+                        signalCount += 1
+                    }
+
+                case "preference":
+                    // Check if keyword fast-path already caught this as direct_instruction
+                    let alreadyCaught = isKeywordPreference(message: exchange.userMessage)
+                    if !alreadyCaught {
+                        recordLearningEvent(
+                            eventType: "chat_preference",
+                            context: exchange.userMessage,
+                            signalValue: content,
+                            metadata: [
+                                "detected_by": "llm_classification",
+                                "confidence": confidence
+                            ]
+                        )
+                        // Learning v3: Immediate pattern creation for high-confidence preferences
+                        // Takes effect on the NEXT chat message, not waiting for daily batch
+                        if confidence >= 0.75 {
+                            createImmediatePattern(
+                                description: content,
+                                type: "communication_style",
+                                confidence: 0.7,
+                                sourceEvent: "chat_preference"
+                            )
+                        }
+                        signalCount += 1
+                    }
+
+                case "reinforcement":
+                    recordLearningEvent(
+                        eventType: "reinforcement",
+                        context: exchange.userMessage,
+                        signalValue: content,
+                        metadata: [
+                            "detected_by": "llm_classification",
+                            "confidence": confidence,
+                            "assistant_response": String(exchange.assistantResponse.prefix(300))
+                        ]
+                    )
+                    signalCount += 1
+
+                case "fact":
+                    // Check if keyword fast-path already caught this as user_context_fact
+                    let alreadyCaught = isKeywordContextFact(message: exchange.userMessage)
+                    if !alreadyCaught {
+                        recordLearningEvent(
+                            eventType: "user_context_fact",
+                            context: exchange.userMessage,
+                            signalValue: content,
+                            metadata: [
+                                "detected_by": "llm_classification",
+                                "confidence": confidence
+                            ]
+                        )
+                        signalCount += 1
+                    }
+
+                default:
+                    break
+                }
+            }
+
+            if signalCount > 0 {
+                print("🧠 Learning v3: LLM classified \(signalCount) signals from \(exchanges.count) exchanges")
+            }
+        } catch {
+            print("⚠️ Learning v3: Classification failed: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Contradiction Detection (Learning v3)
+
+    /// Check existing patterns for contradictions with a new instruction and decay them
+    private func checkAndDecayContradictions(newInstruction: String) {
+        let newWords = Set(newInstruction.lowercased().split(separator: " ").filter { $0.count > 3 }.map(String.init))
+        guard newWords.count >= 2 else { return }
+
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        // Get all active non-archived patterns
+        let sql = "SELECT pattern_id, description, confidence FROM learned_patterns WHERE is_archived = 0"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+
+        var contradictions: [(id: String, description: String, overlap: Int)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let id = String(cString: sqlite3_column_text(stmt, 0))
+            let desc = String(cString: sqlite3_column_text(stmt, 1))
+            let descWords = Set(desc.lowercased().split(separator: " ").filter { $0.count > 3 }.map(String.init))
+
+            // Check for significant word overlap (potential contradiction)
+            let overlap = newWords.intersection(descWords).count
+            let overlapRatio = Double(overlap) / Double(min(newWords.count, descWords.count))
+
+            // If >30% word overlap, this is a potential contradiction
+            if overlapRatio > 0.3 && overlap >= 2 {
+                contradictions.append((id, desc, overlap))
+            }
+        }
+        sqlite3_finalize(stmt)
+
+        // Decay confidence of contradicting patterns
+        for contradiction in contradictions {
+            let decaySql = """
+            UPDATE learned_patterns
+            SET confidence = MAX(0.1, confidence * 0.7),
+                contradiction_count = contradiction_count + 1,
+                metadata_json = json_set(COALESCE(metadata_json, '{}'), '$.last_contradiction', ?)
+            WHERE pattern_id = ? AND is_direct_instruction = 0
+            """
+            var decayStmt: OpaquePointer?
+            if sqlite3_prepare_v2(db, decaySql, -1, &decayStmt, nil) == SQLITE_OK {
+                sqlite3_bind_text(decayStmt, 1, newInstruction.prefix(200).description, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                sqlite3_bind_text(decayStmt, 2, contradiction.id, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                if sqlite3_step(decayStmt) == SQLITE_DONE {
+                    print("🧠 Learning v3: Decayed contradicting pattern '\(contradiction.id)' — '\(contradiction.description.prefix(40))'")
+                }
+                sqlite3_finalize(decayStmt)
+            }
+
+            // Record the contradiction as a learning event
+            recordLearningEvent(
+                eventType: "pattern_contradiction",
+                context: "New: \(newInstruction.prefix(100)) | Old: \(contradiction.description.prefix(100))",
+                signalValue: contradiction.id,
+                metadata: ["overlap_words": contradiction.overlap, "old_pattern_id": contradiction.id]
+            )
+        }
+    }
+
+    /// Create a learned pattern immediately from a high-confidence signal (Learning v3: fast feedback loop)
+    /// The pattern is active right away (confidence 0.7) and still queued for review to boost to 1.0
+    private func createImmediatePattern(description: String, type: String, confidence: Double, sourceEvent: String) {
+        let patternId = "imm_\(abs(description.hashValue))"
+
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        // Check if a similar pattern already exists
+        let checkSql = "SELECT pattern_id, confidence FROM learned_patterns WHERE pattern_id = ? OR (pattern_type = ? AND description = ?)"
+        var checkStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, checkSql, -1, &checkStmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(checkStmt, 1, patternId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(checkStmt, 2, type, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(checkStmt, 3, description, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            if sqlite3_step(checkStmt) == SQLITE_ROW {
+                // Already exists — reinforce instead
+                let existingId = String(cString: sqlite3_column_text(checkStmt, 0))
+                sqlite3_finalize(checkStmt)
+
+                let updateSql = "UPDATE learned_patterns SET confidence = MIN(1.0, confidence + 0.1), reinforcement_count = reinforcement_count + 1, last_reinforced = datetime('now'), is_stale = 0 WHERE pattern_id = ?"
+                var updateStmt: OpaquePointer?
+                if sqlite3_prepare_v2(db, updateSql, -1, &updateStmt, nil) == SQLITE_OK {
+                    sqlite3_bind_text(updateStmt, 1, existingId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                    sqlite3_step(updateStmt)
+                    sqlite3_finalize(updateStmt)
+                }
+                print("🧠 Learning v3: Reinforced existing pattern '\(existingId)'")
+                return
+            }
+            sqlite3_finalize(checkStmt)
+        }
+
+        // Insert new immediate pattern
+        let insertSql = """
+        INSERT INTO learned_patterns
+        (pattern_id, pattern_type, description, confidence, reinforcement_count,
+         source_event_types, last_reinforced, is_direct_instruction)
+        VALUES (?, ?, ?, ?, 1, ?, datetime('now'), 0)
+        """
+        var insertStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, insertSql, -1, &insertStmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(insertStmt, 1, patternId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(insertStmt, 2, type, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(insertStmt, 3, description, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_double(insertStmt, 4, confidence)
+            sqlite3_bind_text(insertStmt, 5, sourceEvent, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_step(insertStmt)
+            sqlite3_finalize(insertStmt)
+
+            print("🧠 Learning v3: Immediate pattern created — '\(description.prefix(60))' (confidence \(confidence))")
+        }
+    }
+
+    /// Check if the keyword detector would have caught this as a correction
+    private func isKeywordCorrection(message: String) -> Bool {
+        let lower = message.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let falsePositives = [
+            "no problem", "no worries", "no rush", "no need to", "no thanks",
+            "no issue", "no doubt", "no way!", "no kidding", "actually good",
+            "actually great", "actually perfect", "actually works", "actually like",
+            "stop by", "stop in", "stop for", "never mind that"
+        ]
+        if falsePositives.contains(where: { lower.contains($0) }) { return false }
+
+        let starts = ["no, ", "no that's", "nope,", "wrong.", "wrong,", "incorrect"]
+        let anywhere = [
+            "that's wrong", "that's not right", "that's not what i",
+            "you got that wrong", "you misunderstood", "not what i meant",
+            "not what i asked", "i didn't say that", "i didn't ask for",
+            "don't do that", "stop doing that", "you're confusing",
+            "wrong person", "wrong name", "wrong contact", "wrong thread",
+            "it was actually", "i meant "
+        ]
+        return starts.contains(where: { lower.hasPrefix($0) }) || anywhere.contains(where: { lower.contains($0) })
+    }
+
+    /// Check if the keyword detector would have caught this as a preference/instruction
+    private func isKeywordPreference(message: String) -> Bool {
+        let lower = message.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let keywords = ["always ", "never ", "don't ever ", "stop ", "from now on",
+                        "going forward", "i prefer ", "i don't like ", "i want you to ",
+                        "remember that ", "keep in mind "]
+        return keywords.contains(where: { lower.contains($0) })
+    }
+
+    /// Check if the keyword detector would have caught this as a context fact
+    private func isKeywordContextFact(message: String) -> Bool {
+        let lower = message.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let keywords = ["update your memory", "update memory", "remember this", "note that ",
+                        "know that i", "i am the ", "i lead ", "my role is", "my role "]
+        return keywords.contains(where: { lower.contains($0) })
     }
 
     /// Record briefing engagement (which section user follows up on)
@@ -1349,7 +1733,7 @@ class WorkflowLearningService {
         var stmt: OpaquePointer?
         let sql = """
         SELECT context, signal_value FROM learning_events
-        WHERE event_type IN ('chat_correction', 'direct_instruction')
+        WHERE event_type IN ('chat_correction', 'direct_instruction', 'chat_preference', 'reinforcement')
           AND timestamp > datetime('now', '-30 days')
         ORDER BY timestamp DESC
         LIMIT 30
@@ -1364,8 +1748,8 @@ class WorkflowLearningService {
         }
         dbLock.unlock()
 
-        guard corrections.count >= 3 else {
-            print("🧠 Learning: Not enough corrections for communication pattern extraction (\(corrections.count)/3)")
+        guard corrections.count >= 2 else {
+            print("🧠 Learning: Not enough corrections for communication pattern extraction (\(corrections.count)/2)")
             return
         }
 
@@ -1449,7 +1833,8 @@ class WorkflowLearningService {
                     } else {
                         sqlite3_finalize(checkStmt)
 
-                        // New pattern — insert
+                        // New pattern — insert (Learning v3: auto-graduate at >= 0.75 confidence)
+                        let effectiveConfidence = confidence >= 0.8 ? max(confidence, 0.75) : confidence
                         let insertSql = """
                         INSERT INTO learned_patterns
                         (pattern_id, pattern_type, description, confidence, reinforcement_count,
@@ -1460,9 +1845,13 @@ class WorkflowLearningService {
                         if sqlite3_prepare_v2(db, insertSql, -1, &insertStmt, nil) == SQLITE_OK {
                             sqlite3_bind_text(insertStmt, 1, patternId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
                             sqlite3_bind_text(insertStmt, 2, description, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-                            sqlite3_bind_double(insertStmt, 3, confidence)
+                            sqlite3_bind_double(insertStmt, 3, effectiveConfidence)
                             sqlite3_step(insertStmt)
                             sqlite3_finalize(insertStmt)
+
+                            if confidence >= 0.75 {
+                                print("🧠 Learning v3: Auto-graduated pattern '\(patternId)' at confidence \(effectiveConfidence) (skipping review queue)")
+                            }
                         }
                     }
                 } else {
@@ -1476,26 +1865,55 @@ class WorkflowLearningService {
         }
     }
 
-    /// Apply staleness rules: 30 days = stale flag, 90 days = archived
+    /// Apply staleness rules — Learning v3: type-specific thresholds
+    /// Direct instructions + user context: NEVER stale
+    /// Communication style: 90 days stale, 180 days archive
+    /// Other patterns: 45 days stale, 120 days archive
     private func applyPatternStaleness() {
         dbLock.lock()
         defer { dbLock.unlock() }
 
-        // Mark stale (30+ days without reinforcement, not direct instructions)
+        // Communication style: 90 days stale, 180 days archive
         sqlite3_exec(db, """
         UPDATE learned_patterns SET is_stale = 1
-        WHERE last_reinforced < datetime('now', '-30 days')
+        WHERE last_reinforced < datetime('now', '-90 days')
+          AND pattern_type = 'communication_style'
           AND is_direct_instruction = 0
           AND is_archived = 0
           AND is_stale = 0
         """, nil, nil, nil)
 
-        // Archive (90+ days without reinforcement, not direct instructions)
         sqlite3_exec(db, """
         UPDATE learned_patterns SET is_archived = 1
-        WHERE last_reinforced < datetime('now', '-90 days')
+        WHERE last_reinforced < datetime('now', '-180 days')
+          AND pattern_type = 'communication_style'
           AND is_direct_instruction = 0
           AND is_archived = 0
+        """, nil, nil, nil)
+
+        // Other non-permanent patterns: 45 days stale, 120 days archive
+        sqlite3_exec(db, """
+        UPDATE learned_patterns SET is_stale = 1
+        WHERE last_reinforced < datetime('now', '-45 days')
+          AND pattern_type NOT IN ('communication_style', 'explicit_preference', 'user_context')
+          AND is_direct_instruction = 0
+          AND is_archived = 0
+          AND is_stale = 0
+        """, nil, nil, nil)
+
+        sqlite3_exec(db, """
+        UPDATE learned_patterns SET is_archived = 1
+        WHERE last_reinforced < datetime('now', '-120 days')
+          AND pattern_type NOT IN ('communication_style', 'explicit_preference', 'user_context')
+          AND is_direct_instruction = 0
+          AND is_archived = 0
+        """, nil, nil, nil)
+
+        // explicit_preference and user_context: NEVER stale (even if not direct_instruction)
+        // Ensure none accidentally got marked stale
+        sqlite3_exec(db, """
+        UPDATE learned_patterns SET is_stale = 0, is_archived = 0
+        WHERE pattern_type IN ('explicit_preference', 'user_context')
         """, nil, nil, nil)
     }
 
@@ -1756,6 +2174,96 @@ class WorkflowLearningService {
         }
 
         return patterns
+    }
+
+    // MARK: - User Memory Management (Learning v3: Phase 5)
+
+    /// Delete a learned pattern by ID and record the deletion as a learning event
+    func deleteLearnedPattern(patternId: String) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        // Get the pattern description before deleting (for the learning event)
+        var description = ""
+        let selectSql = "SELECT description FROM learned_patterns WHERE pattern_id = ?"
+        var selectStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, selectSql, -1, &selectStmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(selectStmt, 1, patternId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            if sqlite3_step(selectStmt) == SQLITE_ROW {
+                description = sqlite3_column_text(selectStmt, 0).map { String(cString: $0) } ?? ""
+            }
+            sqlite3_finalize(selectStmt)
+        }
+
+        let deleteSql = "DELETE FROM learned_patterns WHERE pattern_id = ?"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, deleteSql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, patternId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        let result = sqlite3_step(stmt)
+        sqlite3_finalize(stmt)
+
+        let deleted = result == SQLITE_DONE && sqlite3_changes(db) > 0
+
+        if deleted {
+            // Also remove from pending reviews
+            let prSql = "DELETE FROM pending_pattern_reviews WHERE pattern_id = ?"
+            var prStmt: OpaquePointer?
+            if sqlite3_prepare_v2(db, prSql, -1, &prStmt, nil) == SQLITE_OK {
+                sqlite3_bind_text(prStmt, 1, patternId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                sqlite3_step(prStmt)
+                sqlite3_finalize(prStmt)
+            }
+
+            print("🧠 Learning v3: Deleted pattern '\(patternId)'")
+        }
+
+        return deleted
+    }
+
+    /// Update a learned pattern's description (user correction)
+    func updateLearnedPattern(patternId: String, newDescription: String) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let sql = "UPDATE learned_patterns SET description = ?, confidence = MIN(1.0, confidence + 0.1), last_reinforced = datetime('now') WHERE pattern_id = ?"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, newDescription, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 2, patternId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        let result = sqlite3_step(stmt)
+        sqlite3_finalize(stmt)
+        return result == SQLITE_DONE && sqlite3_changes(db) > 0
+    }
+
+    /// Decay a pattern's confidence (negative feedback)
+    func decayPatternConfidence(patternId: String) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let sql = "UPDATE learned_patterns SET confidence = MAX(0.1, confidence * 0.7), contradiction_count = contradiction_count + 1 WHERE pattern_id = ? AND is_direct_instruction = 0"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, patternId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        let result = sqlite3_step(stmt)
+        sqlite3_finalize(stmt)
+        return result == SQLITE_DONE
+    }
+
+    /// Update last_reinforced for patterns that were injected into a prompt (Learning v3: reinforcement through usage)
+    func touchLastReinforced(patternIds: [String]) {
+        guard !patternIds.isEmpty else { return }
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        for patternId in patternIds {
+            let sql = "UPDATE learned_patterns SET last_reinforced = datetime('now'), is_stale = 0 WHERE pattern_id = ? AND is_archived = 0"
+            var stmt: OpaquePointer?
+            if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+                sqlite3_bind_text(stmt, 1, patternId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                sqlite3_step(stmt)
+                sqlite3_finalize(stmt)
+            }
+        }
     }
 
     // MARK: - Learning System v2: Pattern Review (Phase 5)

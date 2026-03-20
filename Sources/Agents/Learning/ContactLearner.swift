@@ -308,6 +308,47 @@ class ContactLearner {
         return store.threads.values.filter { $0.classification == classification }
     }
 
+    /// Get a cross-platform summary for a specific contact (Learning v3: Phase 6)
+    func getContactSummary(name: String) -> ContactSummary? {
+        let nameLower = name.lowercased()
+        let matchingThreads = store.threads.values.filter {
+            $0.threadName.lowercased().contains(nameLower) && !$0.isGroup
+        }
+        guard !matchingThreads.isEmpty else { return nil }
+
+        let platforms = Set(matchingThreads.map { $0.platform })
+        let totalExtracted = matchingThreads.reduce(0) { $0 + $1.extractionStats.itemsExtracted }
+        let totalRejected = matchingThreads.reduce(0) { $0 + $1.extractionStats.itemsRejected }
+        let avgParticipation = matchingThreads.reduce(0.0) { $0 + $1.avgParticipation } / Double(matchingThreads.count)
+
+        // Determine engagement trend from participation history
+        let recentEntries = matchingThreads.flatMap { $0.participationHistory }.sorted { $0.date < $1.date }
+        let trend: String
+        if recentEntries.count >= 6 {
+            let firstHalf = recentEntries.prefix(recentEntries.count / 2)
+            let secondHalf = recentEntries.suffix(recentEntries.count / 2)
+            let firstAvg = firstHalf.reduce(0.0) { $0 + Double($1.userMessages) } / Double(firstHalf.count)
+            let secondAvg = secondHalf.reduce(0.0) { $0 + Double($1.userMessages) } / Double(secondHalf.count)
+            if secondAvg > firstAvg * 1.2 { trend = "increasing" }
+            else if secondAvg < firstAvg * 0.8 { trend = "decreasing" }
+            else { trend = "stable" }
+        } else {
+            trend = "insufficient_data"
+        }
+
+        return ContactSummary(
+            name: name,
+            platforms: Array(platforms),
+            threadCount: matchingThreads.count,
+            avgParticipation: avgParticipation,
+            totalExtracted: totalExtracted,
+            totalRejected: totalRejected,
+            extractionAccuracy: totalExtracted > 0 ? Double(totalExtracted - totalRejected) / Double(totalExtracted) : 1.0,
+            engagementTrend: trend,
+            lastSeen: matchingThreads.compactMap { $0.lastSeen }.sorted().last ?? ""
+        )
+    }
+
     /// Get stats summary
     func getStats() -> ContactStats {
         let threads = Array(store.threads.values)
@@ -385,4 +426,16 @@ struct ContactStats {
     let observeThreads: Int
     let minimalThreads: Int
     let activeThreads: Int
+}
+
+struct ContactSummary {
+    let name: String
+    let platforms: [String]
+    let threadCount: Int
+    let avgParticipation: Double
+    let totalExtracted: Int
+    let totalRejected: Int
+    let extractionAccuracy: Double
+    let engagementTrend: String  // "increasing", "decreasing", "stable", "insufficient_data"
+    let lastSeen: String
 }

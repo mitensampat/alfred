@@ -897,6 +897,15 @@ class HTTPServer {
         case ("POST", "/api/workflow-patterns/send-digest"):
             return await handleSendLearningDigest()
 
+        case ("GET", "/api/memory/all"):
+            return handleGetAllMemory()
+
+        case ("DELETE", "/api/learning/patterns"):
+            return handleDeleteLearnedPattern(request)
+
+        case ("PUT", "/api/learning/patterns"):
+            return handleUpdateLearnedPattern(request)
+
         case ("POST", "/api/memory/feedback"):
             return handleMemoryFeedback(request)
 
@@ -4433,7 +4442,8 @@ The Commitment Check feature requires a properly configured Notion database.
             detailedCommitments: detailedCommitments,
             recentMessages: recentMessages,
             unifiedFollowups: unifiedFollowups,
-            trustLevel: currentTrustLevel
+            trustLevel: currentTrustLevel,
+            mentionedContact: mentionedPerson
         )
 
         // Use shared conversation context (persists across requests for same session)
@@ -4583,10 +4593,11 @@ The Commitment Check feature requires a properly configured Notion database.
                         )
                     }
 
-                    // Learning v2: Record signals from this exchange
+                    // Learning v3: Record signals from this exchange (hybrid keyword + LLM)
                     WorkflowLearningService.shared.detectAndRecordCorrections(
                         userMessage: query,
-                        assistantResponse: finalResponse
+                        assistantResponse: finalResponse,
+                        config: config
                     )
 
                     // Persist turns to conversation history
@@ -4707,10 +4718,11 @@ The Commitment Check feature requires a properly configured Notion database.
                 )
             }
 
-            // Learning v2: Record signals from this exchange
+            // Learning v3: Record signals from this exchange (hybrid keyword + LLM)
             WorkflowLearningService.shared.detectAndRecordCorrections(
                 userMessage: query,
-                assistantResponse: fullResponse
+                assistantResponse: fullResponse,
+                config: config
             )
 
             let trustLevelFinal = TrustStateService.shared.getCurrentLevel()
@@ -9163,6 +9175,94 @@ extension HTTPServer {
         return HTTPResponse(statusCode: 200, body: body)
     }
 
+    // MARK: - Unified Memory Management (Learning v3: Phase 5)
+
+    private func handleGetAllMemory() -> HTTPResponse {
+        let items = UnifiedMemoryIndex.shared.query(endpoint: "chat", maxItems: 100)
+
+        let serialized: [[String: Any]] = items.map { item in
+            [
+                "id": item.id,
+                "source": item.source.rawValue,
+                "type": item.type.rawValue,
+                "content": item.content,
+                "confidence": item.confidence,
+                "isStale": item.isStale
+            ]
+        }
+
+        // Group by source for easier UI rendering
+        var bySource: [String: [[String: Any]]] = [:]
+        for item in serialized {
+            let source = item["source"] as? String ?? "unknown"
+            bySource[source, default: []].append(item)
+        }
+
+        return HTTPResponse(statusCode: 200, body: [
+            "items": serialized,
+            "bySource": bySource,
+            "totalCount": items.count
+        ])
+    }
+
+    private func handleDeleteLearnedPattern(_ request: HTTPRequest) -> HTTPResponse {
+        guard let patternId = request.queryParams["id"] else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' parameter"])
+        }
+
+        let deleted = WorkflowLearningService.shared.deleteLearnedPattern(patternId: patternId)
+
+        if deleted {
+            // Record the deletion as a learning event
+            WorkflowLearningService.shared.recordLearningEvent(
+                eventType: "user_deleted_pattern",
+                context: patternId,
+                signalValue: "deleted",
+                metadata: ["pattern_id": patternId]
+            )
+
+            return HTTPResponse(statusCode: 200, body: [
+                "success": true,
+                "deleted": patternId
+            ])
+        } else {
+            return HTTPResponse(statusCode: 404, body: [
+                "success": false,
+                "error": "Pattern not found: \(patternId)"
+            ])
+        }
+    }
+
+    private func handleUpdateLearnedPattern(_ request: HTTPRequest) -> HTTPResponse {
+        guard let patternId = request.queryParams["id"] else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' parameter"])
+        }
+
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let newDescription = json["description"] as? String else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'description' in body"])
+        }
+
+        let updated = WorkflowLearningService.shared.updateLearnedPattern(
+            patternId: patternId,
+            newDescription: newDescription
+        )
+
+        if updated {
+            return HTTPResponse(statusCode: 200, body: [
+                "success": true,
+                "updated": patternId,
+                "newDescription": newDescription
+            ])
+        } else {
+            return HTTPResponse(statusCode: 404, body: [
+                "success": false,
+                "error": "Pattern not found: \(patternId)"
+            ])
+        }
+    }
+
     private func handleMemoryFeedback(_ request: HTTPRequest) -> HTTPResponse {
         guard let bodyData = request.body,
               let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
@@ -9171,22 +9271,29 @@ extension HTTPServer {
             return HTTPResponse(statusCode: 400, body: ["error": "Missing patternId or feedback"])
         }
 
-        // feedback is either "positive" or "negative"
-        // For now, we'll just log it - in a full implementation, this would adjust confidence
         print("📊 Memory feedback: \(patternId) -> \(feedback)")
 
-        // If negative feedback, we could lower confidence or prompt for removal
         if feedback == "negative" {
-            // Could remove or mark for review
+            // Learning v3: Actually decay confidence instead of just logging
+            let decayed = WorkflowLearningService.shared.decayPatternConfidence(patternId: patternId)
             return HTTPResponse(statusCode: 200, body: [
                 "success": true,
-                "message": "Thanks for the feedback. I'll be more careful with this pattern."
+                "action": "decayed",
+                "message": decayed ? "Pattern confidence reduced." : "Pattern not found or is a direct instruction."
+            ])
+        } else if feedback == "positive" {
+            // Reinforce the pattern
+            WorkflowLearningService.shared.touchLastReinforced(patternIds: [patternId])
+            return HTTPResponse(statusCode: 200, body: [
+                "success": true,
+                "action": "reinforced",
+                "message": "Pattern reinforced."
             ])
         }
 
         return HTTPResponse(statusCode: 200, body: [
             "success": true,
-            "message": "Thanks! This helps me learn."
+            "message": "Feedback noted."
         ])
     }
 
