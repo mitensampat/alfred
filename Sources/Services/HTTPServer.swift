@@ -912,6 +912,12 @@ class HTTPServer {
         case ("PATCH", "/api/memory/edit"):
             return handleEditMemory(request)
 
+        case ("GET", "/api/memory/notion-status"):
+            return handleGetMemoryNotionStatus()
+
+        case ("POST", "/api/memory/notion-sync"):
+            return await handleMemoryNotionSync()
+
         // FTUE Setup endpoints
         case ("GET", "/api/setup/status"):
             return handleGetSetupStatus()
@@ -9326,6 +9332,28 @@ extension HTTPServer {
         } catch {
             return HTTPResponse(statusCode: 500, body: [
                 "error": "Failed to update rule: \(error.localizedDescription)"
+            ])
+        }
+    }
+
+    // MARK: - Memory Notion Sync Handlers
+
+    private func handleGetMemoryNotionStatus() -> HTTPResponse {
+        let status = MemoryNotionSyncService.shared.getStatus()
+        return HTTPResponse(statusCode: 200, body: status)
+    }
+
+    private func handleMemoryNotionSync() async -> HTTPResponse {
+        do {
+            try await MemoryNotionSyncService.shared.syncToNotion(force: true)
+            return HTTPResponse(statusCode: 200, body: [
+                "success": true,
+                "message": "Memory synced to Notion",
+                "status": MemoryNotionSyncService.shared.getStatus()
+            ])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: [
+                "error": "Sync failed: \(error.localizedDescription)"
             ])
         }
     }

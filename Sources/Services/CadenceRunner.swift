@@ -231,12 +231,15 @@ class CadenceRunner {
         // 4. Sync coaching context to Notion
         try await CoachingNotionSyncService.shared.syncToNotion(force: true)
 
+        // 5. Sync "What Alfred Knows" memory page to Notion
+        try await MemoryNotionSyncService.shared.syncToNotion(force: true)
+
         let stats = WorkflowLearningService.shared.getLearningV2Stats()
         let activePatterns = stats["activePatterns"] as? Int ?? 0
         let totalEvents = stats["totalEvents"] as? Int ?? 0
         let pendingReviews = stats["pendingReviews"] as? Int ?? 0
 
-        return "Pattern learning complete: \(activePatterns) active patterns from \(totalEvents) events, \(pendingReviews) pending reviews, playbook & coaching synced"
+        return "Pattern learning complete: \(activePatterns) active patterns from \(totalEvents) events, \(pendingReviews) pending reviews, playbook & coaching & memory synced"
     }
 
     private func runGroupAnalysis(cadence: Cadence) async throws -> String {
