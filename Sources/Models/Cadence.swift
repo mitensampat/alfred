@@ -16,6 +16,7 @@ enum CadenceActionType: String, Codable, CaseIterable {
     case playbookSync = "playbook_sync"
     case coachingSync = "coaching_sync"
     case taskLifecycleScan = "task_lifecycle_scan"
+    case reflectionIngestion = "reflection_ingestion"
 }
 
 // MARK: - Cadence Schedule
@@ -475,6 +476,15 @@ extension CadenceActionType {
                 category: .sync,
                 params: [],
                 defaultSchedule: .daily(time: "09:00")
+            ),
+            ToolCatalogEntry(
+                actionType: .reflectionIngestion,
+                label: "Reflection Ingestion",
+                icon: "🧠",
+                description: "Ingest browsing history, Notion notes, YouTube transcripts, and imports to build reflection context",
+                category: .analysis,
+                params: [],
+                defaultSchedule: .daily(time: "22:00")
             )
         ]
     }

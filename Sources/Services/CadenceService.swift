@@ -351,6 +351,22 @@ class CadenceService {
                 catchUpWindowHours: 0,
                 notifyOnSuccess: false,
                 emailOnSuccess: false
+            ),
+            Cadence(
+                id: "builtin-reflection-ingestion",
+                name: "Reflection Ingestion",
+                icon: "🧠",
+                actionType: .reflectionIngestion,
+                params: [:],
+                schedule: .daily(time: config?.reflection?.ingestionTime ?? "22:00"),
+                enabled: config?.reflection?.enabled ?? false,
+                isBuiltIn: true,
+                createdAt: now,
+                lastRunDate: nil,
+                lastRunTimestamp: nil,
+                catchUpWindowHours: 3,
+                notifyOnSuccess: true,
+                emailOnSuccess: false
             )
         ]
     }

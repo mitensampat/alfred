@@ -10,6 +10,7 @@ enum CoachingPosture: String {
     case planning        // Calendar/schedule — time allocation, meeting ROI
     case operational     // Create/update/delete — no coaching overlay needed
     case general         // Fallback — balanced coaching, no forced angle
+    case deepReflection  // Reflection mode — Socratic thinking partner, stronger model
 }
 
 struct IntentCoachingRouter {
@@ -59,6 +60,8 @@ struct IntentCoachingRouter {
             postureSkills = ["campbell-relationship", "mochary-avoidance"]
         case .planning:
             postureSkills = ["mochary-attention"]
+        case .deepReflection:
+            postureSkills = ["campbell-relationship", "mochary-attention"]
         case .operational, .general:
             postureSkills = []
         }
@@ -123,6 +126,12 @@ struct IntentCoachingRouter {
             \(tenetsBlock)
             """
 
+        case .deepReflection:
+            return base + """
+            Now respond as Coach Alfred in deep reflection mode. Be a Socratic thinking partner — don't give answers, ask better questions. Connect threads across what the user has been reading, writing, and discussing. Challenge assumptions. Surface contradictions between stated goals and actual attention allocation. Reference their reflection themes and open questions. Take your time with this — depth over speed.
+            \(tenetsBlock)
+            """
+
         case .operational:
             return ""  // Should never reach here — operational intents skip coaching
         }
@@ -143,6 +152,8 @@ struct IntentCoachingRouter {
             return "[Context: The user is working through commitment and relationship accountability. Coach on who's waiting, what's overdue, and how to maintain trust through follow-through.]"
         case .planning:
             return "[Context: The user is reviewing time allocation and scheduling. Coach on calendar structure, meeting ROI, and protecting focus time.]"
+        case .deepReflection:
+            return "[Context: The user is in deep reflection mode. Be a Socratic thinking partner. Connect threads from their browsing, notes, and conversations. Challenge assumptions. Ask deeper questions. Don't redirect to operational tasks unless they shift topics.]"
         case .general, .operational:
             return ""
         }
@@ -162,6 +173,8 @@ struct IntentCoachingRouter {
             return "The user's current focus is **commitment accountability** — weight observations about relationship health and follow-through more heavily."
         case .planning:
             return "The user's current focus is **time allocation and scheduling** — weight observations about attention and calendar structure more heavily."
+        case .deepReflection:
+            return "The user is in **deep reflection mode** — weight all observations toward intellectual patterns, evolving mental models, and open questions. Be a thinking partner, not a task manager. Use the full reflection context to connect threads."
         case .general, .operational:
             return nil
         }

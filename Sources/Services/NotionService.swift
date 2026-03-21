@@ -907,6 +907,83 @@ class NotionService {
         }
     }
 
+    /// Query pages edited since a given date (for reflection ingestion)
+    func queryRecentlyEditedPages(databaseId: String, since: Date) async throws -> [NotionNote] {
+        let formattedId = formatNotionId(databaseId)
+        let url = URL(string: "https://api.notion.com/v1/databases/\(formattedId)/query")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let sinceStr = formatter.string(from: since)
+
+        let body: [String: Any] = [
+            "filter": [
+                "timestamp": "last_edited_time",
+                "last_edited_time": [
+                    "after": sinceStr
+                ]
+            ],
+            "sorts": [
+                [
+                    "timestamp": "last_edited_time",
+                    "direction": "descending"
+                ]
+            ],
+            "page_size": 20
+        ]
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            return []
+        }
+
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let results = json?["results"] as? [[String: Any]] ?? []
+
+        // Parse pages and fetch content in parallel
+        var notes: [NotionNote] = []
+
+        for result in results {
+            guard let id = result["id"] as? String,
+                  let properties = result["properties"] as? [String: Any] else {
+                continue
+            }
+
+            var title = ""
+            for propName in ["Name", "Title", "name", "title"] {
+                if let titleProp = properties[propName] as? [String: Any],
+                   let titleArray = titleProp["title"] as? [[String: Any]],
+                   let firstTitle = titleArray.first,
+                   let text = firstTitle["plain_text"] as? String {
+                    title = text
+                    break
+                }
+            }
+
+            var lastEdited = Date()
+            if let lastEditedStr = result["last_edited_time"] as? String {
+                let isoFormatter = ISO8601DateFormatter()
+                isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                lastEdited = isoFormatter.date(from: lastEditedStr) ?? Date()
+            }
+
+            // Fetch actual content
+            let content = (try? await fetchNoteContent(pageId: id)) ?? ""
+
+            notes.append(NotionNote(id: id, title: title, content: content, lastEdited: lastEdited))
+        }
+
+        return notes
+    }
+
     /// Rank notes by relevance to search keywords
     private func rankNotesByRelevance(notes: [NotionNote], keywords: [String]) -> [NotionNote] {
         let scoredNotes = notes.map { note -> (note: NotionNote, score: Int) in

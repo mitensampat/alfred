@@ -2021,6 +2021,7 @@
                 <button class="coaching-tab" onclick="showSettingsTab('previews',this)">previews</button>
                 <button class="coaching-tab" onclick="showSettingsTab('library',this)">library</button>
                 <button onclick="showSettingsTab('memory',this)">memory</button>
+                <button class="coaching-tab" onclick="showSettingsTab('reflection',this)">reflection</button>
             </div>
             <div class="slide-panel-body">
                 <!-- TENETS TAB -->
@@ -2181,6 +2182,35 @@
                     <div class="panel-section">
                         <div class="panel-section-label">LEARNING STATS</div>
                         <div class="config-card" id="memoryStats"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
+                    </div>
+                </div>
+                <!-- REFLECTION TAB -->
+                <div id="panelTabReflection" style="display:none;">
+                    <div class="panel-section">
+                        <div class="panel-section-label">ACTIVE THEMES</div>
+                        <div class="config-card" id="reflectionThemesList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
+                    </div>
+                    <div class="panel-section">
+                        <div class="panel-section-label">OPEN QUESTIONS</div>
+                        <div class="config-card" id="reflectionQuestionsList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
+                    </div>
+                    <div class="panel-section">
+                        <div class="panel-section-label">RECENT REFLECTIONS</div>
+                        <div class="config-card" id="reflectionRecentList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
+                    </div>
+                    <div class="panel-section">
+                        <div class="panel-section-label">CAPTURE</div>
+                        <div class="config-card" style="padding:12px 16px;">
+                            <textarea id="reflectionInput" placeholder="Paste a thought, article excerpt, or insight..." style="width:100%;min-height:80px;font-family:var(--font-body);font-size:13px;border:1px solid var(--line);border-radius:6px;padding:8px;background:var(--surface);color:var(--ink);resize:vertical;box-sizing:border-box;margin-bottom:8px;"></textarea>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <button class="btn btn-sm btn-coach" onclick="submitReflection()">Ingest</button>
+                                <span id="reflectionIngestStatus" style="font-size:11px;color:var(--ink-tertiary);"></span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="panel-section">
+                        <div class="panel-section-label">STATS</div>
+                        <div class="config-card" id="reflectionStats"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
                     </div>
                 </div>
             </div>
@@ -2509,8 +2539,8 @@
         }
 
         function showSettingsTab(tab, btn) {
-            const tabs = ['tenets', 'skills', 'config', 'previews', 'library', 'memory'];
-            const tabLabels = { config: 'configurations', skills: 'coaching', tenets: 'tenets', previews: 'previews', library: 'library', memory: 'memory' };
+            const tabs = ['tenets', 'skills', 'config', 'previews', 'library', 'memory', 'reflection'];
+            const tabLabels = { config: 'configurations', skills: 'coaching', tenets: 'tenets', previews: 'previews', library: 'library', memory: 'memory', reflection: 'reflection' };
             tabs.forEach(t => {
                 const el = document.getElementById('panelTab' + t.charAt(0).toUpperCase() + t.slice(1));
                 if (el) el.style.display = t === tab ? '' : 'none';
@@ -2525,6 +2555,7 @@
             if (tab === 'previews') loadQAPreview();
             if (tab === 'library') loadLibrary();
             if (tab === 'memory') loadMemoryTab();
+            if (tab === 'reflection') loadReflectionData();
         }
 
         // Slash command system
@@ -2541,6 +2572,7 @@
             { icon: '\u{1F4CA}', name: '/briefing',    desc: 'Daily briefing',     hasParams: false },
             { icon: '\u2699\uFE0F', name: '/settings',    desc: 'Coaching config',    hasParams: false },
             { icon: '\u{1F4DA}', name: '/skills',      desc: 'Skill library',      hasParams: false },
+            { icon: '\u{1F9E0}', name: '/reflect',     desc: 'Reflection mode',    hasParams: false },
         ];
 
         function showPalette(filter) {
@@ -2594,6 +2626,7 @@
 
             if (cmd.name === '/settings') { openSettingsPanel(); return; }
             if (cmd.name === '/skills') { openSettingsPanel(); showSettingsTab('library'); return; }
+            if (cmd.name === '/reflect') { openSettingsPanel(); showSettingsTab('reflection'); return; }
             if (cmd.hasParams) {
                 showParamForm(cmd.name);
             } else {
@@ -5467,6 +5500,126 @@
                 }
             });
         });
+
+        // ═══════════════════════════════════════════════
+        // REFLECTION MODE
+        // ═══════════════════════════════════════════════
+
+        async function loadReflectionData() {
+            loadReflectionThemes();
+            loadReflectionRecent();
+            loadReflectionStats();
+        }
+
+        async function loadReflectionThemes() {
+            const themesEl = document.getElementById('reflectionThemesList');
+            const questionsEl = document.getElementById('reflectionQuestionsList');
+            if (!themesEl) return;
+            try {
+                const resp = await authFetch('/api/reflect/themes?days=30&limit=10');
+                const data = await resp.json();
+                const classIcons = { researching: '\u{1F50D}', deciding: '\u2696\uFE0F', creating: '\u{1F6E0}', monitoring: '\u{1F4E1}' };
+                if (data.themes && data.themes.length > 0) {
+                    themesEl.innerHTML = data.themes.map(t => `
+                        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);">
+                            <span style="font-size:14px;">${classIcons[t.classification] || '\u{1F4E1}'}</span>
+                            <span style="font-size:13px;color:var(--ink);flex:1;">${t.theme}</span>
+                            <span style="font-size:10px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.05em;">${t.classification}</span>
+                            <span style="font-size:11px;color:var(--ink-tertiary);">\u00D7${t.count}</span>
+                        </div>
+                    `).join('');
+                } else {
+                    themesEl.innerHTML = '<div style="font-size:12px;color:var(--ink-tertiary);padding:12px;">No themes yet. Run the reflection ingestion cadence or manually ingest content below.</div>';
+                }
+                if (questionsEl && data.open_questions && data.open_questions.length > 0) {
+                    questionsEl.innerHTML = data.open_questions.map(q => `
+                        <div style="padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px;color:var(--ink);">\u2022 ${q}</div>
+                    `).join('');
+                } else if (questionsEl) {
+                    questionsEl.innerHTML = '<div style="font-size:12px;color:var(--ink-tertiary);padding:12px;">No open questions detected yet.</div>';
+                }
+            } catch (e) {
+                themesEl.innerHTML = '<div style="font-size:12px;color:var(--danger);padding:8px;">Failed to load themes</div>';
+            }
+        }
+
+        async function loadReflectionRecent() {
+            const el = document.getElementById('reflectionRecentList');
+            if (!el) return;
+            try {
+                const resp = await authFetch('/api/reflect/recent?days=7&limit=10');
+                const data = await resp.json();
+                if (data.reflections && data.reflections.length > 0) {
+                    const sourceIcons = { chrome: '\u{1F310}', youtube: '\u25B6\uFE0F', notion: '\u{1F4DD}', claude_export: '\u{1F916}', conversation: '\u{1F4AC}', manual: '\u270D\uFE0F' };
+                    el.innerHTML = data.reflections.map(r => `
+                        <div style="padding:10px 12px;border-bottom:1px solid var(--line);">
+                            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+                                <span style="font-size:12px;">${sourceIcons[r.source] || '\u{1F4C4}'}</span>
+                                <span style="font-size:11px;font-weight:600;color:var(--ink-tertiary);text-transform:uppercase;">${r.source}</span>
+                                <span style="font-size:10px;color:var(--ink-faint);margin-left:auto;">${(r.created_at || '').substring(0,10)}</span>
+                            </div>
+                            <div style="font-size:12px;color:var(--ink);line-height:1.4;">${r.content_summary || '(no summary)'}</div>
+                            ${(r.themes && r.themes.length) ? '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">' + r.themes.map(t => '<span style="font-size:10px;background:var(--bg);border:1px solid var(--line);border-radius:3px;padding:1px 5px;color:var(--ink-tertiary);">' + t + '</span>').join('') + '</div>' : ''}
+                        </div>
+                    `).join('');
+                } else {
+                    el.innerHTML = '<div style="font-size:12px;color:var(--ink-tertiary);padding:12px;">No reflections yet.</div>';
+                }
+            } catch (e) {
+                el.innerHTML = '<div style="font-size:12px;color:var(--danger);padding:8px;">Failed to load</div>';
+            }
+        }
+
+        async function loadReflectionStats() {
+            const el = document.getElementById('reflectionStats');
+            if (!el) return;
+            try {
+                const resp = await authFetch('/api/reflect/stats');
+                const data = await resp.json();
+                const total = data.total_reflections || 0;
+                const themes = data.active_themes || 0;
+                const bySource = data.by_source || {};
+                const sourceList = Object.entries(bySource).map(([k,v]) => `${k}: ${v}`).join(', ');
+                el.innerHTML = `
+                    <div style="padding:10px 12px;font-size:12px;color:var(--ink);">
+                        <div style="margin-bottom:4px;"><strong>${total}</strong> reflections | <strong>${themes}</strong> active themes</div>
+                        ${sourceList ? '<div style="color:var(--ink-tertiary);">By source: ' + sourceList + '</div>' : ''}
+                    </div>
+                `;
+            } catch (e) {
+                el.innerHTML = '<div style="font-size:12px;color:var(--ink-tertiary);padding:8px;">Stats unavailable</div>';
+            }
+        }
+
+        async function submitReflection() {
+            const input = document.getElementById('reflectionInput');
+            const status = document.getElementById('reflectionIngestStatus');
+            if (!input || !input.value.trim()) return;
+            status.textContent = 'Processing...';
+            status.style.color = 'var(--ink-tertiary)';
+            try {
+                const resp = await authFetch('/api/reflect/ingest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: input.value.trim(), source: 'manual' })
+                });
+                const data = await resp.json();
+                if (data.themes && data.themes.length > 0) {
+                    status.textContent = 'Ingested: ' + data.themes.join(', ');
+                    status.style.color = 'var(--coach)';
+                    input.value = '';
+                    loadReflectionThemes();
+                    loadReflectionRecent();
+                    loadReflectionStats();
+                } else {
+                    status.textContent = data.message || 'No themes extracted';
+                    status.style.color = 'var(--ink-tertiary)';
+                }
+            } catch (e) {
+                status.textContent = 'Failed to ingest';
+                status.style.color = 'var(--danger)';
+            }
+        }
 
     </script>
 </body>

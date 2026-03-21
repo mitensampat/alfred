@@ -1055,6 +1055,19 @@ class HTTPServer {
         case ("POST", "/api/conversations/restore"):
             return handleRestoreConversation(request)
 
+        // Reflection Mode endpoints
+        case ("POST", "/api/reflect/ingest"):
+            return await handleReflectIngest(request)
+
+        case ("GET", "/api/reflect/recent"):
+            return handleReflectRecent(request)
+
+        case ("GET", "/api/reflect/themes"):
+            return handleReflectThemes(request)
+
+        case ("GET", "/api/reflect/stats"):
+            return handleReflectStats()
+
         default:
             return HTTPResponse(
                 statusCode: 404,
@@ -4437,6 +4450,7 @@ The Commitment Check feature requires a properly configured Notion database.
         }
 
         let currentTrustLevel = TrustStateService.shared.getCurrentLevel()
+        let reflectionContext = ReflectionStore.shared.getFormattedContextForCoaching(maxChars: 1200)
         let systemPrompt = CoachingPromptBuilder.build(
             userName: userName,
             dateTime: now,
@@ -4449,7 +4463,8 @@ The Commitment Check feature requires a properly configured Notion database.
             recentMessages: recentMessages,
             unifiedFollowups: unifiedFollowups,
             trustLevel: currentTrustLevel,
-            mentionedContact: mentionedPerson
+            mentionedContact: mentionedPerson,
+            reflectionContext: reflectionContext
         )
 
         // Use shared conversation context (persists across requests for same session)
@@ -4669,7 +4684,8 @@ The Commitment Check feature requires a properly configured Notion database.
                 recentMessages: recentMessages,
                 unifiedFollowups: unifiedFollowups,
                 activePosture: activePosture,
-                trustLevel: currentTrustLevel
+                trustLevel: currentTrustLevel,
+                reflectionContext: reflectionContext
             )
         } else {
             chatSystemPrompt = systemPrompt
@@ -9827,5 +9843,103 @@ extension HTTPServer {
         } catch {
             return HTTPResponse(statusCode: 500, body: ["error": "Failed to detect completions: \(error.localizedDescription)"])
         }
+    }
+
+    // MARK: - Reflection Mode Handlers
+
+    private func handleReflectIngest(_ request: HTTPRequest) async -> HTTPResponse {
+        guard let config = AppConfig.load() else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Config not available"])
+        }
+
+        guard let bodyData = request.body,
+              let body = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let content = body["content"] as? String,
+              !content.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines).isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'content' in request body"])
+        }
+
+        let source = body["source"] as? String ?? "manual"
+        let sourceId = body["source_id"] as? String ?? String(content.hashValue)
+
+        let extractionService = ReflectionExtractionService(config: config.ai)
+        let existingThemes = ReflectionStore.shared.getExistingThemes()
+
+        do {
+            let extraction = try await extractionService.extract(
+                from: content,
+                source: source,
+                existingThemes: existingThemes
+            )
+
+            guard !extraction.themes.isEmpty else {
+                return HTTPResponse(statusCode: 200, body: [
+                    "message": "No meaningful themes extracted from content",
+                    "themes": [] as [String]
+                ])
+            }
+
+            ReflectionStore.shared.insertReflection(
+                source: source,
+                sourceId: sourceId,
+                contentSummary: extraction.contentSummary,
+                themes: extraction.themes,
+                themeClassifications: extraction.themeClassifications,
+                openQuestions: extraction.openQuestions,
+                mentalModelShifts: extraction.mentalModelShifts,
+                decisions: extraction.decisions
+            )
+
+            return HTTPResponse(statusCode: 200, body: [
+                "message": "Reflection ingested successfully",
+                "content_summary": extraction.contentSummary,
+                "themes": extraction.themes,
+                "theme_classifications": extraction.themeClassifications,
+                "open_questions": extraction.openQuestions,
+                "decisions": extraction.decisions
+            ])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Extraction failed: \(error.localizedDescription)"])
+        }
+    }
+
+    private func handleReflectRecent(_ request: HTTPRequest) -> HTTPResponse {
+        let days = Int(request.queryParams["days"] ?? "14") ?? 14
+        let limit = Int(request.queryParams["limit"] ?? "20") ?? 20
+        let source = request.queryParams["source"]
+
+        let reflections = ReflectionStore.shared.getRecentReflections(limit: limit, days: days, source: source)
+
+        return HTTPResponse(statusCode: 200, body: [
+            "reflections": reflections,
+            "count": reflections.count
+        ])
+    }
+
+    private func handleReflectThemes(_ request: HTTPRequest) -> HTTPResponse {
+        let days = Int(request.queryParams["days"] ?? "30") ?? 30
+        let limit = Int(request.queryParams["limit"] ?? "10") ?? 10
+
+        let themes = ReflectionStore.shared.getTopThemes(days: days, limit: limit)
+        let questions = ReflectionStore.shared.getOpenQuestions(limit: 5)
+
+        let themesArray = themes.map { theme -> [String: Any] in
+            return [
+                "theme": theme.theme,
+                "count": theme.count,
+                "classification": theme.classification
+            ]
+        }
+
+        return HTTPResponse(statusCode: 200, body: [
+            "themes": themesArray,
+            "open_questions": questions,
+            "total_themes": themes.count
+        ])
+    }
+
+    private func handleReflectStats() -> HTTPResponse {
+        let stats = ReflectionStore.shared.getStats()
+        return HTTPResponse(statusCode: 200, body: stats)
     }
 }

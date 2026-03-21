@@ -14,6 +14,7 @@ struct AppConfig: Codable {
     let api: APIConfig?
     let scheduled: ScheduledConfig?
     let cadence: CadenceConfig?
+    let reflection: ReflectionConfig?
 
     static func load(from path: String? = nil) -> AppConfig? {
         // Try multiple config locations in order of preference
@@ -108,6 +109,30 @@ struct CadenceConfig: Codable {
         case weeklyReviewEnabled = "weekly_review_enabled"
         case weeklyReviewDay = "weekly_review_day"
         case weeklyReviewTime = "weekly_review_time"
+    }
+}
+
+struct ReflectionConfig: Codable {
+    let enabled: Bool?                  // master toggle, default false
+    let chromeEnabled: Bool?            // default true when reflection enabled
+    let notionEnabled: Bool?            // default true when reflection enabled
+    let youtubeTranscripts: Bool?       // default true — fetch transcripts for watched videos
+    let importFolderEnabled: Bool?      // default true when reflection enabled
+    let chromeProfilePath: String?      // default "Default"
+    let noiseDomains: [String]?         // additional domains to filter
+    let dwellTimeSeconds: Int?          // default 30 — minimum time on page to count
+    let ingestionTime: String?          // default "22:00"
+
+    enum CodingKeys: String, CodingKey {
+        case enabled
+        case chromeEnabled = "chrome_enabled"
+        case notionEnabled = "notion_enabled"
+        case youtubeTranscripts = "youtube_transcripts"
+        case importFolderEnabled = "import_folder_enabled"
+        case chromeProfilePath = "chrome_profile_path"
+        case noiseDomains = "noise_domains"
+        case dwellTimeSeconds = "dwell_time_seconds"
+        case ingestionTime = "ingestion_time"
     }
 }
 

@@ -126,7 +126,8 @@ struct CoachingPromptBuilder {
         unifiedFollowups: String = "",       // Always-on: merged follow-ups from all sources
         activePosture: CoachingPosture? = nil, // Intent-driven: weights coaching observations by posture
         trustLevel: TrustLevel = .new,       // Progressive trust: calibrates coaching voice over time
-        mentionedContact: String? = nil      // Learning v3: boost contact intelligence for mentioned person
+        mentionedContact: String? = nil,      // Learning v3: boost contact intelligence for mentioned person
+        reflectionContext: String = ""         // Reflection mode: what's on the user's mind
     ) -> String {
         var prompt = ""
 
@@ -301,6 +302,18 @@ struct CoachingPromptBuilder {
             \(unifiedFollowups)
 
             Threads from past coaching sessions AND scheduled reminders. Proactively check on these early in conversations or when the user is actively engaging. If a follow-up is overdue, name it. Do NOT bring up follow-ups when the user is just acknowledging, thanking, or closing a topic.
+
+            """
+        }
+
+        // REFLECTION CONTEXT — what's on the user's mind beyond tasks (~400 tokens)
+        if !reflectionContext.isEmpty {
+            prompt += """
+
+            ## WHAT'S ON YOUR MIND
+            \(reflectionContext)
+
+            These are themes and questions Alfred has detected from browsing, notes, and conversations. Each is classified as something you're actively researching, deciding on, creating, or monitoring. Weave them in when relevant — don't list them back. Use them to connect coaching advice to what the user is actually thinking about.
 
             """
         }

@@ -40,6 +40,8 @@ class CadenceRunner {
             return try await runCoachingSync(cadence: cadence)
         case .taskLifecycleScan:
             return try await runTaskLifecycleScan(cadence: cadence)
+        case .reflectionIngestion:
+            return try await runReflectionIngestion(cadence: cadence)
         }
     }
 
@@ -806,5 +808,186 @@ class CadenceRunner {
         } catch {
             print("  ⚠️ Notion save error: \(error)")
         }
+    }
+
+    // MARK: - Reflection Ingestion
+
+    private func runReflectionIngestion(cadence: Cadence) async throws -> String {
+        guard let config = AppConfig.load() else {
+            throw CadenceError.serviceUnavailable("AppConfig")
+        }
+
+        let reflectionConfig = config.reflection
+        let extractionService = ReflectionExtractionService(config: config.ai)
+        var summary: [String] = []
+        var allNewThemes: Set<String> = []
+
+        // Get existing themes for normalization
+        let existingThemes = ReflectionStore.shared.getExistingThemes()
+
+        // 1. Chrome History Ingestion
+        if reflectionConfig?.chromeEnabled ?? true {
+            let chromeReader = ChromeHistoryReader(
+                chromeProfilePath: reflectionConfig?.chromeProfilePath ?? "Default",
+                noiseDomains: reflectionConfig?.noiseDomains ?? [],
+                dwellTimeSeconds: reflectionConfig?.dwellTimeSeconds ?? 30
+            )
+
+            let (clusters, youtubeVideoIds) = chromeReader.fetchBrowsingClusters(hours: 24, minClusterSize: 2)
+
+            // Process browsing clusters
+            if !clusters.isEmpty {
+                let clusterText = chromeReader.formatClustersForExtraction(clusters)
+                let extraction = try await extractionService.extract(
+                    from: clusterText,
+                    source: "chrome",
+                    existingThemes: existingThemes
+                )
+
+                if !extraction.themes.isEmpty {
+                    let dateId = Self.todayDateString()
+                    ReflectionStore.shared.insertReflection(
+                        source: "chrome",
+                        sourceId: dateId,
+                        contentSummary: extraction.contentSummary,
+                        themes: extraction.themes,
+                        themeClassifications: extraction.themeClassifications,
+                        openQuestions: extraction.openQuestions,
+                        mentalModelShifts: extraction.mentalModelShifts,
+                        decisions: extraction.decisions
+                    )
+                    allNewThemes.formUnion(extraction.themes)
+                    summary.append("Chrome: \(clusters.count) clusters → \(extraction.themes.count) themes")
+                }
+            } else {
+                summary.append("Chrome: no significant browsing clusters")
+            }
+
+            // Process YouTube transcripts
+            if reflectionConfig?.youtubeTranscripts ?? true {
+                var ytProcessed = 0
+                for videoId in youtubeVideoIds.prefix(5) {
+                    if let transcript = await chromeReader.fetchYouTubeTranscript(videoId: videoId) {
+                        let extraction = try await extractionService.extract(
+                            from: transcript,
+                            source: "youtube",
+                            existingThemes: existingThemes + Array(allNewThemes)
+                        )
+                        if !extraction.themes.isEmpty {
+                            ReflectionStore.shared.insertReflection(
+                                source: "youtube",
+                                sourceId: videoId,
+                                contentSummary: extraction.contentSummary,
+                                themes: extraction.themes,
+                                themeClassifications: extraction.themeClassifications,
+                                openQuestions: extraction.openQuestions,
+                                mentalModelShifts: extraction.mentalModelShifts,
+                                decisions: extraction.decisions
+                            )
+                            allNewThemes.formUnion(extraction.themes)
+                            ytProcessed += 1
+                        }
+                    }
+                }
+                if ytProcessed > 0 {
+                    summary.append("YouTube: \(ytProcessed) transcripts processed")
+                }
+            }
+        }
+
+        // 2. Notion Second Brain Ingestion
+        if reflectionConfig?.notionEnabled ?? true {
+            let notionService = NotionService(config: config.notion)
+            let since = Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date()
+
+            // Query all context databases for recently edited pages
+            let dbIds = config.notion.contextDatabases ?? []
+            var notionProcessed = 0
+
+            for dbId in dbIds {
+                if let pages = try? await notionService.queryRecentlyEditedPages(databaseId: dbId, since: since) {
+                    for page in pages {
+                        let pageId = page.id
+                        let content = page.content ?? page.title
+                        guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+
+                        let extraction = try await extractionService.extract(
+                            from: content,
+                            source: "notion",
+                            existingThemes: existingThemes + Array(allNewThemes)
+                        )
+
+                        if !extraction.themes.isEmpty {
+                            ReflectionStore.shared.insertReflection(
+                                source: "notion",
+                                sourceId: pageId,
+                                contentSummary: extraction.contentSummary,
+                                themes: extraction.themes,
+                                themeClassifications: extraction.themeClassifications,
+                                openQuestions: extraction.openQuestions,
+                                mentalModelShifts: extraction.mentalModelShifts,
+                                decisions: extraction.decisions
+                            )
+                            allNewThemes.formUnion(extraction.themes)
+                            notionProcessed += 1
+                        }
+                    }
+                }
+            }
+            if notionProcessed > 0 {
+                summary.append("Notion: \(notionProcessed) pages processed")
+            }
+        }
+
+        // 3. Import Folder Ingestion
+        if reflectionConfig?.importFolderEnabled ?? true {
+            let importService = ReflectionImportService()
+            let imports = importService.checkForNewImports()
+
+            for imp in imports {
+                let extraction = try await extractionService.extract(
+                    from: imp.content,
+                    source: imp.source,
+                    existingThemes: existingThemes + Array(allNewThemes)
+                )
+
+                if !extraction.themes.isEmpty {
+                    ReflectionStore.shared.insertReflection(
+                        source: imp.source,
+                        sourceId: imp.fileHash,
+                        contentSummary: extraction.contentSummary,
+                        themes: extraction.themes,
+                        themeClassifications: extraction.themeClassifications,
+                        openQuestions: extraction.openQuestions,
+                        mentalModelShifts: extraction.mentalModelShifts,
+                        decisions: extraction.decisions
+                    )
+                    allNewThemes.formUnion(extraction.themes)
+                }
+            }
+            if !imports.isEmpty {
+                summary.append("Imports: \(imports.count) files processed")
+            }
+        }
+
+        // 4. Apply relevance decay with reinforcement
+        ReflectionStore.shared.applyRelevanceDecay(reinforcedThemes: allNewThemes)
+
+        let stats = ReflectionStore.shared.getStats()
+        let totalReflections = stats["total_reflections"] as? Int ?? 0
+        let activeThemes = stats["active_themes"] as? Int ?? 0
+
+        let result = summary.isEmpty
+            ? "Reflection ingestion: no new content found"
+            : "Reflection ingestion: \(summary.joined(separator: ", ")). Total: \(totalReflections) reflections, \(activeThemes) active themes."
+
+        print("✅ \(result)")
+        return result
+    }
+
+    private static func todayDateString() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Date())
     }
 }
