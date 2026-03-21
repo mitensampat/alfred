@@ -53,7 +53,13 @@ class ClaudeAIService {
             } else if let name = msg.senderName, !name.isEmpty {
                 sender = name  // Individual sender in group chats
             } else {
-                sender = thread.contactName ?? "Unknown"
+                // Avoid leaking raw JIDs/base64 IDs as sender names
+                let fallback = msg.sender
+                if fallback.contains("==") || fallback.contains("@") || fallback.contains("+M0G") {
+                    sender = thread.contactName ?? "Participant"
+                } else {
+                    sender = thread.contactName ?? fallback
+                }
             }
             return "[\(msg.timestamp.formatted())] \(sender): \(msg.content)"
         }.joined(separator: "\n")
@@ -123,7 +129,17 @@ class ClaudeAIService {
         }
 
         // Detect group chat and list participants for attribution clarity
-        let incomingSenders = Set(thread.messages.compactMap { $0.direction == .incoming ? ($0.senderName ?? $0.sender) : nil })
+        // Filter out raw JIDs/base64 IDs — only use human-readable names
+        let incomingSenders = Set(thread.messages.compactMap { msg -> String? in
+            guard msg.direction == .incoming else { return nil }
+            if let name = msg.senderName, !name.isEmpty { return name }
+            let sender = msg.sender
+            // Skip raw identifiers: base64-encoded IDs, phone-style JIDs, or anything with == / @
+            if sender.contains("==") || sender.contains("@") || sender.contains("+M0G") {
+                return nil  // Unresolvable — omit rather than leak gibberish
+            }
+            return sender
+        })
         let isGroupChat = incomingSenders.count > 1
         let participantList = isGroupChat ? "\nParticipants in this group: \(incomingSenders.sorted().joined(separator: ", ")), and You (Miten)." : ""
 
