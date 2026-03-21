@@ -1394,7 +1394,8 @@
             opacity: 0;
             transition: opacity 0.15s;
         }
-        .lead-insight:hover .nb-refresh { opacity: 1; }
+        .lead-insight:hover .nb-refresh,
+        .secondary-bubble:hover .nb-refresh { opacity: 1; }
 
         /* ── MORE OBSERVATIONS (details/summary) ── */
         details.more-observations { border-radius: 0; margin-bottom: 16px; }
@@ -2019,6 +2020,7 @@
                 <button class="coaching-tab" onclick="showSettingsTab('skills',this)">coaching</button>
                 <button class="coaching-tab" onclick="showSettingsTab('previews',this)">previews</button>
                 <button class="coaching-tab" onclick="showSettingsTab('library',this)">library</button>
+                <button onclick="showSettingsTab('memory',this)">memory</button>
             </div>
             <div class="slide-panel-body">
                 <!-- TENETS TAB -->
@@ -2162,6 +2164,23 @@
                     <div class="panel-section">
                         <div class="panel-section-label">SKILL LIBRARY</div>
                         <div class="config-card" id="libraryList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
+                    </div>
+                </div>
+                <!-- MEMORY TAB -->
+                <div id="panelTabMemory" style="display:none;">
+                    <div class="panel-section">
+                        <div class="panel-section-label" style="display:flex;justify-content:space-between;align-items:center;">
+                            WHAT ALFRED KNOWS
+                            <div style="display:flex;gap:6px;">
+                                <button class="pill" style="font-size:10px;padding:3px 10px;" onclick="syncMemoryToNotion(this)">sync to notion</button>
+                                <button class="pill" style="font-size:10px;padding:3px 10px;" onclick="loadMemoryTab()">refresh</button>
+                            </div>
+                        </div>
+                        <div id="memoryContent"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
+                    </div>
+                    <div class="panel-section">
+                        <div class="panel-section-label">LEARNING STATS</div>
+                        <div class="config-card" id="memoryStats"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
                     </div>
                 </div>
             </div>
@@ -2490,8 +2509,8 @@
         }
 
         function showSettingsTab(tab, btn) {
-            const tabs = ['tenets', 'skills', 'config', 'previews', 'library'];
-            const tabLabels = { config: 'configurations', skills: 'coaching', tenets: 'tenets', previews: 'previews', library: 'library' };
+            const tabs = ['tenets', 'skills', 'config', 'previews', 'library', 'memory'];
+            const tabLabels = { config: 'configurations', skills: 'coaching', tenets: 'tenets', previews: 'previews', library: 'library', memory: 'memory' };
             tabs.forEach(t => {
                 const el = document.getElementById('panelTab' + t.charAt(0).toUpperCase() + t.slice(1));
                 if (el) el.style.display = t === tab ? '' : 'none';
@@ -2505,6 +2524,7 @@
             }
             if (tab === 'previews') loadQAPreview();
             if (tab === 'library') loadLibrary();
+            if (tab === 'memory') loadMemoryTab();
         }
 
         // Slash command system
@@ -3892,7 +3912,10 @@
                             + '<div class="nb-dot" data-type="' + escapeHtml(secType) + '"></div>'
                             + '<span class="nb-type">' + escapeHtml(secLabel) + '</span>'
                             + (secMethod ? '<span class="nb-method">&middot; ' + escapeHtml(secMethod) + '</span>' : '')
-                            + (secAgo ? '<span style="font-size:10px;color:var(--ink-faint);margin-left:auto;">' + escapeHtml(secAgo) + '</span>' : '')
+                            + '<span style="display:flex;align-items:center;gap:6px;margin-left:auto;">'
+                            + (secAgo ? '<span style="font-size:10px;color:var(--ink-faint);">' + escapeHtml(secAgo) + '</span>' : '')
+                            + '<button class="nb-refresh" onclick="refreshCoachingCard(\'' + escapeHtml(card.type || '') + '\')" title="Regenerate">&#x21bb;</button>'
+                            + '</span>'
                             + '</div>'
                             + '<div class="sec-body">' + renderMarkdown(trimInsight(card.insight || '')) + '</div>'
                             + '</div>';
@@ -4615,6 +4638,211 @@
             const meta = document.getElementById('qaDebugMeta');
             if (meta) meta.textContent = '';
             loadQAPreview(true);
+        }
+
+        // ═══ MEMORY TAB (Learning v3) ═══
+        async function loadMemoryTab() {
+            const content = document.getElementById('memoryContent');
+            const stats = document.getElementById('memoryStats');
+            if (!content) return;
+
+            try {
+                const [memResp, statsResp] = await Promise.all([
+                    authFetch('/api/memory/all'),
+                    authFetch('/api/learning/status')
+                ]);
+                const memData = await memResp.json();
+                const statsData = await statsResp.json();
+
+                renderMemoryItems(memData, content);
+                renderMemoryStats(statsData, stats);
+            } catch (e) {
+                content.innerHTML = '<div style="font-size:12px;color:var(--danger);padding:8px 0;">Failed to load memory</div>';
+            }
+        }
+
+        function renderMemoryItems(data, container) {
+            const items = data.items || [];
+            if (items.length === 0) {
+                container.innerHTML = '<div style="font-size:12px;color:var(--ink-tertiary);padding:16px 0;text-align:center;">No learned patterns yet. Chat with Alfred to start building memory.</div>';
+                return;
+            }
+
+            // Group by type for display
+            const groups = {};
+            const groupOrder = ['directInstruction', 'userContext', 'communicationStyle', 'personalityNote', 'coachingTheme', 'followUp', 'contactIntelligence', 'correctionPattern', 'agentPattern'];
+            const groupLabels = {
+                directInstruction: 'YOUR EXPLICIT PREFERENCES',
+                userContext: 'WHAT ALFRED KNOWS ABOUT YOU',
+                communicationStyle: 'COMMUNICATION STYLE',
+                personalityNote: 'PERSONALITY NOTES',
+                coachingTheme: 'COACHING THEMES',
+                followUp: 'OPEN FOLLOW-UPS',
+                contactIntelligence: 'CONTACT INTELLIGENCE',
+                correctionPattern: 'EXTRACTION PATTERNS',
+                agentPattern: 'OBSERVED PATTERNS'
+            };
+
+            items.forEach(item => {
+                const key = item.type || 'other';
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(item);
+            });
+
+            let html = '';
+            for (const type of groupOrder) {
+                const group = groups[type];
+                if (!group || group.length === 0) continue;
+
+                const label = groupLabels[type] || type.toUpperCase();
+                const isContactGroup = type === 'contactIntelligence';
+
+                html += '<div class="config-card" style="margin-bottom:10px;">';
+                html += '<div style="padding:10px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;">';
+                html += '<span style="font-size:10px;font-weight:600;letter-spacing:0.5px;color:var(--ink-secondary);">' + label + '</span>';
+                html += '<span style="font-size:10px;color:var(--ink-tertiary);">' + group.length + '</span>';
+                html += '</div>';
+
+                // For contact intelligence, collapse by default (too many items)
+                if (isContactGroup && group.length > 5) {
+                    html += '<div id="contactIntelCollapsed" style="padding:8px 16px;">';
+                    group.slice(0, 5).forEach(item => { html += renderMemoryRow(item); });
+                    html += '<button class="pill" style="font-size:10px;padding:3px 10px;margin-top:6px;" onclick="document.getElementById(\'contactIntelCollapsed\').style.display=\'none\';document.getElementById(\'contactIntelExpanded\').style.display=\'\';">Show all ' + group.length + '</button>';
+                    html += '</div>';
+                    html += '<div id="contactIntelExpanded" style="padding:8px 16px;display:none;">';
+                    group.forEach(item => { html += renderMemoryRow(item); });
+                    html += '</div>';
+                } else {
+                    html += '<div style="padding:8px 16px;">';
+                    group.forEach(item => { html += renderMemoryRow(item); });
+                    html += '</div>';
+                }
+
+                html += '</div>';
+            }
+
+            container.innerHTML = html;
+        }
+
+        function renderMemoryRow(item) {
+            const confidenceColor = item.confidence >= 0.9 ? 'var(--growth)' : item.confidence >= 0.7 ? 'var(--coach)' : item.confidence >= 0.5 ? 'var(--warning)' : 'var(--ink-tertiary)';
+            const confidencePct = Math.round(item.confidence * 100);
+            const staleTag = item.isStale ? '<span style="font-size:9px;color:var(--warning);margin-left:4px;">(stale)</span>' : '';
+            const sourceTag = '<span style="font-size:9px;color:var(--ink-faint);margin-left:4px;">' + item.source + '</span>';
+
+            // Only show action buttons for workflow patterns (editable)
+            const isEditable = item.source === 'workflow';
+            const actions = isEditable ? `
+                <div style="display:flex;gap:4px;margin-left:auto;flex-shrink:0;">
+                    <button class="pill" style="font-size:9px;padding:2px 6px;color:var(--growth);border-color:var(--growth);" onclick="memoryFeedback('${item.id}','positive',this)" title="This is accurate">&#x2713;</button>
+                    <button class="pill" style="font-size:9px;padding:2px 6px;color:var(--warning);border-color:var(--warning);" onclick="memoryFeedback('${item.id}','negative',this)" title="This is wrong">&#x2717;</button>
+                    <button class="pill" style="font-size:9px;padding:2px 6px;color:var(--danger);border-color:var(--danger);" onclick="memoryDelete('${item.id}',this)" title="Delete">&#x2212;</button>
+                </div>
+            ` : '';
+
+            return `
+                <div style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px solid var(--line);font-size:12px;" data-memory-id="${item.id}">
+                    <span style="width:4px;height:4px;border-radius:50%;background:${confidenceColor};flex-shrink:0;margin-top:6px;" title="${confidencePct}% confidence"></span>
+                    <span style="flex:1;color:var(--ink);line-height:1.4;">${escapeHtml(item.content)}${staleTag}${sourceTag}</span>
+                    ${actions}
+                </div>
+            `;
+        }
+
+        function renderMemoryStats(data, container) {
+            if (!container) return;
+            const v2 = data.v2 || {};
+            const events = v2.totalEvents || 0;
+            const active = v2.activePatterns || 0;
+            const direct = v2.directInstructions || 0;
+            const stale = v2.stalePatterns || 0;
+            const pending = v2.pendingReviews || 0;
+            const byType = v2.eventsByType || {};
+
+            let html = '<div style="padding:12px 16px;">';
+            html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;">';
+            html += `<div><span style="color:var(--ink-tertiary);">Learning Events</span><div style="font-size:18px;font-weight:600;font-family:var(--font-display);color:var(--ink);">${events}</div></div>`;
+            html += `<div><span style="color:var(--ink-tertiary);">Active Patterns</span><div style="font-size:18px;font-weight:600;font-family:var(--font-display);color:var(--ink);">${active}</div></div>`;
+            html += `<div><span style="color:var(--ink-tertiary);">Direct Instructions</span><div style="font-size:18px;font-weight:600;font-family:var(--font-display);color:var(--growth);">${direct}</div></div>`;
+            html += `<div><span style="color:var(--ink-tertiary);">Pending Reviews</span><div style="font-size:18px;font-weight:600;font-family:var(--font-display);color:var(--warning);">${pending}</div></div>`;
+            html += '</div>';
+
+            if (Object.keys(byType).length > 0) {
+                html += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line);">';
+                html += '<div style="font-size:10px;font-weight:600;color:var(--ink-secondary);letter-spacing:0.5px;margin-bottom:6px;">SIGNAL BREAKDOWN</div>';
+                Object.entries(byType).sort((a,b) => b[1] - a[1]).forEach(([type, count]) => {
+                    const label = type.replace(/_/g, ' ');
+                    html += `<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0;"><span style="color:var(--ink-secondary);">${label}</span><span style="color:var(--ink);font-weight:500;">${count}</span></div>`;
+                });
+                html += '</div>';
+            }
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        async function memoryFeedback(patternId, feedback, btn) {
+            const origHtml = btn.innerHTML;
+            try {
+                btn.disabled = true;
+                const siblings = btn.parentElement.querySelectorAll('button');
+                siblings.forEach(s => s.style.opacity = '0.3');
+                btn.style.opacity = '1';
+                await authFetch('/api/memory/feedback', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ patternId, feedback })
+                });
+                const row = btn.closest('[data-memory-id]');
+                if (feedback === 'positive') {
+                    btn.innerHTML = 'saved';
+                    btn.style.color = 'var(--growth)';
+                    btn.style.borderColor = 'var(--growth)';
+                    setTimeout(() => { btn.innerHTML = origHtml; btn.style.color = ''; btn.style.borderColor = ''; btn.disabled = false; siblings.forEach(s => s.style.opacity = '1'); }, 1500);
+                } else {
+                    btn.innerHTML = 'noted';
+                    if (row) { row.style.opacity = '0.4'; row.style.transition = 'opacity 0.3s'; }
+                    setTimeout(() => { btn.innerHTML = origHtml; btn.disabled = false; siblings.forEach(s => s.style.opacity = '1'); }, 1500);
+                }
+            } catch (e) { btn.innerHTML = origHtml; btn.disabled = false; }
+        }
+
+        async function memoryDelete(patternId, btn) {
+            if (!confirm('Delete this learned pattern?')) return;
+            try {
+                btn.disabled = true;
+                await authFetch('/api/learning/patterns?id=' + encodeURIComponent(patternId), { method: 'DELETE' });
+                const row = btn.closest('[data-memory-id]');
+                if (row) {
+                    row.style.transition = 'opacity 0.3s';
+                    row.style.opacity = '0';
+                    setTimeout(() => row.remove(), 300);
+                }
+            } catch (e) { btn.disabled = false; }
+        }
+
+        async function syncMemoryToNotion(btn) {
+            const origText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'syncing...';
+            try {
+                const resp = await authFetch('/api/memory/notion-sync', { method: 'POST' });
+                const data = await resp.json();
+                if (data.success) {
+                    btn.textContent = 'synced!';
+                    btn.style.borderColor = 'var(--growth)';
+                    btn.style.color = 'var(--growth)';
+                    setTimeout(() => { btn.textContent = origText; btn.style.borderColor = ''; btn.style.color = ''; btn.disabled = false; }, 2000);
+                } else {
+                    btn.textContent = 'failed';
+                    btn.style.borderColor = 'var(--danger)';
+                    btn.style.color = 'var(--danger)';
+                    setTimeout(() => { btn.textContent = origText; btn.style.borderColor = ''; btn.style.color = ''; btn.disabled = false; }, 2000);
+                }
+            } catch (e) {
+                btn.textContent = 'error';
+                setTimeout(() => { btn.textContent = origText; btn.disabled = false; }, 2000);
+            }
         }
 
         async function loadLibrary() {
