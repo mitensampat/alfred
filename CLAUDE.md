@@ -158,8 +158,8 @@ Alfred's learning system has 3 layers:
 
 ## Git State Notes
 
-- Latest release: `v2.0.8` (Imperial design system)
-- Version in code: `2.0.8` (in `main.swift` line 17 — single source of truth)
+- Latest release: `v2.1.0` (Reflection Mode + Memory Sync)
+- Version in code: `2.1.0` (in `main.swift` line 17 — single source of truth)
 
 ## Post-Deploy Verification Checklist
 

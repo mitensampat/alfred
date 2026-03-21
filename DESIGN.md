@@ -1,6 +1,6 @@
 # Alfred Imperial Design System
 
-Version: 2.0.8 (introduced with the Imperial reskin)
+Version: 2.1.0
 Origin: Inspired by Stitch design assets, adapted for Alfred's single-column coaching UI.
 
 ## Design Philosophy
