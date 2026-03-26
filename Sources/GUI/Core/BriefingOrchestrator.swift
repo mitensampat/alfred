@@ -21,8 +21,8 @@ class BriefingOrchestrator {
     init(config: AppConfig) {
         self.config = config
 
-        self.imessageReader = iMessageReader(dbPath: config.messaging.imessage.dbPath)
-        self.whatsappReader = WhatsAppReader(dbPath: config.messaging.whatsapp.dbPath)
+        self.imessageReader = iMessageReader.shared(dbPath: config.messaging.imessage.dbPath)
+        self.whatsappReader = WhatsAppReader.shared(dbPath: config.messaging.whatsapp.dbPath)
         self.signalReader = SignalReader(dbPath: config.messaging.signal.dbPath)
         self.gmailReader = config.messaging.email.map { GmailReader(config: $0) }
         self.calendarService = MultiCalendarService(configs: config.calendar.google)
@@ -508,7 +508,7 @@ class BriefingOrchestrator {
         if config.messaging.imessage.enabled {
             print("  ↳ Searching iMessage...")
             do {
-                let reader = iMessageReader(dbPath: config.messaging.imessage.dbPath)
+                let reader = iMessageReader.shared(dbPath: config.messaging.imessage.dbPath)
                 try reader.connect()
                 let threads = try reader.fetchThreads(since: since)
                 reader.disconnect()

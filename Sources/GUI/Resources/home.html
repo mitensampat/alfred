@@ -321,6 +321,42 @@
         .focus-card.pinned { background: var(--surface); }
         [data-theme="dark"] .focus-card.pinned { background: var(--surface); }
 
+        /* Meeting Brief Card */
+        .meeting-brief-card {
+            padding: 18px 20px;
+            margin-bottom: 16px;
+            border-radius: 0;
+            border: 1px solid var(--line);
+            border-left: 3px solid var(--info);
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            background: var(--surface);
+            position: relative;
+            animation: fadeIn 0.4s ease-out;
+        }
+        .meeting-brief-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
+        .meeting-brief-label { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--info); }
+        .meeting-brief-countdown { font-size: 11px; font-weight: 500; color: var(--info); background: var(--info-light); padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+        .meeting-brief-title { font-size: 15px; font-weight: 500; color: var(--ink); margin-bottom: 2px; line-height: 1.3; }
+        .meeting-brief-meta { font-size: 12px; color: var(--ink-tertiary); margin-bottom: 14px; }
+        .meeting-brief-divider { border: none; border-top: 1px solid var(--line); margin: 0 0 12px 0; }
+        .meeting-brief-body { font-size: 13px; line-height: 1.65; color: var(--ink); }
+        .meeting-brief-body strong { font-weight: 600; color: var(--ink); }
+        .meeting-brief-body ul { margin: 4px 0 10px 0; padding-left: 18px; }
+        .meeting-brief-body li { margin-bottom: 3px; color: var(--ink-secondary); }
+        .meeting-brief-body li strong { color: var(--ink); }
+        .meeting-brief-toggle { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding: 6px 0; cursor: pointer; border-top: 1px solid var(--line); }
+        .meeting-brief-toggle-text { font-size: 11px; font-weight: 500; color: var(--info); }
+        .meeting-brief-toggle-arrow { font-size: 11px; color: var(--info); transition: transform 0.2s; }
+        .meeting-brief-toggle.open .meeting-brief-toggle-arrow { transform: rotate(180deg); }
+        .meeting-brief-toggle:hover .meeting-brief-toggle-text { color: var(--ink); }
+        .meeting-brief-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+        .meeting-brief-generated { font-size: 10px; color: var(--ink-faint); }
+        .meeting-brief-refresh { font-size: 11px; padding: 3px 10px; border-radius: 4px; background: var(--surface-sunken); border: 1px solid var(--line); color: var(--ink-secondary); cursor: pointer; opacity: 0; transition: opacity 0.2s; }
+        .meeting-brief-card:hover .meeting-brief-refresh { opacity: 1; }
+        .meeting-brief-refresh:hover { background: var(--info-light); color: var(--info); border-color: var(--info); }
+        .meeting-brief-skeleton .skel-line { height: 12px; background: var(--surface-sunken); border-radius: 4px; margin-bottom: 8px; animation: pulse 1.5s infinite; }
+        .skel-line.w60 { width: 60%; } .skel-line.w80 { width: 80%; } .skel-line.w45 { width: 45%; } .skel-line.w90 { width: 90%; } .skel-line.w70 { width: 70%; }
+
         .calendar-card .cal-event { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
         .calendar-card .cal-event:last-child { border: none; }
         .cal-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
@@ -1960,6 +1996,7 @@
         <div class="top-bar">
             <div class="top-bar-title">Coach Alfred</div>
             <div class="top-bar-actions">
+                <span id="syncIndicator" style="font-size:10px;color:var(--ink-faint);margin-right:6px;opacity:0.7;cursor:pointer;" onclick="forceFullRefresh()" title="Tap to refresh"></span>
                 <span id="greetingTime" style="font-size:11px;color:var(--ink-faint);margin-right:4px;">loading...</span>
                 <button class="top-bar-btn" id="themeToggleBtn" onclick="toggleTheme()" title="Toggle dark mode">&#9728;&#65039;</button>
                 <button class="top-bar-btn" onclick="openSettingsPanel()" title="Settings">&#9881;&#65039;</button>
@@ -2029,6 +2066,18 @@
                     <div class="panel-section">
                         <div class="panel-section-label">COACHING TENETS</div>
                         <div id="tenetSectionsList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
+                    </div>
+                    <!-- Meeting Brief Prompt (in tenets, not config) -->
+                    <div class="panel-section">
+                        <div class="panel-section-label">MEETING BRIEF PROMPT</div>
+                        <div class="config-card">
+                            <div style="padding:12px 16px;">
+                                <div style="font-size:11px;color:var(--ink-tertiary);margin-bottom:8px;">What should Alfred tell you before each meeting? Leave blank for the default briefing.</div>
+                                <textarea id="meetingBriefPrompt" class="form-input" rows="4" placeholder="e.g., Summarize recent threads with attendees, list open commitments, suggest talking points..." style="font-size:12px;resize:vertical;min-height:60px;"></textarea>
+                                <button class="btn btn-sm btn-coach" onclick="saveMeetingBriefConfig()" style="margin-top:8px;">Save</button>
+                                <div id="meetingBriefStatus" class="hidden" style="margin-top:4px;font-size:11px;color:var(--growth);"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <!-- SKILLS TAB -->
@@ -2296,8 +2345,16 @@
         function cacheSet(key, data) {
             try { localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ data, timestamp: Date.now() })); } catch (e) {}
         }
-        function cacheGet(key) {
-            try { const raw = localStorage.getItem(CACHE_PREFIX + key); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+        function cacheGet(key, maxAgeMs) {
+            try {
+                const raw = localStorage.getItem(CACHE_PREFIX + key);
+                if (!raw) return null;
+                const parsed = JSON.parse(raw);
+                // Enforce TTL: return null if cache is too old
+                const ttl = maxAgeMs || CACHE_MAX_AGE_MS;
+                if (parsed.timestamp && (Date.now() - parsed.timestamp) > ttl) return null;
+                return parsed;
+            } catch (e) { return null; }
         }
         function cacheDelete(key) {
             try { localStorage.removeItem(CACHE_PREFIX + key); } catch (e) {}
@@ -2315,6 +2372,32 @@
             const hrs = Math.floor(mins / 60);
             if (hrs < 24) return hrs + 'h ago';
             return Math.floor(hrs / 24) + 'd ago';
+        }
+
+        // Sync indicator: shows how fresh the data is
+        let lastSyncTimestamp = null;
+        function markSynced() {
+            lastSyncTimestamp = Date.now();
+            updateSyncIndicator();
+        }
+        function updateSyncIndicator() {
+            const el = document.getElementById('syncIndicator');
+            if (!el) return;
+            if (!lastSyncTimestamp) { el.textContent = ''; return; }
+            const age = Date.now() - lastSyncTimestamp;
+            const mins = Math.floor(age / 60000);
+            if (mins < 1) el.textContent = 'synced just now';
+            else if (mins < 60) el.textContent = 'synced ' + mins + 'm ago';
+            else el.textContent = 'synced ' + Math.floor(mins / 60) + 'h ago';
+            // Turn amber if stale (>30 min)
+            el.style.color = mins > 30 ? 'var(--accent-warning, #f0a030)' : 'var(--ink-faint)';
+        }
+        // Update sync indicator every 30 seconds
+        setInterval(updateSyncIndicator, 30000);
+
+        function forceFullRefresh() {
+            sessionStorage.setItem('alfred_force_refresh', '1');
+            location.reload();
         }
 
         // Load version from server
@@ -2831,6 +2914,7 @@
             startGreetingClock();
             loadMorningWalk();
             if (isSunday()) loadWeeklyReflection();
+            registerPushNotifications();
         }
 
         function authenticate() {
@@ -3777,6 +3861,142 @@
                 + '</div>';
         }
 
+        // --- Meeting Brief Card ---
+        var _meetingBriefStartTime = null; // stored for countdown ticker
+
+        function buildMeetingBriefCard(data) {
+            if (!data || data.noMeeting) return '';
+            const m = data.meeting;
+            if (!m) return '';
+
+            _meetingBriefStartTime = new Date(m.startTime);
+
+            const title = escapeHtml(m.title || 'Untitled');
+            const start = new Date(m.startTime);
+            const end = new Date(m.endTime);
+            const timeFmt = function(d) { var h=d.getHours(), ap=h>=12?'PM':'AM'; h=h%12||12; var mn=String(d.getMinutes()).padStart(2,'0'); return h+':'+mn+' '+ap; };
+            const timeStr = timeFmt(start) + ' \u2013 ' + timeFmt(end);
+            const loc = m.location ? ' \u00B7 ' + escapeHtml(m.location) : '';
+            const att = m.attendeeCount ? ' \u00B7 ' + m.attendeeCount + ' attendees' : '';
+            const countdown = escapeHtml(m.countdown || '');
+
+            // Render brief body (markdown-like: bold and lists)
+            var briefHtml = '';
+            if (data.brief) {
+                briefHtml = renderSimpleMarkdown(data.brief);
+            } else {
+                briefHtml = '<div style="color:var(--ink-tertiary);font-size:12px;">Brief could not be generated. <button class="meeting-brief-refresh" style="opacity:1;" onclick="refreshMeetingBrief()">Retry</button></div>';
+            }
+
+            // Generated ago
+            var agoStr = 'just now';
+            if (data.generatedAt) {
+                var diffMs = Date.now() - new Date(data.generatedAt).getTime();
+                var diffMin = Math.round(diffMs / 60000);
+                if (diffMin >= 1) agoStr = diffMin + ' min ago';
+            }
+
+            return '<div class="meeting-brief-card" id="meetingBriefCard">'
+                + '<div class="meeting-brief-head">'
+                + '<div class="meeting-brief-label">Next Meeting</div>'
+                + '<div class="meeting-brief-countdown" id="meetingBriefCountdown">' + countdown + '</div>'
+                + '</div>'
+                + '<div class="meeting-brief-title">' + title + '</div>'
+                + '<div class="meeting-brief-meta">' + timeStr + loc + att + '</div>'
+                + '<div class="meeting-brief-toggle" id="meetingBriefToggle" onclick="toggleMeetingBrief()">'
+                + '<span class="meeting-brief-toggle-text">Show brief</span>'
+                + '<span class="meeting-brief-toggle-arrow">\u25BE</span>'
+                + '</div>'
+                + '<div class="meeting-brief-details" id="meetingBriefDetails" style="display:none;">'
+                + '<hr class="meeting-brief-divider">'
+                + '<div class="meeting-brief-body">' + briefHtml + '</div>'
+                + '<div class="meeting-brief-footer">'
+                + '<span class="meeting-brief-generated">Generated ' + agoStr + '</span>'
+                + '<button class="meeting-brief-refresh" onclick="refreshMeetingBrief()">Refresh</button>'
+                + '</div>'
+                + '</div>'
+                + '</div>';
+        }
+
+        function toggleMeetingBrief() {
+            var details = document.getElementById('meetingBriefDetails');
+            var toggle = document.getElementById('meetingBriefToggle');
+            if (!details || !toggle) return;
+            var isHidden = details.style.display === 'none';
+            details.style.display = isHidden ? 'block' : 'none';
+            toggle.querySelector('.meeting-brief-toggle-text').textContent = isHidden ? 'Hide brief' : 'Show brief';
+            toggle.querySelector('.meeting-brief-toggle-arrow').textContent = isHidden ? '\u25B4' : '\u25BE';
+            toggle.classList.toggle('open', isHidden);
+        }
+
+        function buildMeetingBriefSkeleton() {
+            return '<div class="meeting-brief-card meeting-brief-skeleton" id="meetingBriefCard">'
+                + '<div class="meeting-brief-head"><div class="meeting-brief-label">Next Meeting</div></div>'
+                + '<div class="skel-line w60" style="height:16px;margin-bottom:6px;"></div>'
+                + '<div class="skel-line w45" style="height:11px;margin-bottom:14px;"></div>'
+                + '<hr class="meeting-brief-divider">'
+                + '<div class="skel-line w90"></div><div class="skel-line w80"></div><div class="skel-line w70"></div>'
+                + '<div class="skel-line w60" style="margin-top:12px;"></div><div class="skel-line w90"></div>'
+                + '</div>';
+        }
+
+        function renderSimpleMarkdown(text) {
+            // Convert markdown bold, lists, etc. to HTML
+            var html = escapeHtml(text);
+            // Bold: **text** or __text__
+            html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+            html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+            // Bullet lists
+            html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+            html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+            // Line breaks
+            html = html.replace(/\n/g, '<br>');
+            // Clean up br inside ul
+            html = html.replace(/<br><ul>/g, '<ul>');
+            html = html.replace(/<\/ul><br>/g, '</ul>');
+            html = html.replace(/<br><li>/g, '<li>');
+            html = html.replace(/<\/li><br>/g, '</li>');
+            return html;
+        }
+
+        async function refreshMeetingBrief() {
+            var card = document.getElementById('meetingBriefCard');
+            if (card) card.outerHTML = buildMeetingBriefSkeleton();
+            try {
+                // Add cache-bust param to force server re-generation
+                var r = await authFetch('/api/home/next-meeting-brief?bust=' + Date.now());
+                if (!r.ok) throw new Error('Failed');
+                var data = await r.json();
+                var newCard = buildMeetingBriefCard(data);
+                var el = document.getElementById('meetingBriefCard');
+                if (el) el.outerHTML = newCard || '';
+            } catch(e) {
+                console.error('Meeting brief refresh failed:', e);
+            }
+        }
+
+        // Countdown ticker for meeting brief card (every 60s)
+        setInterval(function() {
+            if (!_meetingBriefStartTime) return;
+            var el = document.getElementById('meetingBriefCountdown');
+            if (!el) return;
+            var now = Date.now();
+            var diffMin = Math.round((_meetingBriefStartTime.getTime() - now) / 60000);
+            if (diffMin <= 0) {
+                el.textContent = 'starting now';
+                el.style.background = 'var(--growth-light)';
+                el.style.color = 'var(--growth)';
+            } else if (diffMin < 60) {
+                el.textContent = 'in ' + diffMin + ' min';
+            } else {
+                var h = Math.floor(diffMin / 60), m = diffMin % 60;
+                el.textContent = m > 0 ? 'in ' + h + 'h ' + m + 'm' : 'in ' + h + 'h';
+            }
+            // Hide card if meeting ended
+            var card = document.getElementById('meetingBriefCard');
+            if (card && diffMin < -15) { card.style.display = 'none'; }
+        }, 60000);
+
         function buildFocusNarrative(pulseData) {
             const m = (pulseData && pulseData.metrics) || {};
             const open = m.openTasks || 0;
@@ -3818,7 +4038,7 @@
             }
         }
 
-        function renderMorningWalk(pulseData, coachingCards, openerText, pendingClosures) {
+        function renderMorningWalk(pulseData, coachingCards, openerText, pendingClosures, meetingBrief) {
             const thread = document.getElementById('morningWalkThread');
             if (!thread) return;
 
@@ -3832,6 +4052,11 @@
             // 2. Focus card FIRST (before greeting)
             const topGoal = (pulseData && pulseData.topGoal) || null;
             html += buildFocusCardElement(topGoal);
+
+            // 2.5. Meeting brief card
+            if (meetingBrief && !meetingBrief.noMeeting) {
+                html += buildMeetingBriefCard(meetingBrief);
+            }
 
             // 3. Pending closure reviews
             const closures = pendingClosures || [];
@@ -4013,17 +4238,24 @@
             const cachedCards = cacheGet('coaching_cards');
             const cachedOpener = cacheGet('coaching_opener');
             const cachedCardData = (cachedCards && cachedCards.data) ? cachedCards.data : [];
+            const cachedBrief = cacheGet('meeting_brief');
             if (cachedPulse && cachedPulse.data) {
                 renderMorningWalk(
                     cachedPulse.data,
                     cachedCardData,
                     (cachedOpener && cachedOpener.data) || null,
-                    []
+                    [],
+                    (cachedBrief && cachedBrief.data) || null
                 );
+                // Show cache age so user knows this is stale data being refreshed
+                if (cachedPulse.timestamp) {
+                    lastSyncTimestamp = cachedPulse.timestamp;
+                    updateSyncIndicator();
+                }
             }
 
-            // Fetch pulse, opener, and pending closures in parallel (fast endpoints)
-            const [pulseResult, openerResult, pendingClosuresResult] = await Promise.allSettled([
+            // Fetch pulse, opener, pending closures, and meeting brief in parallel
+            const [pulseResult, openerResult, pendingClosuresResult, meetingBriefResult] = await Promise.allSettled([
                 (async () => {
                     const ctrl = new AbortController();
                     const t = setTimeout(() => ctrl.abort(), 5000);
@@ -4059,25 +4291,43 @@
                         const d = await r.json();
                         return d.pendingClosures || [];
                     } catch (e) { clearTimeout(t); throw e; }
+                })(),
+                (async () => {
+                    const cached = cacheGet('meeting_brief', 7 * 60 * 1000);
+                    if (cached && cached.data && !cached.data.noMeeting) {
+                        return cached.data;
+                    }
+                    const ctrl = new AbortController();
+                    const t = setTimeout(() => ctrl.abort(), 15000);
+                    try {
+                        const r = await authFetch('/api/home/next-meeting-brief', { signal: ctrl.signal });
+                        clearTimeout(t);
+                        if (!r.ok) throw new Error('Meeting brief failed: ' + r.status);
+                        const d = await r.json();
+                        if (!d.noMeeting) cacheSet('meeting_brief', d);
+                        return d;
+                    } catch (e) { clearTimeout(t); throw e; }
                 })()
             ]);
 
             const pulseData = pulseResult.status === 'fulfilled' ? pulseResult.value : (cachedPulse && cachedPulse.data) || {};
             const openerData = openerResult.status === 'fulfilled' ? openerResult.value : (cachedOpener && cachedOpener.data) || null;
             const pendingClosures = pendingClosuresResult.status === 'fulfilled' ? pendingClosuresResult.value : [];
+            const meetingBrief = meetingBriefResult.status === 'fulfilled' ? meetingBriefResult.value : null;
 
             // Stream coaching cards via SSE (progressive loading)
-            const streamedCards = await streamCoachingCards(forceCards, pulseData, openerData, pendingClosures);
+            const streamedCards = await streamCoachingCards(forceCards, pulseData, openerData, pendingClosures, meetingBrief);
             cacheSet('coaching_cards', streamedCards);
 
             // Final render with all data
             const freshJSON = JSON.stringify([pulseData, streamedCards, openerData, pendingClosures]);
             if (freshJSON !== _lastPulseJSON) {
                 _lastPulseJSON = freshJSON;
-                renderMorningWalk(pulseData, streamedCards, openerData, pendingClosures);
+                renderMorningWalk(pulseData, streamedCards, openerData, pendingClosures, meetingBrief);
             }
 
             updateLastActive();
+            markSynced();
 
             // Retry on failure after delay
             if (pulseResult.status === 'rejected' && (!cachedPulse || !cachedPulse.data)) {
@@ -4089,7 +4339,7 @@
         }
 
         // Stream coaching cards via SSE, rendering each card progressively as it arrives
-        function streamCoachingCards(forceRefresh, pulseData, openerData, pendingClosures) {
+        function streamCoachingCards(forceRefresh, pulseData, openerData, pendingClosures, meetingBrief) {
             return new Promise((resolve) => {
                 const url = '/api/coaching/cards/stream' +
                     '?passcode=' + encodeURIComponent(getPasscode()) +
@@ -4124,7 +4374,7 @@
                         const card = JSON.parse(e.data);
                         cards.push(card);
                         // Progressive render: replace cached cards with fresh ones as they arrive
-                        renderMorningWalk(pulseData, cards, openerData, pendingClosures);
+                        renderMorningWalk(pulseData, cards, openerData, pendingClosures, meetingBrief);
                         _lastPulseJSON = JSON.stringify([pulseData, cards, openerData, pendingClosures]);
                     } catch(ex) {
                         console.error('[Cards] Failed to parse card:', ex);
@@ -5147,6 +5397,8 @@
                     if (input && contextDbs[i]) { input.value = contextDbs[i]; if (statusEl && dbNames[contextDbs[i]]) statusEl.textContent = dbNames[contextDbs[i]]; }
                 }
             } catch (error) { console.error('Failed to load settings:', error); }
+            // Also load meeting brief config
+            loadMeetingBriefConfig();
         }
 
         function extractNotionDbId(input) {
@@ -5157,6 +5409,192 @@
             const cleanId = input.replace(/-/g, '');
             if (/^[a-f0-9]{32}$/i.test(cleanId)) return cleanId;
             return input;
+        }
+
+        // --- Push Notification Registration ---
+
+        async function registerPushNotifications() {
+            if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+                console.log('[Push] Not supported in this browser');
+                return;
+            }
+
+            try {
+                // Register service worker
+                const reg = await navigator.serviceWorker.register('/sw.js');
+                console.log('[Push] Service worker registered, scope:', reg.scope);
+
+                // Check if already subscribed
+                const existingSub = await reg.pushManager.getSubscription();
+                if (existingSub) {
+                    console.log('[Push] Already subscribed');
+                    return;
+                }
+
+                // Check if permission already denied
+                if (Notification.permission === 'denied') {
+                    console.log('[Push] Notification permission denied');
+                    return;
+                }
+
+                // Get VAPID public key from server
+                const vapidResp = await authFetch('/api/push/vapid-public-key');
+                if (!vapidResp.ok) {
+                    console.log('[Push] VAPID keys not configured');
+                    return;
+                }
+                const vapidData = await vapidResp.json();
+                const vapidKey = vapidData.vapid_public_key;
+                if (!vapidKey) return;
+
+                // Request permission (only if not yet decided)
+                if (Notification.permission === 'default') {
+                    const perm = await Notification.requestPermission();
+                    if (perm !== 'granted') {
+                        console.log('[Push] Permission not granted:', perm);
+                        return;
+                    }
+                }
+
+                // Subscribe to push
+                const sub = await reg.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: urlBase64ToUint8Array(vapidKey)
+                });
+
+                // Send subscription to server
+                await authFetch('/api/push/subscribe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(sub.toJSON())
+                });
+
+                console.log('[Push] Subscribed successfully');
+            } catch(e) {
+                console.error('[Push] Registration failed:', e);
+            }
+        }
+
+        // --- Post-Meeting Capture Overlay ---
+
+        function showCaptureOverlay(meetingTitle, meetingId) {
+            var existing = document.getElementById('capture-overlay');
+            if (existing) existing.remove();
+
+            var overlay = document.createElement('div');
+            overlay.id = 'capture-overlay';
+            overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:10000;display:flex;align-items:flex-start;justify-content:center;padding-top:60px;';
+            overlay.innerHTML = '<div style="background:#1a1d21;border-radius:16px;padding:24px;width:90%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,0.5);">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
+                    '<div>' +
+                        '<div style="font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:0.5px;">Post-Meeting Capture</div>' +
+                        '<div style="font-size:16px;color:#e6edf3;margin-top:4px;">' + meetingTitle + '</div>' +
+                    '</div>' +
+                    '<button onclick="document.getElementById(\'capture-overlay\').remove()" style="background:none;border:none;color:#8b949e;font-size:24px;cursor:pointer;padding:4px 8px;">\u00d7</button>' +
+                '</div>' +
+                '<textarea id="capture-input" placeholder="Follow-ups, commitments, notes..." style="width:100%;height:120px;background:#0d1117;border:1px solid #30363d;border-radius:8px;color:#e6edf3;padding:12px;font-size:15px;resize:vertical;font-family:inherit;box-sizing:border-box;"></textarea>' +
+                '<button id="capture-submit-btn" onclick="submitCapture(\'' + (meetingId || '').replace(/\x27/g, "\\\x27") + '\',\'' + (meetingTitle || '').replace(/\x27/g, "\\\x27") + '\')" style="width:100%;margin-top:12px;padding:12px;background:#238636;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:500;cursor:pointer;">Save Follow-up</button>' +
+            '</div>';
+            document.body.appendChild(overlay);
+            setTimeout(function() { var inp = document.getElementById('capture-input'); if (inp) inp.focus(); }, 100);
+        }
+
+        async function submitCapture(meetingId, meetingTitle) {
+            var input = document.getElementById('capture-input');
+            var text = input ? input.value.trim() : '';
+            if (!text) return;
+
+            var btn = document.getElementById('capture-submit-btn');
+            if (btn) { btn.textContent = 'Saving...'; btn.disabled = true; }
+
+            try {
+                var r = await authFetch('/api/capture', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ meetingId: meetingId, meetingTitle: meetingTitle, text: text })
+                });
+                if (r.ok) {
+                    if (btn) { btn.textContent = '\u2713 Saved'; btn.style.background = '#1a7f37'; }
+                    setTimeout(function() { var ov = document.getElementById('capture-overlay'); if (ov) ov.remove(); }, 1000);
+                } else {
+                    if (btn) { btn.textContent = 'Failed — tap to retry'; btn.disabled = false; btn.style.background = '#da3633'; }
+                }
+            } catch(e) {
+                if (btn) { btn.textContent = 'Failed — tap to retry'; btn.disabled = false; btn.style.background = '#da3633'; }
+            }
+        }
+
+        // Check for pending captures from server (works across all platforms including iOS PWAs)
+        async function checkPendingCapture() {
+            try {
+                var r = await authFetch('/api/capture/pending');
+                if (r.ok) {
+                    var d = await r.json();
+                    if (d.pending) {
+                        showCaptureOverlay(d.meetingTitle, d.meetingId);
+                        authFetch('/api/capture/pending', { method: 'DELETE' });
+                    }
+                }
+            } catch(e) {
+                console.log('[Capture] Pending check failed:', e);
+            }
+        }
+        setTimeout(checkPendingCapture, 2000);
+
+        // Listen for messages from service worker (notification clicks)
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.addEventListener('message', function(event) {
+                if (event.data && event.data.type === 'notification-click') {
+                    checkPendingCapture();
+                }
+            });
+        }
+
+        function urlBase64ToUint8Array(base64String) {
+            var padding = '='.repeat((4 - base64String.length % 4) % 4);
+            var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+            var rawData = window.atob(base64);
+            var outputArray = new Uint8Array(rawData.length);
+            for (var i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+            }
+            return outputArray;
+        }
+
+        async function loadMeetingBriefConfig() {
+            try {
+                const r = await authFetch('/api/config/home');
+                if (r.ok) {
+                    const d = await r.json();
+                    const el = document.getElementById('meetingBriefPrompt');
+                    if (el && d.meeting_brief_prompt) el.value = d.meeting_brief_prompt;
+                }
+            } catch(e) { console.error('Failed to load meeting brief config:', e); }
+        }
+
+        async function saveMeetingBriefConfig() {
+            const prompt = document.getElementById('meetingBriefPrompt').value.trim();
+            const statusEl = document.getElementById('meetingBriefStatus');
+            try {
+                const r = await authFetch('/api/config/home', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ meeting_brief_prompt: prompt })
+                });
+                if (r.ok) {
+                    statusEl.textContent = 'Saved';
+                    statusEl.className = '';
+                    setTimeout(() => { statusEl.className = 'hidden'; }, 2000);
+                } else {
+                    statusEl.textContent = 'Failed to save';
+                    statusEl.style.color = 'var(--danger)';
+                    statusEl.className = '';
+                }
+            } catch(e) {
+                statusEl.textContent = 'Error: ' + e.message;
+                statusEl.style.color = 'var(--danger)';
+                statusEl.className = '';
+            }
         }
 
         async function saveNotionConfig() {

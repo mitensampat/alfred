@@ -250,7 +250,7 @@ class CadenceRunner {
         }
 
         // 1. Fetch all WhatsApp threads from the last 7 days
-        let whatsappReader = WhatsAppReader(dbPath: config.messaging.whatsapp.dbPath)
+        let whatsappReader = WhatsAppReader.shared(dbPath: config.messaging.whatsapp.dbPath)
         try whatsappReader.connect()
         let since = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
         let threads = try whatsappReader.fetchThreads(since: since)
@@ -449,7 +449,7 @@ class CadenceRunner {
         // Messaging velocity
         do {
             let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: today)!
-            let reader = WhatsAppReader(dbPath: config.messaging.whatsapp.dbPath)
+            let reader = WhatsAppReader.shared(dbPath: config.messaging.whatsapp.dbPath)
             try reader.connect()
             let threads = try reader.fetchThreads(since: sevenDaysAgo)
             let totalIn = threads.flatMap { $0.messages }.filter { $0.direction == .incoming }.count

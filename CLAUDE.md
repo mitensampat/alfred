@@ -18,20 +18,29 @@ sleep 1
 pkill -f "Alfred.app/Contents/MacOS/Alfred"
 sleep 2
 
-# 3. Install new binary
-cp .build/release/alfred /Applications/Alfred.app/Contents/MacOS/Alfred
+# 3. Smart install: only copy + re-sign if binary actually changed
+#    Re-signing revokes ALL macOS TCC permissions (FDA, Contacts, Notifications)
+#    so we skip it when the binary is identical (e.g., HTML-only changes)
+OLD_HASH=$(md5 -q /Applications/Alfred.app/Contents/MacOS/Alfred 2>/dev/null || echo "none")
+NEW_HASH=$(md5 -q .build/release/alfred 2>/dev/null || echo "new")
+if [ "$OLD_HASH" != "$NEW_HASH" ]; then
+    echo "Binary changed — installing + re-signing"
+    cp .build/release/alfred /Applications/Alfred.app/Contents/MacOS/Alfred
+    codesign --force --sign - --identifier com.msfoundry.alfred /Applications/Alfred.app/Contents/MacOS/Alfred
+else
+    echo "Binary unchanged — skipping codesign (preserves TCC permissions)"
+fi
 
-# 4. Re-sign with stable bundle identifier (CRITICAL for Full Disk Access / TCC permissions)
-codesign --force --sign - --identifier com.msfoundry.alfred /Applications/Alfred.app/Contents/MacOS/Alfred
-
-# 5. Sync HTML to hot-reload directory
+# 4. Sync HTML to hot-reload directory
 cp Sources/GUI/Resources/home.html ~/.config/alfred/web/home.html
 
-# 6. Restart via LaunchAgent
+# 5. Restart via LaunchAgent
 launchctl load ~/Library/LaunchAgents/com.msfoundry.alfred.plist
 ```
 
 **Always do this after making code changes.** Never leave a debug binary running alongside the release binary.
+
+**Note on permissions**: `codesign --force --sign -` uses ad-hoc signing which generates a new identity each time, causing macOS to revoke FDA, Contacts, and Notification permissions. The smart-skip above avoids this on HTML-only deploys. For a permanent fix, use a stable Apple Developer identity (see High Priority To-Do in MEMORY.md).
 
 ### Why This Matters
 
@@ -175,6 +184,7 @@ After every Golden Path deploy:
 For UI/frontend changes, also:
 - Load the page and visually verify (screenshot or browser tool)
 - Don't assume HTML hot-reload worked — confirm by checking the rendered output
+- **Mobile rendering check** — verify layout on iPhone 17 Pro (393×852 viewport) and iPad Pro (1024×1366 viewport) using browser responsive mode or device simulation. Check for overflow, truncation, touch target sizing, and panel/modal usability. Do this on every UI push.
 
 For prompt/LLM behavior changes:
 - Trigger the actual user flow (e.g. send a chat message, run a scan)

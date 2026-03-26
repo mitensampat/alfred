@@ -61,6 +61,7 @@ struct UserIntent: Codable {
         case create = "create"          // Create new task, commitment
         case delete = "delete"          // Delete/cancel item
         case search = "search"          // Search across all data
+        case chat = "chat"              // Conversational, no structured action needed
     }
 
     enum Target: String, Codable {
@@ -114,6 +115,13 @@ struct UserIntent: Codable {
         let taskTitle: String?            // title for new task (distinct from taskSearchTerm which is for search)
         let taskType: String?             // "Todo", "Commitment", "Follow-up"
 
+        // Commitment creation filters (used when action is "create" and target is "commitments")
+        let commitmentDirection: String?  // "i_owe" or "they_owe"
+        let commitmentCounterparty: String? // person name (e.g., "Nikhil")
+
+        // Calendar event search/update filters
+        let eventSearchTerm: String?      // fuzzy search for existing events ("3pm", "standup", "Nikhil")
+
         // Calendar event creation filters (used when action is "create" and target is "calendar")
         let eventTitle: String?           // "Meeting with Mona about finance"
         let eventTime: String?            // ISO8601 datetime computed from natural language
@@ -141,6 +149,9 @@ struct UserIntent: Codable {
             case noteToAdd = "note_to_add"
             case taskTitle = "task_title"
             case taskType = "task_type"
+            case commitmentDirection = "commitment_direction"
+            case commitmentCounterparty = "commitment_counterparty"
+            case eventSearchTerm = "event_search_term"
             case eventTitle = "event_title"
             case eventTime = "event_time"
             case eventDurationMinutes = "event_duration_minutes"
@@ -226,6 +237,13 @@ struct UserIntent: Codable {
                 newDueDate = nil
             }
 
+            // Commitment creation fields
+            commitmentDirection = try container.decodeIfPresent(String.self, forKey: .commitmentDirection)
+            commitmentCounterparty = try container.decodeIfPresent(String.self, forKey: .commitmentCounterparty)
+
+            // Calendar event search/update fields
+            eventSearchTerm = try container.decodeIfPresent(String.self, forKey: .eventSearchTerm)
+
             // Calendar event creation fields
             eventTitle = try container.decodeIfPresent(String.self, forKey: .eventTitle)
             eventTime = try container.decodeIfPresent(String.self, forKey: .eventTime)
@@ -283,6 +301,9 @@ struct UserIntent: Codable {
             self.noteToAdd = nil
             self.taskTitle = nil
             self.taskType = nil
+            self.commitmentDirection = nil
+            self.commitmentCounterparty = nil
+            self.eventSearchTerm = nil
             self.eventTitle = nil
             self.eventTime = nil
             self.eventDurationMinutes = nil
@@ -311,6 +332,9 @@ struct UserIntent: Codable {
             noteToAdd: String? = nil,
             taskTitle: String? = nil,
             taskType: String? = nil,
+            commitmentDirection: String? = nil,
+            commitmentCounterparty: String? = nil,
+            eventSearchTerm: String? = nil,
             eventTitle: String? = nil,
             eventTime: String? = nil,
             eventDurationMinutes: Int? = nil,
@@ -336,6 +360,9 @@ struct UserIntent: Codable {
             self.noteToAdd = noteToAdd
             self.taskTitle = taskTitle
             self.taskType = taskType
+            self.commitmentDirection = commitmentDirection
+            self.commitmentCounterparty = commitmentCounterparty
+            self.eventSearchTerm = eventSearchTerm
             self.eventTitle = eventTitle
             self.eventTime = eventTime
             self.eventDurationMinutes = eventDurationMinutes

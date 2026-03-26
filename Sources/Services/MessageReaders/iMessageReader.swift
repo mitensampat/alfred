@@ -3,7 +3,22 @@ import SQLite3
 import Contacts
 
 class iMessageReader {
+    /// Shared singleton — one connection, one instance, across the entire app.
+    private static var _shared: iMessageReader?
+    private static let sharedLock = NSLock()
+
+    static func shared(dbPath: String) -> iMessageReader {
+        sharedLock.lock()
+        defer { sharedLock.unlock() }
+        if let existing = _shared { return existing }
+        let reader = iMessageReader(dbPath: dbPath)
+        _shared = reader
+        return reader
+    }
+
     private let dbPath: String
+    /// Single persistent connection with SQLITE_OPEN_FULLMUTEX.
+    /// FULLMUTEX serializes at the C level without blocking Swift's cooperative thread pool.
     private var db: OpaquePointer?
     private var contactNameCache: [String: String] = [:]
 
@@ -12,26 +27,25 @@ class iMessageReader {
     }
 
     func connect() throws {
+        // Idempotent
+        if db != nil { return }
+
         let path = (dbPath as NSString).expandingTildeInPath
 
-        // Pre-flight check: verify file exists
         guard FileManager.default.fileExists(atPath: path) else {
             throw MessageReaderError.databaseNotFound(path)
         }
 
-        // Open database directly — sqlite3_open_v2 properly goes through macOS TCC
-        // (FileManager.isReadableFile falsely returns false for TCC-protected files even with Full Disk Access)
-        var db: OpaquePointer?
-        let result = sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil)
+        var localDb: OpaquePointer?
+        let result = sqlite3_open_v2(path, &localDb, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil)
         if result == SQLITE_OK {
-            // Verify we can actually read by running a simple query (TCC may defer rejection)
             var stmt: OpaquePointer?
-            let testResult = sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM message LIMIT 1", -1, &stmt, nil)
+            let testResult = sqlite3_prepare_v2(localDb, "SELECT COUNT(*) FROM message LIMIT 1", -1, &stmt, nil)
             sqlite3_finalize(stmt)
             if testResult == SQLITE_OK {
-                self.db = db
+                self.db = localDb
             } else {
-                sqlite3_close(db)
+                sqlite3_close(localDb)
                 print("⚠️ iMessage: Full Disk Access not granted - cannot query \(path)")
                 throw MessageReaderError.connectionFailed("iMessage - Full Disk Access required. Grant in System Settings → Privacy & Security → Full Disk Access")
             }
@@ -42,10 +56,7 @@ class iMessageReader {
     }
 
     func disconnect() {
-        if let db = db {
-            sqlite3_close(db)
-            self.db = nil
-        }
+        // No-op for singleton: the shared connection stays open for the app lifetime.
     }
 
     func fetchMessages(since: Date) throws -> [Message] {

@@ -2,6 +2,18 @@ import Foundation
 import SQLite3
 
 class iMessageReader {
+    private static var _shared: iMessageReader?
+    private static let sharedLock = NSLock()
+
+    static func shared(dbPath: String) -> iMessageReader {
+        sharedLock.lock()
+        defer { sharedLock.unlock() }
+        if let existing = _shared { return existing }
+        let reader = iMessageReader(dbPath: dbPath)
+        _shared = reader
+        return reader
+    }
+
     private let dbPath: String
     private var db: OpaquePointer?
 
@@ -10,17 +22,16 @@ class iMessageReader {
     }
 
     func connect() throws {
+        if db != nil { return }
+
         let path = (dbPath as NSString).expandingTildeInPath
 
-        // Pre-flight check: verify file exists
         guard FileManager.default.fileExists(atPath: path) else {
             throw MessageReaderError.databaseNotFound(path)
         }
 
-        // Open database directly — sqlite3_open_v2 properly goes through macOS TCC
-        // (FileManager.isReadableFile falsely returns false for TCC-protected files even with Full Disk Access)
         var db: OpaquePointer?
-        let result = sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil)
+        let result = sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil)
         if result == SQLITE_OK {
             // Verify we can actually read by running a simple query (TCC may defer rejection)
             var stmt: OpaquePointer?
@@ -40,10 +51,7 @@ class iMessageReader {
     }
 
     func disconnect() {
-        if let db = db {
-            sqlite3_close(db)
-            self.db = nil
-        }
+        // No-op for singleton: the shared connection stays open for the app lifetime.
     }
 
     func fetchMessages(since: Date) throws -> [Message] {

@@ -13,6 +13,7 @@ struct AppConfig: Codable {
     let api: APIConfig?
     let scheduled: ScheduledConfig?
     let cadence: CadenceConfig?
+    let home: HomeConfig?
 
     static func load(from path: String? = nil) -> AppConfig? {
         // Try multiple config locations in order of preference
@@ -212,6 +213,22 @@ struct NotificationConfig: Codable {
 
     struct PushConfig: Codable {
         let enabled: Bool
+        let vapidPublicKey: String?
+        let vapidPrivateKey: String?
+        let vapidSubject: String?
+        let maxPerDay: Int?
+        let quietHoursStart: Int?
+        let quietHoursEnd: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case enabled
+            case vapidPublicKey = "vapid_public_key"
+            case vapidPrivateKey = "vapid_private_key"
+            case vapidSubject = "vapid_subject"
+            case maxPerDay = "max_per_day"
+            case quietHoursStart = "quiet_hours_start"
+            case quietHoursEnd = "quiet_hours_end"
+        }
     }
 
     struct SlackConfig: Codable {
@@ -295,6 +312,14 @@ struct CadenceConfig: Codable {
         case weeklyReviewEnabled = "weekly_review_enabled"
         case weeklyReviewDay = "weekly_review_day"
         case weeklyReviewTime = "weekly_review_time"
+    }
+}
+
+struct HomeConfig: Codable {
+    let meetingBriefPrompt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case meetingBriefPrompt = "meeting_brief_prompt"
     }
 }
 

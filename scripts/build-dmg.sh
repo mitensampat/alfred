@@ -3,7 +3,7 @@
 # Usage: ./scripts/build-dmg.sh [--skip-build]
 set -e
 
-VERSION="2.0.3"
+VERSION="2.1.0"
 APP_NAME="Alfred"
 BUNDLE_ID="com.msfoundry.alfred"
 DMG_NAME="Coach-Alfred-${VERSION}.dmg"
@@ -56,7 +56,7 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" << PLIST
     <key>CFBundleShortVersionString</key>
     <string>${VERSION}</string>
     <key>CFBundleVersion</key>
-    <string>3</string>
+    <string>4</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>LSMinimumSystemVersion</key>
@@ -64,7 +64,7 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" << PLIST
     <key>LSUIElement</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2025 MS Foundry. All rights reserved.</string>
+    <string>Copyright © 2026 MS Foundry. All rights reserved.</string>
 </dict>
 </plist>
 PLIST
@@ -72,6 +72,21 @@ PLIST
 # Copy web resources
 if [[ -f "Sources/GUI/Resources/home.html" ]]; then
     cp Sources/GUI/Resources/home.html "${APP_BUNDLE}/Contents/Resources/"
+fi
+
+# Copy PWA resources (service worker, manifest, icons)
+mkdir -p "${APP_BUNDLE}/Contents/Resources/web"
+for f in sw.js manifest.json icon-192.png icon-512.png; do
+    if [[ -f "Sources/GUI/Resources/${f}" ]]; then
+        cp "Sources/GUI/Resources/${f}" "${APP_BUNDLE}/Contents/Resources/web/"
+    elif [[ -f "${HOME}/.config/alfred/web/${f}" ]]; then
+        cp "${HOME}/.config/alfred/web/${f}" "${APP_BUNDLE}/Contents/Resources/web/"
+    fi
+done
+
+# Copy LaunchAgent plist template
+if [[ -f "Config/com.msfoundry.alfred.plist" ]]; then
+    cp Config/com.msfoundry.alfred.plist "${APP_BUNDLE}/Contents/Resources/"
 fi
 
 # Copy example skills

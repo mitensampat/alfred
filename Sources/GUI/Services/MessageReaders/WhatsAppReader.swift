@@ -2,35 +2,61 @@ import Foundation
 import SQLite3
 
 class WhatsAppReader {
+    /// Shared singleton — ensures one SQLite connection, one serial queue, across the entire app.
+    private static var _shared: WhatsAppReader?
+    private static let sharedLock = NSLock()
+
+    static func shared(dbPath: String) -> WhatsAppReader {
+        sharedLock.lock()
+        defer { sharedLock.unlock() }
+        if let existing = _shared {
+            return existing
+        }
+        let reader = WhatsAppReader(dbPath: dbPath)
+        _shared = reader
+        return reader
+    }
+
     private let dbPath: String
     private var db: OpaquePointer?
+    /// Lock only protects connect/disconnect. SQLite itself uses FULLMUTEX for internal serialization.
+    private let connectLock = NSLock()
 
     init(dbPath: String) {
         self.dbPath = dbPath
     }
 
     func connect() throws {
+        connectLock.lock()
+        defer { connectLock.unlock() }
+        if db != nil { return }
+
         let path = (dbPath as NSString).expandingTildeInPath
         guard FileManager.default.fileExists(atPath: path) else {
             throw MessageReaderError.databaseNotFound(path)
         }
 
-        var db: OpaquePointer?
-        if sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK {
-            self.db = db
+        var localDb: OpaquePointer?
+        if sqlite3_open_v2(path, &localDb, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK {
+            self.db = localDb
         } else {
             throw MessageReaderError.connectionFailed("WhatsApp")
         }
     }
 
     func disconnect() {
-        if let db = db {
+        // No-op for singleton: the shared connection stays open for the app lifetime.
+        if false, let db = db {
             sqlite3_close(db)
             self.db = nil
         }
     }
 
     func fetchMessages(since: Date) throws -> [Message] {
+        return try self._unsafeFetchMessages(since: since)
+    }
+
+    private func _unsafeFetchMessages(since: Date) throws -> [Message] {
         guard let db = db else {
             throw MessageReaderError.notConnected
         }
@@ -129,9 +155,82 @@ class WhatsAppReader {
     }
 
     func fetchThreads(since: Date) throws -> [MessageThread] {
-        let messages = try fetchMessages(since: since)
+
+        let messages = try self._unsafeFetchMessages(since: since)
         let chatMetadata = try fetchChatMetadata()
-        return groupMessagesIntoThreads(messages, chatMetadata: chatMetadata)
+        var threads = groupMessagesIntoThreads(messages, chatMetadata: chatMetadata)
+
+        // Update lastMessageDate to reflect ALL interaction types (calls, media, etc.)
+        // fetchMessages only returns text messages, so calls/media are invisible.
+        // This separate query gets the true last interaction date per chat.
+        let trueLastDates = try fetchTrueLastInteractionDates(since: since)
+        for i in threads.indices {
+            if let trueDate = trueLastDates[threads[i].contactIdentifier],
+               trueDate > threads[i].lastMessageDate {
+                threads[i] = MessageThread(
+                    contactIdentifier: threads[i].contactIdentifier,
+                    contactName: threads[i].contactName,
+                    platform: threads[i].platform,
+                    messages: threads[i].messages,
+                    unreadCount: threads[i].unreadCount,
+                    lastMessageDate: trueDate
+                )
+            }
+        }
+
+        // Also add threads for contacts who ONLY had calls/media (no text at all)
+        let existingJids = Set(threads.map { $0.contactIdentifier })
+        for (jid, date) in trueLastDates where !existingJids.contains(jid) {
+            if let name = chatMetadata[jid] {
+                threads.append(MessageThread(
+                    contactIdentifier: jid,
+                    contactName: name,
+                    platform: .whatsapp,
+                    messages: [],
+                    unreadCount: 0,
+                    lastMessageDate: date
+                ))
+            }
+        }
+
+        return threads.sorted { $0.lastMessageDate > $1.lastMessageDate }
+    }
+
+    /// Returns the true last interaction date per chat, including calls and media (not just text).
+    private func fetchTrueLastInteractionDates(since: Date) throws -> [String: Date] {
+        guard let db = db else { throw MessageReaderError.notConnected }
+
+        let sinceTimestamp = since.timeIntervalSinceReferenceDate
+
+        let query = """
+        SELECT
+            ZWACHATSESSION.ZCONTACTJID,
+            MAX(ZWAMESSAGE.ZMESSAGEDATE) AS LAST_DATE
+        FROM ZWAMESSAGE
+        LEFT JOIN ZWACHATSESSION ON ZWAMESSAGE.ZCHATSESSION = ZWACHATSESSION.Z_PK
+        WHERE ZWAMESSAGE.ZMESSAGEDATE > ?
+            AND ZWACHATSESSION.ZSESSIONTYPE IN (0, 1)
+        GROUP BY ZWACHATSESSION.ZCONTACTJID
+        """
+
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+
+        var results: [String: Date] = [:]
+
+        if sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK {
+            sqlite3_bind_double(statement, 1, sinceTimestamp)
+
+            while sqlite3_step(statement) == SQLITE_ROW {
+                guard let jidPtr = sqlite3_column_text(statement, 0) else { continue }
+                let jid = String(cString: jidPtr)
+                let dateVal = sqlite3_column_double(statement, 1)
+                let date = Date(timeIntervalSinceReferenceDate: dateVal)
+                results[jid] = date
+            }
+        }
+
+        return results
     }
 
     func fetchThreadByName(_ searchName: String, since: Date) throws -> MessageThread? {

@@ -897,16 +897,26 @@ class ClaudeAIService {
           "due_date": "YYYY-MM-DD" or null
         }
 
+        IMPORTANT: Messages sent to yourself are almost ALWAYS todo items or reminders.
+        Be aggressive about classifying them as todos. If it looks like something to do or remember, it IS a todo.
+
         Examples of todo items:
         - "Remember to call John tomorrow"
         - "Need to review Q4 metrics by Friday"
         - "Follow up with Sarah about the proposal"
         - "Buy milk"
+        - "Vibin feedback today" (short reminder: give feedback to/about Vibin today)
+        - "Call dentist" (two-word action)
+        - "Send deck to Mona" (quick task note)
+        - "Review Q3 numbers" (self-reminder)
+        - "Gym 6pm" (scheduling reminder)
+        - "Nikhil follow up" (terse follow-up reminder)
 
         Not todo items:
-        - Regular conversations
-        - Questions
-        - Status updates without action
+        - Forwarded articles or news stories
+        - Jokes or memes
+        - Long opinion pieces or rants
+        - Questions directed at someone else
         """
 
         let response = try await sendRequest(prompt: prompt)

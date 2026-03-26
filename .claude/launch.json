@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "alfred",
+      "runtimeExecutable": "sleep",
+      "runtimeArgs": ["3600"],
+      "port": 8080
+    }
+  ]
+}

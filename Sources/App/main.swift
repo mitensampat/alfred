@@ -14,7 +14,7 @@ Task {
 RunLoop.main.run()
 
 struct AlfredApp {
-    static let version = "2.1.0"
+    static let version = "2.1.1"
     static var menuBarController: MenuBarController?  // Keep reference to prevent deallocation
 
     static func main() async {
@@ -2682,6 +2682,65 @@ struct AlfredApp {
                 print("  \(warning)")
             }
         }
+        print("")
+
+        // ===============================================
+        // EAGER PERMISSION REQUESTS
+        // Request all permissions upfront at startup so the user gets prompted once.
+        // After a binary re-sign, macOS revokes TCC grants — this ensures we re-request immediately.
+        // ===============================================
+        print("🔐 Requesting permissions...")
+
+        // 1. Notification permission (for macOS native notifications + menu bar alerts)
+        do {
+            let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
+            print("  \(granted ? "✓" : "⚠️") Notification permission \(granted ? "granted" : "denied")")
+        } catch {
+            print("  ⚠️ Notification permission request failed: \(error)")
+        }
+
+        // 2. Contacts permission (for iMessage name resolution)
+        if config.messaging.imessage.enabled {
+            let contactStatus = CNContactStore.authorizationStatus(for: .contacts)
+            if contactStatus == .notDetermined {
+                let contactStore = CNContactStore()
+                do {
+                    let granted = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Bool, Error>) in
+                        contactStore.requestAccess(for: .contacts) { granted, error in
+                            if let error = error { cont.resume(throwing: error) }
+                            else { cont.resume(returning: granted) }
+                        }
+                    }
+                    print("  \(granted ? "✓" : "⚠️") Contacts permission \(granted ? "granted" : "denied")")
+                } catch {
+                    print("  ⚠️ Contacts permission request failed: \(error)")
+                }
+            } else {
+                print("  ✓ Contacts permission already \(contactStatus == .authorized ? "granted" : "denied")")
+            }
+        }
+
+        // 3. Full Disk Access — can't be requested programmatically, but we test it and log clearly
+        if config.messaging.imessage.enabled || config.messaging.whatsapp.enabled {
+            let chatDbPath = config.messaging.imessage.enabled ? config.messaging.imessage.expandedPath : config.messaging.whatsapp.expandedPath
+            var testDb: OpaquePointer?
+            let rc = sqlite3_open_v2(chatDbPath, &testDb, SQLITE_OPEN_READONLY, nil)
+            if rc == SQLITE_OK {
+                var stmt: OpaquePointer?
+                let qrc = sqlite3_prepare_v2(testDb, "SELECT 1", -1, &stmt, nil)
+                if qrc == SQLITE_OK {
+                    print("  ✓ Full Disk Access verified")
+                } else {
+                    print("  ❌ Full Disk Access DENIED — grant in System Settings → Privacy & Security → Full Disk Access → Alfred.app")
+                }
+                sqlite3_finalize(stmt)
+                sqlite3_close(testDb)
+            } else {
+                print("  ❌ Full Disk Access DENIED — grant in System Settings → Privacy & Security → Full Disk Access → Alfred.app")
+                sqlite3_close(testDb)
+            }
+        }
+
         print("")
 
         // Auto-initialize core databases on startup (ensures they exist before any scan or API call)

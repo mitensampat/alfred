@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Coach Alfred — Desktop Home Prototype</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<style>
+    :root {
+        --canvas: #f8f9fb;
+        --surface: #ffffff;
+        --surface-sunken: #f0f2f5;
+        --surface-overlay: rgba(25, 28, 30, 0.45);
+        --ink: #191c1e;
+        --ink-secondary: #57606a;
+        --ink-tertiary: #8b949e;
+        --ink-faint: #b1bac4;
+        --line: #d8dee4;
+        --line-strong: #ced5dc;
+        --line-subtle: #e8ecf0;
+        --coach: #24292f;
+        --coach-light: #eef1f5;
+        --coach-dark: #1b1f23;
+        --gold: #AF9358;
+        --gold-dark: #735b26;
+        --gold-light: #f5f0e6;
+        --growth: #2d5a3d;
+        --growth-light: #e4efe7;
+        --danger: #8b2332;
+        --danger-light: #f4e4e6;
+        --warning: #c49a3c;
+        --info: #3d6888;
+        --font-display: 'Newsreader', Georgia, serif;
+        --font-body: 'Public Sans', -apple-system, sans-serif;
+        --font-mono: 'SF Mono', 'Menlo', monospace;
+        --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+        --shadow-md: 0 2px 8px rgba(0,0,0,0.06);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+        font-family: var(--font-body);
+        background: var(--canvas);
+        color: var(--ink);
+        height: 100vh;
+        overflow: hidden;
+        -webkit-font-smoothing: antialiased;
+    }
+
+    .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+        vertical-align: middle;
+    }
+
+    /* ══════════════════════════════════════
+       SIDEBAR
+       ══════════════════════════════════════ */
+    .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        height: 100vh;
+        width: 240px;
+        background: var(--surface-sunken);
+        border-right: 1px solid var(--line-subtle);
+        display: flex;
+        flex-direction: column;
+        padding: 28px 16px;
+        z-index: 50;
+    }
+
+    .sidebar-brand {
+        margin-bottom: 8px;
+        padding: 0 8px;
+    }
+    .sidebar-brand h1 {
+        font-family: var(--font-display);
+        font-size: 18px;
+        font-weight: 500;
+        color: var(--ink);
+    }
+    .sidebar-brand p {
+        font-size: 10px;
+        color: var(--ink-faint);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-top: 2px;
+    }
+
+    .sidebar-nav {
+        margin-top: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        flex: 1;
+    }
+    .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        font-size: 13px;
+        color: var(--ink-secondary);
+        text-decoration: none;
+        transition: all 0.15s;
+        cursor: pointer;
+        border: none;
+        background: none;
+        width: 100%;
+        text-align: left;
+    }
+    .nav-item:hover { background: var(--surface); color: var(--ink); }
+    .nav-item.active {
+        color: var(--gold-dark);
+        font-weight: 600;
+        background: var(--gold-light);
+    }
+    .nav-item .material-symbols-outlined { font-size: 20px; }
+
+    .sidebar-footer {
+        margin-top: auto;
+        padding-top: 16px;
+        border-top: 1px solid var(--line-subtle);
+    }
+    .sidebar-user {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px;
+    }
+    .sidebar-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        background: var(--coach);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-family: var(--font-display);
+        font-size: 16px;
+        flex-shrink: 0;
+    }
+    .sidebar-user-info { overflow: hidden; }
+    .sidebar-user-name {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--ink);
+    }
+    .sidebar-user-role {
+        font-size: 10px;
+        color: var(--ink-faint);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    /* ══════════════════════════════════════
+       MAIN CONTENT
+       ══════════════════════════════════════ */
+    .main {
+        margin-left: 240px;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Top Bar */
+    .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 28px;
+        height: 56px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--line-subtle);
+        flex-shrink: 0;
+    }
+    .topbar-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .topbar-title {
+        font-family: var(--font-display);
+        font-size: 17px;
+        font-weight: 500;
+        color: var(--ink);
+    }
+    .topbar-divider {
+        width: 1px;
+        height: 16px;
+        background: var(--line);
+    }
+    .topbar-session {
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+    }
+    .topbar-right {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+    }
+    .topbar-btn {
+        background: none;
+        border: none;
+        color: var(--ink-tertiary);
+        cursor: pointer;
+        padding: 4px;
+        transition: color 0.15s;
+    }
+    .topbar-btn:hover { color: var(--gold); }
+    .topbar-status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: var(--ink-faint);
+    }
+    .status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--growth);
+    }
+
+    /* ══════════════════════════════════════
+       TWO-PANE LAYOUT
+       ══════════════════════════════════════ */
+    .two-pane {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+    }
+
+    /* Left Pane — Context */
+    .context-pane {
+        width: 340px;
+        border-right: 1px solid var(--line-subtle);
+        background: var(--surface-sunken);
+        overflow-y: auto;
+        padding: 24px 20px;
+        flex-shrink: 0;
+    }
+    .context-pane::-webkit-scrollbar { width: 4px; }
+    .context-pane::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
+
+    .context-section {
+        margin-bottom: 28px;
+    }
+    .context-section-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        margin-bottom: 12px;
+    }
+
+    /* Strategic Nudge Card */
+    .nudge-card {
+        background: var(--coach);
+        border-radius: 14px;
+        padding: 20px;
+        color: white;
+        position: relative;
+        overflow: hidden;
+    }
+    .nudge-card h3 {
+        font-family: var(--font-display);
+        font-size: 18px;
+        font-weight: 500;
+        margin-bottom: 8px;
+    }
+    .nudge-card p {
+        font-size: 13px;
+        line-height: 1.6;
+        opacity: 0.8;
+        margin-bottom: 14px;
+    }
+    .nudge-action {
+        font-family: var(--font-body);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--gold);
+        background: none;
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .nudge-action:hover { color: white; }
+    .nudge-bg-icon {
+        position: absolute;
+        right: -8px;
+        bottom: -8px;
+        font-size: 80px;
+        opacity: 0.06;
+        color: white;
+    }
+
+    /* Schedule Items */
+    .schedule-item {
+        display: flex;
+        gap: 14px;
+        padding: 10px 8px;
+        border-radius: 8px;
+        transition: background 0.15s;
+        cursor: pointer;
+    }
+    .schedule-item:hover { background: var(--surface); }
+    .schedule-item.highlight {
+        background: var(--gold-light);
+        border: 1px solid rgba(175, 147, 88, 0.15);
+    }
+    .schedule-time {
+        font-size: 12px;
+        font-family: var(--font-mono);
+        color: var(--ink-faint);
+        min-width: 42px;
+        padding-top: 2px;
+    }
+    .schedule-item.highlight .schedule-time {
+        color: var(--gold-dark);
+        font-weight: 600;
+    }
+    .schedule-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--ink);
+    }
+    .schedule-meta {
+        font-size: 11px;
+        color: var(--ink-tertiary);
+        margin-top: 2px;
+    }
+    .schedule-item.highlight .schedule-meta { color: var(--gold-dark); }
+
+    /* Directives */
+    .directive-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        background: var(--surface);
+        border: 1px solid var(--line-subtle);
+        border-radius: 10px;
+        margin-bottom: 6px;
+        font-size: 13px;
+        color: var(--ink-secondary);
+    }
+    .directive-item .material-symbols-outlined { color: var(--line-strong); font-size: 20px; }
+    .directive-item.completed {
+        opacity: 0.5;
+        text-decoration: line-through;
+    }
+    .directive-item.completed .material-symbols-outlined {
+        color: var(--gold);
+        font-variation-settings: 'FILL' 1, 'wght' 300;
+    }
+
+    /* Right Pane — Chat */
+    .chat-pane {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        background: var(--surface);
+    }
+
+    /* Chat Header */
+    .chat-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 28px;
+        border-bottom: 1px solid var(--line-subtle);
+    }
+    .chat-header-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .chat-indicator {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--gold);
+    }
+    .chat-header-title {
+        font-family: var(--font-display);
+        font-size: 16px;
+        font-weight: 500;
+        color: var(--ink);
+    }
+
+    /* Chat Messages */
+    .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 28px 32px;
+    }
+    .chat-messages::-webkit-scrollbar { width: 4px; }
+    .chat-messages::-webkit-scrollbar-thumb { background: var(--line); border-radius: 2px; }
+
+    .msg-group { margin-bottom: 28px; }
+
+    .msg-ai {
+        display: flex;
+        gap: 14px;
+        max-width: 680px;
+    }
+    .msg-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        background: var(--coach);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+    .msg-avatar .material-symbols-outlined { color: white; font-size: 18px; }
+    .msg-avatar.user {
+        background: var(--gold-light);
+    }
+    .msg-avatar.user .material-symbols-outlined { color: var(--gold-dark); }
+    .msg-content {
+        flex: 1;
+    }
+    .msg-text {
+        font-size: 14.5px;
+        line-height: 1.65;
+        color: var(--ink);
+    }
+    .msg-text p { margin-bottom: 10px; }
+    .msg-text p:last-child { margin-bottom: 0; }
+    .msg-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+    }
+    .msg-action-btn {
+        font-family: var(--font-body);
+        font-size: 11px;
+        font-weight: 600;
+        padding: 7px 16px;
+        border: 1px solid var(--line-strong);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--ink-secondary);
+        cursor: pointer;
+        transition: all 0.15s;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+    .msg-action-btn:hover {
+        border-color: var(--gold);
+        color: var(--gold-dark);
+    }
+
+    .msg-user {
+        display: flex;
+        gap: 14px;
+        max-width: 680px;
+        margin-left: auto;
+        flex-direction: row-reverse;
+    }
+    .msg-user .msg-content {
+        text-align: right;
+    }
+    .msg-user-bubble {
+        display: inline-block;
+        background: var(--surface-sunken);
+        padding: 14px 18px;
+        border-radius: 14px;
+        text-align: left;
+    }
+    .msg-user-bubble p {
+        font-size: 14.5px;
+        line-height: 1.6;
+        color: var(--ink);
+    }
+
+    /* Data Card (inline) */
+    .data-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+        margin-top: 14px;
+        max-width: 480px;
+    }
+    .data-card-header {
+        background: var(--coach);
+        padding: 12px 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .data-card-header span {
+        font-family: var(--font-display);
+        font-size: 12px;
+        color: white;
+        font-style: italic;
+    }
+    .data-card-body {
+        padding: 16px;
+    }
+    .data-metrics {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+    }
+    .data-metric {
+        padding: 10px;
+        background: var(--surface-sunken);
+        border-radius: 6px;
+    }
+    .data-metric-label {
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+    }
+    .data-metric-value {
+        font-family: var(--font-display);
+        font-size: 20px;
+        font-weight: 500;
+        color: var(--ink);
+        margin-top: 4px;
+    }
+    .data-metric-value.highlight { color: var(--gold-dark); }
+
+    /* Recommendation Block */
+    .recommendation {
+        background: var(--surface-sunken);
+        border-left: 3px solid var(--gold);
+        padding: 16px 18px;
+        border-radius: 0 8px 8px 0;
+        margin-top: 14px;
+        max-width: 400px;
+    }
+    .recommendation h5 {
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--gold-dark);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 10px;
+    }
+    .recommendation-row {
+        display: flex;
+        justify-content: space-between;
+        font-size: 13px;
+        padding: 3px 0;
+    }
+    .recommendation-row .label { color: var(--ink-secondary); }
+    .recommendation-row .value { font-weight: 600; color: var(--ink); }
+    .recommendation-row .value.positive { color: var(--growth); }
+
+    /* Chat Input */
+    .chat-input-area {
+        padding: 20px 28px;
+        border-top: 1px solid var(--line-subtle);
+        background: var(--surface);
+    }
+    .chat-input-row {
+        max-width: 680px;
+        margin: 0 auto;
+        position: relative;
+    }
+    .chat-input-field {
+        width: 100%;
+        padding: 14px 60px 14px 16px;
+        font-family: var(--font-body);
+        font-size: 14px;
+        border: none;
+        border-bottom: 1px solid var(--line);
+        background: transparent;
+        color: var(--ink);
+        outline: none;
+        transition: border-color 0.2s;
+    }
+    .chat-input-field:focus { border-bottom-color: var(--gold); }
+    .chat-input-field::placeholder { color: var(--ink-faint); }
+    .chat-input-actions {
+        position: absolute;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .chat-input-actions button {
+        background: none;
+        border: none;
+        color: var(--ink-faint);
+        cursor: pointer;
+        padding: 4px;
+    }
+    .chat-input-actions button:hover { color: var(--gold); }
+    .chat-send-btn {
+        width: 36px !important;
+        height: 36px;
+        border-radius: 50% !important;
+        background: var(--coach) !important;
+        color: white !important;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .chat-send-btn .material-symbols-outlined { font-size: 18px; }
+    .chat-send-btn:hover { background: var(--coach-dark) !important; }
+
+    /* Cmd overlay (shows above input on desktop) */
+    .cmd-overlay {
+        position: absolute;
+        bottom: 100%;
+        left: 0;
+        margin-bottom: 8px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        box-shadow: var(--shadow-md);
+        padding: 8px 0;
+        width: 240px;
+    }
+    .cmd-overlay-header {
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        padding: 6px 16px 8px;
+        border-bottom: 1px solid var(--line-subtle);
+    }
+    .cmd-overlay-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 16px;
+        cursor: pointer;
+        transition: background 0.1s;
+    }
+    .cmd-overlay-item:hover { background: var(--gold-light); }
+    .cmd-overlay-item .cmd-name {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--gold-dark);
+    }
+    .cmd-overlay-item .cmd-desc {
+        font-size: 12px;
+        color: var(--ink-tertiary);
+    }
+
+    .chat-input-hint {
+        text-align: center;
+        font-size: 10px;
+        color: var(--ink-faint);
+        margin-top: 10px;
+        letter-spacing: 0.02em;
+    }
+</style>
+</head>
+<body>
+
+<!-- ═══ SIDEBAR ═══ -->
+<aside class="sidebar">
+    <div class="sidebar-brand">
+        <h1>Coach Alfred</h1>
+        <p>Executive Coaching</p>
+    </div>
+
+    <nav class="sidebar-nav">
+        <button class="nav-item active">
+            <span class="material-symbols-outlined">chat_bubble</span>
+            <span>Concierge</span>
+        </button>
+        <button class="nav-item">
+            <span class="material-symbols-outlined">settings</span>
+            <span>Settings</span>
+        </button>
+    </nav>
+
+    <div class="sidebar-footer">
+        <div class="sidebar-user">
+            <div class="sidebar-avatar">M</div>
+            <div class="sidebar-user-info">
+                <div class="sidebar-user-name">Miten Sampat</div>
+                <div class="sidebar-user-role">Coach Alfred</div>
+            </div>
+        </div>
+    </div>
+</aside>
+
+<!-- ═══ MAIN ═══ -->
+<main class="main">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+        <div class="topbar-left">
+            <span class="topbar-title">Coach Alfred</span>
+            <span class="topbar-divider"></span>
+            <span class="topbar-session">Active Session</span>
+        </div>
+        <div class="topbar-right">
+            <button class="topbar-btn"><span class="material-symbols-outlined">dark_mode</span></button>
+            <button class="topbar-btn"><span class="material-symbols-outlined">settings</span></button>
+            <div class="topbar-status">
+                <div class="status-dot"></div>
+                <span>Connected</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Two-Pane -->
+    <div class="two-pane">
+
+        <!-- Left Pane: Context -->
+        <section class="context-pane">
+
+            <!-- Strategic Nudge -->
+            <div class="context-section">
+                <div class="context-section-label">Today's Focus</div>
+                <div class="nudge-card">
+                    <h3>Board Prep Week</h3>
+                    <p>You have 3 days until the board meeting. The strategy deck is 60% complete — prioritise the financial summary section today.</p>
+                    <button class="nudge-action">
+                        Open Strategy Deck
+                        <span class="material-symbols-outlined" style="font-size:14px;">arrow_forward</span>
+                    </button>
+                    <span class="material-symbols-outlined nudge-bg-icon">psychology</span>
+                </div>
+            </div>
+
+            <!-- Schedule -->
+            <div class="context-section">
+                <div class="context-section-label" style="display:flex;justify-content:space-between;">
+                    <span>Today's Schedule</span>
+                    <span style="text-transform:none;font-weight:400;letter-spacing:0;">Thu, Mar 20</span>
+                </div>
+                <div class="schedule-item">
+                    <span class="schedule-time">09:00</span>
+                    <div>
+                        <div class="schedule-title">Deep Work Block</div>
+                        <div class="schedule-meta">Focus time · 90 min</div>
+                    </div>
+                </div>
+                <div class="schedule-item highlight">
+                    <span class="schedule-time">10:30</span>
+                    <div>
+                        <div class="schedule-title">Strategy Sync</div>
+                        <div class="schedule-meta">With Raj, Priya · Zoom</div>
+                    </div>
+                </div>
+                <div class="schedule-item">
+                    <span class="schedule-time">14:00</span>
+                    <div>
+                        <div class="schedule-title">Investor Update Call</div>
+                        <div class="schedule-meta">With Portfolio Team</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Directives -->
+            <div class="context-section">
+                <div class="context-section-label">Open Commitments</div>
+                <div class="directive-item">
+                    <span class="material-symbols-outlined">radio_button_unchecked</span>
+                    <span>Follow up with Raj on proposal</span>
+                </div>
+                <div class="directive-item">
+                    <span class="material-symbols-outlined">radio_button_unchecked</span>
+                    <span>Review Q4 financial projections</span>
+                </div>
+                <div class="directive-item completed">
+                    <span class="material-symbols-outlined">check_circle</span>
+                    <span>Send board meeting agenda</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right Pane: Chat -->
+        <section class="chat-pane">
+            <div class="chat-header">
+                <div class="chat-header-left">
+                    <div class="chat-indicator"></div>
+                    <span class="chat-header-title">Active Consultation</span>
+                </div>
+            </div>
+
+            <div class="chat-messages">
+                <!-- AI Message -->
+                <div class="msg-group">
+                    <div class="msg-ai">
+                        <div class="msg-avatar">
+                            <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">concierge</span>
+                        </div>
+                        <div class="msg-content">
+                            <div class="msg-text">
+                                <p>Good morning, Miten. I've reviewed your calendar and commitments. You have a clear 90-minute window before the strategy sync — I'd recommend using it for the board deck financial section rather than inbox triage.</p>
+                                <p>You also have 2 overdue commitments that need attention today.</p>
+                            </div>
+                            <div class="msg-actions">
+                                <button class="msg-action-btn">View Commitments</button>
+                                <button class="msg-action-btn">Run Briefing</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- User Message -->
+                <div class="msg-group">
+                    <div class="msg-user">
+                        <div class="msg-avatar user">
+                            <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">person</span>
+                        </div>
+                        <div class="msg-content">
+                            <div class="msg-user-bubble">
+                                <p>What's the status on the Q4 projections? I need to know before the investor call.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI Response with Data Card -->
+                <div class="msg-group">
+                    <div class="msg-ai">
+                        <div class="msg-avatar">
+                            <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">concierge</span>
+                        </div>
+                        <div class="msg-content">
+                            <div class="msg-text">
+                                <p>Based on your Notion tasks and recent messages, here's what I've gathered on Q4 projections:</p>
+                            </div>
+                            <!-- Data Card -->
+                            <div class="data-card">
+                                <div class="data-card-header">
+                                    <span>Commitment Tracker Summary</span>
+                                    <span class="material-symbols-outlined" style="font-size:16px;color:var(--ink-faint);">fullscreen</span>
+                                </div>
+                                <div class="data-card-body">
+                                    <div class="data-metrics">
+                                        <div class="data-metric">
+                                            <div class="data-metric-label">Open</div>
+                                            <div class="data-metric-value">5</div>
+                                        </div>
+                                        <div class="data-metric">
+                                            <div class="data-metric-label">Overdue</div>
+                                            <div class="data-metric-value highlight">2</div>
+                                        </div>
+                                        <div class="data-metric">
+                                            <div class="data-metric-label">Completed</div>
+                                            <div class="data-metric-value">12</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Recommendation -->
+                            <div class="recommendation">
+                                <h5>Coach Alfred's Recommendation</h5>
+                                <div class="recommendation-row">
+                                    <span class="label">Priority:</span>
+                                    <span class="value">Follow up with Raj first</span>
+                                </div>
+                                <div class="recommendation-row">
+                                    <span class="label">Confidence:</span>
+                                    <span class="value positive">High</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Input -->
+            <div class="chat-input-area">
+                <div class="chat-input-row">
+                    <!-- Cmd Overlay -->
+                    <div class="cmd-overlay">
+                        <div class="cmd-overlay-header">Commands</div>
+                        <div class="cmd-overlay-item">
+                            <span class="cmd-name">/briefing</span>
+                            <span class="cmd-desc">Morning Briefing</span>
+                        </div>
+                        <div class="cmd-overlay-item">
+                            <span class="cmd-name">/calendar</span>
+                            <span class="cmd-desc">Today's Schedule</span>
+                        </div>
+                        <div class="cmd-overlay-item">
+                            <span class="cmd-name">/commitments</span>
+                            <span class="cmd-desc">Track Commitments</span>
+                        </div>
+                    </div>
+
+                    <input type="text" class="chat-input-field" placeholder="Talk to Coach Alfred...">
+                    <div class="chat-input-actions">
+                        <button class="chat-send-btn">
+                            <span class="material-symbols-outlined">arrow_upward</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="chat-input-hint">Type / for tools · Press Enter to send</div>
+            </div>
+        </section>
+    </div>
+</main>
+
+</body>
+</html>

@@ -424,7 +424,7 @@ class CoachingEngine {
                 if let config = alfredService.orchestrator?.config {
                     do {
                         let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
-                        let reader = WhatsAppReader(dbPath: config.messaging.whatsapp.dbPath)
+                        let reader = WhatsAppReader.shared(dbPath: config.messaging.whatsapp.dbPath)
                         try reader.connect()
                         let threads = try reader.fetchThreads(since: sevenDaysAgo)
 
@@ -560,7 +560,7 @@ class CoachingEngine {
                 if let config = alfredService.orchestrator?.config {
                     do {
                         let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
-                        let reader = WhatsAppReader(dbPath: config.messaging.whatsapp.dbPath)
+                        let reader = WhatsAppReader.shared(dbPath: config.messaging.whatsapp.dbPath)
                         try reader.connect()
                         let threads = try reader.fetchThreads(since: sevenDaysAgo)
 
@@ -650,7 +650,7 @@ class CoachingEngine {
                 if let config = alfredService.orchestrator?.config {
                     do {
                         let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
-                        let reader = WhatsAppReader(dbPath: config.messaging.whatsapp.dbPath)
+                        let reader = WhatsAppReader.shared(dbPath: config.messaging.whatsapp.dbPath)
                         try reader.connect()
                         let threads = try reader.fetchThreads(since: sevenDaysAgo)
 

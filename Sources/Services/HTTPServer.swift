@@ -313,6 +313,23 @@ class HTTPServer {
                 return
             }
 
+            // Serve service worker (must be served from root scope for push notifications)
+            if request.path == "/sw.js" {
+                if let js = HotReloadManager.shared.getWebFile("sw.js") {
+                    let response = HTTPResponse(
+                        statusCode: 200,
+                        headers: [
+                            "Content-Type": "application/javascript",
+                            "Service-Worker-Allowed": "/",
+                            "Cache-Control": "no-cache"
+                        ],
+                        htmlBody: js
+                    )
+                    try await client.send(response)
+                    return
+                }
+            }
+
             // Allow auth endpoints without authentication (they validate passcode internally)
             if request.path == "/api/auth/login" || request.path == "/api/auth/logout" || request.path == "/api/auth/validate" {
                 let response = await routeAuth(request)
@@ -648,6 +665,32 @@ class HTTPServer {
         case ("GET", "/api/home/pulse"):
             return await handleHomePulse()
 
+        // Next meeting brief (LLM-generated meeting prep card)
+        case ("GET", "/api/home/next-meeting-brief"):
+            return await handleNextMeetingBrief()
+
+        // Home config (meeting brief prompt)
+        case ("GET", "/api/config/home"):
+            return handleGetHomeConfig()
+        case ("POST", "/api/config/home"):
+            return handleUpdateHomeConfig(request)
+
+        // Push notifications
+        case ("POST", "/api/push/setup"):
+            return handlePushSetup()
+        case ("GET", "/api/push/vapid-public-key"):
+            return handleGetVAPIDPublicKey()
+        case ("POST", "/api/push/subscribe"):
+            return handlePushSubscribe(request)
+        case ("DELETE", "/api/push/subscribe"):
+            return handlePushUnsubscribe(request)
+        case ("GET", "/api/push/subscriptions"):
+            return handleGetPushSubscriptions()
+        case ("POST", "/api/push/test"):
+            return await handlePushTest(request)
+        case ("GET", "/api/push/budget"):
+            return handleGetPushBudget()
+
         // Coaching cards (AI-generated insights)
         case ("GET", "/api/coaching/cards"):
             return await handleCoachingCards()
@@ -706,6 +749,15 @@ class HTTPServer {
 
         case ("GET", "/api/todos/scan"):
             return await handleScanTodos()
+
+        case ("POST", "/api/capture"):
+            return await handlePostMeetingCapture(request)
+
+        case ("GET", "/api/capture/pending"):
+            return handleGetPendingCapture()
+
+        case ("DELETE", "/api/capture/pending"):
+            return handleClearPendingCapture()
 
         case ("GET", "/api/commitment-check"):
             return await handleCommitmentCheck(request)
@@ -1581,7 +1633,13 @@ class HTTPServer {
             async let topGoalTask = fetchTopGoalForPulse(orchestrator)
             async let statsTask = orchestrator.notionServicePublic.getCommitmentStatsFromNotion()
             async let overdueTask = alfredService.fetchOverdueCommitments()
-            async let calendarTask = alfredService.fetchCalendarBriefing(for: Date())
+            // Fetch raw calendar events (no LLM briefings) — just need the count
+            async let calendarTask: DailySchedule? = {
+                if let config = AppConfig.load() {
+                    return try? await orchestrator.calendarServicePublic.fetchEventsFromAllCalendars(for: Date(), userSettings: config.user)
+                }
+                return nil
+            }()
 
             // Await all results (gracefully handle failures)
             topGoal = await topGoalTask
@@ -1612,17 +1670,14 @@ class HTTPServer {
                 }
             }
 
-            if let calendarBriefing = try? await calendarTask {
-                meetingsToday = calendarBriefing.schedule.events.count
+            if let schedule = await calendarTask {
+                meetingsToday = schedule.events.count
             }
         } else {
             openTasks = trackerStats.openCommitments
 
-            // No orchestrator — still fetch overdue + calendar in parallel
-            async let overdueTask = alfredService.fetchOverdueCommitments()
-            async let calendarTask = alfredService.fetchCalendarBriefing(for: Date())
-
-            if let overdue = try? await overdueTask {
+            // No orchestrator — still fetch overdue
+            if let overdue = try? await alfredService.fetchOverdueCommitments() {
                 overdueCount = overdue.count
                 pendingActions = overdue.prefix(3).map { commitment in
                     var action: [String: Any] = [
@@ -1641,10 +1696,8 @@ class HTTPServer {
                     return action
                 }
             }
-
-            if let calendarBriefing = try? await calendarTask {
-                meetingsToday = calendarBriefing.schedule.events.count
-            }
+            // Calendar count not available without orchestrator
+            meetingsToday = 0
         }
 
         // 5. Reliability score
@@ -1729,6 +1782,378 @@ class HTTPServer {
             print("⚠️ Home pulse: failed to get top priority task: \(error)")
         }
         return nil
+    }
+
+    // MARK: - Next Meeting Brief
+
+    private static let defaultMeetingBriefPrompt = """
+    Prepare me for this meeting. For each attendee:
+    - What are the open commitments between us?
+    - Summarize recent message threads (last 7 days) — focus on unresolved items, not pleasantries
+    - Any patterns I should be aware of (delayed responses, escalating tone, repeated asks)
+
+    Then give me:
+    - 2-3 specific talking points (not generic — grounded in the data above)
+    - One thing I should NOT forget to raise
+
+    Keep it concise — bullet points, not paragraphs. Be direct.
+    """
+
+    private func handleNextMeetingBrief() async -> HTTPResponse {
+        // Step 1: Fetch raw calendar events (fast — Google API only, no LLM briefing generation)
+        guard let config = AppConfig.load(),
+              let orchestrator = alfredService.orchestrator else {
+            return HTTPResponse(statusCode: 200, body: ["noMeeting": true] as [String: Any])
+        }
+
+        let now = Date()
+        let cutoff = now.addingTimeInterval(-15 * 60) // Include meetings started within 15 min
+
+        guard let schedule = try? await orchestrator.calendarServicePublic.fetchEventsFromAllCalendars(
+            for: now, userSettings: config.user
+        ) else {
+            return HTTPResponse(statusCode: 200, body: ["noMeeting": true] as [String: Any])
+        }
+
+        let nextEvent = schedule.events
+            .filter { !$0.isAllDay }
+            .filter { $0.startTime > cutoff && $0.endTime > now }
+            .sorted { $0.startTime < $1.startTime }
+            .first
+
+        guard let event = nextEvent else {
+            return HTTPResponse(statusCode: 200, body: ["noMeeting": true] as [String: Any])
+        }
+
+        // Step 2: Check per-event cache FIRST (before any expensive work)
+        let cacheKey = "meeting_brief_\(event.id)"
+        if let cached: [String: Any] = getFromMemoryCache(cacheKey) {
+            return HTTPResponse(statusCode: 200, body: cached)
+        }
+
+        // Step 3: Compile user's meeting brief prompt into a data plan, then resolve
+        let externalAttendees = event.attendees.filter { attendee in
+            let email = attendee.email.lowercased()
+            let userEmail = config.user.email.lowercased()
+            return email != userEmail && !attendee.isOrganizer
+        }
+        let attendeeNames = externalAttendees.prefix(6).compactMap { $0.name ?? $0.email.components(separatedBy: "@").first }
+
+        let userPrompt = config.home?.meetingBriefPrompt ?? Self.defaultMeetingBriefPrompt
+
+        // Compile the user's prompt into a data plan (cached — only recompiles if prompt changes)
+        let dataPlan = PromptCompiler.shared.compile(prompt: userPrompt)
+        print("📋 [MeetingBrief] Data plan: \(dataPlan.capabilities.count) capabilities → \(dataPlan.capabilities.map { $0.capabilityId }.joined(separator: ", "))")
+
+        // Resolve the data plan with runtime context (parallel data fetching)
+        let runtimeContext = DataPlanResolver.RuntimeContext(
+            attendeeNames: attendeeNames,
+            meetingTitle: event.title,
+            meetingDescription: event.description,
+            date: now,
+            orchestrator: orchestrator,
+            config: config
+        )
+        let resolvedContext = await DataPlanResolver.shared.resolve(plan: dataPlan, context: runtimeContext)
+
+        // Step 4: Build the LLM prompt with resolved data
+        let timeFmt = DateFormatter()
+        timeFmt.dateFormat = "h:mm a"
+        let startStr = timeFmt.string(from: event.startTime)
+        let endStr = timeFmt.string(from: event.endTime)
+
+        let minutesUntil = Int(event.startTime.timeIntervalSince(now) / 60)
+        let countdown: String
+        if minutesUntil <= 0 {
+            countdown = "starting now"
+        } else if minutesUntil < 60 {
+            countdown = "in \(minutesUntil) min"
+        } else {
+            let hours = minutesUntil / 60
+            let mins = minutesUntil % 60
+            countdown = mins > 0 ? "in \(hours)h \(mins)m" : "in \(hours)h"
+        }
+
+        let attendeeListStr = attendeeNames.isEmpty ? "Solo event" : attendeeNames.joined(separator: ", ")
+        let locationStr = event.location ?? "No location"
+
+        let systemPrompt = """
+        You are Coach Alfred, a concise executive assistant. The user has an upcoming meeting and wants a briefing.
+
+        MEETING: \(event.title)
+        TIME: \(startStr) - \(endStr) (\(countdown))
+        LOCATION: \(locationStr)
+        ATTENDEES: \(attendeeListStr)
+        MEETING DESCRIPTION: \(event.description ?? "None")
+
+        RESOLVED DATA (gathered from Alfred's data sources based on the user's briefing configuration):
+        \(resolvedContext)
+
+        Respond to the user's briefing request below. Be concise, use bullet points. No emojis. Use markdown formatting (bold for names, bullet lists). Reference the resolved data above — do NOT say you cannot access any data source.
+        """
+
+        // Step 5: Call LLM for THIS ONE meeting only
+        var briefText: String? = nil
+        do {
+            let claudeService = ClaudeAIService(config: config.ai)
+            briefText = try await claudeService.generateText(
+                prompt: userPrompt,
+                system: systemPrompt,
+                maxTokens: 800,
+                useModel: config.ai.effectiveCoachingModel
+            )
+        } catch {
+            print("⚠️ Meeting brief LLM call failed: \(error)")
+        }
+
+        // Step 6: Build response
+        let responseBody: [String: Any] = [
+            "meeting": [
+                "id": event.id,
+                "title": event.title,
+                "startTime": Self.iso8601Formatter.string(from: event.startTime),
+                "endTime": Self.iso8601Formatter.string(from: event.endTime),
+                "countdown": countdown,
+                "countdownMinutes": minutesUntil,
+                "attendeeCount": event.attendees.count,
+                "location": event.location as Any,
+                "meetingLink": event.meetingLink as Any
+            ],
+            "brief": briefText as Any,
+            "generatedAt": Self.iso8601Formatter.string(from: Date())
+        ]
+
+        // Cache until meeting ends (min 5 min, max 30 min)
+        let ttlSeconds = max(300, min(1800, event.endTime.timeIntervalSince(Date())))
+        setInMemoryCache(cacheKey, value: responseBody, ttl: ttlSeconds)
+
+        return HTTPResponse(statusCode: 200, body: responseBody)
+    }
+
+    // MARK: - Home Config
+
+    private func handleGetHomeConfig() -> HTTPResponse {
+        let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
+
+        guard FileManager.default.fileExists(atPath: configPath) else {
+            return HTTPResponse(statusCode: 200, body: ["meeting_brief_prompt": ""] as [String: Any])
+        }
+
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
+            let config = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let home = config?["home"] as? [String: Any]
+
+            return HTTPResponse(statusCode: 200, body: [
+                "meeting_brief_prompt": home?["meeting_brief_prompt"] as? String ?? ""
+            ] as [String: Any])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to read config: \(error.localizedDescription)"])
+        }
+    }
+
+    private func handleUpdateHomeConfig(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Invalid request body"])
+        }
+
+        let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
+
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
+            var config = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+
+            var home = config["home"] as? [String: Any] ?? [:]
+            if let prompt = json["meeting_brief_prompt"] as? String {
+                home["meeting_brief_prompt"] = prompt
+            }
+            config["home"] = home
+
+            let updatedData = try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
+            try updatedData.write(to: URL(fileURLWithPath: configPath))
+
+            // Note: meeting brief cache is keyed by event ID and has 7min TTL,
+            // so the next request after config change will naturally re-generate
+
+            return HTTPResponse(statusCode: 200, body: ["success": true] as [String: Any])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to update config: \(error.localizedDescription)"])
+        }
+    }
+
+    // MARK: - Push Notifications
+
+    private func handlePushSetup() -> HTTPResponse {
+        // Generate VAPID keys and store in config
+        let keys = WebPushService.generateVAPIDKeys()
+        let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
+
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
+            var config = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+            var notifications = config["notifications"] as? [String: Any] ?? [:]
+            var push = notifications["push"] as? [String: Any] ?? [:]
+
+            push["enabled"] = true
+            push["vapid_public_key"] = keys.publicKey
+            push["vapid_private_key"] = keys.privateKey
+            push["vapid_subject"] = "mailto:\((config["user"] as? [String: Any])?["email"] as? String ?? "user@example.com")"
+            push["max_per_day"] = 5
+            push["quiet_hours_start"] = 22
+            push["quiet_hours_end"] = 7
+
+            notifications["push"] = push
+            config["notifications"] = notifications
+
+            let updatedData = try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
+            try updatedData.write(to: URL(fileURLWithPath: configPath))
+
+            print("🔑 [WebPush] VAPID keys generated and saved")
+
+            return HTTPResponse(statusCode: 200, body: [
+                "success": true,
+                "vapid_public_key": keys.publicKey
+            ] as [String: Any])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to save VAPID keys: \(error.localizedDescription)"])
+        }
+    }
+
+    private func handleGetVAPIDPublicKey() -> HTTPResponse {
+        guard let config = AppConfig.load(),
+              let publicKey = config.notifications.push.vapidPublicKey, !publicKey.isEmpty else {
+            return HTTPResponse(statusCode: 404, body: ["error": "VAPID keys not configured. Call POST /api/push/setup first."])
+        }
+        // Return as plain text (needed by PushManager.subscribe)
+        return HTTPResponse(statusCode: 200, body: ["vapid_public_key": publicKey] as [String: Any])
+    }
+
+    private func handlePushSubscribe(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let endpoint = json["endpoint"] as? String,
+              let keys = json["keys"] as? [String: Any],
+              let p256dh = keys["p256dh"] as? String,
+              let auth = keys["auth"] as? String else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Invalid subscription object. Expected {endpoint, keys: {p256dh, auth}}"])
+        }
+
+        WebPushService.shared.addSubscription(endpoint: endpoint, p256dh: p256dh, auth: auth)
+        return HTTPResponse(statusCode: 200, body: ["success": true, "message": "Subscribed"] as [String: Any])
+    }
+
+    private func handlePushUnsubscribe(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let endpoint = json["endpoint"] as? String else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing endpoint"])
+        }
+
+        WebPushService.shared.removeSubscription(endpoint: endpoint)
+        return HTTPResponse(statusCode: 200, body: ["success": true, "message": "Unsubscribed"] as [String: Any])
+    }
+
+    private func handleGetPushSubscriptions() -> HTTPResponse {
+        let subs = WebPushService.shared.getSubscriptions()
+        let list = subs.map { sub -> [String: Any] in
+            [
+                "endpoint": String(sub.endpoint.prefix(80)) + "...",
+                "subscribedAt": ISO8601DateFormatter().string(from: sub.subscribedAt),
+                "lastPushAt": sub.lastPushAt.map { ISO8601DateFormatter().string(from: $0) } as Any,
+                "pushCountToday": sub.pushCountToday
+            ]
+        }
+        return HTTPResponse(statusCode: 200, body: [
+            "count": subs.count,
+            "subscriptions": list
+        ] as [String: Any])
+    }
+
+    private func handlePushTest(_ request: HTTPRequest) async -> HTTPResponse {
+        guard let config = AppConfig.load(),
+              let publicKey = config.notifications.push.vapidPublicKey,
+              let privateKey = config.notifications.push.vapidPrivateKey,
+              let subject = config.notifications.push.vapidSubject else {
+            return HTTPResponse(statusCode: 400, body: ["error": "VAPID keys not configured. Call POST /api/push/setup first."])
+        }
+
+        let subs = WebPushService.shared.getSubscriptions()
+        guard !subs.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "No push subscriptions. Open Alfred in a browser and grant notification permission first."])
+        }
+
+        // Use custom payload from request body if provided
+        var customTitle = "Coach Alfred"
+        var customBody = "Push notifications are working. You'll receive coaching insights here."
+        var customTag = "test"
+        var customUrl = "/home.html"
+        var customType = "test"
+        var customActions: [WebPushService.PushPayload.PushAction] = [
+            WebPushService.PushPayload.PushAction(action: "open", title: "Open Alfred")
+        ]
+
+        if let bodyData = request.body,
+           let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] {
+            customTitle = json["title"] as? String ?? customTitle
+            customBody = json["body"] as? String ?? customBody
+            customTag = json["tag"] as? String ?? customTag
+            customUrl = json["url"] as? String ?? customUrl
+            customType = json["type"] as? String ?? customType
+            if let acts = json["actions"] as? [[String: String]] {
+                customActions = acts.compactMap { a in
+                    guard let action = a["action"], let title = a["title"] else { return nil }
+                    return WebPushService.PushPayload.PushAction(action: action, title: title)
+                }
+            }
+
+            // If type is post-meeting, also set pending capture
+            if customType == "post-meeting" {
+                let meetingTitle = json["title"] as? String ?? "Meeting"
+                let meetingId = json["meetingId"] as? String ?? "test"
+                CoachingPushService.shared.setPendingCapture(
+                    meetingId: meetingId,
+                    meetingTitle: meetingTitle.replacingOccurrences(of: "Just left: ", with: "")
+                )
+            }
+        }
+
+        let payload = WebPushService.PushPayload(
+            title: customTitle,
+            body: customBody,
+            tag: customTag,
+            url: customUrl,
+            type: customType,
+            actions: customActions
+        )
+
+        var results: [String] = []
+        results.append("Starting push to \(subs.count) subscriber(s)")
+
+        for i in subs.indices {
+            do {
+                try await WebPushService.shared.sendSingle(
+                    to: subs[i],
+                    payload: payload,
+                    vapidPublicKey: publicKey,
+                    vapidPrivateKey: privateKey,
+                    vapidSubject: subject
+                )
+                results.append("✅ Sent to subscriber \(i + 1)")
+            } catch {
+                results.append("❌ Failed subscriber \(i + 1): \(error.localizedDescription ?? String(describing: error))")
+            }
+        }
+
+        return HTTPResponse(statusCode: 200, body: [
+            "success": true,
+            "sentTo": subs.count,
+            "results": results
+        ] as [String: Any])
+    }
+
+    private func handleGetPushBudget() -> HTTPResponse {
+        return HTTPResponse(statusCode: 200, body: PushBudgetService.shared.getStats())
     }
 
     // MARK: - Focus Pin
@@ -2047,7 +2472,7 @@ class HTTPServer {
         if let msgConfig = alfredService.orchestrator?.config {
             do {
                 let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: today)!
-                let reader = WhatsAppReader(dbPath: msgConfig.messaging.whatsapp.dbPath)
+                let reader = WhatsAppReader.shared(dbPath: msgConfig.messaging.whatsapp.dbPath)
                 try reader.connect()
                 let threads = try reader.fetchThreads(since: sevenDaysAgo)
                 let totalIncoming = threads.flatMap { $0.messages }.filter { $0.direction == .incoming }.count
@@ -2565,6 +2990,85 @@ class HTTPServer {
                 body: ["error": error.localizedDescription]
             )
         }
+    }
+
+    // MARK: - Post-Meeting Capture
+
+    private func handlePostMeetingCapture(_ request: HTTPRequest) async -> HTTPResponse {
+        // Parse JSON body
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let text = json["text"] as? String, !text.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'text' in request body"])
+        }
+
+        let meetingTitle = json["meetingTitle"] as? String ?? "Meeting"
+        let meetingId = json["meetingId"] as? String
+
+        guard let orchestrator = alfredService.orchestrator else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Service not available"])
+        }
+
+        // Create a follow-up task with the raw capture text
+        let task = TaskItem(
+            notionId: "",
+            title: "Follow-up: \(meetingTitle)",
+            type: .followup,
+            status: .notStarted,
+            description: text,
+            dueDate: nil,
+            priority: nil,
+            assignee: nil,
+            commitmentDirection: nil,
+            committedBy: nil,
+            committedTo: nil,
+            originalContext: "Post-meeting capture for: \(meetingTitle)",
+            sourcePlatform: .manual,
+            sourceThread: meetingId,
+            sourceThreadId: nil,
+            tags: ["post-meeting-capture"],
+            followUpDate: nil,
+            uniqueHash: nil,
+            notes: nil,
+            createdDate: Date(),
+            lastUpdated: Date()
+        )
+
+        do {
+            let notionId = try await orchestrator.notionServicePublic.createTask(task)
+            print("✅ [Capture] Created follow-up for '\(meetingTitle)': \(notionId)")
+
+            return HTTPResponse(statusCode: 200, body: [
+                "success": true,
+                "notionId": notionId,
+                "tasksCreated": 1,
+                "meetingTitle": meetingTitle
+            ] as [String: Any])
+        } catch {
+            print("❌ [Capture] Failed to create follow-up: \(error)")
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to save capture: \(error.localizedDescription)"])
+        }
+    }
+
+    private func handleGetPendingCapture() -> HTTPResponse {
+        if let pending = CoachingPushService.shared.pendingCapture {
+            // Auto-expire after 30 minutes
+            if Date().timeIntervalSince(pending.createdAt) > 1800 {
+                CoachingPushService.shared.clearPendingCapture()
+                return HTTPResponse(statusCode: 200, body: ["pending": false] as [String: Any])
+            }
+            return HTTPResponse(statusCode: 200, body: [
+                "pending": true,
+                "meetingId": pending.meetingId,
+                "meetingTitle": pending.meetingTitle
+            ] as [String: Any])
+        }
+        return HTTPResponse(statusCode: 200, body: ["pending": false] as [String: Any])
+    }
+
+    private func handleClearPendingCapture() -> HTTPResponse {
+        CoachingPushService.shared.clearPendingCapture()
+        return HTTPResponse(statusCode: 200, body: ["cleared": true] as [String: Any])
     }
 
     private func handleCommitmentCheck(_ request: HTTPRequest) async -> HTTPResponse {
@@ -4477,6 +4981,11 @@ The Commitment Check feature requires a properly configured Notion database.
 
             // If clarification needed, stream it as a question back to the user
             if intentResponse.clarificationNeeded, let question = intentResponse.clarificationQuestion {
+                // Record the clarification exchange so follow-up messages have context
+                sharedContext.addTurn(sessionId: sessionId, query: query, intent: intentResponse.intent, result: nil)
+                ConversationHistoryService.shared.addTurn(sessionId: sessionId, role: "user", content: query)
+                ConversationHistoryService.shared.addTurn(sessionId: sessionId, role: "assistant", content: question)
+
                 client.sendSSEJSON(event: "chunk", json: ["text": question])
                 client.sendSSEJSON(event: "done", json: ["sessionId": sessionId])
                 client.endSSE()
@@ -5705,7 +6214,7 @@ The Commitment Check feature requires a properly configured Notion database.
         // Recent message interactions (WhatsApp) — so Coach doesn't nudge about recently-contacted people
         do {
             let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
-            let reader = WhatsAppReader(dbPath: config.messaging.whatsapp.dbPath)
+            let reader = WhatsAppReader.shared(dbPath: config.messaging.whatsapp.dbPath)
             try reader.connect()
             let threads = try reader.fetchThreads(since: sevenDaysAgo)
 
@@ -8411,7 +8920,7 @@ extension HTTPServer {
             }
 
             // 1. Read WhatsApp threads from last 7 days
-            let whatsappReader = WhatsAppReader(dbPath: config.messaging.whatsapp.dbPath)
+            let whatsappReader = WhatsAppReader.shared(dbPath: config.messaging.whatsapp.dbPath)
             try whatsappReader.connect()
             let since = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
             let threads = try whatsappReader.fetchThreads(since: since)

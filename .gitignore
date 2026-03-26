@@ -64,3 +64,4 @@ PLAN.md
 
 # Local deployment script (process documented in CLAUDE.md)
 deploy.sh
+.claude/worktrees/

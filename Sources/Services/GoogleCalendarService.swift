@@ -255,6 +255,122 @@ class GoogleCalendarService {
         )
     }
 
+    /// Update an existing calendar event (partial update — only non-nil fields are changed)
+    func updateEvent(
+        eventId: String,
+        title: String? = nil,
+        startTime: Date? = nil,
+        endTime: Date? = nil,
+        location: String? = nil,
+        description: String? = nil
+    ) async throws -> CreatedEvent {
+        guard let accessToken = accessToken else {
+            throw CalendarError.notAuthenticated
+        }
+
+        let encodedCalendarId = calendarId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? calendarId
+        let encodedEventId = eventId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? eventId
+        let url = URL(string: "https://www.googleapis.com/calendar/v3/calendars/\(encodedCalendarId)/events/\(encodedEventId)")!
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime]
+
+        var eventBody: [String: Any] = [:]
+        if let title = title { eventBody["summary"] = title }
+        if let startTime = startTime {
+            eventBody["start"] = ["dateTime": isoFormatter.string(from: startTime), "timeZone": TimeZone.current.identifier]
+        }
+        if let endTime = endTime {
+            eventBody["end"] = ["dateTime": isoFormatter.string(from: endTime), "timeZone": TimeZone.current.identifier]
+        }
+        if let location = location { eventBody["location"] = location }
+        if let description = description { eventBody["description"] = description }
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: eventBody)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 401 {
+            try await refreshAccessToken()
+            return try await updateEvent(eventId: eventId, title: title, startTime: startTime, endTime: endTime, location: location, description: description)
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "unknown"
+            print("⚠️ Calendar update failed: \(errorBody)")
+            throw CalendarError.updateFailed
+        }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let returnedId = json["id"] as? String,
+              let htmlLink = json["htmlLink"] as? String else {
+            throw CalendarError.invalidResponse
+        }
+
+        let returnedTitle = json["summary"] as? String ?? title ?? "Updated Event"
+        print("✅ Updated calendar event: \(returnedTitle) (\(returnedId))")
+
+        // Parse returned start/end times
+        let returnedStart: Date
+        let returnedEnd: Date
+        if let startObj = json["start"] as? [String: Any], let dtStr = startObj["dateTime"] as? String {
+            returnedStart = isoFormatter.date(from: dtStr) ?? startTime ?? Date()
+        } else {
+            returnedStart = startTime ?? Date()
+        }
+        if let endObj = json["end"] as? [String: Any], let dtStr = endObj["dateTime"] as? String {
+            returnedEnd = isoFormatter.date(from: dtStr) ?? endTime ?? Date()
+        } else {
+            returnedEnd = endTime ?? Date()
+        }
+
+        return CreatedEvent(
+            id: returnedId,
+            title: returnedTitle,
+            startTime: returnedStart,
+            endTime: returnedEnd,
+            location: json["location"] as? String ?? location,
+            description: json["description"] as? String ?? description,
+            htmlLink: htmlLink,
+            shareableLink: Self.makeShareableLink(title: returnedTitle, startTime: returnedStart, endTime: returnedEnd, location: location, description: description)
+        )
+    }
+
+    /// Delete a calendar event
+    func deleteEvent(eventId: String) async throws {
+        guard let accessToken = accessToken else {
+            throw CalendarError.notAuthenticated
+        }
+
+        let encodedCalendarId = calendarId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? calendarId
+        let encodedEventId = eventId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? eventId
+        let url = URL(string: "https://www.googleapis.com/calendar/v3/calendars/\(encodedCalendarId)/events/\(encodedEventId)")!
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 401 {
+            try await refreshAccessToken()
+            return try await deleteEvent(eventId: eventId)
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) || httpResponse.statusCode == 204 else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "unknown"
+            print("⚠️ Calendar delete failed: \(errorBody)")
+            throw CalendarError.deleteFailed
+        }
+
+        print("✅ Deleted calendar event: \(eventId)")
+    }
+
     /// Generate a Google Calendar template URL that anyone can use to add the event to their own calendar
     static func makeShareableLink(
         title: String,
@@ -410,6 +526,8 @@ enum CalendarError: Error, LocalizedError {
     case fetchFailed
     case invalidResponse
     case createFailed
+    case updateFailed
+    case deleteFailed
 
     var errorDescription: String? {
         switch self {
@@ -421,6 +539,10 @@ enum CalendarError: Error, LocalizedError {
             return "Invalid response from Google Calendar API"
         case .createFailed:
             return "Failed to create calendar event"
+        case .updateFailed:
+            return "Failed to update calendar event"
+        case .deleteFailed:
+            return "Failed to delete calendar event"
         }
     }
 }

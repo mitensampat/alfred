@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Coach Alfred — Dark Mode Prototype</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+<style>
+    /* ══════════════════════════════════════
+       ALFRED IMPERIAL — Dark Mode (Linear-inspired)
+       Gold on layered charcoal
+       ══════════════════════════════════════ */
+
+    :root {
+        --canvas: #08090a;
+        --surface: #141516;
+        --surface-sunken: #0f1011;
+        --surface-elevated: #1a1b1d;
+        --surface-overlay: rgba(0, 0, 0, 0.65);
+        --ink: #f7f8f8;
+        --ink-secondary: #8a8f98;
+        --ink-tertiary: #62666d;
+        --ink-faint: #3e4046;
+        --line: #23252a;
+        --line-strong: #34343a;
+        --line-subtle: #1c1d21;
+        --coach: #AF9358;
+        --coach-light: #1e1a14;
+        --coach-dark: #c4a76e;
+        --gold: #AF9358;
+        --gold-dark: #c4a76e;
+        --gold-light: #1e1a14;
+        --growth: #26B5CE;
+        --growth-light: #0d2b30;
+        --danger: #EB5757;
+        --danger-light: #2d1519;
+        --warning: #F0BF00;
+        --warning-light: #2b2400;
+        --font-display: 'Newsreader', Georgia, serif;
+        --font-body: 'Public Sans', -apple-system, sans-serif;
+        --font-mono: 'SF Mono', 'Menlo', monospace;
+        --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+        --shadow-md: 0 2px 8px rgba(0,0,0,0.4);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+        font-family: var(--font-body);
+        background: var(--canvas);
+        color: var(--ink);
+        height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        -webkit-font-smoothing: antialiased;
+        max-width: 430px;
+        margin: 0 auto;
+    }
+    .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 24;
+        vertical-align: middle;
+    }
+
+    /* ── Header ── */
+    .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 14px 20px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--line);
+        flex-shrink: 0;
+    }
+    .header-brand {
+        font-family: var(--font-display);
+        font-size: 20px;
+        font-weight: 500;
+        font-style: italic;
+        color: var(--gold);
+        letter-spacing: -0.01em;
+    }
+    .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .header-btn {
+        width: 34px;
+        height: 34px;
+        border: none;
+        background: transparent;
+        border-radius: 8px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--ink-tertiary);
+        transition: all 0.15s;
+    }
+    .header-btn:hover { background: var(--surface-elevated); color: var(--gold); }
+
+    /* ── Conversation ── */
+    .conversation {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px 16px 8px;
+        scroll-behavior: smooth;
+    }
+    .conversation-inner { max-width: 640px; margin: 0 auto; }
+
+    /* ── Time Marker ── */
+    .time-marker {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0 0 16px;
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--gold);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+    .time-marker::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: var(--line);
+    }
+
+    /* ── Greeting Bubble ── */
+    .greeting-bubble {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 16px 18px;
+        margin-bottom: 16px;
+    }
+    .greeting-text {
+        font-size: 14.5px;
+        line-height: 1.65;
+        color: var(--ink);
+    }
+    .greeting-text .highlight {
+        color: var(--gold);
+        font-weight: 600;
+    }
+    .greeting-time {
+        font-size: 11px;
+        color: var(--gold);
+        margin-top: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .greeting-time .system-tag {
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--ink-tertiary);
+    }
+
+    /* ── Bento Cards ── */
+    .bento-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 14px;
+    }
+    .bento-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 14px 16px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        min-height: 110px;
+    }
+    .bento-card.overdue {
+        border-left: 3px solid var(--danger);
+    }
+    .bento-card.schedule {
+        background: var(--surface-elevated);
+        border-color: var(--line-strong);
+    }
+    .bento-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+    }
+    .card-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--ink-tertiary);
+        margin-top: 4px;
+    }
+    .card-value {
+        font-size: 14px;
+        font-weight: 500;
+        line-height: 1.3;
+        color: var(--ink);
+    }
+    .bento-tag {
+        display: inline-block;
+        font-size: 9px;
+        font-weight: 700;
+        padding: 2px 6px;
+        border-radius: 3px;
+        letter-spacing: 0.03em;
+    }
+    .bento-tag.overdue {
+        background: rgba(235, 87, 87, 0.15);
+        color: var(--danger);
+    }
+    .bento-tag.next {
+        background: rgba(175, 147, 88, 0.15);
+        color: var(--gold);
+    }
+
+    /* Full-width insight */
+    .insight-card {
+        grid-column: 1 / -1;
+        background: var(--gold-light);
+        border: 1px solid rgba(175, 147, 88, 0.15);
+        border-radius: 14px;
+        padding: 14px 16px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        min-height: auto;
+    }
+    .insight-icon-wrap {
+        width: 42px;
+        height: 42px;
+        border-radius: 10px;
+        background: rgba(175, 147, 88, 0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+    .insight-icon-wrap .material-symbols-outlined { color: var(--gold); }
+    .insight-content h4 {
+        font-family: var(--font-display);
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--gold);
+        margin-bottom: 2px;
+    }
+    .insight-content p {
+        font-size: 12px;
+        color: var(--ink-secondary);
+    }
+    .insight-chevron {
+        color: var(--ink-tertiary);
+        margin-left: auto;
+    }
+
+    /* ── Active System ── */
+    .active-system { margin: 20px 0 16px; }
+    .system-divider {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 14px;
+    }
+    .system-divider::before, .system-divider::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: var(--line);
+    }
+    .system-divider span {
+        font-size: 9px;
+        font-weight: 700;
+        color: var(--ink-faint);
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+    }
+    .system-card {
+        background: var(--surface-elevated);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 16px;
+    }
+    .system-card .cmd-line {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--gold);
+        margin-bottom: 6px;
+    }
+    .system-card .cmd-name {
+        font-size: 13px;
+        font-family: var(--font-mono);
+    }
+    .system-card .cmd-status {
+        font-size: 12px;
+        color: var(--ink-tertiary);
+        font-style: italic;
+        padding-left: 28px;
+    }
+
+    /* ── Coaching Card ── */
+    .coaching-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px 18px;
+        margin-bottom: 10px;
+    }
+    .cc-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+    }
+    .cc-left {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .cc-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+    }
+    .cc-dot.leverage { background: var(--gold); }
+    .cc-dot.relationship { background: var(--growth); }
+    .cc-type {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--ink-secondary);
+    }
+    .cc-ago { font-size: 10px; color: var(--ink-faint); }
+    .cc-body {
+        font-size: 13.5px;
+        line-height: 1.72;
+        color: var(--ink);
+    }
+
+    /* ── User Message ── */
+    .user-msg { display: flex; justify-content: flex-end; margin: 12px 0; }
+    .user-bubble {
+        background: var(--surface-elevated);
+        color: var(--ink);
+        border: 1px solid var(--line);
+        padding: 10px 16px;
+        border-radius: 18px 18px 4px 18px;
+        font-size: 14px;
+        line-height: 1.5;
+        max-width: 85%;
+    }
+
+    /* ── Input Area ── */
+    .input-area {
+        padding: 10px 16px max(16px, env(safe-area-inset-bottom, 16px));
+        background: var(--canvas);
+        border-top: 1px solid var(--line);
+        flex-shrink: 0;
+    }
+    .input-inner { max-width: 640px; margin: 0 auto; }
+
+    .cmd-suggestions {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 10px;
+        scrollbar-width: none;
+    }
+    .cmd-suggestions::-webkit-scrollbar { display: none; }
+    .cmd-chip {
+        font-family: var(--font-body);
+        font-size: 12px;
+        font-weight: 500;
+        padding: 6px 14px;
+        border-radius: 20px;
+        border: 1px solid var(--line-strong);
+        background: var(--surface);
+        color: var(--ink-secondary);
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.15s;
+    }
+    .cmd-chip:hover {
+        border-color: var(--gold);
+        color: var(--gold);
+        background: var(--gold-light);
+    }
+
+    .input-row {
+        display: flex;
+        align-items: center;
+        gap: 0;
+        background: var(--surface);
+        border: 1px solid var(--line-strong);
+        border-radius: 24px;
+        padding: 6px 6px 6px 16px;
+        transition: border-color 0.2s;
+    }
+    .input-row:focus-within { border-color: var(--gold); }
+    .slash-prefix {
+        font-family: var(--font-body);
+        font-size: 16px;
+        font-weight: 700;
+        color: var(--gold);
+        margin-right: 6px;
+        flex-shrink: 0;
+    }
+    .input-row textarea {
+        flex: 1;
+        border: none;
+        background: transparent;
+        font-family: var(--font-body);
+        font-size: 14px;
+        color: var(--ink);
+        resize: none;
+        outline: none;
+        max-height: 96px;
+        line-height: 1.5;
+        padding: 6px 0;
+    }
+    .input-row textarea::placeholder { color: var(--ink-faint); }
+    .send-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        border: none;
+        background: var(--gold);
+        color: var(--coach-light);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+    .send-btn:hover { background: var(--gold-dark); }
+    .send-btn .material-symbols-outlined { font-size: 20px; color: #1b1f23; }
+
+    .safe-spacer { height: 6px; }
+</style>
+</head>
+<body>
+
+<!-- ═══ HEADER ═══ -->
+<header class="header">
+    <div class="header-brand">Coach Alfred</div>
+    <div class="header-actions">
+        <button class="header-btn">
+            <span class="material-symbols-outlined">search</span>
+        </button>
+        <button class="header-btn">
+            <span class="material-symbols-outlined">light_mode</span>
+        </button>
+        <button class="header-btn">
+            <span class="material-symbols-outlined">settings</span>
+        </button>
+    </div>
+</header>
+
+<!-- ═══ CONVERSATION ═══ -->
+<div class="conversation">
+    <div class="conversation-inner">
+
+        <div class="time-marker">Today's Pulse · Evening</div>
+
+        <div class="greeting-bubble">
+            <div class="greeting-text">
+                Good evening, sir. Your strategy deck is ready. You have
+                <span class="highlight">3 critical items</span> requiring attention before the board meeting.
+            </div>
+            <div class="greeting-time">
+                <span>18:42 PM</span>
+                <span class="system-tag">· System Ready</span>
+            </div>
+        </div>
+
+        <div class="bento-grid">
+            <div class="bento-card overdue">
+                <div class="bento-card-header">
+                    <span class="material-symbols-outlined" style="color:var(--danger);font-size:20px;">error</span>
+                    <span class="bento-tag overdue">OVERDUE</span>
+                </div>
+                <div>
+                    <div class="card-label" style="color:var(--danger);">Commitments</div>
+                    <div class="card-value">Q4 Financial Projections</div>
+                </div>
+            </div>
+
+            <div class="bento-card schedule">
+                <div class="bento-card-header">
+                    <span class="material-symbols-outlined" style="font-size:20px;color:var(--gold);">calendar_today</span>
+                    <span class="bento-tag next">NEXT</span>
+                </div>
+                <div>
+                    <div class="card-label">Tomorrow</div>
+                    <div class="card-value">09:00 Board Meeting</div>
+                </div>
+            </div>
+
+            <div class="insight-card">
+                <div class="insight-icon-wrap">
+                    <span class="material-symbols-outlined">trending_up</span>
+                </div>
+                <div class="insight-content">
+                    <h4>Attention Alert</h4>
+                    <p>Portfolio sentiment trending +4.2% bullish.</p>
+                </div>
+                <span class="material-symbols-outlined insight-chevron">chevron_right</span>
+            </div>
+        </div>
+
+        <div class="active-system">
+            <div class="system-divider">
+                <span>Active System</span>
+            </div>
+            <div class="system-card">
+                <div class="cmd-line">
+                    <span class="material-symbols-outlined" style="font-size:18px;">terminal</span>
+                    <span class="cmd-name">/attention --live</span>
+                </div>
+                <div class="cmd-status">Scanning threads for items requiring your response...</div>
+            </div>
+        </div>
+
+        <div class="coaching-card">
+            <div class="cc-head">
+                <div class="cc-left">
+                    <div class="cc-dot leverage"></div>
+                    <span class="cc-type">Leverage</span>
+                </div>
+                <span class="cc-ago">1h ago</span>
+            </div>
+            <div class="cc-body">
+                Your evening is free. Consider using this time for the board deck financial summary — morning cognitive load will be higher with back-to-back meetings.
+            </div>
+        </div>
+
+        <div class="coaching-card">
+            <div class="cc-head">
+                <div class="cc-left">
+                    <div class="cc-dot relationship"></div>
+                    <span class="cc-type">Relationship</span>
+                </div>
+                <span class="cc-ago">3h ago</span>
+            </div>
+            <div class="cc-body">
+                Priya sent a follow-up on the Singapore timeline. She seems to be waiting for your input on the Q1 budget allocation.
+            </div>
+        </div>
+
+        <div class="user-msg">
+            <div class="user-bubble">What's left on my plate for tomorrow?</div>
+        </div>
+
+    </div>
+</div>
+
+<!-- ═══ INPUT AREA ═══ -->
+<div class="input-area">
+    <div class="input-inner">
+        <div class="cmd-suggestions">
+            <button class="cmd-chip">/briefing</button>
+            <button class="cmd-chip">/calendar</button>
+            <button class="cmd-chip">/commitments</button>
+            <button class="cmd-chip">/todos</button>
+        </div>
+        <div class="input-row">
+            <span class="slash-prefix">/</span>
+            <textarea rows="1" placeholder="Instruct Coach Alfred..."></textarea>
+            <button class="send-btn">
+                <span class="material-symbols-outlined">arrow_upward</span>
+            </button>
+        </div>
+        <div class="safe-spacer"></div>
+    </div>
+</div>
+
+</body>
+</html>

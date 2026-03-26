@@ -143,6 +143,7 @@ class IntentRecognitionService {
         - create: Create new task or commitment
         - delete: Delete or cancel an item
         - search: Search across all data
+        - chat: Conversational messages with no structured action needed
 
         Available targets:
         - briefing: Daily briefing with priorities and recommendations
@@ -216,6 +217,13 @@ class IntentRecognitionService {
         If confidence < 0.7 OR the query is genuinely ambiguous, set clarification_needed: true and provide a specific clarification_question.
 
         Be generous with interpreting user intent - err on the side of action rather than asking for clarification, unless truly ambiguous.
+
+        CONVERSATIONAL / ACKNOWLEDGMENT RULES:
+        - "thanks for the feedback" / "got it" / "I agree" / "sounds good" -> action:"chat", target:null, confidence:0.9
+        - "I will do better in the future" / "that's a good point" -> action:"chat", target:null, confidence:0.9
+        - If a message is PRIMARILY conversational but mentions a task by name AND contains a clear command (e.g. "mark it as done"), extract the command as the intent — do NOT use action:"chat"
+        - If a message is conversational with NO embedded command, use action:"chat" with confidence:0.9
+        - Do NOT ask for clarification on purely conversational messages
         """
     }
 

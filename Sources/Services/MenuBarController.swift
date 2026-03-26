@@ -439,6 +439,12 @@ class MenuBarController: NSObject, NSMenuDelegate {
             // Release in-flight guard after completion (success or failure)
             inFlightCadenceIds.remove(cadence.id)
         }
+
+        // ===============================================
+        // COACHING PUSH CHECK (runs every 60s, outside cadence loop)
+        // Lightweight in-memory checks for pre-meeting, post-meeting, morning nudge
+        // ===============================================
+        await CoachingPushService.shared.tick(orchestrator: alfredService?.orchestrator)
     }
 
     /// Evaluates whether a cadence should run right now based on its schedule type.

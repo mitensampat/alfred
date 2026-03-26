@@ -162,7 +162,10 @@ class IntentRecognitionService {
               "event_location": null,
               "event_attendees": null,
               "event_attendee_emails": null,
-              "event_description": null
+              "event_description": null,
+              "event_search_term": null,
+              "commitment_direction": null,
+              "commitment_counterparty": null
             },
             "confidence": 0.95,
             "original_query": "<the user query>"
@@ -172,7 +175,7 @@ class IntentRecognitionService {
           "suggested_follow_ups": ["suggestion 1", "suggestion 2"]
         }
 
-        ACTION must be one of: generate, scan, analyze, find, summarize, check, list, update, create, delete, search
+        ACTION must be one of: generate, scan, analyze, find, summarize, check, list, update, create, delete, search, chat
         TARGET must be one of: briefing, calendar, messages, commitments, todos, drafts, attention, thread, meeting, tasks, contacts, preferences
 
         CRITICAL RULES:
@@ -256,6 +259,32 @@ class IntentRecognitionService {
         - "what commitments am I behind on?" -> action:"list", target:"commitments", filters.urgency:"overdue"
         - "mark the commitment with Nikhil as done" -> action:"update", target:"commitments", filters.task_search_term:"Nikhil", filters.new_status:"Done"
 
+        COMMITMENT CREATION RULES:
+        - "I owe Nikhil a deck review by Friday" -> action:"create", target:"commitments", filters.task_title:"Deck review", filters.commitment_direction:"i_owe", filters.commitment_counterparty:"Nikhil", filters.new_due_date:"YYYY-MM-DD"
+        - "Mona owes me the Q3 numbers" -> action:"create", target:"commitments", filters.task_title:"Q3 numbers", filters.commitment_direction:"they_owe", filters.commitment_counterparty:"Mona"
+        - "I need to send Kunal the report by Monday" -> action:"create", target:"commitments", filters.task_title:"Send the report", filters.commitment_direction:"i_owe", filters.commitment_counterparty:"Kunal", filters.new_due_date:"YYYY-MM-DD"
+        - commitment_direction: "i_owe" when the user owes someone, "they_owe" when someone owes the user
+        - commitment_counterparty: the OTHER person's name (who the commitment is with)
+
+        COMMITMENT DELETION RULES:
+        - "cancel my commitment to review the budget" -> action:"delete", target:"commitments", filters.task_search_term:"budget review"
+        - "remove the commitment with Mona about Q3" -> action:"delete", target:"commitments", filters.task_search_term:"Mona Q3"
+        - Deletion is soft: commitments are marked as "Cancelled", not permanently removed
+
+        CALENDAR UPDATE RULES:
+        - "move my 3pm to 4pm" -> action:"update", target:"calendar", filters.event_search_term:"3pm", filters.event_time:"<new ISO8601 datetime for 4pm today>"
+        - "reschedule the meeting with Nikhil to tomorrow" -> action:"update", target:"calendar", filters.event_search_term:"Nikhil", filters.event_time:"<tomorrow ISO8601>"
+        - "change my standup location to Conference Room" -> action:"update", target:"calendar", filters.event_search_term:"standup", filters.event_location:"Conference Room"
+        - "push back the 2pm by 30 minutes" -> action:"update", target:"calendar", filters.event_search_term:"2pm", filters.event_time:"<ISO8601 for 2:30pm>"
+        - event_search_term: keywords to fuzzy-match an existing event (time like "3pm", title words, attendee names)
+        - event_time: the NEW time for the event (ISO8601 with timezone), only if time is being changed
+        - event_location: the NEW location, only if location is being changed
+
+        CALENDAR DELETE RULES:
+        - "cancel my 3pm meeting" -> action:"delete", target:"calendar", filters.event_search_term:"3pm"
+        - "remove the sync with product" -> action:"delete", target:"calendar", filters.event_search_term:"product sync"
+        - "delete the standup" -> action:"delete", target:"calendar", filters.event_search_term:"standup"
+
         DRAFT GENERATION RULES:
         - "draft a reply to Mona" -> action:"generate", target:"drafts", filters.contact_name:"Mona"
         - "generate drafts for my messages" -> action:"generate", target:"drafts"
@@ -265,6 +294,14 @@ class IntentRecognitionService {
         - "task stats" -> action:"check", target:"tasks"
         - "weekly reflection" -> action:"summarize", target:"briefing"
         - "how was my week?" -> action:"summarize", target:"briefing"
+
+        CONVERSATIONAL / ACKNOWLEDGMENT RULES:
+        - "thanks for the feedback" / "got it" / "I agree" / "sounds good" -> action:"chat", target:null, confidence:0.9
+        - "I will do better in the future" / "that's a good point" -> action:"chat", target:null, confidence:0.9
+        - "yes" / "no" / "okay" / "sure" -> resolve from conversation context if possible; if context has a pending action, complete it. Otherwise action:"chat"
+        - If a message is PRIMARILY conversational but mentions a task by name AND contains a clear command (e.g. "mark it as done"), extract the command as the intent — do NOT use action:"chat"
+        - If a message is conversational with NO embedded command, use action:"chat" with confidence:0.9
+        - Do NOT ask for clarification on purely conversational messages
 
         Output the JSON object now. Nothing else.
         """

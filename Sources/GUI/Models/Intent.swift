@@ -61,6 +61,7 @@ struct UserIntent: Codable {
         case create = "create"          // Create new task, commitment
         case delete = "delete"          // Delete/cancel item
         case search = "search"          // Search across all data
+        case chat = "chat"              // Conversational, no structured action needed
     }
 
     enum Target: String, Codable {

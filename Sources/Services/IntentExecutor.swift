@@ -152,19 +152,40 @@ class IntentExecutor {
         case (.summarize, .briefing):
             return try await handleWeeklyReflection(intent: intent)
 
+        // MARK: - Commitment Creation (direct)
+        case (.create, .commitments):
+            return try await handleCreateCommitment(intent: intent)
+
+        // MARK: - Commitment Deletion
+        case (.delete, .commitments):
+            return try await handleTaskDeletion(intent: intent)
+
+        // MARK: - Calendar Update
+        case (.update, .calendar):
+            return try await handleUpdateCalendarEvent(intent: intent)
+
+        // MARK: - Calendar Deletion
+        case (.delete, .calendar):
+            return try await handleDeleteCalendarEvent(intent: intent)
+
+        // MARK: - Chat (conversational, falls through to LLM)
+        case (.chat, _):
+            throw IntentExecutionError.unsupportedIntent(action: "chat", target: "conversation")
+
         case (_, nil):
             let actionHint: String
             switch intent.action {
             case .list: actionHint = "You can list your tasks, commitments, calendar, messages, todos, or drafts."
-            case .create: actionHint = "You can create a task, todo, or calendar event."
-            case .update: actionHint = "You can update a task or commitment."
+            case .create: actionHint = "You can create a task, todo, commitment, or calendar event."
+            case .update: actionHint = "You can update a task, commitment, or calendar event."
             case .generate: actionHint = "You can generate a briefing, attention check, or draft responses."
             case .scan: actionHint = "You can scan for commitments or todos."
             case .check: actionHint = "You can check your attention, tasks, or commitments."
             case .search, .find: actionHint = "You can search for tasks, commitments, or specific threads."
-            case .delete: actionHint = "You can cancel a task."
+            case .delete: actionHint = "You can cancel a task, commitment, or calendar event."
             case .summarize: actionHint = "You can summarize a message thread or get a weekly reflection."
             case .analyze: actionHint = "You can analyze a specific message thread."
+            case .chat: actionHint = "I'm here to help with your tasks, calendar, commitments, and more."
             }
             return IntentExecutionResult(
                 data: [:] as [String: Any],
@@ -957,6 +978,87 @@ class IntentExecutor {
         )
     }
 
+    // MARK: - Commitment Creation Handler
+
+    private func handleCreateCommitment(intent: UserIntent) async throws -> IntentExecutionResult {
+        let filters = intent.filters
+
+        guard let title = filters.taskTitle ?? filters.taskSearchTerm, !title.isEmpty else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "What's the commitment? Give me a description.",
+                structuredData: nil
+            )
+        }
+
+        let direction: TaskItem.CommitmentDirection
+        if filters.commitmentDirection == "they_owe" {
+            direction = .theyOweMe
+        } else {
+            direction = .iOwe
+        }
+
+        let counterparty = filters.commitmentCounterparty ?? filters.contactName
+
+        let priority: TaskItem.Priority?
+        if let p = filters.newPriority {
+            priority = TaskItem.Priority(rawValue: p)
+        } else {
+            priority = nil
+        }
+
+        let task = TaskItem(
+            notionId: "",
+            title: title,
+            type: .commitment,
+            status: .notStarted,
+            description: filters.noteToAdd,
+            dueDate: filters.newDueDate,
+            priority: priority,
+            assignee: nil,
+            commitmentDirection: direction,
+            committedBy: direction == .iOwe ? nil : counterparty,
+            committedTo: direction == .iOwe ? counterparty : nil,
+            originalContext: nil,
+            sourcePlatform: .manual,
+            sourceThread: nil,
+            sourceThreadId: nil,
+            tags: nil,
+            followUpDate: nil,
+            uniqueHash: nil,
+            notes: nil,
+            createdDate: Date(),
+            lastUpdated: Date()
+        )
+
+        let notionId = try await orchestrator.notionServicePublic.createTask(task)
+        print("✅ Created commitment '\(title)' in Notion: \(notionId)")
+
+        var response = "Created commitment: '\(title)'"
+        if let cp = counterparty {
+            response += direction == .iOwe ? " (you owe \(cp))" : " (\(cp) owes you)"
+        }
+        if let p = priority { response += " — \(p.rawValue) priority" }
+        if let dueDate = filters.newDueDate {
+            let fmt = DateFormatter()
+            fmt.dateStyle = .medium
+            response += ", due \(fmt.string(from: dueDate))"
+        }
+        response += "."
+
+        return IntentExecutionResult(
+            data: task,
+            conversationalResponse: response,
+            structuredData: [
+                "type": "commitment_create",
+                "taskTitle": title,
+                "taskType": "Commitment",
+                "notionId": notionId,
+                "success": true
+            ]
+        )
+    }
+
     // MARK: - Task Deletion Handler
 
     private func handleTaskDeletion(intent: UserIntent) async throws -> IntentExecutionResult {
@@ -1425,6 +1527,184 @@ class IntentExecutor {
             data: createdEvent,
             conversationalResponse: summary,
             structuredData: structuredData
+        )
+    }
+
+    // MARK: - Calendar Event Update Handler
+
+    private func handleUpdateCalendarEvent(intent: UserIntent) async throws -> IntentExecutionResult {
+        let filters = intent.filters
+
+        guard let searchTerm = filters.eventSearchTerm ?? filters.eventTitle, !searchTerm.isEmpty else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "Which event would you like to update? Give me a name, time, or keyword.",
+                structuredData: nil
+            )
+        }
+
+        guard let calendarService = orchestrator.calendarServicePublic.getService(named: "primary") else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "Primary calendar is not configured. Please set up Google Calendar first.",
+                structuredData: nil
+            )
+        }
+
+        // Fetch today's events to find the match
+        let targetDate = filters.specificDate ?? Date()
+        let events = try await calendarService.fetchEvents(for: targetDate)
+
+        // Fuzzy-match events by search term (title, time, attendee name)
+        let searchLower = searchTerm.lowercased()
+        let timeFmt = DateFormatter()
+        timeFmt.dateFormat = "h:mma"
+        let hourFmt = DateFormatter()
+        hourFmt.dateFormat = "ha"
+
+        let matches = events.filter { event in
+            let titleMatch = event.title.lowercased().contains(searchLower)
+            let timeStr = timeFmt.string(from: event.startTime).lowercased()
+            let hourStr = hourFmt.string(from: event.startTime).lowercased()
+            let timeMatch = searchLower.contains(timeStr.replacingOccurrences(of: ":00", with: "")) || searchLower.contains(hourStr)
+            let attendeeMatch = event.attendees.contains { ($0.name ?? "").lowercased().contains(searchLower) || $0.email.lowercased().contains(searchLower) }
+            return titleMatch || timeMatch || attendeeMatch
+        }
+
+        guard !matches.isEmpty else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "I couldn't find a calendar event matching '\(searchTerm)' today.",
+                structuredData: nil
+            )
+        }
+
+        if matches.count > 3 {
+            let eventNames = matches.prefix(5).map { "\($0.title) (\(timeFmt.string(from: $0.startTime)))" }
+            return IntentExecutionResult(
+                data: ["type": "disambiguation", "matches": eventNames] as [String: Any],
+                conversationalResponse: "I found \(matches.count) events matching '\(searchTerm)'. Which one?\n" + eventNames.enumerated().map { "  \($0.offset + 1). \($0.element)" }.joined(separator: "\n"),
+                structuredData: nil
+            )
+        }
+
+        let event = matches[0]
+
+        // Parse new time if provided
+        var newStart: Date? = nil
+        var newEnd: Date? = nil
+        if let eventTimeStr = filters.eventTime {
+            let isoFormatter = ISO8601DateFormatter()
+            isoFormatter.formatOptions = [.withInternetDateTime]
+            if let parsed = isoFormatter.date(from: eventTimeStr) {
+                newStart = parsed
+                let duration = event.endTime.timeIntervalSince(event.startTime)
+                newEnd = parsed.addingTimeInterval(duration)
+            }
+        }
+
+        let updatedEvent = try await calendarService.updateEvent(
+            eventId: event.id,
+            startTime: newStart,
+            endTime: newEnd,
+            location: filters.eventLocation
+        )
+
+        let displayTimeFmt = DateFormatter()
+        displayTimeFmt.dateFormat = "h:mm a"
+
+        var changes: [String] = []
+        if let ns = newStart { changes.append("moved to \(displayTimeFmt.string(from: ns))") }
+        if let loc = filters.eventLocation { changes.append("location → \(loc)") }
+
+        let summary = "Updated '\(event.title)': \(changes.joined(separator: ", "))."
+
+        return IntentExecutionResult(
+            data: updatedEvent,
+            conversationalResponse: summary,
+            structuredData: [
+                "type": "calendar_update",
+                "eventTitle": event.title,
+                "eventId": event.id,
+                "changes": changes,
+                "success": true
+            ]
+        )
+    }
+
+    // MARK: - Calendar Event Delete Handler
+
+    private func handleDeleteCalendarEvent(intent: UserIntent) async throws -> IntentExecutionResult {
+        let filters = intent.filters
+
+        guard let searchTerm = filters.eventSearchTerm ?? filters.eventTitle, !searchTerm.isEmpty else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "Which event would you like to cancel? Give me a name, time, or keyword.",
+                structuredData: nil
+            )
+        }
+
+        guard let calendarService = orchestrator.calendarServicePublic.getService(named: "primary") else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "Primary calendar is not configured. Please set up Google Calendar first.",
+                structuredData: nil
+            )
+        }
+
+        let targetDate = filters.specificDate ?? Date()
+        let events = try await calendarService.fetchEvents(for: targetDate)
+
+        // Fuzzy-match (same logic as update)
+        let searchLower = searchTerm.lowercased()
+        let timeFmt = DateFormatter()
+        timeFmt.dateFormat = "h:mma"
+        let hourFmt = DateFormatter()
+        hourFmt.dateFormat = "ha"
+
+        let matches = events.filter { event in
+            let titleMatch = event.title.lowercased().contains(searchLower)
+            let timeStr = timeFmt.string(from: event.startTime).lowercased()
+            let hourStr = hourFmt.string(from: event.startTime).lowercased()
+            let timeMatch = searchLower.contains(timeStr.replacingOccurrences(of: ":00", with: "")) || searchLower.contains(hourStr)
+            let attendeeMatch = event.attendees.contains { ($0.name ?? "").lowercased().contains(searchLower) || $0.email.lowercased().contains(searchLower) }
+            return titleMatch || timeMatch || attendeeMatch
+        }
+
+        guard !matches.isEmpty else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "I couldn't find a calendar event matching '\(searchTerm)' today.",
+                structuredData: nil
+            )
+        }
+
+        if matches.count > 3 {
+            let eventNames = matches.prefix(5).map { "\($0.title) (\(timeFmt.string(from: $0.startTime)))" }
+            return IntentExecutionResult(
+                data: ["type": "disambiguation", "matches": eventNames] as [String: Any],
+                conversationalResponse: "I found \(matches.count) events matching '\(searchTerm)'. Which one?\n" + eventNames.enumerated().map { "  \($0.offset + 1). \($0.element)" }.joined(separator: "\n"),
+                structuredData: nil
+            )
+        }
+
+        let event = matches[0]
+        let displayTimeFmt = DateFormatter()
+        displayTimeFmt.dateFormat = "h:mm a"
+        let eventDescription = "\(event.title) at \(displayTimeFmt.string(from: event.startTime))"
+
+        try await calendarService.deleteEvent(eventId: event.id)
+
+        return IntentExecutionResult(
+            data: [:] as [String: Any],
+            conversationalResponse: "Cancelled '\(eventDescription)'.",
+            structuredData: [
+                "type": "calendar_delete",
+                "eventTitle": event.title,
+                "eventId": event.id,
+                "success": true
+            ]
         )
     }
 }
