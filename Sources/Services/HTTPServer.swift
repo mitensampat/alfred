@@ -675,6 +675,12 @@ class HTTPServer {
         case ("POST", "/api/config/home"):
             return handleUpdateHomeConfig(request)
 
+        // Notification settings
+        case ("GET", "/api/config/notifications"):
+            return handleGetNotificationConfig()
+        case ("POST", "/api/config/notifications"):
+            return handleUpdateNotificationConfig(request)
+
         // Push notifications
         case ("POST", "/api/push/setup"):
             return handlePushSetup()
@@ -1604,8 +1610,11 @@ class HTTPServer {
 
     // MARK: - Home Pulse (consolidated endpoint for v2)
 
+    /// Track whether a background pulse refresh is already running
+    private static var _pulseRefreshInFlight = false
+
     private func handleHomePulse() async -> HTTPResponse {
-        // Check memory cache (2min TTL)
+        // Check memory cache (2min TTL) — fastest path
         if let cached: [String: Any] = getFromMemoryCache("home_pulse") {
             return HTTPResponse(statusCode: 200, body: cached)
         }
@@ -1616,6 +1625,28 @@ class HTTPServer {
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 setInMemoryCache("home_pulse", value: json, ttl: 120)
                 return HTTPResponse(statusCode: 200, body: json)
+            }
+        }
+
+        // Stale-while-revalidate: check for ANY cached version (even expired)
+        // Return it instantly so the user sees data, then refresh in background
+        if let staleCached = cache.getCachedEvenIfExpired(endpoint: "/api/home/pulse") {
+            if let data = staleCached.data(using: .utf8),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                // Cache stale data in memory briefly so rapid successive calls don't miss
+                setInMemoryCache("home_pulse", value: json, ttl: 30)
+                // Kick off background refresh (only if one isn't already running)
+                if !Self._pulseRefreshInFlight {
+                    Self._pulseRefreshInFlight = true
+                    Task { [weak self] in
+                        defer { Self._pulseRefreshInFlight = false }
+                        _ = await self?.refreshPulseData()
+                    }
+                }
+                // Return stale data immediately — user sees content in <20ms
+                var staleJson = json
+                staleJson["_stale"] = true
+                return HTTPResponse(statusCode: 200, body: staleJson)
             }
         }
 
@@ -1726,6 +1757,21 @@ class HTTPServer {
         }
 
         return HTTPResponse(statusCode: 200, body: responseBody)
+    }
+
+    /// Background refresh: fetch fresh pulse data and update caches
+    /// Called by stale-while-revalidate to update caches silently
+    /// Clears all caches first, then does a full fetch. Stale data remains
+    /// in memory cache (30s TTL) so concurrent user requests stay fast.
+    private func refreshPulseData() async -> HTTPResponse {
+        print("♻️ [Pulse] Background refresh started")
+        // Clear both caches — stale data is held in memory (30s) for concurrent requests
+        invalidateMemoryCache("home_pulse")
+        cache.deleteByEndpoint("/api/home/pulse")
+        // handleHomePulse will now miss memory + disk + stale → do a full fresh fetch
+        let result = await handleHomePulse()
+        print("♻️ [Pulse] Background refresh complete")
+        return result
     }
 
     /// Helper: fetch the top goal (pinned or algorithmic) for home pulse
@@ -1983,6 +2029,95 @@ class HTTPServer {
     }
 
     // MARK: - Push Notifications
+
+    // MARK: - Notification Config
+
+    private func handleGetNotificationConfig() -> HTTPResponse {
+        guard let config = AppConfig.load() else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to load config"])
+        }
+        let push = config.notifications.push
+        let budget = PushBudgetService.shared.getStats()
+        let subs = WebPushService.shared.getSubscriptions()
+
+        return HTTPResponse(statusCode: 200, body: [
+            "enabled": push.enabled,
+            "briefingTime": config.app.briefingTime ?? "08:15",
+            "morningNudgeEnabled": push.morningNudgeEnabled ?? true,
+            "postMeetingCaptureEnabled": push.postMeetingCaptureEnabled ?? true,
+            "maxPerDay": push.maxPerDay ?? 5,
+            "quietHoursStart": push.quietHoursStart ?? 22,
+            "quietHoursEnd": push.quietHoursEnd ?? 7,
+            "budget": budget,
+            "subscriberCount": subs.count,
+            "subscriptions": subs.map { sub -> [String: Any] in
+                [
+                    "endpoint": String(sub.endpoint.prefix(60)) + "...",
+                    "subscribedAt": ISO8601DateFormatter().string(from: sub.subscribedAt),
+                    "lastPushAt": sub.lastPushAt.map { ISO8601DateFormatter().string(from: $0) } as Any
+                ]
+            }
+        ] as [String: Any])
+    }
+
+    private func handleUpdateNotificationConfig(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Invalid JSON body"])
+        }
+
+        let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
+        do {
+            let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
+            var config = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+            var notifications = config["notifications"] as? [String: Any] ?? [:]
+            var push = notifications["push"] as? [String: Any] ?? [:]
+            var app = config["app"] as? [String: Any] ?? [:]
+
+            // Update push settings
+            if let maxPerDay = json["maxPerDay"] as? Int {
+                push["max_per_day"] = max(1, min(20, maxPerDay))
+            }
+            if let quietStart = json["quietHoursStart"] as? Int {
+                push["quiet_hours_start"] = max(0, min(23, quietStart))
+            }
+            if let quietEnd = json["quietHoursEnd"] as? Int {
+                push["quiet_hours_end"] = max(0, min(23, quietEnd))
+            }
+            if let morningNudge = json["morningNudgeEnabled"] as? Bool {
+                push["morning_nudge_enabled"] = morningNudge
+            }
+            if let postMeeting = json["postMeetingCaptureEnabled"] as? Bool {
+                push["post_meeting_capture_enabled"] = postMeeting
+            }
+
+            // Update briefing time (in app settings, not push)
+            if let briefingTime = json["briefingTime"] as? String {
+                // Validate HH:MM format
+                let parts = briefingTime.split(separator: ":").compactMap { Int($0) }
+                if parts.count == 2 && parts[0] >= 0 && parts[0] <= 23 && parts[1] >= 0 && parts[1] <= 59 {
+                    app["briefing_time"] = briefingTime
+                }
+            }
+
+            notifications["push"] = push
+            config["notifications"] = notifications
+            config["app"] = app
+
+            let updatedData = try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys])
+            try updatedData.write(to: URL(fileURLWithPath: configPath))
+
+            // Reload budget service with new settings
+            if let newConfig = AppConfig.load() {
+                PushBudgetService.shared.configure(from: newConfig.notifications.push)
+            }
+
+            print("⚙️ [Config] Notification settings updated")
+            return HTTPResponse(statusCode: 200, body: ["success": true])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to save: \(error.localizedDescription)"])
+        }
+    }
 
     private func handlePushSetup() -> HTTPResponse {
         // Generate VAPID keys and store in config

@@ -357,6 +357,8 @@ struct NotificationConfig: Codable {
         let maxPerDay: Int?           // default 5
         let quietHoursStart: Int?     // default 22 (10pm)
         let quietHoursEnd: Int?       // default 7 (7am)
+        let morningNudgeEnabled: Bool?    // default true
+        let postMeetingCaptureEnabled: Bool?  // default true
 
         enum CodingKeys: String, CodingKey {
             case enabled
@@ -366,6 +368,8 @@ struct NotificationConfig: Codable {
             case maxPerDay = "max_per_day"
             case quietHoursStart = "quiet_hours_start"
             case quietHoursEnd = "quiet_hours_end"
+            case morningNudgeEnabled = "morning_nudge_enabled"
+            case postMeetingCaptureEnabled = "post_meeting_capture_enabled"
         }
     }
 

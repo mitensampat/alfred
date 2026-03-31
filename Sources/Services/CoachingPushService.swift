@@ -78,16 +78,20 @@ class CoachingPushService {
         }
 
         // Check for post-meeting capture (meeting ended 3-7 min ago)
-        await checkPostMeeting(
-            events: cachedEvents, now: now,
-            config: config, publicKey: publicKey, privateKey: privateKey, subject: subject
-        )
+        if config.notifications.push.postMeetingCaptureEnabled ?? true {
+            await checkPostMeeting(
+                events: cachedEvents, now: now,
+                config: config, publicKey: publicKey, privateKey: privateKey, subject: subject
+            )
+        }
 
         // Morning nudge (once per day, at briefing time)
-        await checkMorningNudge(
-            now: now, config: config,
-            publicKey: publicKey, privateKey: privateKey, subject: subject
-        )
+        if config.notifications.push.morningNudgeEnabled ?? true {
+            await checkMorningNudge(
+                now: now, config: config,
+                publicKey: publicKey, privateKey: privateKey, subject: subject
+            )
+        }
     }
 
     // MARK: - Post-Meeting Capture
@@ -205,6 +209,50 @@ class CoachingPushService {
             vapidSubject: subject
         )
         PushBudgetService.shared.recordPush()
+
+        // Pre-warm home page caches so the UI loads instantly when user taps the notification
+        await prewarmHomeCache(config: config)
+    }
+
+    // MARK: - Cache Pre-Warming
+
+    /// Fires off parallel requests to warm the home page caches after sending a push notification.
+    /// By the time the user taps through (~5-30s later), all data is cached and renders instantly.
+    private func prewarmHomeCache(config: AppConfig) async {
+        let port = config.api?.port ?? 8080
+        let pc = config.api?.passcode ?? "REDACTED_PASSCODE"
+        let base = "http://localhost:\(port)"
+
+        print("🔥 [CoachingPush] Pre-warming home caches...")
+
+        await withTaskGroup(of: Void.self) { group in
+            // Pulse: dashboard metrics (5 internal calls, 2min cache)
+            group.addTask {
+                if let url = URL(string: "\(base)/api/home/pulse?passcode=\(pc)") {
+                    _ = try? await URLSession.shared.data(from: url)
+                }
+            }
+            // Coaching cards: AI-generated cards (2h cache, ~3-5s cold)
+            group.addTask {
+                if let url = URL(string: "\(base)/api/coaching/cards?passcode=\(pc)") {
+                    _ = try? await URLSession.shared.data(from: url)
+                }
+            }
+            // Coaching opener: AI greeting (1h cache, LLM call ~2-4s cold)
+            group.addTask {
+                if let url = URL(string: "\(base)/api/coaching/opener?passcode=\(pc)") {
+                    _ = try? await URLSession.shared.data(from: url)
+                }
+            }
+            // Next meeting brief: pre-generate if a meeting is coming up
+            group.addTask {
+                if let url = URL(string: "\(base)/api/home/next-meeting-brief?passcode=\(pc)") {
+                    _ = try? await URLSession.shared.data(from: url)
+                }
+            }
+        }
+
+        print("✅ [CoachingPush] Home caches warm")
     }
 
     // MARK: - Smart Meeting Filter

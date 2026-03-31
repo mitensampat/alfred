@@ -357,6 +357,37 @@
         .meeting-brief-skeleton .skel-line { height: 12px; background: var(--surface-sunken); border-radius: 4px; margin-bottom: 8px; animation: pulse 1.5s infinite; }
         .skel-line.w60 { width: 60%; } .skel-line.w80 { width: 80%; } .skel-line.w45 { width: 45%; } .skel-line.w90 { width: 90%; } .skel-line.w70 { width: 70%; }
 
+        /* Morning Briefing Card */
+        .briefing-card {
+            padding: 18px 20px; margin-bottom: 16px;
+            border: 1px solid var(--line); border-left: 3px solid var(--growth);
+            background: var(--surface); position: relative;
+            animation: fadeIn 0.4s ease-out;
+        }
+        .briefing-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
+        .briefing-label { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--growth); }
+        .briefing-time { font-size: 11px; font-weight: 500; color: var(--growth); background: var(--growth-light); padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+        .briefing-summary { font-size: 13.5px; line-height: 1.72; color: var(--ink); }
+        .briefing-summary strong { font-weight: 600; }
+        .briefing-toggle { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding: 6px 0; cursor: pointer; border-top: 1px solid var(--line); }
+        .briefing-toggle-text { font-size: 11px; font-weight: 500; color: var(--growth); }
+        .briefing-toggle-arrow { font-size: 11px; color: var(--growth); transition: transform 0.2s; }
+        .briefing-toggle.open .briefing-toggle-arrow { transform: rotate(180deg); }
+        .briefing-toggle:hover .briefing-toggle-text { color: var(--ink); }
+        .briefing-section { margin-bottom: 14px; }
+        .briefing-section-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-tertiary); margin-bottom: 6px; }
+        .briefing-section ul { margin: 0; padding-left: 16px; }
+        .briefing-section li { font-size: 12.5px; line-height: 1.65; color: var(--ink-secondary); margin-bottom: 3px; }
+        .briefing-section li strong { font-weight: 600; color: var(--ink); }
+        .briefing-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+        .briefing-generated { font-size: 10px; color: var(--ink-faint); }
+        .briefing-refresh { font-size: 11px; padding: 3px 10px; border-radius: 4px; background: var(--surface-sunken); border: 1px solid var(--line); color: var(--ink-secondary); cursor: pointer; opacity: 0; transition: opacity 0.2s; }
+        .briefing-card:hover .briefing-refresh { opacity: 1; }
+        .briefing-refresh:hover { background: var(--growth-light); color: var(--growth); border-color: var(--growth); }
+        .briefing-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+        .briefing-chip { font-size: 11px; font-weight: 500; padding: 4px 12px; border-radius: 4px; border: 1px solid var(--line); background: transparent; color: var(--ink-secondary); cursor: pointer; }
+        .briefing-chip:hover { background: var(--growth-light); color: var(--growth); border-color: var(--growth); }
+
         .calendar-card .cal-event { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
         .calendar-card .cal-event:last-child { border: none; }
         .cal-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
@@ -672,15 +703,29 @@
         .ftue-database-option:hover { background: var(--surface-sunken); }
 
         /* ── Streaming / Chat ── */
-        .typing-indicator { display: flex; gap: 4px; padding: 4px 0; }
-        .typing-indicator span { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-faint); animation: typingDot 1.4s infinite ease-in-out; }
+        .typing-indicator { display: flex; gap: 5px; padding: 6px 0; align-items: center; }
+        .typing-indicator span { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-faint); animation: typingDot 1.4s infinite ease-in-out; }
         .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
         .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
-        @keyframes typingDot { 0%, 80%, 100% { opacity: 0.3; } 40% { opacity: 1; } }
+        @keyframes typingDot { 0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); } 40% { opacity: 1; transform: scale(1); } }
 
-        .tool-indicator { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-tertiary); padding: 6px 0; }
+        /* Streaming cursor — blinking caret at end of streaming text */
+        .stream-cursor { display: inline-block; width: 2px; height: 1em; background: var(--ink-tertiary); margin-left: 1px; vertical-align: text-bottom; animation: cursorBlink 0.8s steps(2) infinite; }
+        @keyframes cursorBlink { 0% { opacity: 1; } 100% { opacity: 0; } }
+
+        /* Thinking state — shows before first token arrives */
+        .thinking-state { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-tertiary); padding: 8px 0; font-style: italic; }
+        .thinking-shimmer { display: inline-block; width: 60px; height: 3px; border-radius: 2px; background: linear-gradient(90deg, var(--line) 0%, var(--ink-faint) 50%, var(--line) 100%); background-size: 200% 100%; animation: shimmer 1.5s ease-in-out infinite; }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+        .tool-indicator { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-tertiary); padding: 6px 0; transition: opacity 0.3s ease; }
         .spinner { width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--coach); border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
         @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Smooth text appearance for streaming chunks */
+        .stream-text { transition: none; }
+        .stream-text > *:last-child { animation: fadeInChunk 0.15s ease; }
+        @keyframes fadeInChunk { from { opacity: 0.6; } to { opacity: 1; } }
 
         .coaching-card-loading { color: var(--ink-faint); animation: pulse 2s ease-in-out infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
@@ -1203,6 +1248,7 @@
         .slide-panel.open { display: block; }
         .slide-panel-inner {
             max-width: 480px;
+            width: 100%;
             margin: 0 auto;
             background: var(--surface);
             border-radius: 20px 20px 0 0;
@@ -1210,6 +1256,7 @@
             max-height: 72vh;
             display: flex;
             flex-direction: column;
+            overflow: hidden;
             animation: slideUpPanel 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
         }
         @keyframes slideUpPanel {
@@ -2052,47 +2099,13 @@
                 </div>
             </div>
             <div class="slide-panel-tab-nav" id="settingsPanelTabs">
-                <button class="active" onclick="showSettingsTab('config',this)">configurations</button>
-                <button class="coaching-tab" onclick="showSettingsTab('tenets',this)">tenets</button>
-                <button class="coaching-tab" onclick="showSettingsTab('skills',this)">coaching</button>
-                <button class="coaching-tab" onclick="showSettingsTab('previews',this)">previews</button>
-                <button class="coaching-tab" onclick="showSettingsTab('library',this)">library</button>
-                <button onclick="showSettingsTab('memory',this)">memory</button>
-                <button class="coaching-tab" onclick="showSettingsTab('reflection',this)">reflection</button>
+                <button class="active" onclick="showSettingsTab('config',this)">general</button>
+                <button onclick="showSettingsTab('coaching',this)">coaching</button>
+                <button onclick="showSettingsTab('notifications',this)">notifications</button>
+                <button onclick="showSettingsTab('data',this)">data</button>
             </div>
             <div class="slide-panel-body">
-                <!-- TENETS TAB -->
-                <div id="panelTabTenets" style="display:none;">
-                    <div class="panel-section">
-                        <div class="panel-section-label">COACHING TENETS</div>
-                        <div id="tenetSectionsList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
-                    </div>
-                    <!-- Meeting Brief Prompt (in tenets, not config) -->
-                    <div class="panel-section">
-                        <div class="panel-section-label">MEETING BRIEF PROMPT</div>
-                        <div class="config-card">
-                            <div style="padding:12px 16px;">
-                                <div style="font-size:11px;color:var(--ink-tertiary);margin-bottom:8px;">What should Alfred tell you before each meeting? Leave blank for the default briefing.</div>
-                                <textarea id="meetingBriefPrompt" class="form-input" rows="4" placeholder="e.g., Summarize recent threads with attendees, list open commitments, suggest talking points..." style="font-size:12px;resize:vertical;min-height:60px;"></textarea>
-                                <button class="btn btn-sm btn-coach" onclick="saveMeetingBriefConfig()" style="margin-top:8px;">Save</button>
-                                <div id="meetingBriefStatus" class="hidden" style="margin-top:4px;font-size:11px;color:var(--growth);"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <!-- SKILLS TAB -->
-                <div id="panelTabSkills" style="display:none;">
-                    <div class="panel-section">
-                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                            <div class="panel-section-label" style="margin:0;padding:0;">YOUR SKILLS</div>
-                            <button class="btn btn-sm" onclick="openSkillEditor()">+ New</button>
-                        </div>
-                        <div class="config-card" id="userSkillsList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
-                        <div class="panel-section-label">INSTALLED SKILLS</div>
-                        <div class="config-card" id="installedSkillsList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
-                    </div>
-                </div>
-                <!-- CONFIG TAB -->
+                <!-- GENERAL TAB (was: config) -->
                 <div id="panelTabConfig">
                     <!-- Cadences -->
                     <div class="panel-section">
@@ -2180,24 +2193,37 @@
                             </div>
                         </div>
                     </div>
-                    <!-- Data -->
+                </div>
+                <!-- COACHING TAB (merged: tenets + skills + library + previews) -->
+                <div id="panelTabCoaching" style="display:none;">
                     <div class="panel-section">
-                        <div class="panel-section-label">DATA</div>
+                        <div class="panel-section-label">COACHING TENETS</div>
+                        <div id="tenetSectionsList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
+                    </div>
+                    <div class="panel-section">
+                        <div class="panel-section-label">MEETING BRIEF PROMPT</div>
                         <div class="config-card">
-                            <div class="config-row">
-                                <span>Clear Server Cache</span>
-                                <button class="btn btn-sm" onclick="clearCache()">Clear</button>
-                            </div>
-                            <div id="cacheStatus" class="hidden" style="padding:0 16px 8px;"></div>
-                            <div class="config-row">
-                                <span>Patterns & Memory</span>
-                                <button class="btn btn-sm" onclick="showPatternsAndMemory()">View</button>
+                            <div style="padding:12px 16px;">
+                                <div style="font-size:11px;color:var(--ink-tertiary);margin-bottom:8px;">What should Alfred tell you before each meeting? Leave blank for the default briefing.</div>
+                                <textarea id="meetingBriefPrompt" class="form-input" rows="4" placeholder="e.g., Summarize recent threads with attendees, list open commitments, suggest talking points..." style="font-size:12px;resize:vertical;min-height:60px;"></textarea>
+                                <button class="btn btn-sm btn-coach" onclick="saveMeetingBriefConfig()" style="margin-top:8px;">Save</button>
+                                <div id="meetingBriefStatus" class="hidden" style="margin-top:4px;font-size:11px;color:var(--growth);"></div>
                             </div>
                         </div>
                     </div>
-                </div>
-                <!-- PREVIEWS TAB -->
-                <div id="panelTabPreviews" style="display:none;">
+                    <div class="panel-section">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                            <div class="panel-section-label" style="margin:0;padding:0;">YOUR SKILLS</div>
+                            <button class="btn btn-sm" onclick="openSkillEditor()">+ New</button>
+                        </div>
+                        <div class="config-card" id="userSkillsList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
+                        <div class="panel-section-label">INSTALLED SKILLS</div>
+                        <div class="config-card" id="installedSkillsList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
+                    </div>
+                    <div class="panel-section">
+                        <div class="panel-section-label">SKILL LIBRARY</div>
+                        <div class="config-card" id="libraryList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
+                    </div>
                     <div class="panel-section">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                             <div class="panel-section-label" style="margin:0;padding:0;">CARD PREVIEWS</div>
@@ -2209,15 +2235,99 @@
                         <div id="qaCardsList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
                     </div>
                 </div>
-                <!-- LIBRARY TAB -->
-                <div id="panelTabLibrary" style="display:none;">
+                <!-- NOTIFICATIONS TAB -->
+                <div id="panelTabNotifications" style="display:none;">
+                    <!-- Status -->
                     <div class="panel-section">
-                        <div class="panel-section-label">SKILL LIBRARY</div>
-                        <div class="config-card" id="libraryList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
+                        <div class="panel-section-label">STATUS</div>
+                        <div class="config-card">
+                            <div class="config-row">
+                                <span>Browser Permission</span>
+                                <span id="pushNotifStatus" style="font-size:12px;color:var(--ink-secondary);">Checking...</span>
+                            </div>
+                            <div class="config-row">
+                                <span>Subscribed Devices</span>
+                                <span id="pushSubCount" style="font-size:12px;color:var(--ink-secondary);">-</span>
+                            </div>
+                            <div class="config-row">
+                                <span>Test Push</span>
+                                <button class="btn btn-sm" id="testPushBtn" onclick="sendTestPush()">Send Test</button>
+                            </div>
+                            <div id="testPushStatus" class="hidden" style="padding:4px 16px 8px;font-size:11px;"></div>
+                        </div>
+                    </div>
+                    <!-- Schedule -->
+                    <div class="panel-section">
+                        <div class="panel-section-label">SCHEDULE</div>
+                        <div class="config-card">
+                            <div class="config-row">
+                                <span>Morning Briefing Time</span>
+                                <input type="time" id="notifBriefingTime" value="08:15" style="font-size:12px;border:1px solid var(--line);border-radius:4px;padding:3px 8px;background:var(--surface);color:var(--ink);font-family:var(--font-body);">
+                            </div>
+                            <div class="config-row">
+                                <div>
+                                    <span>Quiet Hours</span>
+                                    <div style="font-size:10px;color:var(--ink-tertiary);">No pushes during this window</div>
+                                </div>
+                                <div style="display:flex;align-items:center;gap:4px;">
+                                    <select id="notifQuietStart" style="font-size:12px;border:1px solid var(--line);border-radius:4px;padding:3px 6px;background:var(--surface);color:var(--ink);">
+                                    </select>
+                                    <span style="font-size:11px;color:var(--ink-tertiary);">to</span>
+                                    <select id="notifQuietEnd" style="font-size:12px;border:1px solid var(--line);border-radius:4px;padding:3px 6px;background:var(--surface);color:var(--ink);">
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Limits -->
+                    <div class="panel-section">
+                        <div class="panel-section-label">LIMITS</div>
+                        <div class="config-card">
+                            <div class="config-row">
+                                <div>
+                                    <span>Max Per Day</span>
+                                    <div id="notifBudgetStatus" style="font-size:10px;color:var(--ink-tertiary);"></div>
+                                </div>
+                                <div style="display:flex;align-items:center;gap:8px;">
+                                    <input type="range" id="notifMaxPerDay" min="1" max="15" value="5" style="width:80px;" oninput="document.getElementById('notifMaxLabel').textContent=this.value">
+                                    <span id="notifMaxLabel" style="font-size:13px;font-weight:500;color:var(--ink);min-width:18px;text-align:center;">5</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Types -->
+                    <div class="panel-section">
+                        <div class="panel-section-label">NOTIFICATION TYPES</div>
+                        <div class="config-card">
+                            <div class="config-row">
+                                <div>
+                                    <span>Morning Nudge</span>
+                                    <div style="font-size:10px;color:var(--ink-tertiary);">Daily briefing summary at your scheduled time</div>
+                                </div>
+                                <div class="toggle on" id="toggleMorningNudge" onclick="toggleNotifType('morningNudge', this)"></div>
+                            </div>
+                            <div class="config-row">
+                                <div>
+                                    <span>Post-Meeting Capture</span>
+                                    <div style="font-size:10px;color:var(--ink-tertiary);">Prompt to capture follow-ups after meetings</div>
+                                </div>
+                                <div class="toggle on" id="togglePostMeeting" onclick="toggleNotifType('postMeeting', this)"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Devices -->
+                    <div class="panel-section">
+                        <div class="panel-section-label">DEVICES</div>
+                        <div class="config-card" id="notifDevicesList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px;">Loading...</div></div>
+                    </div>
+                    <!-- Save -->
+                    <div class="panel-section" style="padding-top:0;">
+                        <button class="btn btn-sm btn-coach" onclick="saveNotificationSettings()">Save Changes</button>
+                        <span id="notifSaveStatus" class="hidden" style="margin-left:8px;font-size:11px;"></span>
                     </div>
                 </div>
-                <!-- MEMORY TAB -->
-                <div id="panelTabMemory" style="display:none;">
+                <!-- DATA TAB (merged: memory + reflection) -->
+                <div id="panelTabData" style="display:none;">
                     <div class="panel-section">
                         <div class="panel-section-label" style="display:flex;justify-content:space-between;align-items:center;">
                             WHAT ALFRED KNOWS
@@ -2232,9 +2342,6 @@
                         <div class="panel-section-label">LEARNING STATS</div>
                         <div class="config-card" id="memoryStats"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
                     </div>
-                </div>
-                <!-- REFLECTION TAB -->
-                <div id="panelTabReflection" style="display:none;">
                     <div class="panel-section">
                         <div class="panel-section-label">ACTIVE THEMES</div>
                         <div class="config-card" id="reflectionThemesList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
@@ -2260,6 +2367,20 @@
                     <div class="panel-section">
                         <div class="panel-section-label">STATS</div>
                         <div class="config-card" id="reflectionStats"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
+                    </div>
+                    <div class="panel-section">
+                        <div class="panel-section-label">DATA</div>
+                        <div class="config-card">
+                            <div class="config-row">
+                                <span>Clear Server Cache</span>
+                                <button class="btn btn-sm" onclick="clearCache()">Clear</button>
+                            </div>
+                            <div id="cacheStatus" class="hidden" style="padding:0 16px 8px;"></div>
+                            <div class="config-row">
+                                <span>Patterns & Memory</span>
+                                <button class="btn btn-sm" onclick="showPatternsAndMemory()">View</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2566,6 +2687,7 @@
             const next = current === 'dark' ? 'light' : 'dark';
             applyTheme(next);
             saveThemeToAPI(next);
+            if (_settingsChannel) { try { _settingsChannel.postMessage({ type: 'theme-changed', theme: next }); } catch(e) {} }
         }
 
         async function fetchThemeFromAPI() {
@@ -2622,8 +2744,11 @@
         }
 
         function showSettingsTab(tab, btn) {
-            const tabs = ['tenets', 'skills', 'config', 'previews', 'library', 'memory', 'reflection'];
-            const tabLabels = { config: 'configurations', skills: 'coaching', tenets: 'tenets', previews: 'previews', library: 'library', memory: 'memory', reflection: 'reflection' };
+            // Map legacy tab names to new consolidated tabs
+            const legacyMap = { tenets: 'coaching', skills: 'coaching', previews: 'coaching', library: 'coaching', memory: 'data', reflection: 'data' };
+            tab = legacyMap[tab] || tab;
+            const tabs = ['config', 'coaching', 'notifications', 'data'];
+            const tabLabels = { config: 'general', coaching: 'coaching', notifications: 'notifications', data: 'data' };
             tabs.forEach(t => {
                 const el = document.getElementById('panelTab' + t.charAt(0).toUpperCase() + t.slice(1));
                 if (el) el.style.display = t === tab ? '' : 'none';
@@ -2635,10 +2760,9 @@
                 const buttons = document.querySelectorAll('#settingsPanelTabs button');
                 buttons.forEach(b => { if (b.textContent.trim() === label) b.classList.add('active'); });
             }
-            if (tab === 'previews') loadQAPreview();
-            if (tab === 'library') loadLibrary();
-            if (tab === 'memory') loadMemoryTab();
-            if (tab === 'reflection') loadReflectionData();
+            if (tab === 'coaching') { loadQAPreview(); loadLibrary(); }
+            if (tab === 'data') { loadMemoryTab(); loadReflectionData(); }
+            if (tab === 'notifications') loadNotificationStatus();
         }
 
         // Slash command system
@@ -3092,7 +3216,7 @@
             const div = document.createElement('div');
             div.className = 'coach-msg fade-in';
             div.id = 'chat-stream-' + Date.now();
-            div.innerHTML = '<div class="stream-tools" style="display:none;"></div><div class="stream-text"><div class="typing-indicator"><span></span><span></span><span></span></div></div>';
+            div.innerHTML = '<div class="stream-tools" style="display:none;"></div><div class="stream-text"><div class="thinking-state"><div class="thinking-shimmer"></div></div></div>';
             canvas.appendChild(div);
             div.scrollIntoView({ behavior: 'smooth', block: 'end' });
             return div.id;
@@ -3109,13 +3233,22 @@
                         const bubble = document.getElementById(id);
                         if (!bubble) continue;
                         const textEl = bubble.querySelector('.stream-text');
-                        if (textEl) textEl.innerHTML = renderMarkdown(txt);
+                        if (textEl) {
+                            // Render markdown + append streaming cursor
+                            textEl.innerHTML = renderMarkdown(txt) + '<span class="stream-cursor"></span>';
+                        }
                     }
-                    // Scroll only once per frame
+                    // Smart scroll: only auto-scroll if user is near the bottom
                     const lastBubbleId = Object.keys(_pendingStreamText).pop();
                     if (lastBubbleId) {
-                        const lastBubble = document.getElementById(lastBubbleId);
-                        if (lastBubble) lastBubble.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                        const conv = document.getElementById('conversationScroll');
+                        if (conv) {
+                            const atBottom = (conv.scrollHeight - conv.scrollTop - conv.clientHeight) < 150;
+                            if (atBottom) {
+                                const lastBubble = document.getElementById(lastBubbleId);
+                                if (lastBubble) lastBubble.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                            }
+                        }
                     }
                     _pendingStreamText = {};
                     _pendingStreamUpdate = null;
@@ -3129,8 +3262,11 @@
             const toolsEl = bubble.querySelector('.stream-tools');
             if (!toolsEl) return;
             toolsEl.style.display = 'block';
-            const labels = { calendar: 'Looking up your calendar...', commitments: 'Checking commitments...', messages: 'Reading messages...', briefing: 'Preparing your briefing...', todos: 'Scanning for todos...', attention: 'Running attention check...', memory: 'Checking memory...', tasks: 'Looking up tasks...' };
-            toolsEl.innerHTML = '<div class="tool-indicator"><div class="spinner"></div><span>' + escapeHtml(labels[toolName] || 'Running ' + toolName + '...') + '</span></div>';
+            // Remove thinking state when tools start
+            const thinking = bubble.querySelector('.thinking-state');
+            if (thinking) thinking.remove();
+            const labels = { calendar: 'Looking up your calendar', commitments: 'Checking commitments', messages: 'Reading messages', briefing: 'Preparing your briefing', todos: 'Scanning for todos', attention: 'Running attention check', memory: 'Checking memory', tasks: 'Looking up tasks', contacts: 'Searching contacts', notion: 'Checking Notion' };
+            toolsEl.innerHTML = '<div class="tool-indicator"><div class="spinner"></div><span>' + escapeHtml(labels[toolName] || 'Working on it') + '</span></div>';
         }
 
         function renderToolCard(bubbleId, data) {
@@ -3205,8 +3341,16 @@
         function finalizeStreamingBubble(bubbleId, hideToolIndicator) {
             const bubble = document.getElementById(bubbleId);
             if (!bubble) return;
+            // Remove thinking state
+            const thinking = bubble.querySelector('.thinking-state');
+            if (thinking) thinking.remove();
+            // Remove legacy typing indicator
             const typing = bubble.querySelector('.typing-indicator');
             if (typing) typing.remove();
+            // Remove streaming cursor with a fade
+            const cursor = bubble.querySelector('.stream-cursor');
+            if (cursor) { cursor.style.transition = 'opacity 0.3s'; cursor.style.opacity = '0'; setTimeout(() => cursor.remove(), 300); }
+            // Fade out tool indicator
             const indicator = bubble.querySelector('.tool-indicator');
             if (indicator) {
                 if (hideToolIndicator) { indicator.parentElement.style.display = 'none'; }
@@ -3970,13 +4114,14 @@
                 var newCard = buildMeetingBriefCard(data);
                 var el = document.getElementById('meetingBriefCard');
                 if (el) el.outerHTML = newCard || '';
+                updateMeetingCountdown();
             } catch(e) {
                 console.error('Meeting brief refresh failed:', e);
             }
         }
 
-        // Countdown ticker for meeting brief card (every 60s)
-        setInterval(function() {
+        // Update meeting countdown from real time (not cached API value)
+        function updateMeetingCountdown() {
             if (!_meetingBriefStartTime) return;
             var el = document.getElementById('meetingBriefCountdown');
             if (!el) return;
@@ -3992,10 +4137,173 @@
                 var h = Math.floor(diffMin / 60), m = diffMin % 60;
                 el.textContent = m > 0 ? 'in ' + h + 'h ' + m + 'm' : 'in ' + h + 'h';
             }
-            // Hide card if meeting ended
+            // Hide card if meeting ended 15+ min ago
             var card = document.getElementById('meetingBriefCard');
             if (card && diffMin < -15) { card.style.display = 'none'; }
-        }, 60000);
+        }
+        // Tick every 60s AND run immediately after render
+        setInterval(updateMeetingCountdown, 60000);
+
+        // --- Morning Briefing Card ---
+
+        function shouldShowMorningBriefing() {
+            // Only show before 11 AM
+            return new Date().getHours() < 11;
+        }
+
+        function buildMorningBriefingCard(data) {
+            if (!data || !shouldShowMorningBriefing()) return '';
+
+            var timeFmt = function(d) { var h=d.getHours(), ap=h>=12?'PM':'AM'; h=h%12||12; var mn=String(d.getMinutes()).padStart(2,'0'); return h+':'+mn+' '+ap; };
+
+            // Build summary line from stats
+            var stats = data.stats || {};
+            var meetings = stats.meetings || 0;
+            var calendar = data.calendar || {};
+            var events = (calendar.events || []).filter(function(e) { return !e.isAllDay; }).sort(function(a,b) { return new Date(a.start) - new Date(b.start); });
+            var msgs = data.messages || {};
+            var needsResponse = msgs.needsResponse || [];
+            var actionItems = data.actionItems || [];
+
+            // Build the 2-3 sentence summary
+            var summaryParts = [];
+            if (meetings === 0) {
+                summaryParts.push('<strong>Clear calendar today.</strong> Good day for deep work.');
+            } else {
+                var firstEvent = events.length > 0 ? events[0] : null;
+                var firstStr = firstEvent ? ', first at ' + timeFmt(new Date(firstEvent.start)) : '';
+                summaryParts.push('<strong>' + meetings + ' meeting' + (meetings !== 1 ? 's' : '') + ' today</strong>' + firstStr + '.');
+            }
+            if (needsResponse.length > 0) {
+                var names = needsResponse.slice(0, 2).map(function(m) { return m.contactName || m.threadName || 'someone'; });
+                summaryParts.push(needsResponse.length + ' message' + (needsResponse.length !== 1 ? 's' : '') + ' need' + (needsResponse.length === 1 ? 's' : '') + ' a response \u2014 ' + names.join(' and ') + '.');
+            }
+            if (calendar.focusTime > 3600) {
+                var focusHrs = Math.round(calendar.focusTime / 3600 * 10) / 10;
+                summaryParts.push(focusHrs + 'h of focus time available.');
+            }
+
+            // Generated time pill
+            var genTime = '8:15 AM';
+            if (data.generatedAt) {
+                genTime = timeFmt(new Date(data.generatedAt));
+            }
+
+            // Generated ago
+            var agoStr = 'just now';
+            if (data.generatedAt) {
+                var diffMs = Date.now() - new Date(data.generatedAt).getTime();
+                var diffMin = Math.round(diffMs / 60000);
+                if (diffMin >= 60) agoStr = Math.floor(diffMin / 60) + 'h ago';
+                else if (diffMin >= 1) agoStr = diffMin + ' min ago';
+            }
+
+            var html = '<div class="briefing-card" id="morningBriefingCard">'
+                + '<div class="briefing-head">'
+                + '<div class="briefing-label">Morning Briefing</div>'
+                + '<div class="briefing-time">' + escapeHtml(genTime) + '</div>'
+                + '</div>'
+                + '<div class="briefing-summary">' + summaryParts.join(' ') + '</div>';
+
+            // Build expanded details
+            var hasDetails = events.length > 0 || needsResponse.length > 0 || actionItems.length > 0;
+            if (hasDetails) {
+                html += '<div class="briefing-toggle" onclick="toggleMorningBriefing()">'
+                    + '<span class="briefing-toggle-text">Show full briefing</span>'
+                    + '<span class="briefing-toggle-arrow">&#9662;</span>'
+                    + '</div>'
+                    + '<div class="briefing-details" id="morningBriefingDetails" style="display:none;"><hr>';
+
+                // Schedule section
+                if (events.length > 0) {
+                    html += '<div class="briefing-section"><div class="briefing-section-label">Schedule</div><ul>';
+                    events.forEach(function(ev) {
+                        var start = timeFmt(new Date(ev.start));
+                        var loc = ev.location ? ' \u00B7 ' + escapeHtml(ev.location) : '';
+                        html += '<li><strong>' + escapeHtml(start) + '</strong> \u2014 ' + escapeHtml(ev.title) + loc + '</li>';
+                    });
+                    html += '</ul></div>';
+                }
+
+                // Needs response section
+                if (needsResponse.length > 0) {
+                    html += '<div class="briefing-section"><div class="briefing-section-label">Needs Response</div><ul>';
+                    needsResponse.slice(0, 5).forEach(function(m) {
+                        var name = m.contactName || m.threadName || 'Unknown';
+                        var platform = m.platform ? ' (' + escapeHtml(m.platform) + ')' : '';
+                        var snippet = m.summary || m.lastMessage || '';
+                        if (snippet.length > 80) snippet = snippet.substring(0, 77) + '...';
+                        html += '<li><strong>' + escapeHtml(name) + '</strong>' + platform + (snippet ? ' \u2014 "' + escapeHtml(snippet) + '"' : '') + '</li>';
+                    });
+                    html += '</ul></div>';
+                }
+
+                // Action items / commitments
+                var todayItems = actionItems.filter(function(a) { return a.priority === 'high' || a.category === 'respond'; }).slice(0, 4);
+                if (todayItems.length === 0) todayItems = actionItems.slice(0, 3);
+                if (todayItems.length > 0) {
+                    html += '<div class="briefing-section"><div class="briefing-section-label">Action Items</div><ul>';
+                    todayItems.forEach(function(a) {
+                        html += '<li><strong>' + escapeHtml(a.title) + '</strong></li>';
+                    });
+                    html += '</ul></div>';
+                }
+
+                // Action chips
+                var chips = [];
+                if (needsResponse.length > 0) {
+                    var firstName = needsResponse[0].contactName || needsResponse[0].threadName || 'them';
+                    chips.push({label: 'Reply to ' + firstName, query: 'Draft a reply to ' + firstName});
+                }
+                if (events.length > 0) {
+                    chips.push({label: 'Prep for ' + timeFmt(new Date(events[0].start)), query: 'Help me prep for my ' + events[0].title + ' meeting'});
+                }
+                if (chips.length > 0) {
+                    html += '<div class="briefing-chips">';
+                    chips.forEach(function(c) {
+                        html += '<button class="briefing-chip" onclick="sendChat(\'' + c.query.replace(/'/g, "\\'") + '\')">' + escapeHtml(c.label) + '</button>';
+                    });
+                    html += '</div>';
+                }
+
+                html += '<div class="briefing-footer">'
+                    + '<span class="briefing-generated">Generated ' + escapeHtml(agoStr) + '</span>'
+                    + '<button class="briefing-refresh" onclick="refreshMorningBriefingCard()">Refresh</button>'
+                    + '</div>';
+
+                html += '</div>'; // briefing-details
+            }
+
+            html += '</div>'; // briefing-card
+            return html;
+        }
+
+        function toggleMorningBriefing() {
+            var details = document.getElementById('morningBriefingDetails');
+            var toggle = details ? details.previousElementSibling : null;
+            if (!details || !toggle) return;
+            var isHidden = details.style.display === 'none';
+            details.style.display = isHidden ? 'block' : 'none';
+            toggle.querySelector('.briefing-toggle-text').textContent = isHidden ? 'Hide full briefing' : 'Show full briefing';
+            toggle.classList.toggle('open', isHidden);
+        }
+
+        async function refreshMorningBriefingCard() {
+            var card = document.getElementById('morningBriefingCard');
+            if (!card) return;
+            card.style.opacity = '0.5';
+            try {
+                var r = await authFetch('/api/briefing?bust=' + Date.now());
+                if (!r.ok) throw new Error('Failed');
+                var data = await r.json();
+                cacheSet('morning_briefing', data, 14400);
+                var newHtml = buildMorningBriefingCard(data);
+                if (newHtml && card) card.outerHTML = newHtml;
+            } catch(e) {
+                console.error('Morning briefing refresh failed:', e);
+                if (card) card.style.opacity = '1';
+            }
+        }
 
         function buildFocusNarrative(pulseData) {
             const m = (pulseData && pulseData.metrics) || {};
@@ -4038,7 +4346,7 @@
             }
         }
 
-        function renderMorningWalk(pulseData, coachingCards, openerText, pendingClosures, meetingBrief) {
+        function renderMorningWalk(pulseData, coachingCards, openerText, pendingClosures, meetingBrief, morningBriefing) {
             const thread = document.getElementById('morningWalkThread');
             if (!thread) return;
 
@@ -4049,11 +4357,20 @@
             const walkLabel = h < 12 ? 'Morning Walk' : h < 17 ? 'Afternoon Check-in' : 'Evening Wrap-up';
             html += buildTimeMarker(walkLabel);
 
-            // 2. Focus card FIRST (before greeting)
+            // 2. Coaching opener (reserved for future — when we can read intent, not just data)
+            // openerText is fetched but intentionally not rendered on home.
+            // The coaching cards already deliver sharp observations; doubling up feels like nagging.
+
+            // 3. Focus card
             const topGoal = (pulseData && pulseData.topGoal) || null;
             html += buildFocusCardElement(topGoal);
 
-            // 2.5. Meeting brief card
+            // 3.5. Morning briefing card (auto-hides after 11 AM)
+            if (morningBriefing) {
+                html += buildMorningBriefingCard(morningBriefing);
+            }
+
+            // 2.6. Meeting brief card
             if (meetingBrief && !meetingBrief.noMeeting) {
                 html += buildMeetingBriefCard(meetingBrief);
             }
@@ -4212,6 +4529,9 @@
 
             thread.innerHTML = html;
 
+            // Immediately update countdown from real time (not stale cached value)
+            updateMeetingCountdown();
+
             // Update pulse subtitle
             updatePulseSubtitle(pulseData ? pulseData.metrics : null);
         }
@@ -4239,13 +4559,15 @@
             const cachedOpener = cacheGet('coaching_opener');
             const cachedCardData = (cachedCards && cachedCards.data) ? cachedCards.data : [];
             const cachedBrief = cacheGet('meeting_brief');
+            const cachedMorningBriefing = cacheGet('morning_briefing');
             if (cachedPulse && cachedPulse.data) {
                 renderMorningWalk(
                     cachedPulse.data,
                     cachedCardData,
                     (cachedOpener && cachedOpener.data) || null,
                     [],
-                    (cachedBrief && cachedBrief.data) || null
+                    (cachedBrief && cachedBrief.data) || null,
+                    (cachedMorningBriefing && cachedMorningBriefing.data) || null
                 );
                 // Show cache age so user knows this is stale data being refreshed
                 if (cachedPulse.timestamp) {
@@ -4254,8 +4576,8 @@
                 }
             }
 
-            // Fetch pulse, opener, pending closures, and meeting brief in parallel
-            const [pulseResult, openerResult, pendingClosuresResult, meetingBriefResult] = await Promise.allSettled([
+            // Fetch pulse, opener, pending closures, meeting brief, and morning briefing in parallel
+            const [pulseResult, openerResult, pendingClosuresResult, meetingBriefResult, morningBriefingResult] = await Promise.allSettled([
                 (async () => {
                     const ctrl = new AbortController();
                     const t = setTimeout(() => ctrl.abort(), 5000);
@@ -4307,6 +4629,22 @@
                         if (!d.noMeeting) cacheSet('meeting_brief', d);
                         return d;
                     } catch (e) { clearTimeout(t); throw e; }
+                })(),
+                (async () => {
+                    if (!shouldShowMorningBriefing()) return null;
+                    // Use cached briefing if fresh (4h TTL matches server cache)
+                    const cached = cacheGet('morning_briefing', 4 * 3600 * 1000);
+                    if (cached && cached.data) return cached.data;
+                    const ctrl = new AbortController();
+                    const t = setTimeout(() => ctrl.abort(), 8000);
+                    try {
+                        const r = await authFetch('/api/briefing', { signal: ctrl.signal });
+                        clearTimeout(t);
+                        if (!r.ok) throw new Error('Briefing failed: ' + r.status);
+                        const d = await r.json();
+                        cacheSet('morning_briefing', d, 14400);
+                        return d;
+                    } catch (e) { clearTimeout(t); throw e; }
                 })()
             ]);
 
@@ -4314,16 +4652,17 @@
             const openerData = openerResult.status === 'fulfilled' ? openerResult.value : (cachedOpener && cachedOpener.data) || null;
             const pendingClosures = pendingClosuresResult.status === 'fulfilled' ? pendingClosuresResult.value : [];
             const meetingBrief = meetingBriefResult.status === 'fulfilled' ? meetingBriefResult.value : null;
+            const morningBriefing = morningBriefingResult.status === 'fulfilled' ? morningBriefingResult.value : (cachedMorningBriefing && cachedMorningBriefing.data) || null;
 
             // Stream coaching cards via SSE (progressive loading)
-            const streamedCards = await streamCoachingCards(forceCards, pulseData, openerData, pendingClosures, meetingBrief);
+            const streamedCards = await streamCoachingCards(forceCards, pulseData, openerData, pendingClosures, meetingBrief, morningBriefing);
             cacheSet('coaching_cards', streamedCards);
 
             // Final render with all data
-            const freshJSON = JSON.stringify([pulseData, streamedCards, openerData, pendingClosures]);
+            const freshJSON = JSON.stringify([pulseData, streamedCards, openerData, pendingClosures, morningBriefing]);
             if (freshJSON !== _lastPulseJSON) {
                 _lastPulseJSON = freshJSON;
-                renderMorningWalk(pulseData, streamedCards, openerData, pendingClosures, meetingBrief);
+                renderMorningWalk(pulseData, streamedCards, openerData, pendingClosures, meetingBrief, morningBriefing);
             }
 
             updateLastActive();
@@ -4339,7 +4678,7 @@
         }
 
         // Stream coaching cards via SSE, rendering each card progressively as it arrives
-        function streamCoachingCards(forceRefresh, pulseData, openerData, pendingClosures, meetingBrief) {
+        function streamCoachingCards(forceRefresh, pulseData, openerData, pendingClosures, meetingBrief, morningBriefing) {
             return new Promise((resolve) => {
                 const url = '/api/coaching/cards/stream' +
                     '?passcode=' + encodeURIComponent(getPasscode()) +
@@ -4374,8 +4713,8 @@
                         const card = JSON.parse(e.data);
                         cards.push(card);
                         // Progressive render: replace cached cards with fresh ones as they arrive
-                        renderMorningWalk(pulseData, cards, openerData, pendingClosures, meetingBrief);
-                        _lastPulseJSON = JSON.stringify([pulseData, cards, openerData, pendingClosures]);
+                        renderMorningWalk(pulseData, cards, openerData, pendingClosures, meetingBrief, morningBriefing);
+                        _lastPulseJSON = JSON.stringify([pulseData, cards, openerData, pendingClosures, morningBriefing]);
                     } catch(ex) {
                         console.error('[Cards] Failed to parse card:', ex);
                     }
@@ -4518,13 +4857,40 @@
 
         async function markTopGoalDone(notionId) {
             if (!notionId) return;
+
+            // Immediately show transition state (don't wait for API)
+            var focusCard = document.querySelector('.focus-card');
+            if (focusCard) {
+                focusCard.innerHTML = '<div class="card-header"><span>FOCUS</span></div>'
+                    + '<div class="focus-title" style="opacity:0.5;">Nice one. Picking your next focus...</div>'
+                    + '<div class="focus-actions"></div>';
+            }
+
             try {
                 const response = await authFetch('/api/tasks/status', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notionId, status: 'Done' }) });
                 if (response.ok) {
-                    showToast('Marked done!');
-                    cacheDelete('pulse'); setTimeout(() => loadMorningWalk(), 2000);
+                    showToast('Done!');
+                    cacheDelete('pulse');
+                    // Fetch fresh pulse to get new top goal
+                    try {
+                        var pulseResp = await authFetch('/api/home/pulse');
+                        if (pulseResp.ok) {
+                            var pulseData = await pulseResp.json();
+                            var newGoal = (pulseData && pulseData.topGoal) || null;
+                            var newCard = buildFocusCardElement(newGoal);
+                            if (focusCard) focusCard.outerHTML = newCard;
+                        }
+                    } catch(e) {
+                        // Fallback: show empty state
+                        if (focusCard) focusCard.outerHTML = buildFocusCardElement(null);
+                    }
                 }
-            } catch (err) { console.error('Failed to mark done:', err); }
+            } catch (err) {
+                console.error('Failed to mark done:', err);
+                showToast('Failed to mark done');
+                // Reload to restore state
+                loadMorningWalk();
+            }
         }
 
         let _pinAllSuggestions = [];
@@ -5351,7 +5717,7 @@
             try {
                 const response = await authFetch('/api/favorites/contacts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, aliases, platforms }) });
                 const data = await response.json();
-                if (response.ok) { statusEl.className = 'settings-success'; statusEl.textContent = `Added ${name}`; statusEl.classList.remove('hidden'); document.getElementById('newContactName').value = ''; document.getElementById('newContactAliases').value = ''; loadFavorites(); setTimeout(() => statusEl.classList.add('hidden'), 3000); }
+                if (response.ok) { statusEl.className = 'settings-success'; statusEl.textContent = `Added ${name}`; statusEl.classList.remove('hidden'); document.getElementById('newContactName').value = ''; document.getElementById('newContactAliases').value = ''; loadFavorites(); broadcastSettingsChange(); setTimeout(() => statusEl.classList.add('hidden'), 3000); }
                 else { statusEl.className = 'settings-error'; statusEl.textContent = data.error || 'Failed to add'; statusEl.classList.remove('hidden'); }
             } catch (e) { statusEl.className = 'settings-error'; statusEl.textContent = 'Failed to add contact'; statusEl.classList.remove('hidden'); }
         }
@@ -5401,6 +5767,182 @@
             loadMeetingBriefConfig();
         }
 
+        async function loadNotificationStatus() {
+            // Browser permission status
+            const statusEl = document.getElementById('pushNotifStatus');
+            if (statusEl) {
+                if ('Notification' in window) {
+                    if (Notification.permission === 'granted') { statusEl.textContent = 'Granted'; statusEl.style.color = 'var(--growth)'; }
+                    else if (Notification.permission === 'denied') { statusEl.textContent = 'Blocked'; statusEl.style.color = 'var(--danger)'; }
+                    else { statusEl.textContent = 'Not enabled'; statusEl.style.color = 'var(--warning)'; }
+                } else { statusEl.textContent = 'Not supported'; }
+            }
+
+            // Populate quiet hours dropdowns
+            var quietStartEl = document.getElementById('notifQuietStart');
+            var quietEndEl = document.getElementById('notifQuietEnd');
+            if (quietStartEl && quietStartEl.options.length === 0) {
+                for (var h = 0; h < 24; h++) {
+                    var label = (h === 0 ? '12 AM' : h < 12 ? h + ' AM' : h === 12 ? '12 PM' : (h - 12) + ' PM');
+                    quietStartEl.add(new Option(label, h));
+                    quietEndEl.add(new Option(label, h));
+                }
+            }
+
+            // Fetch notification config from server
+            try {
+                const r = await authFetch('/api/config/notifications');
+                if (!r.ok) return;
+                const d = await r.json();
+
+                // Schedule
+                var timeEl = document.getElementById('notifBriefingTime');
+                if (timeEl) timeEl.value = d.briefingTime || '08:15';
+                if (quietStartEl) quietStartEl.value = d.quietHoursStart ?? 22;
+                if (quietEndEl) quietEndEl.value = d.quietHoursEnd ?? 7;
+
+                // Limits
+                var maxEl = document.getElementById('notifMaxPerDay');
+                var maxLabel = document.getElementById('notifMaxLabel');
+                if (maxEl) { maxEl.value = d.maxPerDay || 5; if (maxLabel) maxLabel.textContent = maxEl.value; }
+                var budgetEl = document.getElementById('notifBudgetStatus');
+                if (budgetEl && d.budget) {
+                    budgetEl.textContent = d.budget.pushCountToday + ' of ' + d.budget.maxPerDay + ' used today';
+                }
+
+                // Types
+                var morningToggle = document.getElementById('toggleMorningNudge');
+                var postToggle = document.getElementById('togglePostMeeting');
+                if (morningToggle) morningToggle.classList.toggle('on', d.morningNudgeEnabled !== false);
+                if (postToggle) postToggle.classList.toggle('on', d.postMeetingCaptureEnabled !== false);
+
+                // Devices
+                var subCountEl = document.getElementById('pushSubCount');
+                if (subCountEl) subCountEl.textContent = d.subscriberCount || 0;
+                var devicesEl = document.getElementById('notifDevicesList');
+                if (devicesEl) {
+                    var subs = d.subscriptions || [];
+                    if (subs.length === 0) {
+                        devicesEl.innerHTML = '<div style="font-size:12px;color:var(--ink-tertiary);padding:8px;">No devices subscribed. Open Alfred in a browser and allow notifications.</div>';
+                    } else {
+                        var html = '';
+                        subs.forEach(function(sub, i) {
+                            var ago = sub.subscribedAt ? formatAgo(sub.subscribedAt) : '';
+                            var lastPush = sub.lastPushAt ? 'Last push: ' + formatAgo(sub.lastPushAt) : 'No pushes yet';
+                            html += '<div class="config-row" style="flex-direction:column;align-items:flex-start;gap:2px;">'
+                                + '<div style="font-size:12px;font-weight:500;color:var(--ink);">Device ' + (i + 1) + '</div>'
+                                + '<div style="font-size:10px;color:var(--ink-tertiary);">Subscribed ' + ago + ' · ' + lastPush + '</div>'
+                                + '</div>';
+                        });
+                        devicesEl.innerHTML = html;
+                    }
+                }
+            } catch(e) { console.error('Notification config load failed:', e); }
+        }
+
+        function toggleNotifType(type, el) {
+            el.classList.toggle('on');
+        }
+
+        async function saveNotificationSettings() {
+            var statusEl = document.getElementById('notifSaveStatus');
+            var payload = {};
+
+            var timeEl = document.getElementById('notifBriefingTime');
+            if (timeEl) payload.briefingTime = timeEl.value;
+
+            var quietStart = document.getElementById('notifQuietStart');
+            var quietEnd = document.getElementById('notifQuietEnd');
+            if (quietStart) payload.quietHoursStart = parseInt(quietStart.value);
+            if (quietEnd) payload.quietHoursEnd = parseInt(quietEnd.value);
+
+            var maxEl = document.getElementById('notifMaxPerDay');
+            if (maxEl) payload.maxPerDay = parseInt(maxEl.value);
+
+            var morningToggle = document.getElementById('toggleMorningNudge');
+            if (morningToggle) payload.morningNudgeEnabled = morningToggle.classList.contains('on');
+
+            var postToggle = document.getElementById('togglePostMeeting');
+            if (postToggle) payload.postMeetingCaptureEnabled = postToggle.classList.contains('on');
+
+            try {
+                var r = await authFetch('/api/config/notifications', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (r.ok) {
+                    statusEl.className = 'settings-success'; statusEl.textContent = 'Saved'; statusEl.classList.remove('hidden');
+                    broadcastSettingsChange();
+                    setTimeout(function() { statusEl.classList.add('hidden'); }, 3000);
+                } else {
+                    var d = await r.json();
+                    statusEl.className = 'settings-error'; statusEl.textContent = d.error || 'Failed'; statusEl.classList.remove('hidden');
+                }
+            } catch(e) {
+                statusEl.className = 'settings-error'; statusEl.textContent = 'Connection failed'; statusEl.classList.remove('hidden');
+            }
+        }
+
+        async function sendTestPush() {
+            var btn = document.getElementById('testPushBtn');
+            var statusEl = document.getElementById('testPushStatus');
+            if (btn) btn.disabled = true;
+            try {
+                var r = await authFetch('/api/push/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+                var d = await r.json();
+                if (r.ok) {
+                    statusEl.className = 'settings-success'; statusEl.textContent = 'Sent to ' + (d.sentTo || 0) + ' device(s)'; statusEl.classList.remove('hidden');
+                } else {
+                    statusEl.className = 'settings-error'; statusEl.textContent = d.error || 'Failed'; statusEl.classList.remove('hidden');
+                }
+            } catch(e) {
+                statusEl.className = 'settings-error'; statusEl.textContent = 'Connection failed'; statusEl.classList.remove('hidden');
+            }
+            if (btn) btn.disabled = false;
+            setTimeout(function() { statusEl.classList.add('hidden'); }, 5000);
+        }
+
+        // --- Cross-Tab Settings Sync ---
+        // Refetch settings when tab becomes visible (covers phone lockscreen → unlock, tab switching)
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible') {
+                // If settings panel is open, reload it
+                var panel = document.getElementById('settingsPanel');
+                if (panel && panel.classList.contains('open')) {
+                    loadSettings();
+                    loadCadenceStatus();
+                    loadFavorites();
+                }
+                // Always sync theme from server
+                fetchThemeFromAPI();
+            }
+        });
+
+        // BroadcastChannel for instant same-browser tab sync
+        var _settingsChannel = null;
+        try {
+            _settingsChannel = new BroadcastChannel('alfred-settings');
+            _settingsChannel.addEventListener('message', function(e) {
+                if (e.data && e.data.type === 'settings-changed') {
+                    // Another tab saved settings — reload if panel is open
+                    var panel = document.getElementById('settingsPanel');
+                    if (panel && panel.classList.contains('open')) {
+                        loadSettings();
+                        loadCadenceStatus();
+                        loadFavorites();
+                    }
+                }
+                if (e.data && e.data.type === 'theme-changed' && e.data.theme) {
+                    applyTheme(e.data.theme);
+                }
+            });
+        } catch(e) { /* BroadcastChannel not supported */ }
+
+        function broadcastSettingsChange() {
+            if (_settingsChannel) { try { _settingsChannel.postMessage({ type: 'settings-changed' }); } catch(e) {} }
+        }
+
         function extractNotionDbId(input) {
             if (!input) return null;
             input = input.trim(); if (!input) return null;
@@ -5420,9 +5962,12 @@
             }
 
             try {
-                // Register service worker
-                const reg = await navigator.serviceWorker.register('/sw.js');
+                // Register service worker (version param forces re-check on updates)
+                const reg = await navigator.serviceWorker.register('/sw.js?v=2.1.1');
                 console.log('[Push] Service worker registered, scope:', reg.scope);
+
+                // Force update check on every page load
+                reg.update().catch(function() {});
 
                 // Check if already subscribed
                 const existingSub = await reg.pushManager.getSubscription();
@@ -5609,7 +6154,7 @@
             try {
                 const response = await authFetch('/api/config/notion', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
                 const data = await response.json();
-                if (response.ok) { statusEl.className = 'settings-success'; statusEl.textContent = 'Notion configuration saved!'; statusEl.classList.remove('hidden'); }
+                if (response.ok) { statusEl.className = 'settings-success'; statusEl.textContent = 'Notion configuration saved!'; statusEl.classList.remove('hidden'); broadcastSettingsChange(); }
                 else { statusEl.className = 'settings-error'; statusEl.textContent = 'Error: ' + (data.error || 'Failed to save'); statusEl.classList.remove('hidden'); }
             } catch (e) { statusEl.className = 'settings-error'; statusEl.textContent = 'Failed to connect to server'; statusEl.classList.remove('hidden'); }
         }

@@ -14,7 +14,7 @@ Task {
 RunLoop.main.run()
 
 struct AlfredApp {
-    static let version = "2.1.1"
+    static let version = "2.1.2"
     static var menuBarController: MenuBarController?  // Keep reference to prevent deallocation
 
     static func main() async {
@@ -3484,16 +3484,34 @@ class Scheduler {
         let pc = config.api?.passcode ?? "REDACTED_PASSCODE"
         let base = "http://localhost:\(port)"
 
-        log("🔥 Pre-warming caches...")
+        log("🔥 Pre-warming caches (parallel)...")
 
-        // Warm the homepage pulse (most impactful — 5 internal calls)
-        if let url = URL(string: "\(base)/api/home/pulse?passcode=\(pc)") {
-            _ = try? await URLSession.shared.data(from: url)
-        }
-
-        // Warm coaching cards (Claude API call, ~3-5s cold)
-        if let url = URL(string: "\(base)/api/coaching/cards?passcode=\(pc)") {
-            _ = try? await URLSession.shared.data(from: url)
+        // Fire ALL cache warms in parallel — don't let slow ones block fast ones
+        await withTaskGroup(of: Void.self) { group in
+            // Pulse: 5 internal calls (Notion + Calendar), ~13s cold, 10min cache
+            group.addTask {
+                if let url = URL(string: "\(base)/api/home/pulse?passcode=\(pc)") {
+                    _ = try? await URLSession.shared.data(from: url)
+                }
+            }
+            // Coaching cards: Claude API, ~30s cold, 2h cache
+            group.addTask {
+                if let url = URL(string: "\(base)/api/coaching/cards?passcode=\(pc)") {
+                    _ = try? await URLSession.shared.data(from: url)
+                }
+            }
+            // Coaching opener: LLM call, ~5s cold, 1h cache
+            group.addTask {
+                if let url = URL(string: "\(base)/api/coaching/opener?passcode=\(pc)") {
+                    _ = try? await URLSession.shared.data(from: url)
+                }
+            }
+            // Next meeting brief: conditional, ~0.6s cold
+            group.addTask {
+                if let url = URL(string: "\(base)/api/home/next-meeting-brief?passcode=\(pc)") {
+                    _ = try? await URLSession.shared.data(from: url)
+                }
+            }
         }
 
         log("✅ Cache pre-warming complete")

@@ -143,6 +143,38 @@ class QueryCacheService {
         sqlite3_finalize(statement)
     }
 
+    /// Get cached response even if expired (for stale-while-revalidate pattern)
+    /// Returns the response regardless of expiration, or nil if never cached
+    func getCachedEvenIfExpired(endpoint: String, params: [String: String] = [:]) -> String? {
+        let cacheKey = generateCacheKey(endpoint: endpoint, params: params)
+
+        let query = """
+        SELECT response FROM query_cache
+        WHERE cache_key = ?
+        ORDER BY created_at DESC LIMIT 1
+        """
+
+        lock.lock()
+        defer { lock.unlock() }
+
+        var statement: OpaquePointer?
+        var result: String?
+
+        if sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK {
+            sqlite3_bind_text(statement, 1, (cacheKey as NSString).utf8String, -1, nil)
+
+            if sqlite3_step(statement) == SQLITE_ROW {
+                if let responsePtr = sqlite3_column_text(statement, 0) {
+                    result = String(cString: responsePtr)
+                    print("♻️ Stale cache HIT for \(endpoint)")
+                }
+            }
+        }
+
+        sqlite3_finalize(statement)
+        return result
+    }
+
     /// Clear expired cache entries
     func clearExpired() {
         let now = Date().timeIntervalSince1970
