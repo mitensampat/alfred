@@ -6188,7 +6188,10 @@
         }
 
         // Check for pending captures from server (works across all platforms including iOS PWAs)
+        var _captureCheckInFlight = false;
         async function checkPendingCapture() {
+            if (_captureCheckInFlight) return;
+            _captureCheckInFlight = true;
             try {
                 var r = await authFetch('/api/capture/pending');
                 if (r.ok) {
@@ -6200,6 +6203,8 @@
                 }
             } catch(e) {
                 console.log('[Capture] Pending check failed:', e);
+            } finally {
+                _captureCheckInFlight = false;
             }
         }
         setTimeout(checkPendingCapture, 2000);
@@ -6208,10 +6213,20 @@
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.addEventListener('message', function(event) {
                 if (event.data && event.data.type === 'notification-click') {
+                    console.log('[Capture] SW notification-click received, type:', event.data.notificationType);
                     checkPendingCapture();
                 }
             });
         }
+
+        // iOS PWA fix: when the app returns from background, re-check for pending captures.
+        // On iPhone, tapping a notification may just foreground the existing PWA window
+        // without triggering a full page load or SW message. visibilitychange catches this.
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'visible') {
+                setTimeout(checkPendingCapture, 500);
+            }
+        });
 
         function urlBase64ToUint8Array(base64String) {
             var padding = '='.repeat((4 - base64String.length % 4) % 4);
