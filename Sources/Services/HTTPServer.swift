@@ -725,6 +725,9 @@ class HTTPServer {
         case ("POST", "/api/coaching/debug/refresh"):
             return await handleRefreshSingleSkill(request)
 
+        case ("POST", "/api/coaching/feedback"):
+            return handleCoachingFeedback(request)
+
         // Focus Pin (user's #1 goal)
         case ("POST", "/api/focus-pin"):
             return await handlePinFocus(request)
@@ -5729,6 +5732,52 @@ The Commitment Check feature requires a properly configured Notion database.
         return HTTPResponse(statusCode: 200, body: response)
     }
 
+    private func handleCoachingFeedback(_ request: HTTPRequest) -> HTTPResponse {
+        let body = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+
+        guard let cardType = body["cardType"] as? String, !cardType.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'cardType' field"])
+        }
+        guard let feedback = body["feedback"] as? String, ["thumbs_up", "thumbs_down"].contains(feedback) else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing or invalid 'feedback' field (thumbs_up or thumbs_down)"])
+        }
+
+        let reason = body["reason"] as? String  // "not_accurate", "already_handled", "not_helpful"
+        let cardInsight = body["insight"] as? String ?? ""
+
+        // Build feedback entry
+        let entry: [String: Any] = [
+            "timestamp": ISO8601DateFormatter().string(from: Date()),
+            "cardType": cardType,
+            "feedback": feedback,
+            "reason": reason as Any,
+            "insight": String(cardInsight.prefix(200)),
+            "context": coachingEngine?.lastSkillResults[cardType]?.context.prefix(20).joined(separator: "\n") ?? ""
+        ]
+
+        // Append to feedback log (JSONL format)
+        let alfredDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".alfred").path
+        let feedbackPath = "\(alfredDir)/nudge_feedback.jsonl"
+
+        if let data = try? JSONSerialization.data(withJSONObject: entry),
+           let line = String(data: data, encoding: .utf8) {
+            let appendLine = line + "\n"
+            if FileManager.default.fileExists(atPath: feedbackPath) {
+                if let handle = FileHandle(forWritingAtPath: feedbackPath) {
+                    handle.seekToEndOfFile()
+                    handle.write(appendLine.data(using: .utf8)!)
+                    handle.closeFile()
+                }
+            } else {
+                try? appendLine.write(toFile: feedbackPath, atomically: true, encoding: .utf8)
+            }
+        }
+
+        print("[Coaching] Feedback recorded: \(feedback) for \(cardType)\(reason.map { " (\($0))" } ?? "")")
+
+        return HTTPResponse(statusCode: 200, body: ["success": true, "message": "Feedback recorded"])
+    }
+
     // MARK: - Skill Library Handlers
 
     /// Returns the library catalog with install status, including already-installed skills
@@ -5897,6 +5946,14 @@ The Commitment Check feature requires a properly configured Notion database.
         let frequency = body["frequency"] as? String ?? "daily"
         let tenets = body["tenets"] as? String ?? ""
 
+        // Lint skill prompt for hallucination-inducing patterns
+        let lintWarnings = lintSkillPrompt(prompt: prompt, tenets: tenets)
+        let lintBlockers = lintWarnings.filter { $0["severity"] as? String == "block" }
+        if !lintBlockers.isEmpty {
+            let messages = lintBlockers.compactMap { $0["message"] as? String }.joined(separator: "; ")
+            return HTTPResponse(statusCode: 422, body: ["error": "Prompt quality issue: \(messages)", "warnings": lintWarnings])
+        }
+
         guard let skill = SkillLoader.shared.createSkill(
             name: name, description: description, icon: icon,
             dataSources: dataSources, frequency: frequency,
@@ -5942,6 +5999,17 @@ The Commitment Check feature requires a properly configured Notion database.
             return HTTPResponse(statusCode: 200, body: updated.toDictionary())
         }
 
+        // Lint prompt if being updated
+        if let newPrompt = body["prompt"] as? String, !newPrompt.isEmpty {
+            let newTenets = body["tenets"] as? String ?? existing.tenets
+            let lintWarnings = lintSkillPrompt(prompt: newPrompt, tenets: newTenets)
+            let lintBlockers = lintWarnings.filter { $0["severity"] as? String == "block" }
+            if !lintBlockers.isEmpty {
+                let messages = lintBlockers.compactMap { $0["message"] as? String }.joined(separator: "; ")
+                return HTTPResponse(statusCode: 422, body: ["error": "Prompt quality issue: \(messages)", "warnings": lintWarnings])
+            }
+        }
+
         guard let updated = SkillLoader.shared.updateSkill(
             id: skillId,
             name: body["name"] as? String,
@@ -5984,6 +6052,69 @@ The Commitment Check feature requires a properly configured Notion database.
         cache.deleteByEndpoint("/api/coaching/cards")
 
         return HTTPResponse(statusCode: 200, body: ["id": skillId, "deleted": true])
+    }
+
+    /// Lint a skill prompt for patterns known to induce hallucination
+    private func lintSkillPrompt(prompt: String, tenets: String) -> [[String: Any]] {
+        var warnings: [[String: Any]] = []
+        let promptLower = prompt.lowercased()
+
+        // Check for forced specificity without grounding
+        let forcePatterns = [
+            "reference a specific .* by name",
+            "name the specific",
+            "always mention",
+            "must include .* name"
+        ]
+        for pattern in forcePatterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+               regex.firstMatch(in: prompt, range: NSRange(prompt.startIndex..., in: prompt)) != nil {
+                // Check if there's a grounding qualifier
+                let groundingQualifiers = ["if .*(data|context|clearly|appear)", "only if", "from the context"]
+                let hasGrounding = groundingQualifiers.contains { qualifier in
+                    (try? NSRegularExpression(pattern: qualifier, options: .caseInsensitive))
+                        .flatMap { $0.firstMatch(in: prompt, range: NSRange(prompt.startIndex..., in: prompt)) } != nil
+                }
+                if !hasGrounding {
+                    warnings.append([
+                        "message": "Prompt forces specific names without grounding clause. Add 'ONLY if they appear in the context' to prevent fabrication.",
+                        "severity": "block",
+                        "pattern": pattern
+                    ])
+                }
+            }
+        }
+
+        // Check for no data/context reference
+        let groundingTerms = ["context", "data provided", "data above", "data below"]
+        if !groundingTerms.contains(where: { promptLower.contains($0) }) {
+            warnings.append([
+                "message": "Prompt doesn't reference the provided context data. The coach may extrapolate beyond available information.",
+                "severity": "warn",
+                "pattern": "missing_grounding"
+            ])
+        }
+
+        // Check for no fallback/graceful-exit instruction
+        let fallbackTerms = ["no clear signal", "not enough data", "if uncertain", "if nothing stands out", "don't force", "rather than guessing"]
+        if !fallbackTerms.contains(where: { promptLower.contains($0) }) {
+            warnings.append([
+                "message": "No fallback instruction for thin data. Consider adding: 'If the data doesn't clearly support a recommendation, say so.'",
+                "severity": "warn",
+                "pattern": "missing_fallback"
+            ])
+        }
+
+        // Check for overly long prompts
+        if prompt.count > 2000 {
+            warnings.append([
+                "message": "Prompt is very long (\(prompt.count) chars). Shorter prompts tend to produce more focused, grounded outputs.",
+                "severity": "warn",
+                "pattern": "too_long"
+            ])
+        }
+
+        return warnings
     }
 
     /// Returns a contextual welcome opener for the Chat tab

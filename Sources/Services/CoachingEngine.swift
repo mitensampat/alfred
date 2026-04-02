@@ -43,7 +43,7 @@ class CoachingEngine {
 
     struct SkillRunResult {
         let card: CoachingCard?
-        let status: String       // "success" | "error" | "no_context" | "fallback"
+        let status: String       // "success" | "error" | "no_context" | "fallback" | "thin_context" | "no_signal"
         let context: [String]    // raw context data lines
         let error: String?
         let generatedAt: Date
@@ -235,6 +235,28 @@ class CoachingEngine {
             )
         }
 
+        // Context quality gate: don't generate from thin data
+        let contextQuality = scoreContextQuality(context)
+        if contextQuality == "thin" {
+            print("[CoachingEngine] Skill '\(skill.name)': context too thin (\(context.components(separatedBy: "\n").count) lines), skipping to prevent hallucination")
+            if let fallback = skill.fallback, !fallback.isEmpty {
+                let card = CoachingCard(
+                    type: skill.id,
+                    label: "\(skill.icon) \(skill.effectiveName)",
+                    insight: fallback,
+                    context: nil
+                )
+                return SkillCardOutput(
+                    card: card, skillId: skill.id, debugContext: [context],
+                    result: SkillRunResult(card: card, status: "thin_context", context: context.components(separatedBy: "\n"), error: nil, generatedAt: Date())
+                )
+            }
+            return SkillCardOutput(
+                card: nil, skillId: skill.id, debugContext: [context],
+                result: SkillRunResult(card: nil, status: "thin_context", context: context.components(separatedBy: "\n"), error: nil, generatedAt: Date())
+            )
+        }
+
         let contextLines = context.components(separatedBy: "\n")
 
         var promptParts: [String] = []
@@ -243,6 +265,17 @@ class CoachingEngine {
         if !skill.tenets.isEmpty {
             promptParts.append("\nTenets to follow:\n\(skill.tenets)")
         }
+
+        // Anti-hallucination grounding rules
+        promptParts.append("""
+
+CRITICAL RULES (override everything else):
+- ONLY reference people, tasks, dates, and facts that appear VERBATIM in the Context section below.
+- If the context doesn't clearly support a recommendation, respond with exactly: "No clear signal today."
+- NEVER invent or guess task names, commitment details, or people not explicitly listed in the context.
+- If data is sparse or ambiguous, be honest: "Limited data, but..." — never fill gaps with plausible-sounding fabrications.
+- Counts and statistics in the context are summaries — do NOT extrapolate specific names or details from aggregate numbers alone.
+""")
 
         promptParts.append("\nContext:\n\(context)")
         promptParts.append("\n\(skill.prompt)")
@@ -276,10 +309,29 @@ class CoachingEngine {
                 )
             }
 
+            // Detect "no signal" responses from grounded LLM
+            let trimmedResponse = response.trimmingCharacters(in: .whitespacesAndNewlines)
+            let noSignalPhrases = ["no clear signal", "limited data", "not enough context", "insufficient data", "no strong signal"]
+            let isNoSignal = noSignalPhrases.contains { trimmedResponse.lowercased().contains($0) }
+
+            if isNoSignal {
+                print("[CoachingEngine] Skill '\(skill.name)': LLM returned no-signal response")
+                let card = CoachingCard(
+                    type: skill.id,
+                    label: "\(skill.icon) \(skill.effectiveName)",
+                    insight: trimmedResponse,
+                    context: nil
+                )
+                return SkillCardOutput(
+                    card: card, skillId: skill.id, debugContext: [context],
+                    result: SkillRunResult(card: card, status: "no_signal", context: contextLines, error: nil, generatedAt: Date())
+                )
+            }
+
             let card = CoachingCard(
                 type: skill.id,
                 label: "\(skill.icon) \(skill.effectiveName)",
-                insight: response.trimmingCharacters(in: .whitespacesAndNewlines),
+                insight: trimmedResponse,
                 context: nil
             )
             return SkillCardOutput(
@@ -302,6 +354,26 @@ class CoachingEngine {
         if let debugCtx = output.debugContext {
             lastDebugContext[output.skillId] = debugCtx
         }
+    }
+
+    /// Score the quality/richness of gathered context to prevent hallucination on thin data.
+    /// Returns "thin", "moderate", or "rich".
+    private func scoreContextQuality(_ context: String) -> String {
+        let lines = context.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        let dataPoints = lines.filter { $0.hasPrefix("- ") || $0.contains(":") }.count
+        let hasNamedEntities = lines.contains { line in
+            // Check for lines that reference specific people or tasks (not just headers/stats)
+            line.hasPrefix("- ") && !line.contains("unavailable") && line.count > 10
+        }
+        let hasUnavailable = context.contains("unavailable")
+
+        if dataPoints < 3 || (hasUnavailable && dataPoints < 5) {
+            return "thin"
+        }
+        if dataPoints < 8 || !hasNamedEntities {
+            return "moderate"
+        }
+        return "rich"
     }
 
     /// Gather context data for a skill based on its requested data sources.
@@ -631,10 +703,18 @@ class CoachingEngine {
                         let sorted = byPerson.sorted { $0.value.count > $1.value.count }
 
                         if !sorted.isEmpty {
+                            let dateFormatter = DateFormatter()
+                            dateFormatter.dateFormat = "MMM d"
                             contextParts.append("\nOpen commitments by person:")
-                            for (person, tasks) in sorted.prefix(6) {
-                                let overdue = tasks.filter { $0.isOverdue }.count
-                                contextParts.append("- \(person): \(tasks.count) open\(overdue > 0 ? ", \(overdue) overdue" : "")")
+                            for (person, personTasks) in sorted.prefix(6) {
+                                let overdue = personTasks.filter { $0.isOverdue }.count
+                                contextParts.append("- \(person): \(personTasks.count) open\(overdue > 0 ? ", \(overdue) overdue" : "")")
+                                // Include actual commitment titles so the model doesn't have to guess
+                                for task in personTasks.prefix(3) {
+                                    let due = task.dueDate.map { dateFormatter.string(from: $0) } ?? "no deadline"
+                                    let overdueMark = task.isOverdue ? " [OVERDUE]" : ""
+                                    contextParts.append("  > \"\(task.title)\" (due: \(due))\(overdueMark)")
+                                }
                             }
                         }
                     } catch {
@@ -661,7 +741,13 @@ class CoachingEngine {
                             for thread in threads.sorted(by: { $0.lastMessageDate > $1.lastMessageDate }).prefix(10) {
                                 let name = thread.contactName ?? thread.contactIdentifier
                                 let ago = formatter.localizedString(for: thread.lastMessageDate, relativeTo: Date())
-                                contextParts.append("- \(name): last message \(ago) (WhatsApp)")
+                                // Include last message snippet for relationship context
+                                let lastMsg = thread.messages.last
+                                let snippet = lastMsg.map { msg in
+                                    let text = String(msg.content.prefix(80))
+                                    return " — \"\(text)\(msg.content.count > 80 ? "..." : "")\""
+                                } ?? ""
+                                contextParts.append("- \(name): last message \(ago)\(snippet)")
                             }
                         }
                     } catch {

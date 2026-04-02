@@ -259,6 +259,20 @@
         .coaching-card.skeleton .skel-line {
             height: 12px; background: var(--line); border-radius: 3px; margin: 7px 0;
         }
+        .coaching-card .cc-feedback, .lead-insight .nb-feedback, .secondary-bubble .nb-feedback {
+            opacity: 0; transition: opacity 0.15s; cursor: pointer; border: none; background: none;
+            font-size: 14px; color: var(--ink-faint); padding: 2px 4px; margin-left: 4px;
+        }
+        .coaching-card:hover .cc-feedback, .lead-insight:hover .nb-feedback, .secondary-bubble:hover .nb-feedback { opacity: 1; }
+        .nb-feedback.down:hover { color: var(--danger); }
+        .nb-feedback.up:hover { color: var(--growth); }
+        .nb-feedback.submitted { opacity: 1; cursor: default; }
+        .nb-feedback.submitted.up { color: var(--growth); }
+        .nb-feedback.submitted.down { color: var(--ink-faint); }
+        .feedback-picker { display: none; position: absolute; right: 0; top: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px; z-index: 10; box-shadow: 0 4px 12px rgba(0,0,0,0.1); white-space: nowrap; }
+        .feedback-picker.active { display: flex; flex-direction: column; gap: 2px; }
+        .feedback-picker button { border: none; background: none; padding: 6px 12px; font-size: 12px; text-align: left; cursor: pointer; border-radius: 4px; color: var(--ink-secondary); }
+        .feedback-picker button:hover { background: var(--bg-secondary); }
 
         .coach-question {
             border-left: 3px solid var(--coach); padding: 14px 18px; margin: 16px 0;
@@ -2431,6 +2445,10 @@
             <textarea id="skillEditorTenets" placeholder="- Be direct&#10;- Challenge assumptions"></textarea>
             <label>Prompt *</label>
             <textarea id="skillEditorPrompt" placeholder="Tell the AI coach what to do..." style="min-height:120px;"></textarea>
+            <div id="promptQualityMeter" style="margin-top:8px;padding:8px 10px;background:var(--bg-secondary);border-radius:6px;font-size:11px;display:none;">
+                <div style="font-weight:600;color:var(--ink-secondary);margin-bottom:4px;">Prompt Quality</div>
+                <div id="promptQualityChecks"></div>
+            </div>
             <div class="skill-editor-actions">
                 <button class="btn" onclick="closeSkillEditor()">Cancel</button>
                 <button class="btn btn-coach" id="skillEditorSave" onclick="saveSkill()">Create Skill</button>
@@ -4436,6 +4454,14 @@
                     + (leadMethod ? '<span class="nb-method">&middot; ' + escapeHtml(leadMethod) + '</span>' : '')
                     + '</div>'
                     + '<button class="nb-refresh" onclick="refreshCoachingCard(\'' + escapeHtml(leadCard.type || '') + '\')" title="Regenerate">&#x21bb;</button>'
+                    + '<div style="position:relative;display:inline-flex;align-items:center;gap:2px;">'
+                    + '<button class="nb-feedback up" onclick="submitNudgeFeedback(\'' + escapeHtml(leadCard.type || '') + '\', \'thumbs_up\', null, this)" title="Helpful">&#x1F44D;</button>'
+                    + '<button class="nb-feedback down" onclick="showFeedbackPicker(event, \'' + escapeHtml(leadCard.type || '') + '\', this)" title="Not helpful">&#x1F44E;</button>'
+                    + '<div class="feedback-picker" id="fp-' + escapeHtml(leadCard.type || '') + '">'
+                    + '<button onclick="submitNudgeFeedback(\'' + escapeHtml(leadCard.type || '') + '\', \'not_accurate\', this)">Not accurate</button>'
+                    + '<button onclick="submitNudgeFeedback(\'' + escapeHtml(leadCard.type || '') + '\', \'already_handled\', this)">Already handled</button>'
+                    + '<button onclick="submitNudgeFeedback(\'' + escapeHtml(leadCard.type || '') + '\', \'not_helpful\', this)">Not helpful</button>'
+                    + '</div></div>'
                     + '</div>'
                     + '<div class="lead-insight-body">' + renderMarkdown(trimInsight(leadCard.insight || '')) + '</div>'
                     + (leadAgo ? '<div class="lead-insight-footer"><div style="font-size:11px;color:var(--ink-tertiary);">' + escapeHtml(leadAgo) + '</div></div>' : '')
@@ -4490,6 +4516,14 @@
                             + '<span style="display:flex;align-items:center;gap:6px;margin-left:auto;">'
                             + (secAgo ? '<span style="font-size:10px;color:var(--ink-faint);">' + escapeHtml(secAgo) + '</span>' : '')
                             + '<button class="nb-refresh" onclick="refreshCoachingCard(\'' + escapeHtml(card.type || '') + '\')" title="Regenerate">&#x21bb;</button>'
+                            + '<div style="position:relative;display:inline-flex;align-items:center;gap:2px;">'
+                            + '<button class="nb-feedback up" onclick="submitNudgeFeedback(\'' + escapeHtml(card.type || '') + '\', \'thumbs_up\', null, this)" title="Helpful">&#x1F44D;</button>'
+                            + '<button class="nb-feedback down" onclick="showFeedbackPicker(event, \'' + escapeHtml(card.type || '') + '\', this)" title="Not helpful">&#x1F44E;</button>'
+                            + '<div class="feedback-picker" id="fp-' + escapeHtml(card.type || '') + '">'
+                            + '<button onclick="submitNudgeFeedback(\'' + escapeHtml(card.type || '') + '\', \'not_accurate\', this)">Not accurate</button>'
+                            + '<button onclick="submitNudgeFeedback(\'' + escapeHtml(card.type || '') + '\', \'already_handled\', this)">Already handled</button>'
+                            + '<button onclick="submitNudgeFeedback(\'' + escapeHtml(card.type || '') + '\', \'not_helpful\', this)">Not helpful</button>'
+                            + '</div></div>'
                             + '</span>'
                             + '</div>'
                             + '<div class="sec-body">' + renderMarkdown(trimInsight(card.insight || '')) + '</div>'
@@ -4810,6 +4844,63 @@
             }
         }
 
+        function showFeedbackPicker(event, cardType, btn) {
+            event.stopPropagation();
+            // Close any other open pickers
+            document.querySelectorAll('.feedback-picker.active').forEach(fp => fp.classList.remove('active'));
+            const picker = document.getElementById('fp-' + cardType);
+            if (picker) picker.classList.toggle('active');
+            // Close on outside click
+            setTimeout(() => {
+                document.addEventListener('click', function closePicker(e) {
+                    if (picker) picker.classList.remove('active');
+                    document.removeEventListener('click', closePicker);
+                }, { once: true });
+            }, 10);
+        }
+
+        async function submitNudgeFeedback(cardType, reason, pickerBtn, directBtn) {
+            // reason is either 'thumbs_up' (direct) or 'not_accurate'/'already_handled'/'not_helpful' (from picker)
+            const isThumbsUp = reason === 'thumbs_up';
+            const feedback = isThumbsUp ? 'thumbs_up' : 'thumbs_down';
+            const feedbackReason = isThumbsUp ? null : reason;
+
+            // Close picker if open
+            if (pickerBtn) {
+                const picker = pickerBtn.closest('.feedback-picker');
+                if (picker) picker.classList.remove('active');
+            }
+
+            // Find the card and get its insight text
+            const cardEl = document.getElementById('card-' + cardType.replace(/[^a-zA-Z0-9-]/g, ''));
+            const insightEl = cardEl ? (cardEl.querySelector('.lead-insight-body') || cardEl.querySelector('.sec-body')) : null;
+            const insight = insightEl ? insightEl.textContent.trim() : '';
+
+            try {
+                await authFetch('/api/coaching/feedback', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cardType, feedback, reason: feedbackReason, insight })
+                });
+                // Visual confirmation on the button that was clicked
+                const feedbackContainer = (pickerBtn || directBtn)?.closest('[style*="inline-flex"]') || (pickerBtn || directBtn)?.parentElement;
+                if (feedbackContainer) {
+                    const upBtn = feedbackContainer.querySelector('.nb-feedback.up');
+                    const downBtn = feedbackContainer.querySelector('.nb-feedback.down');
+                    if (isThumbsUp && upBtn) {
+                        upBtn.classList.add('submitted');
+                        upBtn.onclick = null;
+                        if (downBtn) { downBtn.style.display = 'none'; }
+                    } else if (!isThumbsUp && downBtn) {
+                        downBtn.innerHTML = '&#x2713;';
+                        downBtn.classList.add('submitted');
+                        downBtn.onclick = null;
+                        if (upBtn) { upBtn.style.display = 'none'; }
+                    }
+                }
+            } catch (e) { console.error('[Feedback] Failed:', e); }
+        }
+
         async function loadWeeklyReflection() {
             const section = document.getElementById('weeklyReviewSection');
             if (!section) return;
@@ -5115,6 +5206,11 @@
             document.getElementById('skillEditorId').value = '';
             if (editId) { titleEl.textContent = 'Edit Skill'; saveBtn.textContent = 'Save Changes'; loadSkillForEdit(editId); }
             else { titleEl.textContent = 'New Skill'; saveBtn.textContent = 'Create Skill'; document.querySelector('.skill-datasource-checkboxes input[value="tasks"]').checked = true; }
+            // Wire up prompt quality meter
+            const promptTextarea = document.getElementById('skillEditorPrompt');
+            promptTextarea.removeEventListener('input', updatePromptQuality);
+            promptTextarea.addEventListener('input', updatePromptQuality);
+            updatePromptQuality();
             overlay.classList.add('active');
         }
 
@@ -5137,6 +5233,28 @@
 
         function closeSkillEditor() { document.getElementById('skillEditorOverlay').classList.remove('active'); }
         function editSkill(id) { openSkillEditor(id); }
+
+        function updatePromptQuality() {
+            const prompt = (document.getElementById('skillEditorPrompt').value || '').toLowerCase();
+            const meter = document.getElementById('promptQualityMeter');
+            const checksDiv = document.getElementById('promptQualityChecks');
+            if (!prompt.trim()) { meter.style.display = 'none'; return; }
+            meter.style.display = 'block';
+            const checks = [
+                { label: 'References context data', pass: /context|data (provided|above|below)/.test(prompt) },
+                { label: 'Has output length limit', pass: /maximum|max|sentence|word/i.test(prompt) },
+                { label: 'Fallback for thin data', pass: /no clear signal|if .*(uncertain|nothing|sparse|insufficient)/.test(prompt) },
+                { label: 'Anti-fabrication rule', pass: /never (invent|fabricate|guess)|only .*(appear|listed|verbatim)/.test(prompt) },
+                { label: 'Single-focus constraint', pass: /\bone\b.*\b(action|insight|observation|thing)\b/i.test(prompt) }
+            ];
+            const passed = checks.filter(c => c.pass).length;
+            let html = '<div style="margin-bottom:4px;color:var(--ink-primary);font-weight:500;">' + passed + '/' + checks.length + '</div>';
+            checks.forEach(c => {
+                const icon = c.pass ? '<span style="color:var(--growth);">&#x2713;</span>' : '<span style="color:var(--ink-faint);">&#x25CB;</span>';
+                html += '<div style="margin:2px 0;color:' + (c.pass ? 'var(--ink-secondary)' : 'var(--ink-faint)') + ';">' + icon + ' ' + c.label + '</div>';
+            });
+            checksDiv.innerHTML = html;
+        }
 
         async function saveSkill() {
             const id = document.getElementById('skillEditorId').value;
