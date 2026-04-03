@@ -751,7 +751,7 @@
         }
         .tool-overlay-header { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
         .tool-overlay-title { font-size: 14px; font-weight: 600; }
-        .tool-overlay-content { flex: 1; padding: 16px 20px 80px; overflow-y: auto; max-width: 540px; margin: 0 auto; width: 100%; }
+        .tool-overlay-content { flex: 1; padding: 16px 20px 20px; overflow-y: auto; max-width: 640px; margin: 0 auto; width: 100%; }
 
         /* ── Form Pages ── */
         .form-page-title { font-family: var(--font-display); font-size: 20px; font-weight: 400; margin-bottom: 16px; }
@@ -986,6 +986,7 @@
             font-weight: 400;
             font-size: 18px;
             color: var(--ink);
+            flex: 1;
         }
         .top-bar-actions {
             display: flex;
@@ -1242,85 +1243,69 @@
         .param-go-btn:hover { opacity: 0.85; }
 
         /* ── SLIDE-UP SETTINGS PANEL ── */
-        .panel-overlay {
-            position: fixed;
-            inset: 0;
-            background: var(--surface-overlay);
-            z-index: 300;
+        /* ── Settings Full-Page Screen ── */
+        .panel-overlay { display: none; } /* legacy — kept for compat */
+        .panel-overlay.open { display: none; }
+
+        .settings-screen {
+            background: var(--canvas);
             display: none;
-            animation: fadeIn 0.2s ease both;
-        }
-        .panel-overlay.open { display: block; }
-        .slide-panel {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            z-index: 400;
-            display: none;
-        }
-        .slide-panel.open { display: block; }
-        .slide-panel-inner {
-            max-width: 480px;
-            width: 100%;
-            margin: 0 auto;
-            background: var(--surface);
-            border-radius: 20px 20px 0 0;
-            box-shadow: var(--shadow-lg);
-            max-height: 72vh;
-            display: flex;
             flex-direction: column;
-            overflow: hidden;
-            animation: slideUpPanel 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+            height: 100dvh;
+            width: 100%;
         }
-        @keyframes slideUpPanel {
-            from { transform: translateY(100%); }
-            to { transform: translateY(0); }
+        .settings-screen.open { display: flex; }
+
+        .settings-back-btn {
+            background: none; border: none;
+            color: var(--ink-tertiary); cursor: pointer;
+            font-family: var(--font-body);
+            font-size: 14px; font-weight: 500; padding: 4px 2px;
+            margin-right: 4px;
         }
-        .slide-panel-handle {
-            width: 36px;
-            height: 4px;
-            background: var(--line-strong);
-            border-radius: 2px;
-            margin: 10px auto 0;
-            cursor: pointer;
+        .settings-back-btn:hover { color: var(--ink); }
+
+        .settings-tab-nav {
+            border-bottom: 1px solid var(--line);
             flex-shrink: 0;
+            background: var(--canvas);
         }
-        .slide-panel-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 14px 18px 10px;
-            flex-shrink: 0;
+        .settings-tab-nav-inner {
+            display: flex; gap: 0;
+            max-width: 640px;
+            margin: 0 auto;
+            padding: 0 20px;
         }
-        .slide-panel-title {
-            font-family: var(--font-display);
-            font-size: 17px;
-            font-weight: 400;
-            color: var(--ink);
-        }
-        .slide-panel-close {
-            background: var(--surface-sunken);
-            border: none;
-            cursor: pointer;
+        .settings-tab-nav button {
+            font-family: var(--font-body);
+            font-size: 11px; font-weight: 500;
             color: var(--ink-tertiary);
-            width: 28px;
-            height: 28px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: color 0.15s, background 0.15s;
-            font-size: 16px;
+            background: none; border: none;
+            padding: 12px 10px 10px;
+            cursor: pointer; white-space: nowrap;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            letter-spacing: 0.02em;
         }
-        .slide-panel-close:hover { background: var(--line); color: var(--ink); }
-        .slide-panel-body {
+        .settings-tab-nav button.active {
+            color: var(--coach);
+            border-bottom-color: var(--coach);
+        }
+        .settings-tab-nav button:hover { color: var(--ink-secondary); }
+
+        .settings-body {
             flex: 1;
             overflow-y: auto;
-            padding: 0 18px max(20px, env(safe-area-inset-bottom, 20px));
+            padding: 20px 16px 8px;
             -webkit-overflow-scrolling: touch;
+            scroll-behavior: smooth;
         }
-        .slide-panel-body::-webkit-scrollbar { width: 0; }
+        .settings-body::-webkit-scrollbar { width: 0; }
+        .settings-body-inner {
+            max-width: 640px;
+            margin: 0 auto;
+        }
+
         .panel-section { margin-bottom: 20px; }
         .panel-section-label {
             font-size: 10px;
@@ -1331,35 +1316,10 @@
             margin-bottom: 10px;
             padding-top: 6px;
         }
-        .slide-panel-tab-nav {
-            display: flex;
-            gap: 0;
-            border-bottom: 1px solid var(--line);
-            padding: 0 18px;
-            margin-bottom: 12px;
-        }
-        .slide-panel-tab-nav button {
-            font-family: var(--font-body);
-            font-size: 11px;
-            font-weight: 500;
-            color: var(--ink-tertiary);
-            background: none;
-            border: none;
-            padding: 8px 10px 6px;
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-        }
-        .slide-panel-tab-nav button.active {
-            color: var(--coach);
-            border-bottom-color: var(--coach);
-        }
-        .slide-panel-tab-nav button.coaching-tab {
-            color: var(--ink-faint);
-        }
-        .slide-panel-tab-nav button.coaching-tab.active {
-            color: var(--method);
-            border-bottom-color: var(--method);
-        }
+
+        /* Legacy aliases for JS that references old classes */
+        .slide-panel-tab-nav button { display: none; }
+        .slide-panel-tab-nav button.active { display: none; }
 
         /* ── SUGGESTION CHIPS ── */
         .chips-row {
@@ -1936,8 +1896,8 @@
             color: #1b1f23 !important;
         }
 
-        /* ── Slide Panel: Gold active tab ── */
-        .slide-panel-tab-nav button.active {
+        /* ── Settings tab: Gold active tab ── */
+        .settings-tab-nav button.active {
             color: var(--method) !important;
             border-bottom-color: var(--method) !important;
         }
@@ -2017,6 +1977,308 @@
             background: var(--coach-light);
             color: var(--coach);
         }
+
+        /* ══════════════════════════════════════
+           REFLECTIONS — Theme Deep-Dive
+           ══════════════════════════════════════ */
+        .rf-section-title {
+            font-size: 11px; font-weight: 600; color: var(--ink-tertiary);
+            text-transform: uppercase; letter-spacing: 0.06em;
+            margin: 20px 0 10px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .rf-section-count {
+            font-size: 10px; font-weight: 500; color: var(--ink-faint);
+            background: var(--surface-sunken); padding: 1px 7px; border-radius: 10px;
+        }
+
+        /* ── Theme card ── */
+        .rf-theme-card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 0;
+            padding: 14px 18px;
+            margin-bottom: 1px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        }
+        .rf-theme-card:hover { background: var(--surface-sunken); }
+        .rf-theme-card-top {
+            display: flex; align-items: center; gap: 10px;
+        }
+        .rf-theme-dot {
+            width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+        }
+        .rf-theme-dot.researching { background: var(--info); }
+        .rf-theme-dot.deciding { background: var(--warning); }
+        .rf-theme-dot.creating { background: var(--growth); }
+        .rf-theme-dot.monitoring { background: var(--ink-faint); }
+        .rf-theme-name {
+            font-size: 14px; font-weight: 500; color: var(--ink); flex: 1;
+        }
+        .rf-theme-meta {
+            display: flex; align-items: center; gap: 8px;
+        }
+        .rf-theme-state {
+            font-size: 10px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.04em; color: var(--ink-tertiary);
+        }
+        .rf-theme-count {
+            font-size: 10px; font-weight: 500; color: var(--ink-faint);
+            background: var(--surface-sunken); padding: 1px 7px; border-radius: 10px;
+        }
+        .rf-theme-sub {
+            margin-top: 6px; padding-left: 17px;
+            font-size: 12px; color: var(--ink-secondary); line-height: 1.5;
+        }
+
+        /* ── Question card ── */
+        .rf-question-card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-left: 3px solid var(--coach);
+            border-radius: 0;
+            padding: 12px 18px;
+            margin-bottom: 1px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        }
+        .rf-question-card:hover { background: var(--surface-sunken); }
+        .rf-question-text {
+            font-size: 13px; color: var(--ink); line-height: 1.55;
+        }
+        .rf-question-footer {
+            display: flex; align-items: center; gap: 8px; margin-top: 6px;
+        }
+        .rf-question-tag {
+            font-size: 10px; color: var(--ink-tertiary);
+        }
+        .rf-question-age {
+            font-size: 10px; color: var(--ink-faint); margin-left: auto;
+        }
+
+        /* ── Deep-dive state progression ── */
+        .rf-dd-state {
+            padding: 12px 0;
+            display: flex; align-items: center; gap: 6px;
+            border-bottom: 1px solid var(--line);
+        }
+        .rf-state-step {
+            font-size: 10px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.04em;
+            color: var(--ink-faint);
+            padding: 2px 0;
+        }
+        .rf-state-step.current {
+            color: var(--ink);
+            border-bottom: 2px solid var(--coach);
+            padding-bottom: 0;
+        }
+        .rf-state-step.past {
+            color: var(--ink-faint);
+            text-decoration: line-through;
+        }
+        .rf-state-sep {
+            font-size: 8px; color: var(--ink-faint);
+        }
+        .rf-dd-advance {
+            margin-left: auto;
+            font-family: var(--font-body);
+            font-size: 11px; font-weight: 500;
+            color: var(--ink-secondary);
+            background: none;
+            border: 1px solid var(--line);
+            padding: 4px 10px;
+            cursor: pointer;
+            border-radius: 0;
+            transition: all 0.15s;
+        }
+        .rf-dd-advance:hover { color: var(--ink); border-color: var(--line-strong); }
+
+        /* ── Summary strip ── */
+        .rf-dd-summary {
+            padding: 14px 0;
+            display: flex; gap: 24px;
+            border-bottom: 1px solid var(--line);
+        }
+        .rf-dd-stat-value {
+            font-size: 20px; font-weight: 600; color: var(--ink);
+        }
+        .rf-dd-stat-label {
+            font-size: 10px; color: var(--ink-tertiary);
+            text-transform: uppercase; letter-spacing: 0.04em;
+        }
+
+        /* ── Coaching CTA ── */
+        .rf-dd-cta {
+            margin: 14px 0;
+            padding: 12px 18px;
+            background: var(--coach-light);
+            border: 1px solid var(--line);
+            border-left: 3px solid var(--coach);
+            border-radius: 0;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .rf-dd-cta:hover { background: var(--surface-sunken); }
+        .rf-dd-cta-text {
+            font-size: 13px; color: var(--ink); font-style: italic; line-height: 1.5;
+        }
+        .rf-dd-cta-hint {
+            font-size: 10px; color: var(--ink-faint); white-space: nowrap; margin-left: 12px;
+        }
+
+        /* ── Timeline items ── */
+        .rf-tl-card {
+            padding: 14px 18px;
+            margin-bottom: 1px;
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 0;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        }
+        .rf-tl-card:hover { background: var(--surface-sunken); }
+        .rf-tl-head {
+            display: flex; align-items: center; gap: 8px;
+            margin-bottom: 6px;
+        }
+        .rf-tl-dot {
+            width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+        }
+        .rf-tl-dot.reflection { background: var(--ink-faint); }
+        .rf-tl-dot.question { background: var(--coach); }
+        .rf-tl-dot.decision { background: var(--growth); }
+        .rf-tl-dot.shift { background: var(--warning); }
+        .rf-tl-type {
+            font-size: 11px; font-weight: 600;
+            letter-spacing: 0.04em; text-transform: uppercase;
+            color: var(--ink-secondary);
+        }
+        .rf-tl-source {
+            font-size: 10px; color: var(--ink-faint); margin-left: auto;
+        }
+        .rf-tl-body {
+            font-size: 13.5px; line-height: 1.72; color: var(--ink);
+        }
+        .rf-tl-card.decision { border-left: 3px solid var(--growth); }
+        .rf-tl-card.decision .rf-tl-type { color: var(--growth); }
+        .rf-tl-card.question { border-left: 3px solid var(--coach); }
+        .rf-tl-card.question .rf-tl-type { color: var(--coach); }
+        .rf-tl-card.shift { border-left: 3px solid var(--warning); }
+        .rf-tl-card.shift .rf-tl-type { color: var(--warning); }
+        .rf-tl-shift { display: flex; flex-direction: column; gap: 4px; }
+        .rf-tl-shift-from {
+            font-size: 12.5px; color: var(--ink-tertiary);
+            text-decoration: line-through; line-height: 1.5;
+        }
+        .rf-tl-shift-to {
+            font-size: 13.5px; color: var(--ink); line-height: 1.5;
+        }
+
+        /* ── Hover-reveal actions ── */
+        .rf-tl-actions {
+            opacity: 0; transition: opacity 0.15s;
+            display: flex; gap: 4px; margin-left: auto;
+        }
+        .rf-tl-card:hover .rf-tl-actions { opacity: 1; }
+        .rf-tl-actions button {
+            background: none; border: none;
+            font-size: 12px; color: var(--ink-faint);
+            cursor: pointer; padding: 2px 4px;
+        }
+        .rf-tl-actions button:hover { color: var(--ink-secondary); }
+
+        /* ── Advance modal ── */
+        .rf-modal-overlay {
+            display: none;
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--surface-overlay);
+            z-index: 10001;
+            align-items: flex-end; justify-content: center;
+        }
+        .rf-modal-overlay.active { display: flex; }
+        .rf-modal-sheet {
+            background: var(--surface);
+            border-top: 1px solid var(--line);
+            width: 100%; max-width: 480px;
+            padding: 20px 20px 32px;
+            animation: rfSlideUp 0.2s ease;
+        }
+        @keyframes rfSlideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+        .rf-modal-handle {
+            width: 32px; height: 3px; background: var(--ink-faint);
+            border-radius: 2px; margin: 0 auto 16px;
+        }
+        .rf-modal-title {
+            font-family: var(--font-display);
+            font-size: 18px; font-weight: 400; margin-bottom: 2px;
+        }
+        .rf-modal-subtitle {
+            font-size: 12px; color: var(--ink-tertiary); margin-bottom: 14px;
+        }
+        .rf-modal-input {
+            width: 100%; min-height: 72px;
+            font-family: var(--font-body); font-size: 13px;
+            border: 1px solid var(--line); border-radius: 0;
+            padding: 10px 14px;
+            background: var(--surface-sunken); color: var(--ink);
+            resize: vertical; margin-bottom: 12px;
+        }
+        .rf-modal-input:focus { outline: none; border-color: var(--line-strong); }
+        .rf-modal-input::placeholder { color: var(--ink-faint); }
+        .rf-modal-actions {
+            display: flex; gap: 8px;
+        }
+        .rf-modal-btn-primary {
+            flex: 1; padding: 10px;
+            font-family: var(--font-body); font-size: 12px; font-weight: 600;
+            background: var(--coach); color: white; border: 1px solid var(--coach);
+            border-radius: 0; cursor: pointer;
+        }
+        .rf-modal-btn-primary:hover { opacity: 0.85; }
+        .rf-modal-btn-cancel {
+            padding: 10px 14px;
+            font-family: var(--font-body); font-size: 12px;
+            background: none; color: var(--ink-tertiary);
+            border: 1px solid var(--line); border-radius: 0; cursor: pointer;
+        }
+        .rf-modal-btn-cancel:hover { color: var(--ink); border-color: var(--line-strong); }
+
+        /* ── Reflection sources section ── */
+        .rf-source-row {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--line);
+        }
+        .rf-source-row:last-child { border-bottom: none; }
+        .rf-source-info {
+            display: flex; flex-direction: column; gap: 2px;
+        }
+        .rf-source-name {
+            font-size: 13px; font-weight: 500; color: var(--ink);
+        }
+        .rf-source-status {
+            font-size: 10px; color: var(--ink-faint);
+        }
+        .rf-source-actions {
+            display: flex; align-items: center; gap: 8px;
+        }
+        .rf-source-pull {
+            font-family: var(--font-body);
+            font-size: 10px; color: var(--ink-tertiary);
+            background: none; border: 1px solid var(--line);
+            padding: 2px 8px; cursor: pointer; border-radius: 0;
+            opacity: 0; transition: opacity 0.15s;
+        }
+        .rf-source-row:hover .rf-source-pull { opacity: 1; }
+        .rf-source-pull:hover { color: var(--ink); border-color: var(--line-strong); }
+
     </style>
     <script>
         // Anti-flash: set theme before first paint
@@ -2099,26 +2361,30 @@
         </div>
     </div>
 
-    <!-- ═══ SETTINGS PANEL (Slide-up) ═══ -->
-    <div class="panel-overlay" id="panelOverlay" onclick="closeSettingsPanel()"></div>
-    <div class="slide-panel" id="settingsPanel">
-        <div class="slide-panel-inner">
-            <div class="slide-panel-handle" onclick="closeSettingsPanel()"></div>
-            <div class="slide-panel-header">
-                <div class="slide-panel-title">Settings</div>
-                <div style="display:flex;align-items:center;gap:8px;">
-                    <span id="appVersion" style="font-size:11px;color:var(--ink-faint);">v2.1.0</span>
-                    <button style="font-family:var(--font-body);font-size:12px;color:var(--danger);background:none;border:none;cursor:pointer;font-weight:500;" onclick="logout()">Logout</button>
-                    <button class="slide-panel-close" onclick="closeSettingsPanel()">&times;</button>
-                </div>
+    <!-- ═══ SETTINGS (Full Page) ═══ -->
+    <div class="panel-overlay" id="panelOverlay"></div>
+    <div class="settings-screen" id="settingsPanel">
+        <div class="top-bar-wrapper">
+        <div class="top-bar">
+            <button class="settings-back-btn" onclick="closeSettingsPanel()">&#8592;</button>
+            <div class="top-bar-title">Coach Alfred</div>
+            <div class="top-bar-actions">
+                <span id="settingsGreetingTime" style="font-size:11px;color:var(--ink-faint);margin-right:4px;"></span>
+                <button class="top-bar-btn" onclick="toggleTheme()" title="Toggle dark mode">&#9728;&#65039;</button>
+                <button class="top-bar-btn" onclick="closeSettingsPanel()" title="Settings">&#9881;&#65039;</button>
             </div>
-            <div class="slide-panel-tab-nav" id="settingsPanelTabs">
-                <button class="active" onclick="showSettingsTab('config',this)">general</button>
-                <button onclick="showSettingsTab('coaching',this)">coaching</button>
-                <button onclick="showSettingsTab('notifications',this)">notifications</button>
-                <button onclick="showSettingsTab('data',this)">data</button>
+        </div>
+        </div>
+        <div class="settings-tab-nav" id="settingsPanelTabs">
+            <div class="settings-tab-nav-inner">
+            <button class="active" onclick="showSettingsTab('config',this)">general</button>
+            <button onclick="showSettingsTab('coaching',this)">coaching</button>
+            <button onclick="showSettingsTab('notifications',this)">notifications</button>
+            <button onclick="showSettingsTab('data',this)">data</button>
             </div>
-            <div class="slide-panel-body">
+        </div>
+        <div class="settings-body">
+            <div class="settings-body-inner">
                 <!-- GENERAL TAB (was: config) -->
                 <div id="panelTabConfig">
                     <!-- Cadences -->
@@ -2357,16 +2623,12 @@
                         <div class="config-card" id="memoryStats"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
                     </div>
                     <div class="panel-section">
-                        <div class="panel-section-label">ACTIVE THEMES</div>
-                        <div class="config-card" id="reflectionThemesList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
-                    </div>
-                    <div class="panel-section">
-                        <div class="panel-section-label">OPEN QUESTIONS</div>
-                        <div class="config-card" id="reflectionQuestionsList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
-                    </div>
-                    <div class="panel-section">
-                        <div class="panel-section-label">RECENT REFLECTIONS</div>
-                        <div class="config-card" id="reflectionRecentList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
+                        <div class="panel-section-label">REFLECTIONS</div>
+                        <div class="config-card" style="padding:12px 16px;">
+                            <div id="reflectionSummaryStats" style="font-size:12px;color:var(--ink-secondary);margin-bottom:10px;">Loading...</div>
+                            <div id="reflectionThemesList" style="margin-bottom:10px;"></div>
+                            <button class="btn btn-sm btn-coach" onclick="showReflectionsPage(); closeSettingsPanel();" style="margin-bottom:10px;">Open Reflections</button>
+                        </div>
                     </div>
                     <div class="panel-section">
                         <div class="panel-section-label">CAPTURE</div>
@@ -2378,7 +2640,7 @@
                             </div>
                         </div>
                     </div>
-                    <div class="panel-section">
+                    <div class="panel-section" style="display:none;">
                         <div class="panel-section-label">STATS</div>
                         <div class="config-card" id="reflectionStats"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
                     </div>
@@ -2397,18 +2659,36 @@
                         </div>
                     </div>
                 </div>
+                <div style="text-align:center;padding:20px 0 10px;font-size:10px;color:var(--ink-faint);" id="appVersion">v2.1.0</div>
             </div>
         </div>
-    </div>
     </div>
 
     <!-- ═══ TOOL OVERLAY ═══ -->
     <div class="tool-overlay hidden" id="toolOverlay">
-        <div class="tool-overlay-header">
-            <button class="btn btn-ghost" onclick="closeToolOverlay()">&#8592; Back</button>
-            <span class="tool-overlay-title" id="toolOverlayTitle"></span>
+        <div class="top-bar-wrapper">
+        <div class="top-bar">
+            <button class="settings-back-btn" onclick="closeToolOverlay()">&#8592;</button>
+            <div class="top-bar-title">Coach Alfred</div>
+            <div class="top-bar-actions">
+                <span id="overlayGreetingTime" style="font-size:11px;color:var(--ink-faint);margin-right:4px;"></span>
+                <button class="top-bar-btn" onclick="toggleTheme()" title="Toggle dark mode">&#9728;&#65039;</button>
+                <button class="top-bar-btn" onclick="closeToolOverlay(); openSettingsPanel();" title="Settings">&#9881;&#65039;</button>
+            </div>
+        </div>
         </div>
         <div class="tool-overlay-content" id="toolOverlayContent"></div>
+        <div class="input-area" id="overlayInputArea">
+            <div class="input-inner">
+                <div class="input-row-v2">
+                    <textarea id="overlayChat" rows="1" placeholder="Talk to Alfred..." oninput="handleInput(event)" onkeydown="handleOverlayKeydown(event)"></textarea>
+                    <button class="send-btn-v2" onclick="sendOverlayChat()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                    </button>
+                </div>
+                <div class="input-hint">Type / for tools</div>
+            </div>
+        </div>
     </div>
 
     <!-- Pin Suggestions Overlay -->
@@ -2742,9 +3022,9 @@
             if (id === 'coaching') { openSettingsPanel(); showSettingsTab('tenets'); }
         }
 
-        // Settings panel management
+        // Settings page management
         function openSettingsPanel() {
-            document.getElementById('panelOverlay').classList.add('open');
+            document.getElementById('appContainer').style.display = 'none';
             document.getElementById('settingsPanel').classList.add('open');
             // Load data for active tab
             loadTenets();
@@ -2757,8 +3037,8 @@
         }
 
         function closeSettingsPanel() {
-            document.getElementById('panelOverlay').classList.remove('open');
             document.getElementById('settingsPanel').classList.remove('open');
+            document.getElementById('appContainer').style.display = 'flex';
         }
 
         function showSettingsTab(tab, btn) {
@@ -2771,12 +3051,13 @@
                 const el = document.getElementById('panelTab' + t.charAt(0).toUpperCase() + t.slice(1));
                 if (el) el.style.display = t === tab ? '' : 'none';
             });
-            document.querySelectorAll('#settingsPanelTabs button').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.settings-tab-nav button, #settingsPanelTabs button').forEach(b => b.classList.remove('active'));
             if (btn) btn.classList.add('active');
             else {
                 const label = tabLabels[tab] || tab;
-                const buttons = document.querySelectorAll('#settingsPanelTabs button');
-                buttons.forEach(b => { if (b.textContent.trim() === label) b.classList.add('active'); });
+                document.querySelectorAll('.settings-tab-nav button, #settingsPanelTabs button').forEach(b => {
+                    if (b.textContent.trim() === label) b.classList.add('active');
+                });
             }
             if (tab === 'coaching') { loadQAPreview(); loadLibrary(); }
             if (tab === 'data') { loadMemoryTab(); loadReflectionData(); }
@@ -2798,6 +3079,7 @@
             { icon: '\u2699\uFE0F', name: '/settings',    desc: 'Coaching config',    hasParams: false },
             { icon: '\u{1F4DA}', name: '/skills',      desc: 'Skill library',      hasParams: false },
             { icon: '\u{1F9E0}', name: '/reflect',     desc: 'Reflection mode',    hasParams: false },
+            { icon: '\u25C6', name: '/reflections', desc: 'Your thinking themes', hasParams: false },
         ];
 
         function showPalette(filter) {
@@ -2851,7 +3133,8 @@
 
             if (cmd.name === '/settings') { openSettingsPanel(); return; }
             if (cmd.name === '/skills') { openSettingsPanel(); showSettingsTab('library'); return; }
-            if (cmd.name === '/reflect') { openSettingsPanel(); showSettingsTab('reflection'); return; }
+            if (cmd.name === '/reflect') { showReflectionsPage(); return; }
+            if (cmd.name === '/reflections') { showReflectionsPage(); return; }
             if (cmd.hasParams) {
                 showParamForm(cmd.name);
             } else {
@@ -3108,6 +3391,22 @@
             closePalette();
             if (!prefilled) { input.value = ''; input.style.height = 'auto'; }
             sendChatMessage(text);
+        }
+
+        function sendOverlayChat() {
+            const input = document.getElementById('overlayChat');
+            const text = input ? input.value.trim() : '';
+            if (!text) return;
+            input.value = ''; input.style.height = 'auto';
+            closeToolOverlay();
+            sendChatMessage(text);
+        }
+
+        function handleOverlayKeydown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendOverlayChat();
+            }
         }
 
         function showCapabilityCard(type) {
@@ -4551,14 +4850,19 @@
             if (metrics.meetingsToday > 0) chipItems.push({label: 'Calendar', query: "What's on my calendar today?"});
             if (metrics.overdueCount > 0) chipItems.push({label: 'Overdue', query: 'Show me overdue commitments'});
             else chipItems.push({label: 'Commitments', query: 'How are my commitments looking?'});
-            chipItems.push({label: 'Nudge', query: 'Draft a follow-up nudge'});
+            chipItems.push({label: 'Reflections', action: function() { showReflectionsPage(); }});
             chipItems.push({label: 'Focus', query: 'What should I focus on?'});
             if (!metrics.meetingsToday) chipItems.unshift({label: 'Calendar', query: "What's on my calendar today?"});
 
             html += '<div class="chips-row">';
-            chipItems.forEach(function(c) {
-                html += '<button class="chip" onclick="sendChat(\'' + c.query.replace(/'/g, "\\'") + '\')">' + escapeHtml(c.label) + '</button>';
+            chipItems.forEach(function(c, i) {
+                if (c.action) {
+                    html += '<button class="chip" onclick="chipActions[' + i + ']()">' + escapeHtml(c.label) + '</button>';
+                } else {
+                    html += '<button class="chip" onclick="sendChat(\'' + c.query.replace(/'/g, "\\'") + '\')">' + escapeHtml(c.label) + '</button>';
+                }
             });
+            window.chipActions = chipItems.map(function(c) { return c.action || null; });
             html += '</div>';
 
             thread.innerHTML = html;
@@ -4940,7 +5244,14 @@
                 const h = String(now.getHours()).padStart(2, '0');
                 const m = String(now.getMinutes()).padStart(2, '0');
                 const el = document.getElementById('greetingTime');
-                if (el) el.textContent = days[now.getDay()] + ', ' + months[now.getMonth()] + ' ' + now.getDate() + '  ' + h + ':' + m;
+                const dd = String(now.getDate()).padStart(2, '0');
+                const mm = String(now.getMonth() + 1).padStart(2, '0');
+                const timeStr = days[now.getDay()] + ', ' + dd + '/' + mm + ' ' + h + ':' + m;
+                if (el) el.textContent = timeStr;
+                const settingsEl = document.getElementById('settingsGreetingTime');
+                if (settingsEl) settingsEl.textContent = timeStr;
+                const overlayEl = document.getElementById('overlayGreetingTime');
+                if (overlayEl) overlayEl.textContent = timeStr;
             }
             update();
             setInterval(update, 60000);
@@ -6332,11 +6643,14 @@
             const body = document.getElementById('toolOverlayContent');
             if (headerSpan) headerSpan.textContent = title || 'Tool';
             body.innerHTML = content || '';
+            overlay.classList.remove('hidden');
             overlay.style.display = 'flex';
         }
 
         function closeToolOverlay() {
-            document.getElementById('toolOverlay').style.display = 'none';
+            const overlay = document.getElementById('toolOverlay');
+            overlay.classList.add('hidden');
+            overlay.style.display = 'none';
             currentModalCallback = null;
         }
 
@@ -6623,66 +6937,37 @@
 
         async function loadReflectionData() {
             loadReflectionThemes();
-            loadReflectionRecent();
             loadReflectionStats();
         }
 
         async function loadReflectionThemes() {
             const themesEl = document.getElementById('reflectionThemesList');
-            const questionsEl = document.getElementById('reflectionQuestionsList');
             if (!themesEl) return;
             try {
                 const resp = await authFetch('/api/reflect/themes?days=30&limit=10');
                 const data = await resp.json();
-                const classIcons = { researching: '\u{1F50D}', deciding: '\u2696\uFE0F', creating: '\u{1F6E0}', monitoring: '\u{1F4E1}' };
                 if (data.themes && data.themes.length > 0) {
-                    themesEl.innerHTML = data.themes.map(t => `
-                        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);">
-                            <span style="font-size:14px;">${classIcons[t.classification] || '\u{1F4E1}'}</span>
-                            <span style="font-size:13px;color:var(--ink);flex:1;">${t.theme}</span>
-                            <span style="font-size:10px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.05em;">${t.classification}</span>
-                            <span style="font-size:11px;color:var(--ink-tertiary);">\u00D7${t.count}</span>
-                        </div>
-                    `).join('');
+                    themesEl.innerHTML = data.themes.slice(0, 5).map(t => {
+                        const state = t.state || t.classification || 'researching';
+                        return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);cursor:pointer;" onclick="showThemeDeepDive('${escapeHtml(t.theme || t.name).replace(/'/g, "\\'")}')">
+                            <span class="rf-theme-dot ${state}" style="width:7px;height:7px;border-radius:50%;flex-shrink:0;"></span>
+                            <span style="font-size:13px;color:var(--ink);flex:1;">${escapeHtml(t.theme || t.name)}</span>
+                            <span style="font-size:10px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.05em;">${state}</span>
+                            <span style="font-size:10px;color:var(--ink-faint);background:var(--surface-sunken);padding:1px 7px;border-radius:10px;">${t.count}</span>
+                        </div>`;
+                    }).join('');
                 } else {
-                    themesEl.innerHTML = '<div style="font-size:12px;color:var(--ink-tertiary);padding:12px;">No themes yet. Run the reflection ingestion cadence or manually ingest content below.</div>';
+                    themesEl.innerHTML = '<div style="font-size:12px;color:var(--ink-tertiary);padding:4px 0;">No themes yet. Ingest content below to get started.</div>';
                 }
-                if (questionsEl && data.open_questions && data.open_questions.length > 0) {
-                    questionsEl.innerHTML = data.open_questions.map(q => `
-                        <div style="padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px;color:var(--ink);">\u2022 ${q}</div>
-                    `).join('');
-                } else if (questionsEl) {
-                    questionsEl.innerHTML = '<div style="font-size:12px;color:var(--ink-tertiary);padding:12px;">No open questions detected yet.</div>';
+                // Update summary stats
+                const summaryEl = document.getElementById('reflectionSummaryStats');
+                if (summaryEl) {
+                    const themeCount = (data.themes || []).length;
+                    const questionCount = (data.open_questions || []).length;
+                    summaryEl.innerHTML = `<strong>${themeCount}</strong> active themes &middot; <strong>${questionCount}</strong> open questions`;
                 }
             } catch (e) {
                 themesEl.innerHTML = '<div style="font-size:12px;color:var(--danger);padding:8px;">Failed to load themes</div>';
-            }
-        }
-
-        async function loadReflectionRecent() {
-            const el = document.getElementById('reflectionRecentList');
-            if (!el) return;
-            try {
-                const resp = await authFetch('/api/reflect/recent?days=7&limit=10');
-                const data = await resp.json();
-                if (data.reflections && data.reflections.length > 0) {
-                    const sourceIcons = { chrome: '\u{1F310}', youtube: '\u25B6\uFE0F', notion: '\u{1F4DD}', claude_export: '\u{1F916}', conversation: '\u{1F4AC}', manual: '\u270D\uFE0F' };
-                    el.innerHTML = data.reflections.map(r => `
-                        <div style="padding:10px 12px;border-bottom:1px solid var(--line);">
-                            <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
-                                <span style="font-size:12px;">${sourceIcons[r.source] || '\u{1F4C4}'}</span>
-                                <span style="font-size:11px;font-weight:600;color:var(--ink-tertiary);text-transform:uppercase;">${r.source}</span>
-                                <span style="font-size:10px;color:var(--ink-faint);margin-left:auto;">${(r.created_at || '').substring(0,10)}</span>
-                            </div>
-                            <div style="font-size:12px;color:var(--ink);line-height:1.4;">${r.content_summary || '(no summary)'}</div>
-                            ${(r.themes && r.themes.length) ? '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;">' + r.themes.map(t => '<span style="font-size:10px;background:var(--bg);border:1px solid var(--line);border-radius:3px;padding:1px 5px;color:var(--ink-tertiary);">' + t + '</span>').join('') + '</div>' : ''}
-                        </div>
-                    `).join('');
-                } else {
-                    el.innerHTML = '<div style="font-size:12px;color:var(--ink-tertiary);padding:12px;">No reflections yet.</div>';
-                }
-            } catch (e) {
-                el.innerHTML = '<div style="font-size:12px;color:var(--danger);padding:8px;">Failed to load</div>';
             }
         }
 
@@ -6694,16 +6979,330 @@
                 const data = await resp.json();
                 const total = data.total_reflections || 0;
                 const themes = data.active_themes || 0;
-                const bySource = data.by_source || {};
-                const sourceList = Object.entries(bySource).map(([k,v]) => `${k}: ${v}`).join(', ');
-                el.innerHTML = `
-                    <div style="padding:10px 12px;font-size:12px;color:var(--ink);">
-                        <div style="margin-bottom:4px;"><strong>${total}</strong> reflections | <strong>${themes}</strong> active themes</div>
-                        ${sourceList ? '<div style="color:var(--ink-tertiary);">By source: ' + sourceList + '</div>' : ''}
-                    </div>
-                `;
+                const summaryEl = document.getElementById('reflectionSummaryStats');
+                if (summaryEl) {
+                    const existing = summaryEl.innerHTML;
+                    if (existing.includes('Loading')) {
+                        summaryEl.innerHTML = `<strong>${themes}</strong> active themes &middot; <strong>${total}</strong> reflections`;
+                    }
+                }
             } catch (e) {
-                el.innerHTML = '<div style="font-size:12px;color:var(--ink-tertiary);padding:8px;">Stats unavailable</div>';
+                // Silently fail, stats are supplementary
+            }
+        }
+
+        // ═══════════════════════════════════════════════
+        // REFLECTIONS FULL PAGE
+        // ═══════════════════════════════════════════════
+
+        async function showReflectionsPage() {
+            const loadingHtml = '<div id="reflections-page" style="padding:20px;color:var(--ink-secondary);">Loading reflections...</div>';
+            showFormPage('Reflections', loadingHtml, null, true);
+            try {
+                const [themesResp, statsResp] = await Promise.all([
+                    authFetch('/api/reflect/themes?days=30&limit=15'),
+                    authFetch('/api/reflect/stats')
+                ]);
+                const themesData = await themesResp.json();
+                const statsData = await statsResp.json();
+                const container = document.getElementById('reflections-page');
+                if (!container) return;
+
+                const themes = themesData.themes || [];
+                const questions = themesData.open_questions || [];
+                const totalReflections = statsData.total_reflections || 0;
+
+                let html = '';
+
+                // Header meta
+                html += `<div style="font-size:11px;color:var(--ink-faint);margin-bottom:16px;">${totalReflections} reflections</div>`;
+
+                // Active Themes section
+                html += `<div class="rf-section-title">Active Themes <span class="rf-section-count">${themes.length}</span></div>`;
+
+                if (themes.length > 0) {
+                    themes.forEach(t => {
+                        const state = t.state || t.classification || 'researching';
+                        const name = t.theme || t.name || 'Unnamed';
+                        const subtitle = t.subtitle || '';
+                        const count = t.count || 0;
+                        html += `<div class="rf-theme-card" onclick="showThemeDeepDive('${escapeHtml(name).replace(/'/g, "\\'")}')">
+                            <div class="rf-theme-card-top">
+                                <span class="rf-theme-dot ${state}"></span>
+                                <span class="rf-theme-name">${escapeHtml(name)}</span>
+                                <div class="rf-theme-meta">
+                                    <span class="rf-theme-state">${state}</span>
+                                    <span class="rf-theme-count">${count}</span>
+                                </div>
+                            </div>
+                            ${subtitle ? `<div class="rf-theme-sub">${escapeHtml(subtitle)}</div>` : ''}
+                        </div>`;
+                    });
+                } else {
+                    html += '<div style="font-size:12px;color:var(--ink-tertiary);padding:12px 0;">No themes yet. Ingest content to get started.</div>';
+                }
+
+                // Open Questions section
+                if (questions.length > 0) {
+                    html += `<div class="rf-section-title" style="margin-top:24px;">Open Questions <span class="rf-section-count">${questions.length}</span></div>`;
+                    questions.forEach(q => {
+                        const qText = typeof q === 'string' ? q : (q.text || q.question || '');
+                        const qTheme = typeof q === 'object' ? (q.theme || '') : '';
+                        const qAge = typeof q === 'object' ? (q.age || q.days_open || '') : '';
+                        html += `<div class="rf-question-card" onclick="startReflectionChat('${escapeHtml(qText).replace(/'/g, "\\'")}')">
+                            <div class="rf-question-text">${escapeHtml(qText)}</div>
+                            <div class="rf-question-footer">
+                                ${qTheme ? `<span class="rf-question-tag">${escapeHtml(qTheme)}</span>` : ''}
+                                ${qAge ? `<span class="rf-question-age">${qAge} days</span>` : ''}
+                            </div>
+                        </div>`;
+                    });
+                }
+
+                // Reflection Sources section
+                html += `<div class="rf-section-title" style="margin-top:24px;">Reflection Sources</div>`;
+                html += `<div style="background:var(--surface);border:1px solid var(--line);padding:4px 18px;">`;
+                const sources = [
+                    { key: 'chrome', name: 'Chrome browsing', alwaysOn: false },
+                    { key: 'notion', name: 'Notion pages', alwaysOn: false },
+                    { key: 'conversation', name: 'Messages / conversations', alwaysOn: false },
+                    { key: 'youtube', name: 'YouTube', alwaysOn: false },
+                    { key: 'manual', name: 'Manual capture', alwaysOn: true }
+                ];
+                const bySource = statsData.by_source || {};
+                sources.forEach(src => {
+                    const count = bySource[src.key] || 0;
+                    const statusText = count > 0 ? `${count} reflections` : 'No data yet';
+                    html += `<div class="rf-source-row">
+                        <div class="rf-source-info">
+                            <span class="rf-source-name">${src.name}</span>
+                            <span class="rf-source-status">${statusText}</span>
+                        </div>
+                        <div class="rf-source-actions">
+                            ${!src.alwaysOn ? `<button class="rf-source-pull" onclick="event.stopPropagation(); pullReflectionSource('${src.key}', this)">Pull now</button>` : '<span style="font-size:10px;color:var(--ink-faint);">Always on</span>'}
+                        </div>
+                    </div>`;
+                });
+                html += `</div>`;
+                html += `<div style="margin-top:10px;display:flex;gap:8px;">
+                    <button style="font-family:var(--font-body);font-size:11px;font-weight:500;color:var(--ink-secondary);background:none;border:1px solid var(--line);padding:4px 12px;cursor:pointer;border-radius:0;" onclick="pullReflectionSource('all', this)">Pull all now</button>
+                    <button style="font-family:var(--font-body);font-size:11px;font-weight:500;color:var(--danger);background:none;border:1px solid var(--line);padding:4px 12px;cursor:pointer;border-radius:0;" onclick="resetReflectionSources(this)">Reset</button>
+                </div>`;
+
+                container.innerHTML = html;
+            } catch (error) {
+                const container = document.getElementById('reflections-page');
+                if (container) container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger);">Failed to load reflections. <button class="pill" onclick="showReflectionsPage()">Retry</button></div>`;
+            }
+        }
+
+        function startReflectionChat(question) {
+            closeToolOverlay();
+            const input = document.getElementById('chatInput');
+            if (input) {
+                input.value = "Let's think through: " + question;
+                input.focus();
+            }
+        }
+
+        async function pullReflectionSource(source, btn) {
+            if (btn) { btn.textContent = '...'; btn.disabled = true; }
+            try {
+                const resp = await authFetch('/api/reflect/pull', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source: source })
+                });
+                if (resp.ok) {
+                    showToast('Pull started for ' + source, 'success');
+                } else {
+                    showToast('Pull failed', 'error');
+                }
+            } catch (e) {
+                showToast('Pull failed', 'error');
+            }
+            if (btn) { btn.textContent = 'Pull now'; btn.disabled = false; }
+        }
+
+        async function resetReflectionSources(btn) {
+            if (!confirm('This will clear all reflection data and re-pull from scratch. Continue?')) return;
+            if (btn) { btn.textContent = '...'; btn.disabled = true; }
+            try {
+                const resp = await authFetch('/api/reflect/reset', { method: 'POST' });
+                if (resp.ok) {
+                    showToast('Reflection data reset', 'success');
+                    showReflectionsPage();
+                } else {
+                    showToast('Reset failed', 'error');
+                }
+            } catch (e) {
+                showToast('Reset failed', 'error');
+            }
+            if (btn) { btn.textContent = 'Reset'; btn.disabled = false; }
+        }
+
+        // ═══════════════════════════════════════════════
+        // THEME DEEP-DIVE
+        // ═══════════════════════════════════════════════
+
+        async function showThemeDeepDive(themeName) {
+            const loadingHtml = `<div id="theme-deepdive" style="padding:20px;color:var(--ink-secondary);">Loading ${escapeHtml(themeName)}...</div>`;
+            showFormPage(themeName, loadingHtml, null, true);
+            try {
+                const resp = await authFetch('/api/reflect/theme/detail?name=' + encodeURIComponent(themeName));
+                const data = await resp.json();
+                const container = document.getElementById('theme-deepdive');
+                if (!container) return;
+
+                const currentState = data.state || data.classification || 'researching';
+                const states = ['researching', 'deciding', 'creating', 'monitoring'];
+                const currentIdx = states.indexOf(currentState);
+                const nextState = currentIdx < states.length - 1 ? states[currentIdx + 1] : null;
+
+                let html = '';
+
+                // State progression bar
+                html += `<div class="rf-dd-state">`;
+                states.forEach((s, i) => {
+                    let cls = 'rf-state-step';
+                    if (i < currentIdx) cls += ' past';
+                    else if (i === currentIdx) cls += ' current';
+                    html += `<span class="${cls}">${s}</span>`;
+                    if (i < states.length - 1) html += `<span class="rf-state-sep">&#8250;</span>`;
+                });
+                if (nextState) {
+                    html += `<button class="rf-dd-advance" onclick="showAdvanceModal('${escapeHtml(themeName).replace(/'/g, "\\'")}', '${currentState}', '${nextState}')">Advance</button>`;
+                }
+                html += `</div>`;
+
+                // Summary stats
+                const reflectionCount = data.reflection_count || data.count || 0;
+                const questionCount = data.question_count || 0;
+                const decisionCount = data.decision_count || 0;
+                const shiftCount = data.shift_count || 0;
+                html += `<div class="rf-dd-summary">
+                    <div><div class="rf-dd-stat-value">${reflectionCount}</div><div class="rf-dd-stat-label">Reflections</div></div>
+                    <div><div class="rf-dd-stat-value">${questionCount}</div><div class="rf-dd-stat-label">Questions</div></div>
+                    <div><div class="rf-dd-stat-value">${decisionCount}</div><div class="rf-dd-stat-label">Decisions</div></div>
+                    <div><div class="rf-dd-stat-value">${shiftCount}</div><div class="rf-dd-stat-label">Shifts</div></div>
+                </div>`;
+
+                // Coaching CTA
+                html += `<div class="rf-dd-cta" onclick="startReflectionChat('Let\\'s think through ${escapeHtml(themeName).replace(/'/g, "\\'")}')">
+                    <div class="rf-dd-cta-text">Talk through this with Alfred</div>
+                    <div class="rf-dd-cta-hint">Coaching &#8250;</div>
+                </div>`;
+
+                // Timeline
+                const timeline = data.timeline || data.reflections || [];
+                if (timeline.length > 0) {
+                    let lastDate = '';
+                    timeline.forEach(item => {
+                        const itemDate = (item.date || item.created_at || '').substring(0, 10);
+                        const displayDate = rfFormatTimelineDate(itemDate);
+                        if (displayDate !== lastDate) {
+                            html += `<div class="time-marker" style="margin:24px 0 12px;">${displayDate}</div>`;
+                            lastDate = displayDate;
+                        }
+                        const type = (item.type || 'reflection').toLowerCase();
+                        const typeLabels = { reflection: 'Reflection', question: 'Open Question', decision: 'Decision', shift: 'Mental Model Shift' };
+                        const source = item.source || '';
+
+                        html += `<div class="rf-tl-card ${type}">
+                            <div class="rf-tl-head">
+                                <span class="rf-tl-dot ${type}"></span>
+                                <span class="rf-tl-type">${typeLabels[type] || type}</span>
+                                ${source ? `<span class="rf-tl-source">${escapeHtml(source)}</span>` : ''}
+                            </div>`;
+
+                        if (type === 'shift' && item.from && item.to) {
+                            html += `<div class="rf-tl-body"><div class="rf-tl-shift">
+                                <div class="rf-tl-shift-from">${escapeHtml(item.from)}</div>
+                                <div class="rf-tl-shift-to">${escapeHtml(item.to)}</div>
+                            </div></div>`;
+                        } else {
+                            const content = item.content || item.text || item.content_summary || '';
+                            html += `<div class="rf-tl-body">${escapeHtml(content)}</div>`;
+                        }
+
+                        html += `</div>`;
+                    });
+                } else {
+                    html += '<div style="font-size:12px;color:var(--ink-tertiary);padding:20px 0;text-align:center;">No timeline entries yet for this theme.</div>';
+                }
+
+                // Back to reflections link
+                html += `<div style="margin-top:20px;text-align:center;">
+                    <button style="font-family:var(--font-body);font-size:12px;color:var(--ink-tertiary);background:none;border:1px solid var(--line);padding:6px 16px;cursor:pointer;border-radius:0;" onclick="showReflectionsPage()">&#8592; Back to Reflections</button>
+                </div>`;
+
+                container.innerHTML = html;
+            } catch (error) {
+                const container = document.getElementById('theme-deepdive');
+                if (container) container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger);">Failed to load theme detail. <button class="pill" onclick="showThemeDeepDive('${escapeHtml(themeName).replace(/'/g, "\\'")}')">Retry</button></div>`;
+            }
+        }
+
+        function rfFormatTimelineDate(dateStr) {
+            if (!dateStr) return 'Unknown';
+            const today = new Date();
+            const d = new Date(dateStr + 'T00:00:00');
+            const diffDays = Math.floor((today - d) / 86400000);
+            if (diffDays === 0) return 'Today';
+            if (diffDays === 1) return 'Yesterday';
+            if (diffDays < 7) return d.toLocaleDateString('en-US', { weekday: 'long' });
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+
+        function showAdvanceModal(themeName, currentState, nextState) {
+            const transitionQuestions = {
+                'deciding': 'What are you choosing between?',
+                'creating': 'What have you decided to build or do?',
+                'monitoring': 'What signals will tell you this is working?'
+            };
+            const question = transitionQuestions[nextState] || 'Describe your thinking.';
+
+            let modal = document.getElementById('rfAdvanceModal');
+            if (modal) modal.remove();
+
+            modal = document.createElement('div');
+            modal.id = 'rfAdvanceModal';
+            modal.className = 'rf-modal-overlay active';
+            modal.onclick = function(e) { if (e.target === modal) { modal.remove(); } };
+            modal.innerHTML = `<div class="rf-modal-sheet">
+                <div class="rf-modal-handle"></div>
+                <div class="rf-modal-title">Advance to ${nextState}</div>
+                <div class="rf-modal-subtitle">${question}</div>
+                <textarea class="rf-modal-input" id="rfAdvanceInput" placeholder="Your thoughts..."></textarea>
+                <div class="rf-modal-actions">
+                    <button class="rf-modal-btn-cancel" onclick="document.getElementById('rfAdvanceModal').remove()">Cancel</button>
+                    <button class="rf-modal-btn-primary" onclick="submitAdvance('${escapeHtml(themeName).replace(/'/g, "\\'")}', '${nextState}')">Advance</button>
+                </div>
+            </div>`;
+            document.body.appendChild(modal);
+            setTimeout(() => { const input = document.getElementById('rfAdvanceInput'); if (input) input.focus(); }, 100);
+        }
+
+        async function submitAdvance(themeName, newState) {
+            const input = document.getElementById('rfAdvanceInput');
+            const note = input ? input.value.trim() : '';
+            const modal = document.getElementById('rfAdvanceModal');
+
+            try {
+                const resp = await authFetch('/api/reflect/theme/advance', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: themeName, new_state: newState, note: note })
+                });
+                if (resp.ok) {
+                    if (modal) modal.remove();
+                    showToast('Theme advanced to ' + newState, 'success');
+                    showThemeDeepDive(themeName);
+                } else {
+                    showToast('Failed to advance theme', 'error');
+                }
+            } catch (e) {
+                showToast('Failed to advance theme', 'error');
             }
         }
 
@@ -6725,7 +7324,6 @@
                     status.style.color = 'var(--coach)';
                     input.value = '';
                     loadReflectionThemes();
-                    loadReflectionRecent();
                     loadReflectionStats();
                 } else {
                     status.textContent = data.message || 'No themes extracted';

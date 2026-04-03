@@ -66,6 +66,24 @@ class ReflectionStore {
             }
         }
 
+        let createThemeStates = """
+        CREATE TABLE IF NOT EXISTS theme_states (
+            theme TEXT PRIMARY KEY,
+            state TEXT NOT NULL DEFAULT 'researching',
+            state_history_json TEXT DEFAULT '[]',
+            summary TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+
+        if sqlite3_exec(db, createThemeStates, nil, nil, &errMsg) != SQLITE_OK {
+            if let err = errMsg {
+                print("❌ ReflectionStore: SQL error creating theme_states: \(String(cString: err))")
+                sqlite3_free(errMsg)
+            }
+        }
+
         print("✅ ReflectionStore database initialized")
     }
 
@@ -404,6 +422,366 @@ class ReflectionStore {
         sqlite3_finalize(stmt)
 
         return stats
+    }
+
+    // MARK: - Theme Deep-Dive
+
+    /// Valid theme states in progression order
+    private static let validStates = ["researching", "deciding", "creating", "monitoring", "archived"]
+
+    /// Get detailed timeline and stats for a single theme
+    func getThemeDetail(theme: String, days: Int = 90) -> [String: Any] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return [:] }
+
+        // Fetch reflections containing this theme
+        let sql = """
+        SELECT id, source, content_summary, themes_json, theme_classifications_json,
+               open_questions_json, mental_model_shifts_json, decisions_json,
+               created_at
+        FROM reflections
+        WHERE created_at >= datetime('now', '-\(days) days')
+          AND themes_json LIKE ?
+        ORDER BY created_at DESC
+        """
+
+        let pattern = "%\"\(theme)\"%"
+        var stmt: OpaquePointer?
+        var timelineItems: [[String: Any]] = []
+        var questionCount = 0
+        var decisionCount = 0
+        var shiftCount = 0
+        var reflectionCount = 0
+        var latestClassification = "researching"
+
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (pattern as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let source = columnText(stmt, 1) ?? "unknown"
+                let summary = columnText(stmt, 2) ?? ""
+                let createdAt = columnText(stmt, 8) ?? ""
+                let dateStr = String(createdAt.prefix(10))
+
+                // Extract classifications for fallback state
+                if let classJson = columnText(stmt, 4),
+                   let classifications = jsonDecode(classJson) as? [String: String],
+                   let cls = classifications[theme] {
+                    if reflectionCount == 0 { latestClassification = cls }
+                }
+
+                // Reflection item
+                reflectionCount += 1
+                timelineItems.append([
+                    "type": "reflection",
+                    "date": dateStr,
+                    "content": summary,
+                    "source": source
+                ])
+
+                // Open questions
+                if let qJson = columnText(stmt, 5),
+                   let questions = jsonDecode(qJson) as? [String] {
+                    for q in questions {
+                        questionCount += 1
+                        timelineItems.append([
+                            "type": "question",
+                            "date": dateStr,
+                            "content": q,
+                            "source": source
+                        ])
+                    }
+                }
+
+                // Decisions
+                if let dJson = columnText(stmt, 7),
+                   let decisions = jsonDecode(dJson) as? [String] {
+                    for d in decisions {
+                        decisionCount += 1
+                        timelineItems.append([
+                            "type": "decision",
+                            "date": dateStr,
+                            "content": d,
+                            "source": source
+                        ])
+                    }
+                }
+
+                // Mental model shifts
+                if let sJson = columnText(stmt, 6),
+                   let shifts = jsonDecode(sJson) as? [[String: String]] {
+                    for shift in shifts {
+                        shiftCount += 1
+                        var content = ""
+                        if let from = shift["from"], let to = shift["to"] {
+                            content = "Was: \(from) -> Now: \(to)"
+                        } else if let desc = shift["description"] {
+                            content = desc
+                        }
+                        timelineItems.append([
+                            "type": "shift",
+                            "date": dateStr,
+                            "content": content,
+                            "source": source
+                        ])
+                    }
+                }
+            }
+        }
+        sqlite3_finalize(stmt)
+
+        // Fetch theme state
+        var state = latestClassification
+        var stateHistory: Any = []
+        var themeSummary: String? = nil
+
+        let stateSql = "SELECT state, state_history_json, summary FROM theme_states WHERE theme = ?"
+        if sqlite3_prepare_v2(db, stateSql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (theme as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            if sqlite3_step(stmt) == SQLITE_ROW {
+                state = columnText(stmt, 0) ?? latestClassification
+                if let histJson = columnText(stmt, 1) {
+                    stateHistory = jsonDecode(histJson) ?? []
+                }
+                themeSummary = columnText(stmt, 2)
+            }
+        }
+        sqlite3_finalize(stmt)
+
+        var result: [String: Any] = [
+            "theme": theme,
+            "state": state,
+            "state_history": stateHistory,
+            "timeline": timelineItems,
+            "stats": [
+                "reflections": reflectionCount,
+                "questions": questionCount,
+                "decisions": decisionCount,
+                "shifts": shiftCount
+            ]
+        ]
+        if let s = themeSummary {
+            result["summary"] = s
+        }
+        return result
+    }
+
+    /// Advance a theme's state with validation
+    func advanceThemeState(theme: String, newState: String, context: String) -> Bool {
+        guard ReflectionStore.validStates.contains(newState) else { return false }
+
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+
+        // Read current state
+        var currentState = "researching"
+        let readSql = "SELECT state FROM theme_states WHERE theme = ?"
+        var stmt: OpaquePointer?
+        var rowExists = false
+
+        if sqlite3_prepare_v2(db, readSql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (theme as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            if sqlite3_step(stmt) == SQLITE_ROW {
+                currentState = columnText(stmt, 0) ?? "researching"
+                rowExists = true
+            }
+        }
+        sqlite3_finalize(stmt)
+
+        // Validate transition: any state can go to archived, otherwise must follow progression
+        if newState != "archived" {
+            guard let currentIdx = ReflectionStore.validStates.firstIndex(of: currentState),
+                  let newIdx = ReflectionStore.validStates.firstIndex(of: newState),
+                  newIdx == currentIdx + 1 else {
+                // Allow same-state (idempotent) or forward-one-step only
+                if newState != currentState {
+                    print("❌ ReflectionStore: Invalid state transition \(currentState) → \(newState)")
+                    return false
+                }
+                return true // Same state, no-op success
+            }
+        }
+
+        // Build history entry
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let timestamp = formatter.string(from: Date())
+        let historyEntry: [String: String] = [
+            "from": currentState,
+            "to": newState,
+            "context": context,
+            "at": timestamp
+        ]
+
+        // Read existing history
+        var history: [[String: String]] = []
+        if rowExists {
+            let histSql = "SELECT state_history_json FROM theme_states WHERE theme = ?"
+            if sqlite3_prepare_v2(db, histSql, -1, &stmt, nil) == SQLITE_OK {
+                sqlite3_bind_text(stmt, 1, (theme as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                if sqlite3_step(stmt) == SQLITE_ROW {
+                    if let json = columnText(stmt, 0),
+                       let decoded = jsonDecode(json) as? [[String: String]] {
+                        history = decoded
+                    }
+                }
+            }
+            sqlite3_finalize(stmt)
+        }
+        history.append(historyEntry)
+        let historyJson = jsonEncode(history)
+
+        // Upsert
+        let upsertSql = """
+        INSERT INTO theme_states (theme, state, state_history_json, updated_at)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(theme) DO UPDATE SET
+            state = excluded.state,
+            state_history_json = ?,
+            updated_at = CURRENT_TIMESTAMP
+        """
+
+        if sqlite3_prepare_v2(db, upsertSql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (theme as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(stmt, 2, (newState as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(stmt, 3, (historyJson as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(stmt, 4, (historyJson as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+
+            if sqlite3_step(stmt) == SQLITE_DONE {
+                sqlite3_finalize(stmt)
+                print("✅ ReflectionStore: Theme '\(theme)' state: \(currentState) → \(newState)")
+                return true
+            }
+        }
+        sqlite3_finalize(stmt)
+        print("❌ ReflectionStore: Failed to advance theme state")
+        return false
+    }
+
+    /// Ensure a theme_states row exists (does not override manual changes)
+    func ensureThemeState(theme: String, classification: String) {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return }
+
+        let resolvedState = ReflectionStore.validStates.contains(classification) && !classification.isEmpty
+            ? classification : "researching"
+
+        let sql = """
+        INSERT INTO theme_states (theme, state)
+        VALUES (?, ?)
+        ON CONFLICT(theme) DO NOTHING
+        """
+
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (theme as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(stmt, 2, (resolvedState as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_step(stmt)
+        }
+        sqlite3_finalize(stmt)
+    }
+
+    /// Enhanced theme listing with state from theme_states table
+    func getThemesWithState(days: Int = 30, limit: Int = 10) -> [[String: Any]] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return [] }
+
+        // First, gather theme data from reflections (same approach as getTopThemes but with more detail)
+        let sql = """
+        SELECT content_summary, themes_json, theme_classifications_json,
+               open_questions_json, relevance_score, created_at
+        FROM reflections
+        WHERE created_at >= datetime('now', '-\(days) days')
+        ORDER BY created_at DESC
+        """
+
+        var stmt: OpaquePointer?
+
+        struct ThemeAgg {
+            var count: Int = 0
+            var totalRelevance: Double = 0
+            var latestClassification: String = "monitoring"
+            var latestSummary: String = ""
+            var openQuestionCount: Int = 0
+        }
+
+        var themeData: [String: ThemeAgg] = [:]
+
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let summary = columnText(stmt, 0) ?? ""
+                let themesJson = columnText(stmt, 1)
+                let classJson = columnText(stmt, 2)
+                let questionsJson = columnText(stmt, 3)
+                let relevance = sqlite3_column_double(stmt, 4)
+
+                guard let themes = jsonDecode(themesJson) as? [String] else { continue }
+                let classifications = jsonDecode(classJson) as? [String: String] ?? [:]
+                let questions = jsonDecode(questionsJson) as? [String] ?? []
+
+                for theme in themes {
+                    var agg = themeData[theme] ?? ThemeAgg()
+                    agg.count += 1
+                    agg.totalRelevance += relevance
+                    if agg.count == 1 {
+                        // First (most recent) occurrence
+                        agg.latestClassification = classifications[theme] ?? "monitoring"
+                        agg.latestSummary = summary
+                        agg.openQuestionCount = questions.count
+                    }
+                    themeData[theme] = agg
+                }
+            }
+        }
+        sqlite3_finalize(stmt)
+
+        // Load theme_states for all themes
+        var themeStates: [String: String] = [:]
+        let statesSql = "SELECT theme, state FROM theme_states WHERE state != 'archived'"
+        if sqlite3_prepare_v2(db, statesSql, -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let t = columnText(stmt, 0), let s = columnText(stmt, 1) {
+                    themeStates[t] = s
+                }
+            }
+        }
+        sqlite3_finalize(stmt)
+
+        // Also check for archived themes to filter them out
+        var archivedThemes: Set<String> = []
+        let archivedSql = "SELECT theme FROM theme_states WHERE state = 'archived'"
+        if sqlite3_prepare_v2(db, archivedSql, -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let t = columnText(stmt, 0) {
+                    archivedThemes.insert(t)
+                }
+            }
+        }
+        sqlite3_finalize(stmt)
+
+        // Build results, filter archived, sort by count
+        var results: [[String: Any]] = []
+        let sorted = themeData
+            .filter { !archivedThemes.contains($0.key) }
+            .sorted { $0.value.totalRelevance > $1.value.totalRelevance }
+            .prefix(limit)
+
+        for (theme, agg) in sorted {
+            let state = themeStates[theme] ?? agg.latestClassification
+            results.append([
+                "theme": theme,
+                "state": state,
+                "count": agg.count,
+                "subtitle": agg.latestSummary,
+                "open_questions_count": agg.openQuestionCount
+            ])
+        }
+
+        return results
     }
 
     // MARK: - Helpers

@@ -424,11 +424,41 @@ extension NotionService {
     }
 
     /// Search for active tasks by fuzzy title match (case-insensitive substring)
+    /// Uses progressive strategy: exact phrase → all-words AND → longest-word fallback
     func findTasksByFuzzyTitle(_ searchTerm: String) async throws -> [TaskItem] {
         guard let dbId = tasksDatabaseId else {
             throw NSError(domain: "NotionService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Tasks database ID not set"])
         }
 
+        // Strategy 1: Try exact phrase match (fast path for simple queries)
+        let exactResults = try await queryTasksByTitleFilters(dbId: dbId, titleFilters: [
+            ["property": "Title", "title": ["contains": searchTerm]]
+        ])
+        if !exactResults.isEmpty { return exactResults }
+
+        // Strategy 2: Split into words, require ALL words present in title
+        let words = searchTerm.split(separator: " ").map(String.init).filter { $0.count >= 2 }
+        if words.count >= 2 {
+            let wordFilters = words.map { word in
+                ["property": "Title", "title": ["contains": word]] as [String: Any]
+            }
+            let andResults = try await queryTasksByTitleFilters(dbId: dbId, titleFilters: wordFilters)
+            if !andResults.isEmpty { return andResults }
+        }
+
+        // Strategy 3: Try the longest word alone as a broad search
+        if let longestWord = words.max(by: { $0.count < $1.count }), longestWord != searchTerm {
+            let broadResults = try await queryTasksByTitleFilters(dbId: dbId, titleFilters: [
+                ["property": "Title", "title": ["contains": longestWord]]
+            ])
+            if !broadResults.isEmpty { return broadResults }
+        }
+
+        return []
+    }
+
+    /// Query tasks database with given title filters (AND-ed together) plus active status filters
+    private func queryTasksByTitleFilters(dbId: String, titleFilters: [[String: Any]]) async throws -> [TaskItem] {
         let url = URL(string: "https://api.notion.com/v1/databases/\(dbId)/query")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -436,17 +466,13 @@ extension NotionService {
         request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
+        var allFilters: [[String: Any]] = titleFilters
+        allFilters.append(["property": "Status", "status": ["does_not_equal": "Done"]])
+        allFilters.append(["property": "Status", "status": ["does_not_equal": "Cancelled"]])
+
         let body: [String: Any] = [
-            "filter": [
-                "and": [
-                    ["property": "Title", "title": ["contains": searchTerm]],
-                    ["property": "Status", "status": ["does_not_equal": "Done"]],
-                    ["property": "Status", "status": ["does_not_equal": "Cancelled"]]
-                ]
-            ],
-            "sorts": [
-                ["property": "Due Date", "direction": "ascending"]
-            ],
+            "filter": ["and": allFilters],
+            "sorts": [["property": "Due Date", "direction": "ascending"]],
             "page_size": 10
         ]
 

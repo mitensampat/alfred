@@ -180,6 +180,62 @@ input:focus {
 }
 ```
 
+## Top Bar (Universal Frame)
+
+Every page in Alfred shares the same top bar. No exceptions.
+
+```
+[← back]    Coach Alfred    [Day, DD/MM HH:MM]  [sun]  [gear]
+```
+
+| Element | Home | Settings | Sub-pages (Reflections, Deep Dive, etc.) |
+|---------|------|----------|------------------------------------------|
+| Back arrow | Hidden | Shown (closes Settings) | Shown (closes overlay) |
+| Title | "Coach Alfred" | "Coach Alfred" | "Coach Alfred" |
+| Date | `Day, DD/MM HH:MM` | `Day, DD/MM HH:MM` | `Day, DD/MM HH:MM` |
+| Sync indicator | Shown | Hidden | Hidden |
+| Sun toggle | Shown | Shown | Shown |
+| Gear icon | Opens Settings | Closes Settings | Closes overlay, opens Settings |
+
+- Title is ALWAYS "Coach Alfred" — never the page name, never "Settings"
+- Date format: `Friday, 03/04 17:04` — updated every 60s
+- Top bar wrapper stretches full viewport width; inner content centered at max-width 640px
+
+## Chat Input (Ever-Present)
+
+The "Talk to Alfred..." chat input is visible on **every page except Settings**.
+
+- Home: primary chat input at bottom
+- Sub-pages: overlay chat input at bottom — sends message to main conversation and closes overlay
+- Settings: no chat input (configuration, not coaching)
+
+## Layout Constraints
+
+All pages use identical layout dimensions:
+
+- Outer wrappers (top-bar-wrapper, input-area) stretch full viewport width
+- Inner content: `max-width: 640px; margin: 0 auto; width: 100%;`
+- Content padding: `16px 20px`
+- No page should ever appear wider or narrower than another
+
+## Text Alignment
+
+- All card content is **left-aligned**. Never center-align body text in cards.
+- Section headers (ACTIVE THEMES, CADENCES, etc.) are left-aligned.
+- Only decorative elements (empty states, loading spinners) may center.
+
+## Navigation Model
+
+```
+Home ←→ Settings (full-page, hides Home appContainer)
+Home ←→ Tool Overlay (Reflections, Deep Dive, Commitments, Memory)
+```
+
+- Settings: full-page screen, hides `appContainer`, shows `settingsPanel`
+- Tool Overlay: full-screen overlay (`z-index: 200`) with scrollable content
+- Both use the same top-bar pattern with back arrow
+- Back always returns to Home
+
 ## Anti-Patterns (Don'ts)
 
 - **No rounded corners** on any card, button, chip, or panel

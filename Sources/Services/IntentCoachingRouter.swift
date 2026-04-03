@@ -37,7 +37,17 @@ struct IntentCoachingRouter {
             return action == .summarize ? .planning : .prioritization
         case .drafts:
             return .reflection  // Draft generation is about communication
-        case .contacts, .preferences, nil:
+        case .reflections:
+            return .deepReflection
+        case .memory, .skills:
+            return .general
+        case .focus:
+            return .prioritization
+        case .favorites, .cadences, .conversations:
+            return .operational
+        case .contacts:
+            return .reflection
+        case .preferences, nil:
             return .general
         }
     }

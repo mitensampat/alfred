@@ -77,6 +77,13 @@ struct UserIntent: Codable {
         case tasks = "tasks"            // Unified tasks (todos + commitments)
         case contacts = "contacts"      // People/contacts
         case preferences = "preferences" // User preferences/settings
+        case reflections = "reflections" // Reflection themes, open questions
+        case memory = "memory"          // Learned patterns, teach/forget rules
+        case favorites = "favorites"    // Favorite contacts/groups
+        case focus = "focus"            // Focus pin (top goal)
+        case cadences = "cadences"      // Scheduled cadences
+        case conversations = "conversations" // Past chat conversations
+        case skills = "skills"          // Coaching skills
     }
 
     struct IntentFilters: Codable {
@@ -131,6 +138,13 @@ struct UserIntent: Codable {
         let eventAttendeeEmails: [String]? // ["alice@example.com"] — extracted email addresses
         let eventDescription: String?     // topic/agenda
 
+        // Memory/learning filters
+        let teachText: String?            // rule text for "teach" action
+        // Reflection filters
+        let themeName: String?            // theme name for deep-dive
+        // Cadence filters
+        let cadenceName: String?          // cadence name to trigger
+
         enum CodingKeys: String, CodingKey {
             case contactName = "contact_name"
             case dateRange = "date_range"
@@ -159,6 +173,9 @@ struct UserIntent: Codable {
             case eventAttendees = "event_attendees"
             case eventAttendeeEmails = "event_attendee_emails"
             case eventDescription = "event_description"
+            case teachText = "teach_text"
+            case themeName = "theme_name"
+            case cadenceName = "cadence_name"
         }
 
         struct DateRange: Codable {
@@ -252,6 +269,11 @@ struct UserIntent: Codable {
             eventAttendees = try container.decodeIfPresent([String].self, forKey: .eventAttendees)
             eventAttendeeEmails = try container.decodeIfPresent([String].self, forKey: .eventAttendeeEmails)
             eventDescription = try container.decodeIfPresent(String.self, forKey: .eventDescription)
+
+            // Memory/reflection/cadence fields
+            teachText = try container.decodeIfPresent(String.self, forKey: .teachText)
+            themeName = try container.decodeIfPresent(String.self, forKey: .themeName)
+            cadenceName = try container.decodeIfPresent(String.self, forKey: .cadenceName)
         }
 
         /// Parse date strings in multiple formats that Claude might produce
@@ -311,6 +333,9 @@ struct UserIntent: Codable {
             self.eventAttendees = nil
             self.eventAttendeeEmails = nil
             self.eventDescription = nil
+            self.teachText = nil
+            self.themeName = nil
+            self.cadenceName = nil
         }
 
         // Manual init for programmatic construction
@@ -341,7 +366,10 @@ struct UserIntent: Codable {
             eventLocation: String? = nil,
             eventAttendees: [String]? = nil,
             eventAttendeeEmails: [String]? = nil,
-            eventDescription: String? = nil
+            eventDescription: String? = nil,
+            teachText: String? = nil,
+            themeName: String? = nil,
+            cadenceName: String? = nil
         ) {
             self.contactName = contactName
             self.dateRange = dateRange
@@ -370,6 +398,9 @@ struct UserIntent: Codable {
             self.eventAttendees = eventAttendees
             self.eventAttendeeEmails = eventAttendeeEmails
             self.eventDescription = eventDescription
+            self.teachText = teachText
+            self.themeName = themeName
+            self.cadenceName = cadenceName
         }
     }
 }

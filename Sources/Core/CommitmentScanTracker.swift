@@ -333,7 +333,7 @@ class CommitmentScanTracker {
 
     // MARK: - Closure Detection
 
-    /// Record a closure detection
+    /// Record a closure detection (skips if user already rejected or a pending detection exists)
     func recordClosureDetection(
         commitmentHash: String,
         closureSignal: String,
@@ -342,6 +342,26 @@ class CommitmentScanTracker {
     ) {
         dbLock.lock()
         defer { dbLock.unlock() }
+
+        // Skip if user already rejected a closure for this commitment
+        // or if there's already a pending detection (user_confirmed IS NULL)
+        let checkSql = """
+        SELECT COUNT(*) FROM closure_detections
+        WHERE commitment_hash = ? AND (user_confirmed = 0 OR user_confirmed IS NULL)
+        """
+        var checkStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, checkSql, -1, &checkStmt, nil) == SQLITE_OK {
+            bindText(checkStmt, 1, commitmentHash)
+            if sqlite3_step(checkStmt) == SQLITE_ROW {
+                let count = sqlite3_column_int(checkStmt, 0)
+                sqlite3_finalize(checkStmt)
+                if count > 0 {
+                    return // Already rejected or already pending — don't re-create
+                }
+            } else {
+                sqlite3_finalize(checkStmt)
+            }
+        }
 
         let sql = """
         INSERT INTO closure_detections

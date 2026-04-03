@@ -77,6 +77,13 @@ struct UserIntent: Codable {
         case tasks = "tasks"            // Unified tasks (todos + commitments)
         case contacts = "contacts"      // People/contacts
         case preferences = "preferences" // User preferences/settings
+        case reflections = "reflections" // Reflection themes, open questions
+        case memory = "memory"          // Learned patterns, teach/forget rules
+        case favorites = "favorites"    // Favorite contacts/groups
+        case focus = "focus"            // Focus pin (top goal)
+        case cadences = "cadences"      // Scheduled cadences
+        case conversations = "conversations" // Past chat conversations
+        case skills = "skills"          // Coaching skills
     }
 
     struct IntentFilters: Codable {
@@ -86,7 +93,7 @@ struct UserIntent: Codable {
         // Time filters
         let dateRange: DateRange?
         let specificDate: Date?
-        let dateDescription: String?  // Human-readable date context (e.g., "Monday", "next week")
+        let dateDescription: String?
 
         // Platform filters
         let platform: MessagePlatform?
@@ -104,12 +111,39 @@ struct UserIntent: Codable {
         // Calendar filters
         let calendarName: String?
 
-        // Task update filters (used when action is "update" and target is "tasks")
-        let taskSearchTerm: String?    // fuzzy task name keywords ("RCA", "dentist appointment")
-        let newStatus: String?         // "Done", "In Progress", "Not Started", "Blocked", "Cancelled"
-        let newPriority: String?       // "Critical", "High", "Medium", "Low"
-        let newDueDate: Date?          // new due date for the task
-        let noteToAdd: String?         // text to append to Description
+        // Task update filters
+        let taskSearchTerm: String?
+        let newStatus: String?
+        let newPriority: String?
+        let newDueDate: Date?
+        let noteToAdd: String?
+
+        // Task creation filters
+        let taskTitle: String?
+        let taskType: String?
+
+        // Commitment creation filters
+        let commitmentDirection: String?
+        let commitmentCounterparty: String?
+
+        // Calendar event search/update filters
+        let eventSearchTerm: String?
+
+        // Calendar event creation filters
+        let eventTitle: String?
+        let eventTime: String?
+        let eventDurationMinutes: Int?
+        let eventLocation: String?
+        let eventAttendees: [String]?
+        let eventAttendeeEmails: [String]?
+        let eventDescription: String?
+
+        // Memory/learning filters
+        let teachText: String?
+        // Reflection filters
+        let themeName: String?
+        // Cadence filters
+        let cadenceName: String?
 
         enum CodingKeys: String, CodingKey {
             case contactName = "contact_name"
@@ -127,6 +161,21 @@ struct UserIntent: Codable {
             case newPriority = "new_priority"
             case newDueDate = "new_due_date"
             case noteToAdd = "note_to_add"
+            case taskTitle = "task_title"
+            case taskType = "task_type"
+            case commitmentDirection = "commitment_direction"
+            case commitmentCounterparty = "commitment_counterparty"
+            case eventSearchTerm = "event_search_term"
+            case eventTitle = "event_title"
+            case eventTime = "event_time"
+            case eventDurationMinutes = "event_duration_minutes"
+            case eventLocation = "event_location"
+            case eventAttendees = "event_attendees"
+            case eventAttendeeEmails = "event_attendee_emails"
+            case eventDescription = "event_description"
+            case teachText = "teach_text"
+            case themeName = "theme_name"
+            case cadenceName = "cadence_name"
         }
 
         struct DateRange: Codable {
@@ -170,38 +219,51 @@ struct UserIntent: Codable {
             lookforwardDays = try container.decodeIfPresent(Int.self, forKey: .lookforwardDays)
             calendarName = try container.decodeIfPresent(String.self, forKey: .calendarName)
 
-            // Decode specificDate from flexible date string
             if let dateString = try container.decodeIfPresent(String.self, forKey: .specificDate) {
                 specificDate = IntentFilters.parseFlexibleDate(dateString)
             } else {
                 specificDate = nil
             }
 
-            // Decode dateRange with flexible date parsing
             dateRange = try container.decodeIfPresent(DateRange.self, forKey: .dateRange)
 
-            // Decode optional enums safely (Claude may send null or invalid values)
             platform = try? container.decodeIfPresent(MessagePlatform.self, forKey: .platform)
             commitmentType = try? container.decodeIfPresent(CommitmentType.self, forKey: .commitmentType)
             urgency = try? container.decodeIfPresent(UrgencyLevel.self, forKey: .urgency)
 
-            // Task update fields
             taskSearchTerm = try container.decodeIfPresent(String.self, forKey: .taskSearchTerm)
             newStatus = try container.decodeIfPresent(String.self, forKey: .newStatus)
             newPriority = try container.decodeIfPresent(String.self, forKey: .newPriority)
             noteToAdd = try container.decodeIfPresent(String.self, forKey: .noteToAdd)
 
-            // Decode newDueDate from flexible date string
+            taskTitle = try container.decodeIfPresent(String.self, forKey: .taskTitle)
+            taskType = try container.decodeIfPresent(String.self, forKey: .taskType)
+
             if let dateString = try container.decodeIfPresent(String.self, forKey: .newDueDate) {
                 newDueDate = IntentFilters.parseFlexibleDate(dateString)
             } else {
                 newDueDate = nil
             }
+
+            commitmentDirection = try container.decodeIfPresent(String.self, forKey: .commitmentDirection)
+            commitmentCounterparty = try container.decodeIfPresent(String.self, forKey: .commitmentCounterparty)
+
+            eventSearchTerm = try container.decodeIfPresent(String.self, forKey: .eventSearchTerm)
+            eventTitle = try container.decodeIfPresent(String.self, forKey: .eventTitle)
+            eventTime = try container.decodeIfPresent(String.self, forKey: .eventTime)
+            eventDurationMinutes = try container.decodeIfPresent(Int.self, forKey: .eventDurationMinutes)
+            eventLocation = try container.decodeIfPresent(String.self, forKey: .eventLocation)
+            eventAttendees = try container.decodeIfPresent([String].self, forKey: .eventAttendees)
+            eventAttendeeEmails = try container.decodeIfPresent([String].self, forKey: .eventAttendeeEmails)
+            eventDescription = try container.decodeIfPresent(String.self, forKey: .eventDescription)
+
+            teachText = try container.decodeIfPresent(String.self, forKey: .teachText)
+            themeName = try container.decodeIfPresent(String.self, forKey: .themeName)
+            cadenceName = try container.decodeIfPresent(String.self, forKey: .cadenceName)
         }
 
         /// Parse date strings in multiple formats that Claude might produce
         static func parseFlexibleDate(_ string: String) -> Date? {
-            // Try ISO8601 with time first
             let iso8601Full = ISO8601DateFormatter()
             iso8601Full.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
             if let d = iso8601Full.date(from: string) { return d }
@@ -210,13 +272,11 @@ struct UserIntent: Codable {
             iso8601.formatOptions = [.withInternetDateTime]
             if let d = iso8601.date(from: string) { return d }
 
-            // Try date-only format (YYYY-MM-DD)
             let dateOnly = DateFormatter()
             dateOnly.dateFormat = "yyyy-MM-dd"
             dateOnly.timeZone = TimeZone.current
             if let d = dateOnly.date(from: string) { return d }
 
-            // Try natural date formats
             let natural = DateFormatter()
             natural.dateFormat = "MMMM d, yyyy"
             if let d = natural.date(from: string) { return d }
@@ -244,6 +304,21 @@ struct UserIntent: Codable {
             self.newPriority = nil
             self.newDueDate = nil
             self.noteToAdd = nil
+            self.taskTitle = nil
+            self.taskType = nil
+            self.commitmentDirection = nil
+            self.commitmentCounterparty = nil
+            self.eventSearchTerm = nil
+            self.eventTitle = nil
+            self.eventTime = nil
+            self.eventDurationMinutes = nil
+            self.eventLocation = nil
+            self.eventAttendees = nil
+            self.eventAttendeeEmails = nil
+            self.eventDescription = nil
+            self.teachText = nil
+            self.themeName = nil
+            self.cadenceName = nil
         }
 
         // Manual init for programmatic construction
@@ -262,7 +337,22 @@ struct UserIntent: Codable {
             newStatus: String? = nil,
             newPriority: String? = nil,
             newDueDate: Date? = nil,
-            noteToAdd: String? = nil
+            noteToAdd: String? = nil,
+            taskTitle: String? = nil,
+            taskType: String? = nil,
+            commitmentDirection: String? = nil,
+            commitmentCounterparty: String? = nil,
+            eventSearchTerm: String? = nil,
+            eventTitle: String? = nil,
+            eventTime: String? = nil,
+            eventDurationMinutes: Int? = nil,
+            eventLocation: String? = nil,
+            eventAttendees: [String]? = nil,
+            eventAttendeeEmails: [String]? = nil,
+            eventDescription: String? = nil,
+            teachText: String? = nil,
+            themeName: String? = nil,
+            cadenceName: String? = nil
         ) {
             self.contactName = contactName
             self.dateRange = dateRange
@@ -279,6 +369,21 @@ struct UserIntent: Codable {
             self.newPriority = newPriority
             self.newDueDate = newDueDate
             self.noteToAdd = noteToAdd
+            self.taskTitle = taskTitle
+            self.taskType = taskType
+            self.commitmentDirection = commitmentDirection
+            self.commitmentCounterparty = commitmentCounterparty
+            self.eventSearchTerm = eventSearchTerm
+            self.eventTitle = eventTitle
+            self.eventTime = eventTime
+            self.eventDurationMinutes = eventDurationMinutes
+            self.eventLocation = eventLocation
+            self.eventAttendees = eventAttendees
+            self.eventAttendeeEmails = eventAttendeeEmails
+            self.eventDescription = eventDescription
+            self.teachText = teachText
+            self.themeName = themeName
+            self.cadenceName = cadenceName
         }
     }
 }
@@ -297,5 +402,14 @@ struct IntentRecognitionResponse: Codable {
         case clarificationNeeded = "clarification_needed"
         case clarificationQuestion = "clarification_question"
         case suggestedFollowUps = "suggested_follow_ups"
+    }
+
+    /// Custom decoder: clarification fields default to false/nil if missing
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.intent = try container.decode(UserIntent.self, forKey: .intent)
+        self.clarificationNeeded = (try? container.decode(Bool.self, forKey: .clarificationNeeded)) ?? false
+        self.clarificationQuestion = try? container.decodeIfPresent(String.self, forKey: .clarificationQuestion)
+        self.suggestedFollowUps = try? container.decodeIfPresent([String].self, forKey: .suggestedFollowUps)
     }
 }

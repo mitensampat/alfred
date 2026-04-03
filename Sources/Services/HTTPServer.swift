@@ -1126,6 +1126,12 @@ class HTTPServer {
         case ("GET", "/api/reflect/themes"):
             return handleReflectThemes(request)
 
+        case ("GET", let p) where p.hasPrefix("/api/reflect/theme/detail"):
+            return handleReflectThemeDetail(request)
+
+        case ("POST", "/api/reflect/theme/advance"):
+            return handleReflectThemeAdvance(request)
+
         case ("GET", "/api/reflect/stats"):
             return handleReflectStats()
 
@@ -10664,6 +10670,12 @@ extension HTTPServer {
                 decisions: extraction.decisions
             )
 
+            // Ensure theme state rows exist for each extracted theme
+            for theme in extraction.themes {
+                let classification = extraction.themeClassifications[theme] ?? "emerging"
+                ReflectionStore.shared.ensureThemeState(theme: theme, classification: classification)
+            }
+
             return HTTPResponse(statusCode: 200, body: [
                 "message": "Reflection ingested successfully",
                 "content_summary": extraction.contentSummary,
@@ -10694,22 +10706,41 @@ extension HTTPServer {
         let days = Int(request.queryParams["days"] ?? "30") ?? 30
         let limit = Int(request.queryParams["limit"] ?? "10") ?? 10
 
-        let themes = ReflectionStore.shared.getTopThemes(days: days, limit: limit)
+        let themes = ReflectionStore.shared.getThemesWithState(days: days, limit: limit)
         let questions = ReflectionStore.shared.getOpenQuestions(limit: 5)
 
-        let themesArray = themes.map { theme -> [String: Any] in
-            return [
-                "theme": theme.theme,
-                "count": theme.count,
-                "classification": theme.classification
-            ]
-        }
-
         return HTTPResponse(statusCode: 200, body: [
-            "themes": themesArray,
+            "themes": themes,
             "open_questions": questions,
             "total_themes": themes.count
         ])
+    }
+
+    private func handleReflectThemeDetail(_ request: HTTPRequest) -> HTTPResponse {
+        guard let name = request.queryParams["name"]?.removingPercentEncoding, !name.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'name' query parameter"])
+        }
+        let days = Int(request.queryParams["days"] ?? "90") ?? 90
+
+        let detail = ReflectionStore.shared.getThemeDetail(theme: name, days: days)
+        return HTTPResponse(statusCode: 200, body: detail)
+    }
+
+    private func handleReflectThemeAdvance(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let theme = json["theme"] as? String,
+              let newState = json["new_state"] as? String,
+              let context = json["context"] as? String else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'theme', 'new_state', or 'context' in request body"])
+        }
+
+        let success = ReflectionStore.shared.advanceThemeState(theme: theme, newState: newState, context: context)
+        if success {
+            return HTTPResponse(statusCode: 200, body: ["message": "Theme state advanced", "theme": theme, "new_state": newState])
+        } else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to advance theme state"])
+        }
     }
 
     private func handleReflectStats() -> HTTPResponse {

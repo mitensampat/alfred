@@ -80,9 +80,117 @@ class IntentExecutor {
             let drafts = try await fetchDrafts()
             return formatDraftsResponse(drafts, query: intent.originalQuery)
 
+        // MARK: - Todo Update/Delete
+        case (.update, .todos):
+            return try await handleTaskUpdate(intent: intent)
+
+        case (.delete, .todos):
+            // Soft cancel — reuse task update with Cancelled status
+            let cancelIntent = UserIntent(
+                action: .update, target: .todos,
+                filters: UserIntent.IntentFilters(taskSearchTerm: intent.filters.taskSearchTerm, newStatus: "Cancelled"),
+                confidence: intent.confidence, originalQuery: intent.originalQuery
+            )
+            return try await handleTaskUpdate(intent: cancelIntent)
+
+        // MARK: - Task List/Create/Delete
+        case (.list, .tasks), (.search, .tasks), (.find, .tasks):
+            if let searchTerm = intent.filters.taskSearchTerm, !searchTerm.isEmpty {
+                let tasks = try await orchestrator.notionServicePublic.findTasksByFuzzyTitle(searchTerm)
+                return formatTaskSearchResponse(tasks, searchTerm: searchTerm)
+            }
+            let tasks = try await orchestrator.notionServicePublic.queryActiveTasks(type: nil)
+            return formatTaskListResponse(tasks)
+
+        case (.list, .todos):
+            let todos = try await orchestrator.notionServicePublic.queryActiveTasks(type: .todo)
+            return formatTaskListResponse(todos)
+
+        // MARK: - Meeting Brief
+        case (.generate, .meeting):
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "Meeting brief is available through the web UI. Open Alfred in your browser for the full meeting prep.",
+                structuredData: nil
+            )
+
+        // MARK: - Focus Pin
+        case (.list, .focus), (.check, .focus), (.generate, .focus), (.create, .focus), (.delete, .focus):
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "Focus pin management is available through the web UI.",
+                structuredData: nil
+            )
+
+        // MARK: - Reflections
+        case (.list, .reflections), (.analyze, .reflections), (.summarize, .reflections):
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "Reflections are available through the web UI.",
+                structuredData: nil
+            )
+
+        // MARK: - Memory
+        case (.list, .memory), (.create, .memory), (.delete, .memory):
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "Memory management is available through the web UI.",
+                structuredData: nil
+            )
+
+        // MARK: - Cadences
+        case (.list, .cadences), (.scan, .cadences):
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "Cadence management is available through the web UI.",
+                structuredData: nil
+            )
+
+        // MARK: - Favorites
+        case (.list, .favorites), (.create, .favorites), (.delete, .favorites):
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "Favorites management is available through the web UI.",
+                structuredData: nil
+            )
+
+        // MARK: - Conversations, Skills, Contacts
+        case (.list, .conversations), (.list, .skills), (.analyze, .contacts), (.check, .calendar):
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "This feature is available through the web UI.",
+                structuredData: nil
+            )
+
         default:
             throw IntentExecutionError.unsupportedIntent(action: intent.action.rawValue, target: intent.target?.rawValue ?? "unknown")
         }
+    }
+
+    private func formatTaskSearchResponse(_ tasks: [TaskItem], searchTerm: String) -> IntentExecutionResult {
+        if tasks.isEmpty {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "No active tasks matching '\(searchTerm)'.",
+                structuredData: nil
+            )
+        }
+        var response = "Found \(tasks.count) task\(tasks.count == 1 ? "" : "s") matching '\(searchTerm)':\n"
+        for task in tasks.prefix(5) {
+            response += "• \(task.title) (\(task.status.rawValue))\n"
+        }
+        return IntentExecutionResult(data: tasks, conversationalResponse: response, structuredData: nil)
+    }
+
+    private func formatTaskListResponse(_ tasks: [TaskItem]) -> IntentExecutionResult {
+        if tasks.isEmpty {
+            return IntentExecutionResult(data: [:] as [String: Any], conversationalResponse: "No active tasks.", structuredData: nil)
+        }
+        var response = "\(tasks.count) active task\(tasks.count == 1 ? "" : "s"):\n"
+        for task in tasks.prefix(10) {
+            response += "• \(task.title) (\(task.status.rawValue))\n"
+        }
+        return IntentExecutionResult(data: tasks, conversationalResponse: response, structuredData: nil)
     }
 
     // MARK: - Helper Methods

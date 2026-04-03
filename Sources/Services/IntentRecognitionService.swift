@@ -165,7 +165,10 @@ class IntentRecognitionService {
               "event_description": null,
               "event_search_term": null,
               "commitment_direction": null,
-              "commitment_counterparty": null
+              "commitment_counterparty": null,
+              "teach_text": null,
+              "theme_name": null,
+              "cadence_name": null
             },
             "confidence": 0.95,
             "original_query": "<the user query>"
@@ -176,7 +179,7 @@ class IntentRecognitionService {
         }
 
         ACTION must be one of: generate, scan, analyze, find, summarize, check, list, update, create, delete, search, chat
-        TARGET must be one of: briefing, calendar, messages, commitments, todos, drafts, attention, thread, meeting, tasks, contacts, preferences
+        TARGET must be one of: briefing, calendar, messages, commitments, todos, drafts, attention, thread, meeting, tasks, contacts, preferences, reflections, memory, favorites, focus, cadences, conversations, skills
 
         CRITICAL RULES:
         - "action", "target", "filters", "confidence", "original_query" are ALL REQUIRED inside "intent"
@@ -288,6 +291,91 @@ class IntentRecognitionService {
         DRAFT GENERATION RULES:
         - "draft a reply to Mona" -> action:"generate", target:"drafts", filters.contact_name:"Mona"
         - "generate drafts for my messages" -> action:"generate", target:"drafts"
+
+        TODO UPDATE / DELETE RULES:
+        - "mark that todo as done" -> action:"update", target:"todos", filters.task_search_term:"<resolve from context>", filters.new_status:"Done"
+        - "complete the dentist todo" -> action:"update", target:"todos", filters.task_search_term:"dentist", filters.new_status:"Done"
+        - "cancel the groceries todo" -> action:"delete", target:"todos", filters.task_search_term:"groceries"
+        - Todo update/delete follows the same rules as task update/delete — use task_search_term, new_status, new_priority, new_due_date
+
+        MEETING BRIEF RULES:
+        - "brief me on my next meeting" -> action:"generate", target:"meeting"
+        - "what's my next meeting about?" -> action:"generate", target:"meeting"
+        - "prep me for the 3pm" -> action:"generate", target:"meeting"
+        - "meeting brief" -> action:"generate", target:"meeting"
+        - "what should I know before my next call?" -> action:"generate", target:"meeting"
+
+        FOCUS PIN RULES:
+        - "what's my top goal?" -> action:"list", target:"focus"
+        - "what's my focus?" -> action:"list", target:"focus"
+        - "show focus suggestions" -> action:"generate", target:"focus"
+        - "suggest a focus for today" -> action:"generate", target:"focus"
+        - "pin the RCA task as my focus" -> action:"create", target:"focus", filters.task_search_term:"RCA"
+        - "set my top goal to the budget review" -> action:"create", target:"focus", filters.task_search_term:"budget review"
+        - "I'm done with my focus" -> action:"delete", target:"focus"
+        - "unpin my focus" -> action:"delete", target:"focus"
+        - "clear my top goal" -> action:"delete", target:"focus"
+
+        REFLECTIONS RULES:
+        - "what themes have I been thinking about?" -> action:"list", target:"reflections"
+        - "show my reflection themes" -> action:"list", target:"reflections"
+        - "what are my open questions?" -> action:"analyze", target:"reflections"
+        - "what questions am I wrestling with?" -> action:"analyze", target:"reflections"
+        - "deep dive on Revenue Strategy" -> action:"summarize", target:"reflections", filters.theme_name:"Revenue Strategy"
+        - "tell me more about the Leadership theme" -> action:"summarize", target:"reflections", filters.theme_name:"Leadership"
+        - theme_name: the exact theme name for deep-dive queries
+
+        PENDING COMMITMENT CLOSURES RULES:
+        - "any commitments to confirm?" -> action:"check", target:"commitments", filters.urgency:"pending_closure"
+        - "pending closures" -> action:"check", target:"commitments", filters.urgency:"pending_closure"
+        - "confirm the commitment with Nikhil" -> action:"update", target:"commitments", filters.task_search_term:"Nikhil", filters.new_status:"Done"
+        - When urgency is "pending_closure", this specifically queries auto-detected closure suggestions
+
+        MEMORY & LEARNING RULES:
+        - "what patterns have you learned about me?" -> action:"list", target:"memory"
+        - "show learned patterns" -> action:"list", target:"memory"
+        - "what do you know about me?" -> action:"list", target:"memory"
+        - "teach: always CC finance on budget emails" -> action:"create", target:"memory", filters.teach_text:"Always CC finance on budget emails"
+        - "remember that I prefer morning meetings" -> action:"create", target:"memory", filters.teach_text:"Prefers morning meetings"
+        - "forget the pattern about morning meetings" -> action:"delete", target:"memory", filters.task_search_term:"morning meetings"
+        - teach_text: the rule text to teach Alfred (extract from user's message, clean up to a clear rule statement)
+
+        CADENCE TRIGGER RULES:
+        - "run attention check now" -> action:"scan", target:"cadences", filters.cadence_name:"attention"
+        - "trigger the todo scan" -> action:"scan", target:"cadences", filters.cadence_name:"todo"
+        - "refresh my briefing" -> action:"scan", target:"cadences", filters.cadence_name:"briefing"
+        - "run commitment scan" -> action:"scan", target:"cadences", filters.cadence_name:"commitment"
+        - "show cadence status" -> action:"list", target:"cadences"
+        - "what cadences are running?" -> action:"list", target:"cadences"
+        - cadence_name: keyword to match against cadence names (e.g. "attention", "todo", "briefing", "commitment", "reflection", "pattern")
+
+        FAVORITES RULES:
+        - "who are my favorites?" -> action:"list", target:"favorites"
+        - "show my favorite contacts" -> action:"list", target:"favorites"
+        - "add Vinay to my favorites" -> action:"create", target:"favorites", filters.contact_name:"Vinay"
+        - "add Acme Leadership group to favorites" -> action:"create", target:"favorites", filters.contact_name:"Acme Leadership"
+        - "remove Vinay from favorites" -> action:"delete", target:"favorites", filters.contact_name:"Vinay"
+
+        CONTACT ANALYSIS RULES:
+        - "who have I been talking to most?" -> action:"analyze", target:"contacts"
+        - "show my contact participation" -> action:"analyze", target:"contacts"
+        - "who am I spending the most time messaging?" -> action:"analyze", target:"contacts"
+
+        CALENDAR AVAILABILITY RULES:
+        - "am I free next Friday at 4pm?" -> action:"check", target:"calendar", filters.event_time:"<ISO8601 datetime for next Friday 4pm>"
+        - "do I have anything at 2pm tomorrow?" -> action:"check", target:"calendar", filters.event_time:"<ISO8601 datetime for tomorrow 2pm>"
+        - "what's open on Monday afternoon?" -> action:"check", target:"calendar", filters.specific_date:"<YYYY-MM-DD for Monday>"
+        - "is my calendar clear tomorrow morning?" -> action:"check", target:"calendar", filters.specific_date:"<YYYY-MM-DD for tomorrow>"
+        - For availability checks: use action:"check" with target:"calendar". Set event_time for specific time queries, specific_date for general day queries.
+
+        CONVERSATION HISTORY RULES:
+        - "show my recent conversations" -> action:"list", target:"conversations"
+        - "what did we talk about yesterday?" -> action:"list", target:"conversations"
+
+        SKILLS RULES:
+        - "what coaching skills are active?" -> action:"list", target:"skills"
+        - "show my skills" -> action:"list", target:"skills"
+        - "describe my coaching skills" -> action:"list", target:"skills"
 
         TASK STATS / WEEKLY REFLECTION RULES:
         - "how are my tasks doing?" -> action:"check", target:"tasks"

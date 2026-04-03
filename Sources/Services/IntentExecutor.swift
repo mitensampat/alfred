@@ -125,6 +125,12 @@ class IntentExecutor {
 
         // MARK: - Commitment Actions (check — route through list for unified filtering)
         case (.check, .commitments):
+            // Check if this is a pending closure query
+            if intent.filters.urgency?.rawValue == "pending_closure" ||
+               intent.originalQuery.lowercased().contains("pending") ||
+               intent.originalQuery.lowercased().contains("confirm") {
+                return try await handlePendingClosures()
+            }
             var commitments = try await fetchCommitments(
                 type: intent.filters.commitmentType,
                 contactName: intent.filters.contactName
@@ -167,6 +173,89 @@ class IntentExecutor {
         // MARK: - Calendar Deletion
         case (.delete, .calendar):
             return try await handleDeleteCalendarEvent(intent: intent)
+
+        // MARK: - Todo Update/Delete (items 1-2)
+        case (.update, .todos):
+            return try await handleTaskUpdate(intent: intent)
+
+        case (.delete, .todos):
+            return try await handleTaskDeletion(intent: intent)
+
+        // MARK: - Meeting Brief (item 3)
+        case (.generate, .meeting):
+            return try await handleMeetingBrief()
+
+        // MARK: - Focus Pin (item 4)
+        case (.list, .focus), (.check, .focus):
+            return try await handleGetFocusPin()
+
+        case (.generate, .focus):
+            return try await handleFocusSuggestions()
+
+        case (.create, .focus):
+            return try await handlePinFocus(intent: intent)
+
+        case (.delete, .focus):
+            return try await handleUnpinFocus()
+
+        // MARK: - Reflections (item 5)
+        case (.list, .reflections):
+            return try await handleListReflectionThemes()
+
+        case (.analyze, .reflections):
+            return try await handleOpenQuestions()
+
+        case (.summarize, .reflections):
+            return try await handleThemeDeepDive(intent: intent)
+
+        // MARK: - Pending Commitment Closures (item 6)
+        // Handled via (.check, .commitments) with urgency:"pending_closure" filter — see existing commitments case above
+
+        // MARK: - Memory & Learning (item 7)
+        case (.list, .memory):
+            return try await handleListMemory()
+
+        case (.create, .memory):
+            return try await handleTeachMemory(intent: intent)
+
+        case (.delete, .memory):
+            return try await handleForgetMemory(intent: intent)
+
+        // MARK: - Cadence Trigger (item 8)
+        case (.scan, .cadences):
+            return try await handleTriggerCadence(intent: intent)
+
+        case (.list, .cadences):
+            return try await handleListCadences()
+
+        // MARK: - Favorites (item 9)
+        case (.list, .favorites):
+            return try await handleListFavorites()
+
+        case (.create, .favorites):
+            return try await handleAddFavorite(intent: intent)
+
+        case (.delete, .favorites):
+            return try await handleRemoveFavorite(intent: intent)
+
+        // MARK: - Contact Analysis (item 10)
+        case (.analyze, .contacts):
+            return try await handleContactAnalysis()
+
+        // MARK: - Calendar Availability Check (item 11)
+        case (.check, .calendar):
+            return try await handleCalendarAvailabilityCheck(intent: intent)
+
+        // MARK: - Task Lifecycle Stats (item 12)
+        // Already handled via (.check, .tasks) in existing task actions case above
+
+        // MARK: - Conversation History (item 13)
+        case (.list, .conversations):
+            return try await handleListConversations()
+
+        // MARK: - Skills (item 14)
+        case (.list, .skills):
+            return try await handleListSkills()
 
         // MARK: - Chat (conversational, falls through to LLM)
         case (.chat, _):
@@ -894,9 +983,23 @@ class IntentExecutor {
         case .meeting:
             return "I can show your meeting schedule or create events. Try 'what meetings do I have today?' or 'schedule a meeting'."
         case .contacts:
-            return "I can help with your favorites. Try 'show my favorite contacts'."
+            return "I can analyze your contact participation. Try 'who have I been talking to most?'"
         case .preferences:
             return "Settings changes should be made through the Alfred web UI."
+        case .reflections:
+            return "I can show your reflection themes and open questions. Try 'what themes have I been thinking about?' or 'what are my open questions?'"
+        case .memory:
+            return "I can show learned patterns, teach me new rules, or forget old ones. Try 'what patterns have you learned?' or 'teach: always do X'."
+        case .favorites:
+            return "I can list, add, or remove favorites. Try 'show my favorites' or 'add Vinay to my favorites'."
+        case .focus:
+            return "I can show your focus, suggest one, or pin/unpin it. Try 'what's my top goal?' or 'pin the RCA task as my focus'."
+        case .cadences:
+            return "I can show cadence status or trigger them. Try 'show cadence status' or 'run attention check now'."
+        case .conversations:
+            return "I can show your recent chat conversations. Try 'show my recent conversations'."
+        case .skills:
+            return "I can show your active coaching skills. Try 'what coaching skills are active?'"
         }
     }
 
@@ -1705,6 +1808,712 @@ class IntentExecutor {
                 "eventId": event.id,
                 "success": true
             ]
+        )
+    }
+
+    // MARK: - Meeting Brief Handler (item 3)
+
+    private func handleMeetingBrief() async throws -> IntentExecutionResult {
+        let events = try await orchestrator.calendarServicePublic.fetchEventsFromAllCalendars(
+            for: Date(),
+            userSettings: config.user
+        )
+
+        let now = Date()
+        let upcomingEvents = events.events.filter { $0.startTime > now && !$0.isAllDay }
+            .sorted { $0.startTime < $1.startTime }
+
+        guard let nextEvent = upcomingEvents.first else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "You don't have any upcoming meetings today.",
+                structuredData: ["type": "meeting_brief", "noMeeting": true]
+            )
+        }
+
+        let timeFmt = DateFormatter()
+        timeFmt.dateFormat = "h:mm a"
+        let timeStr = timeFmt.string(from: nextEvent.startTime)
+
+        var response = "Your next meeting is '\(nextEvent.title)' at \(timeStr)."
+        if !nextEvent.attendees.isEmpty {
+            let names = nextEvent.attendees.prefix(5).map { $0.name ?? $0.email }.joined(separator: ", ")
+            response += " Attendees: \(names)."
+        }
+        if let location = nextEvent.location, !location.isEmpty {
+            response += " Location: \(location)."
+        }
+
+        return IntentExecutionResult(
+            data: nextEvent,
+            conversationalResponse: response,
+            structuredData: [
+                "type": "meeting_brief",
+                "title": nextEvent.title,
+                "time": timeStr,
+                "attendeeCount": nextEvent.attendees.count
+            ]
+        )
+    }
+
+    // MARK: - Focus Pin Handlers (item 4)
+
+    private func handleGetFocusPin() async throws -> IntentExecutionResult {
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        let pinFile = homeDir.appendingPathComponent(".alfred/focus_pin.json")
+
+        guard FileManager.default.fileExists(atPath: pinFile.path),
+              let data = try? Data(contentsOf: pinFile),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let title = json["title"] as? String else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "You don't have a focus pinned right now. Want me to suggest one?",
+                structuredData: ["type": "focus", "pinned": false]
+            )
+        }
+
+        let priority = json["priority"] as? String ?? ""
+        var response = "Your current focus: '\(title)'"
+        if !priority.isEmpty { response += " (\(priority) priority)" }
+
+        return IntentExecutionResult(
+            data: json,
+            conversationalResponse: response,
+            structuredData: ["type": "focus", "pinned": true, "title": title, "priority": priority]
+        )
+    }
+
+    private func handleFocusSuggestions() async throws -> IntentExecutionResult {
+        let tasks = try await orchestrator.notionServicePublic.queryActiveTasks(type: nil)
+
+        // Score tasks: Critical/High priority + soonest due date = best suggestion
+        let scored = tasks.prefix(20).map { task -> (TaskItem, Int) in
+            var score = 0
+            switch task.priority {
+            case .critical: score += 40
+            case .high: score += 30
+            case .medium: score += 15
+            case .low: score += 5
+            case .none, nil: score += 10
+            }
+            if task.isOverdue { score += 25 }
+            if let due = task.dueDate, due.timeIntervalSinceNow < 86400 * 2 { score += 20 }
+            return (task, score)
+        }.sorted { $0.1 > $1.1 }
+
+        let suggestions = scored.prefix(5).map { (task, score) -> [String: Any] in
+            [
+                "notionId": task.notionId,
+                "title": task.title,
+                "priority": task.priority?.rawValue ?? "Medium",
+                "score": score
+            ]
+        }
+
+        var response = "Here are my focus suggestions:\n"
+        for (i, s) in suggestions.enumerated() {
+            let title = s["title"] as? String ?? ""
+            let priority = s["priority"] as? String ?? ""
+            response += "\(i + 1). \(title) (\(priority))\n"
+        }
+        response += "\nTell me which one to pin, or describe your own focus."
+
+        return IntentExecutionResult(
+            data: suggestions,
+            conversationalResponse: response,
+            structuredData: ["type": "focus_suggestions", "suggestions": suggestions, "count": suggestions.count]
+        )
+    }
+
+    private func handlePinFocus(intent: UserIntent) async throws -> IntentExecutionResult {
+        guard let searchTerm = intent.filters.taskSearchTerm, !searchTerm.isEmpty else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "Which task would you like to pin as your focus? Give me a name or keyword.",
+                structuredData: nil
+            )
+        }
+
+        let matchingTasks = try await orchestrator.notionServicePublic.findTasksByFuzzyTitle(searchTerm)
+        guard let task = matchingTasks.first else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "I couldn't find a task matching '\(searchTerm)'. Could you be more specific?",
+                structuredData: nil
+            )
+        }
+
+        let pinData: [String: Any] = [
+            "notionId": task.notionId,
+            "title": task.title,
+            "priority": task.priority?.rawValue ?? "Medium",
+            "pinnedAt": ISO8601DateFormatter().string(from: Date())
+        ]
+
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        let pinFile = homeDir.appendingPathComponent(".alfred/focus_pin.json")
+        let jsonData = try JSONSerialization.data(withJSONObject: pinData, options: .prettyPrinted)
+        try jsonData.write(to: pinFile)
+
+        return IntentExecutionResult(
+            data: pinData,
+            conversationalResponse: "Pinned '\(task.title)' as your focus. I'll keep this front and center.",
+            structuredData: ["type": "focus", "pinned": true, "title": task.title]
+        )
+    }
+
+    private func handleUnpinFocus() async throws -> IntentExecutionResult {
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser
+        let pinFile = homeDir.appendingPathComponent(".alfred/focus_pin.json")
+
+        if FileManager.default.fileExists(atPath: pinFile.path) {
+            try FileManager.default.removeItem(at: pinFile)
+        }
+
+        return IntentExecutionResult(
+            data: [:] as [String: Any],
+            conversationalResponse: "Focus unpinned. Ready for a new one when you are.",
+            structuredData: ["type": "focus", "pinned": false]
+        )
+    }
+
+    // MARK: - Reflection Handlers (item 5)
+
+    private func handleListReflectionThemes() async throws -> IntentExecutionResult {
+        let themes = ReflectionStore.shared.getThemesWithState(days: 30, limit: 15)
+        let openQuestions = ReflectionStore.shared.getOpenQuestions(limit: 5)
+
+        if themes.isEmpty {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "No reflection themes found in the last 30 days. Reflection data may not have been ingested yet.",
+                structuredData: ["type": "reflections", "count": 0]
+            )
+        }
+
+        var response = "Your top themes from the last 30 days:\n"
+        for (i, theme) in themes.prefix(10).enumerated() {
+            let name = theme["theme"] as? String ?? "Unknown"
+            let count = theme["count"] as? Int ?? 0
+            let state = theme["state"] as? String ?? ""
+            response += "\(i + 1). \(name) (\(count) mentions"
+            if !state.isEmpty { response += ", \(state)" }
+            response += ")\n"
+        }
+
+        if !openQuestions.isEmpty {
+            response += "\nOpen questions you've been wrestling with:\n"
+            for q in openQuestions.prefix(3) {
+                response += "• \(q)\n"
+            }
+        }
+
+        return IntentExecutionResult(
+            data: themes,
+            conversationalResponse: response,
+            structuredData: ["type": "reflections", "count": themes.count]
+        )
+    }
+
+    private func handleOpenQuestions() async throws -> IntentExecutionResult {
+        let questions = ReflectionStore.shared.getOpenQuestions(limit: 10)
+
+        if questions.isEmpty {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "No open questions found. These are extracted from your reflections over time.",
+                structuredData: ["type": "open_questions", "count": 0]
+            )
+        }
+
+        var response = "Open questions you've been wrestling with:\n"
+        for (i, q) in questions.enumerated() {
+            response += "\(i + 1). \(q)\n"
+        }
+
+        return IntentExecutionResult(
+            data: questions,
+            conversationalResponse: response,
+            structuredData: ["type": "open_questions", "count": questions.count]
+        )
+    }
+
+    private func handleThemeDeepDive(intent: UserIntent) async throws -> IntentExecutionResult {
+        guard let themeName = intent.filters.themeName ?? intent.filters.taskSearchTerm, !themeName.isEmpty else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "Which theme would you like to deep-dive on? Try 'deep dive on [theme name]'.",
+                structuredData: nil
+            )
+        }
+
+        let detail = ReflectionStore.shared.getThemeDetail(theme: themeName)
+
+        guard !detail.isEmpty,
+              let name = detail["theme"] as? String else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "I couldn't find a reflection theme matching '\(themeName)'. Try 'show my reflection themes' to see available themes.",
+                structuredData: nil
+            )
+        }
+
+        let state = detail["state"] as? String ?? "unknown"
+        let mentionCount = detail["mention_count"] as? Int ?? 0
+        let snippets = detail["snippets"] as? [String] ?? []
+
+        var response = "Theme: \(name) (\(state), \(mentionCount) mentions)\n\n"
+        if !snippets.isEmpty {
+            response += "Key insights:\n"
+            for snippet in snippets.prefix(5) {
+                response += "• \(snippet)\n"
+            }
+        }
+
+        return IntentExecutionResult(
+            data: detail,
+            conversationalResponse: response,
+            structuredData: ["type": "theme_detail", "name": name, "state": state, "mentionCount": mentionCount]
+        )
+    }
+
+    // MARK: - Pending Commitment Closures Handler (item 6)
+
+    private func handlePendingClosures() async throws -> IntentExecutionResult {
+        let pending = CommitmentScanTracker.shared.getPendingClosureConfirmations()
+
+        if pending.isEmpty {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "No pending commitment closures to confirm right now.",
+                structuredData: ["type": "pending_closures", "count": 0]
+            )
+        }
+
+        var response = "You have \(pending.count) commitment closure\(pending.count == 1 ? "" : "s") to confirm:\n\n"
+        for (i, closure) in pending.enumerated() {
+            response += "\(i + 1). \(closure.title)"
+            if !closure.signal.isEmpty { response += " — \(closure.signal)" }
+            response += " (\(Int(closure.confidence * 100))% confident)\n"
+        }
+        response += "\nConfirm or reject these through the commitment dashboard, or tell me which one to close."
+
+        return IntentExecutionResult(
+            data: pending,
+            conversationalResponse: response,
+            structuredData: ["type": "pending_closures", "closures": pending, "count": pending.count]
+        )
+    }
+
+    // MARK: - Memory & Learning Handlers (item 7)
+
+    private func handleListMemory() async throws -> IntentExecutionResult {
+        let commMemory = AgentMemoryService.shared.getMemory(for: .communication)
+        let taskMemory = AgentMemoryService.shared.getMemory(for: .task)
+
+        // Parse sections from memory content
+        let commSections = commMemory.sections
+        let taskSections = taskMemory.sections
+
+        // Get learned patterns from WorkflowLearningService
+        let patterns = WorkflowLearningService.shared.getLearnedPatterns()
+        let activePatterns = patterns.filter { !$0.isArchived && !$0.isStale }
+
+        var response = ""
+        if !commSections.isEmpty || !taskSections.isEmpty {
+            response += "Memory sections:\n"
+            for (key, value) in commSections {
+                let preview = String(value.prefix(80))
+                response += "• \(key): \(preview)...\n"
+            }
+            for (key, value) in taskSections {
+                let preview = String(value.prefix(80))
+                response += "• \(key): \(preview)...\n"
+            }
+        }
+        if !activePatterns.isEmpty {
+            response += "\nLearned patterns (\(activePatterns.count)):\n"
+            for pattern in activePatterns.prefix(10) {
+                response += "• \(pattern.description) (\(Int(pattern.confidence * 100))%)\n"
+            }
+        }
+        if commSections.isEmpty && taskSections.isEmpty && activePatterns.isEmpty {
+            response = "I haven't learned any patterns yet. You can teach me rules like 'teach: always CC finance on budget emails'."
+        }
+
+        let sectionCount = commSections.count + taskSections.count
+        return IntentExecutionResult(
+            data: ["sectionCount": sectionCount, "patternCount": activePatterns.count] as [String: Any],
+            conversationalResponse: response,
+            structuredData: ["type": "memory", "sectionCount": sectionCount, "patternCount": activePatterns.count]
+        )
+    }
+
+    private func handleTeachMemory(intent: UserIntent) async throws -> IntentExecutionResult {
+        guard let teachText = intent.filters.teachText ?? intent.filters.noteToAdd, !teachText.isEmpty else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "What would you like to teach me? Try 'teach: [your rule]'.",
+                structuredData: nil
+            )
+        }
+
+        try AgentMemoryService.shared.teach(agentType: .communication, rule: teachText)
+
+        return IntentExecutionResult(
+            data: ["taught": teachText] as [String: Any],
+            conversationalResponse: "Got it — I'll remember: \"\(teachText)\"",
+            structuredData: ["type": "memory_teach", "text": teachText, "success": true]
+        )
+    }
+
+    private func handleForgetMemory(intent: UserIntent) async throws -> IntentExecutionResult {
+        guard let searchTerm = intent.filters.taskSearchTerm ?? intent.filters.teachText, !searchTerm.isEmpty else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "Which pattern or rule should I forget? Give me a keyword.",
+                structuredData: nil
+            )
+        }
+
+        let forgotten = try AgentMemoryService.shared.forget(agentType: .communication, pattern: searchTerm)
+
+        if forgotten {
+            return IntentExecutionResult(
+                data: ["forgotten": searchTerm] as [String: Any],
+                conversationalResponse: "Forgotten: \"\(searchTerm)\"",
+                structuredData: ["type": "memory_forget", "text": searchTerm, "success": true]
+            )
+        }
+
+        return IntentExecutionResult(
+            data: [:] as [String: Any],
+            conversationalResponse: "I couldn't find a rule matching '\(searchTerm)'. Try 'show learned patterns' to see what I know.",
+            structuredData: nil
+        )
+    }
+
+    // MARK: - Cadence Handlers (item 8)
+
+    private func handleTriggerCadence(intent: UserIntent) async throws -> IntentExecutionResult {
+        guard let cadenceName = intent.filters.cadenceName ?? intent.filters.taskSearchTerm, !cadenceName.isEmpty else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "Which cadence would you like to trigger? Try 'run attention check' or 'trigger commitment scan'.",
+                structuredData: nil
+            )
+        }
+
+        let allCadences = CadenceService.shared.getAll()
+        let searchLower = cadenceName.lowercased()
+
+        // Fuzzy match cadence by name or action type
+        guard let cadence = allCadences.first(where: {
+            $0.name.lowercased().contains(searchLower) ||
+            $0.actionType.rawValue.lowercased().contains(searchLower)
+        }) else {
+            let available = allCadences.map { $0.name }.joined(separator: ", ")
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "I couldn't find a cadence matching '\(cadenceName)'. Available: \(available)",
+                structuredData: nil
+            )
+        }
+
+        // Trigger it
+        CadenceService.shared.markManualRunSuccess(id: cadence.id, timestamp: ISO8601DateFormatter().string(from: Date()))
+
+        return IntentExecutionResult(
+            data: ["id": cadence.id, "name": cadence.name] as [String: Any],
+            conversationalResponse: "Triggered '\(cadence.name)'. It's running now.",
+            structuredData: ["type": "cadence_trigger", "id": cadence.id, "name": cadence.name, "success": true]
+        )
+    }
+
+    private func handleListCadences() async throws -> IntentExecutionResult {
+        let cadences = CadenceService.shared.getAll()
+
+        if cadences.isEmpty {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "No cadences configured.",
+                structuredData: ["type": "cadences", "count": 0]
+            )
+        }
+
+        let dateFmt = DateFormatter()
+        dateFmt.dateFormat = "MMM d, h:mm a"
+
+        var response = "Your cadences (\(cadences.count)):\n"
+        for cadence in cadences {
+            let enabled = cadence.enabled ? "✓" : "✗"
+            let lastRun = cadence.lastRunTimestamp ?? "never"
+            response += "\(enabled) \(cadence.name) — last run: \(lastRun)\n"
+        }
+
+        return IntentExecutionResult(
+            data: cadences.map { ["id": $0.id, "name": $0.name, "enabled": $0.enabled] as [String: Any] },
+            conversationalResponse: response,
+            structuredData: ["type": "cadences", "count": cadences.count]
+        )
+    }
+
+    // MARK: - Favorites Handlers (item 9)
+
+    private func handleListFavorites() async throws -> IntentExecutionResult {
+        let favorites = FavoritesService.shared.getFavorites()
+        let contacts = favorites.contacts
+        let groups = favorites.groups
+
+        if contacts.isEmpty && groups.isEmpty {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "You don't have any favorites set up yet. Try 'add [name] to my favorites'.",
+                structuredData: ["type": "favorites", "count": 0]
+            )
+        }
+
+        var response = ""
+        if !contacts.isEmpty {
+            response += "Favorite contacts (\(contacts.count)):\n"
+            for c in contacts {
+                response += "• \(c.name)"
+                if !c.aliases.isEmpty { response += " (aka \(c.aliases.joined(separator: ", ")))" }
+                response += "\n"
+            }
+        }
+        if !groups.isEmpty {
+            response += "\nFavorite groups (\(groups.count)):\n"
+            for g in groups {
+                response += "• \(g.name)"
+                if !g.platform.isEmpty { response += " (\(g.platform))" }
+                response += "\n"
+            }
+        }
+
+        return IntentExecutionResult(
+            data: favorites,
+            conversationalResponse: response,
+            structuredData: ["type": "favorites", "contactCount": contacts.count, "groupCount": groups.count]
+        )
+    }
+
+    private func handleAddFavorite(intent: UserIntent) async throws -> IntentExecutionResult {
+        guard let name = intent.filters.contactName, !name.isEmpty else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "Who would you like to add to your favorites?",
+                structuredData: nil
+            )
+        }
+
+        let contact = FavoriteContact(name: name)
+        try FavoritesService.shared.addContact(contact)
+
+        return IntentExecutionResult(
+            data: ["name": name] as [String: Any],
+            conversationalResponse: "Added '\(name)' to your favorites.",
+            structuredData: ["type": "favorite_add", "name": name, "success": true]
+        )
+    }
+
+    private func handleRemoveFavorite(intent: UserIntent) async throws -> IntentExecutionResult {
+        guard let name = intent.filters.contactName, !name.isEmpty else {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "Who would you like to remove from favorites?",
+                structuredData: nil
+            )
+        }
+
+        try FavoritesService.shared.removeContact(name: name)
+
+        return IntentExecutionResult(
+            data: ["name": name] as [String: Any],
+            conversationalResponse: "Removed '\(name)' from your favorites.",
+            structuredData: ["type": "favorite_remove", "name": name, "success": true]
+        )
+    }
+
+    // MARK: - Contact Analysis Handler (item 10)
+
+    private func handleContactAnalysis() async throws -> IntentExecutionResult {
+        let favorites = FavoritesService.shared.getFavorites()
+        let contactNames = favorites.contacts.map { $0.name }
+
+        if contactNames.isEmpty {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "No favorite contacts configured. Add some favorites first to track participation.",
+                structuredData: nil
+            )
+        }
+
+        var response = "Contact participation (based on favorites):\n"
+        for name in contactNames.prefix(10) {
+            response += "• \(name)\n"
+        }
+        response += "\nFor detailed thread analysis, try 'analyze thread with [name]'."
+
+        return IntentExecutionResult(
+            data: contactNames,
+            conversationalResponse: response,
+            structuredData: ["type": "contact_analysis", "contacts": contactNames, "count": contactNames.count]
+        )
+    }
+
+    // MARK: - Calendar Availability Check Handler (item 11)
+
+    private func handleCalendarAvailabilityCheck(intent: UserIntent) async throws -> IntentExecutionResult {
+        let filters = intent.filters
+
+        // Determine the date/time to check
+        let checkDate = filters.specificDate ?? Date()
+
+        let events = try await orchestrator.calendarServicePublic.fetchEventsFromAllCalendars(
+            for: checkDate,
+            userSettings: config.user
+        )
+
+        let allEvents = events.events
+        let timeFmt = DateFormatter()
+        timeFmt.dateFormat = "h:mm a"
+        let dateFmt = DateFormatter()
+        dateFmt.dateFormat = "EEE, MMM d"
+        let dateStr = dateFmt.string(from: checkDate)
+
+        // If a specific time was requested, check that slot
+        if let eventTimeStr = filters.eventTime,
+           let checkTime = UserIntent.IntentFilters.parseFlexibleDate(eventTimeStr) {
+
+            let duration: TimeInterval = Double(filters.eventDurationMinutes ?? 30) * 60
+            let endTime = checkTime.addingTimeInterval(duration)
+
+            let conflicts = allEvents.filter { event in
+                !(endTime <= event.startTime || checkTime >= event.endTime) && !event.isAllDay
+            }
+
+            let timeStr = timeFmt.string(from: checkTime)
+
+            if conflicts.isEmpty {
+                return IntentExecutionResult(
+                    data: ["free": true, "time": timeStr] as [String: Any],
+                    conversationalResponse: "Yes, you're free at \(timeStr) on \(dateStr). Want me to block that time?",
+                    structuredData: ["type": "availability", "free": true, "time": timeStr, "date": dateStr]
+                )
+            } else {
+                let conflictNames = conflicts.map { $0.title }.joined(separator: ", ")
+
+                // Find next free slot
+                let sortedEvents = allEvents.filter { !$0.isAllDay && $0.endTime > checkTime }
+                    .sorted { $0.startTime < $1.startTime }
+                let dayEnd = Calendar.current.date(bySettingHour: 21, minute: 0, second: 0, of: checkTime)!
+
+                var cursor = checkTime
+                var suggestion: Date? = nil
+                for event in sortedEvents {
+                    if event.startTime > cursor && event.startTime.timeIntervalSince(cursor) >= duration {
+                        suggestion = cursor
+                        break
+                    }
+                    cursor = max(cursor, event.endTime)
+                }
+                if suggestion == nil && cursor < dayEnd && dayEnd.timeIntervalSince(cursor) >= duration {
+                    suggestion = cursor
+                }
+
+                var response = "You're blocked at \(timeStr) — '\(conflictNames)' is on your calendar."
+                if let freeAt = suggestion {
+                    response += " You're free at \(timeFmt.string(from: freeAt)) — want me to book it then?"
+                }
+
+                return IntentExecutionResult(
+                    data: ["free": false, "conflicts": conflicts.map { $0.title }] as [String: Any],
+                    conversationalResponse: response,
+                    structuredData: ["type": "availability", "free": false, "conflicts": conflicts.map { $0.title }]
+                )
+            }
+        }
+
+        // General day availability
+        let nonAllDay = allEvents.filter { !$0.isAllDay }
+        let busyHours = nonAllDay.reduce(0.0) { $0 + $1.endTime.timeIntervalSince($1.startTime) } / 3600
+
+        var response = "Your calendar for \(dateStr): \(nonAllDay.count) meeting\(nonAllDay.count == 1 ? "" : "s"), ~\(String(format: "%.1f", busyHours))h booked.\n"
+
+        if nonAllDay.isEmpty {
+            response += "You're completely free!"
+        } else {
+            for event in nonAllDay.sorted(by: { $0.startTime < $1.startTime }) {
+                response += "• \(timeFmt.string(from: event.startTime))-\(timeFmt.string(from: event.endTime)): \(event.title)\n"
+            }
+        }
+
+        return IntentExecutionResult(
+            data: allEvents.map { $0.title } as [String],
+            conversationalResponse: response,
+            structuredData: ["type": "availability", "date": dateStr, "meetingCount": nonAllDay.count, "busyHours": busyHours]
+        )
+    }
+
+    // MARK: - Conversation History Handler (item 13)
+
+    private func handleListConversations() async throws -> IntentExecutionResult {
+        let conversations = ConversationHistoryService.shared.getConversations(limit: 10)
+
+        if conversations.isEmpty {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "No past conversations found.",
+                structuredData: ["type": "conversations", "count": 0]
+            )
+        }
+
+        let dateFmt = DateFormatter()
+        dateFmt.dateFormat = "MMM d, h:mm a"
+
+        var response = "Recent conversations:\n"
+        for (i, conv) in conversations.enumerated() {
+            let title = (conv["title"] as? String ?? "").isEmpty ? "Untitled" : String((conv["title"] as? String ?? "").prefix(60))
+            let date = (conv["lastActiveAt"] as? String) ?? (conv["createdAt"] as? String) ?? ""
+            let turnCount = conv["turnCount"] as? Int ?? 0
+            response += "\(i + 1). \(title) — \(date) (\(turnCount) turns)\n"
+        }
+
+        return IntentExecutionResult(
+            data: conversations,
+            conversationalResponse: response,
+            structuredData: ["type": "conversations", "count": conversations.count]
+        )
+    }
+
+    // MARK: - Skills Handler (item 14)
+
+    private func handleListSkills() async throws -> IntentExecutionResult {
+        let skills = SkillLoader.shared.getEnabledSkills()
+
+        if skills.isEmpty {
+            return IntentExecutionResult(
+                data: [:] as [String: Any],
+                conversationalResponse: "No coaching skills are currently active.",
+                structuredData: ["type": "skills", "count": 0]
+            )
+        }
+
+        var response = "Active coaching skills (\(skills.count)):\n"
+        for skill in skills {
+            let name = skill.effectiveName
+            let desc = skill.description
+            response += "• \(name)"
+            if !desc.isEmpty { response += " — \(String(desc.prefix(80)))" }
+            response += "\n"
+        }
+
+        return IntentExecutionResult(
+            data: skills.map { ["id": $0.id, "name": $0.effectiveName] as [String: Any] },
+            conversationalResponse: response,
+            structuredData: ["type": "skills", "count": skills.count]
         )
     }
 }
