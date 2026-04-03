@@ -1,6 +1,6 @@
 # Alfred Imperial Design System
 
-Version: 2.1.0
+Version: 2.2.1
 Origin: Inspired by Stitch design assets, adapted for Alfred's single-column coaching UI.
 
 ## Design Philosophy
@@ -227,14 +227,120 @@ All pages use identical layout dimensions:
 ## Navigation Model
 
 ```
-Home ←→ Settings (full-page, hides Home appContainer)
+Home ←→ Settings (full-page with tab navigation)
 Home ←→ Tool Overlay (Reflections, Deep Dive, Commitments, Memory)
 ```
 
-- Settings: full-page screen, hides `appContainer`, shows `settingsPanel`
-- Tool Overlay: full-screen overlay (`z-index: 200`) with scrollable content
+- Settings: full-page screen (`.settings-screen`), replaces the old slide-up panel. Uses persistent tab navigation bar with sub-tabs: General / Coaching / Notifications / Data. Back arrow in top bar returns to Home.
+- Tool Overlay: full-screen overlay (`z-index: 200`) with scrollable content, `max-width: 640px` centered
 - Both use the same top-bar pattern with back arrow
 - Back always returns to Home
+
+### Settings Full-Page Pattern (v2.2.1)
+
+Replaced the old `.slide-panel` bottom sheet (72vh, drag handle) with a proper full-page screen:
+
+```css
+.settings-screen {
+    background: var(--canvas);
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+}
+.settings-tab-nav {
+    border-bottom: 1px solid var(--line);
+    flex-shrink: 0;
+    background: var(--canvas);
+}
+.settings-tab-nav button {
+    font-size: 11px; font-weight: 500;
+    color: var(--ink-tertiary);
+    padding: 12px 10px 10px;
+    border-bottom: 2px solid transparent;
+    letter-spacing: 0.02em;
+}
+.settings-tab-nav button.active {
+    color: var(--coach);
+    border-bottom-color: var(--coach);
+}
+.settings-body {
+    flex: 1; overflow-y: auto;
+    padding: 20px 16px 8px;
+}
+.settings-body-inner {
+    max-width: 640px;
+    margin: 0 auto;
+}
+```
+
+## Reflections Component Library (v2.2.1)
+
+Reflections uses a full tool overlay with its own component set. All components follow Imperial rules (sharp corners, left accent borders, muted palette).
+
+### Theme Cards
+
+Display active reflection themes with state indicators:
+
+```css
+.rf-theme-card {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+}
+.rf-theme-card:hover { background: var(--surface-sunken); }
+```
+
+**State dots** — colored by theme state:
+
+| State | Class | Color Token |
+|-------|-------|-------------|
+| Researching | `.rf-theme-dot.researching` | `--info` (steel blue) |
+| Deciding | `.rf-theme-dot.deciding` | `--warning` (gold) |
+| Creating | `.rf-theme-dot.creating` | `--growth` (green) |
+| Monitoring | `.rf-theme-dot.monitoring` | `--ink-faint` (grey) |
+
+### Question Cards
+
+Open questions extracted from reflections:
+
+```css
+.rf-question-card {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+}
+.rf-question-tag { /* source/category badge */ }
+.rf-question-age { /* relative time indicator */ }
+```
+
+### Theme Deep-Dive View
+
+Accessed by tapping a theme card. Contains:
+
+- **State progression** (`.rf-dd-state`) — horizontal step indicator showing researching → deciding → creating → monitoring, with current state highlighted
+- **Advance button** (`.rf-dd-advance`) — moves theme to next state
+- **Summary stats** (`.rf-dd-stat-value`, `.rf-dd-stat-label`) — mention count, age, source breakdown
+- **CTA cards** (`.rf-dd-cta`) — contextual actions like "Ask Alfred about this theme"
+
+### Timeline View
+
+Chronological feed of reflection events:
+
+```css
+.rf-tl-card {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+}
+```
+
+**Type-colored left borders:**
+
+| Type | Border Color | Dot Color |
+|------|-------------|-----------|
+| Reflection | none | `--ink-faint` |
+| Question | `--coach` (3px left) | `--coach` |
+| Decision | `--growth` (3px left) | `--growth` |
+| Shift | none | `--warning` |
 
 ## Anti-Patterns (Don'ts)
 

@@ -94,6 +94,46 @@ config.json:
   notion.tasks_database_id: "REDACTED_ID..."
 ```
 
+## Chat Intent System (v2.2.1)
+
+The chat pipeline: **User message → IntentRecognitionService → IntentExecutor → coaching overlay → SSE stream**
+
+### Adding a new chat capability
+
+1. **`Sources/Models/Intent.swift`** — Add new `Target` enum case + any new `IntentFilters` fields. Update `CodingKeys`, decoder, and both inits. Mirror in `Sources/GUI/Models/Intent.swift`.
+2. **`Sources/Services/IntentRecognitionService.swift`** — Add prompt rules to `getSystemPrompt()` so Claude knows how to classify the new intent. Update the TARGET list and add example mappings. Mirror in GUI path.
+3. **`Sources/Services/IntentExecutor.swift`** — Add `case (.action, .target):` in the main switch before `(.chat, _)`. Implement the handler method. Mirror in GUI path (can be stub pointing to web UI).
+4. **`Sources/Services/IntentCoachingRouter.swift`** — Map the new target to a `CoachingPosture` in `posture(for:target:)` and optionally add to `relevantSkillIds(for:)`.
+
+### Key services used by handlers
+
+| Service | Access | Notes |
+|---------|--------|-------|
+| `ReflectionStore.shared` | Direct | `getThemesWithState`, `getOpenQuestions`, `getThemeDetail(theme:)` |
+| `AgentMemoryService.shared` | Direct | `getMemory(for: .communication)` returns `AgentMemory` with `.content`/`.sections`. `teach(agentType:rule:)` throws. `forget(agentType:pattern:)` returns Bool. |
+| `WorkflowLearningService.shared` | Direct | `getLearnedPatterns()` returns named tuples. `getContextForEndpoint("chat")` for injection. |
+| `CadenceService.shared` | Direct | `getAll()`, `markManualRunSuccess(id:timestamp:)` |
+| `FavoritesService.shared` | Direct | `getFavorites()`, `addContact()` throws, `removeContact(name:)` throws |
+| `ConversationHistoryService.shared` | Direct | `getConversations(limit:)` returns `[[String: Any]]` with dict keys |
+| `SkillLoader.shared` | Direct | `getEnabledSkills()` returns `[SkillDefinition]`, `.description` is non-optional |
+| `CommitmentScanTracker.shared` | Direct | `getPendingClosureConfirmations()` returns named tuples (`.title`, `.signal`, `.confidence`) |
+
+### Coaching postures
+
+Each intent target maps to a coaching posture via `IntentCoachingRouter`. The posture determines which skill tenets are injected and how follow-up coaching is framed:
+
+- **reflection** — thread/messages/contacts/drafts
+- **prioritization** — tasks/todos/attention/focus
+- **accountability** — commitments
+- **planning** — calendar/meeting
+- **deepReflection** — reflections
+- **operational** — create/update/delete actions, favorites/cadences/conversations (skip coaching)
+- **general** — memory/skills/preferences
+
+### Notion task search
+
+`findTasksByFuzzyTitle()` uses progressive 3-tier search: exact phrase → all-words AND → longest-word fallback. This is in both `Sources/Services/NotionService+Tasks.swift` and GUI path.
+
 ## Scheduler
 
 - Runs inside the main process (not a separate daemon)
