@@ -4,17 +4,19 @@
 
 ![macOS](https://img.shields.io/badge/macOS-13%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9%2B-orange)
-![Version](https://img.shields.io/badge/version-2.1.0-green)
+![Version](https://img.shields.io/badge/version-2.2.1-green)
 
 ---
 
 ## The idea
 
-Most productivity tools make you do the organizing. Alfred flips that. It runs continuously on your Mac — embedded in your messages, calendar, tasks, and notes — then coaches you through three surfaces:
+Most productivity tools make you do the organizing. Alfred flips that. It runs continuously on your Mac — embedded in your messages, calendar, tasks, and notes — then coaches you across five surfaces:
 
-1. **A morning briefing email** from Coach Alfred that opens with coaching — not noise
-2. **A conversation-first chat UI** you can talk to naturally between meetings
-3. **An intent-aware AI** that reads your data, takes actions, and holds you accountable
+1. **A conversation-first chat** you can talk to naturally — it understands every capability and acts on it
+2. **A home dashboard** with live coaching cards, your pinned focus, and at-a-glance state
+3. **A morning briefing email** from Coach Alfred that opens with coaching — not noise
+4. **Push notifications** that nudge you after meetings, flag overdue commitments, and protect your focus time
+5. **A reflection layer** that tracks what you're thinking about — not just what you're doing
 
 The coaching voice is inspired by two frameworks:
 - **Bill Campbell** — the Silicon Valley coach who asked "what's the one thing?" before every meeting
@@ -24,43 +26,42 @@ Alfred doesn't just know these frameworks — it learns *you*. Over weeks and mo
 
 ---
 
-## What's new in v2.1.0
+## What's new in v2.2.1
 
-### Reflection Mode — Alfred as thinking partner
+### Enhanced Chat Experience — Alfred gets you a whole lot more
 
-Alfred has evolved from an operations layer into something deeper: a **thinking partner**. Previous versions tracked *what you're doing* — your tasks, calendar, commitments, messages. v2.1.0 adds awareness of *what you're thinking about*.
+Alfred Chat now understands and acts on **every capability** — not just messages and tasks. Ask anything in natural language and Alfred routes to the right tool, executes it, and coaches you on what it finds.
 
-**Reflection Mode** ingests content from multiple sources to build a living map of your intellectual landscape:
+**14 new chat capabilities wired in v2.2.1:**
 
-| Source | What it captures |
-|--------|-----------------|
-| **Chrome history** | Domain-clustered browsing patterns (what you're researching) |
-| **YouTube transcripts** | Ideas from videos you've watched |
-| **Notion Second Brain** | Your notes, highlights, and evolving thinking |
-| **Claude exports** | Conversations you've had with AI |
-| **Manual capture** | Thoughts, article excerpts, insights you paste in |
+| Capability | Example queries |
+|-----------|----------------|
+| **Focus Pins** | "what's my top goal?", "pin the RCA task as my focus", "suggest a focus" |
+| **Reflection Themes** | "what themes have I been thinking about?", "deep dive on Revenue Strategy" |
+| **Open Questions** | "what are my open questions?", "what am I wrestling with?" |
+| **Memory & Learning** | "what patterns have you learned?", "teach: always CC finance on budget emails" |
+| **Cadences** | "show cadence status", "run attention check now" |
+| **Favorites** | "who are my favorites?", "add Jane to my favorites" |
+| **Meeting Briefs** | "brief me on my next meeting", "what's my next meeting about?" |
+| **Calendar Availability** | "am I free next Friday at 4pm?", "is my calendar clear tomorrow?" |
+| **Contact Analysis** | "who have I been talking to most?" |
+| **Conversation History** | "show my recent conversations" |
+| **Active Skills** | "what coaching skills are active?" |
+| **Todo CRUD** | "mark that todo as done", "cancel the groceries todo" |
+| **Pending Closures** | "show pending commitment closures" |
+| **Forget/Unlearn** | "forget the pattern about morning meetings" |
 
-From this raw input, Alfred extracts:
-- **Active themes** — what's occupying your mind, classified as 🔍 researching, ⚖️ deciding, 🛠 creating, or 📡 monitoring
-- **Open questions** — unresolved threads you're working through
-- **Mental model shifts** — when your thinking changes direction
-- **Decisions** — choices you've made and their context
+**Smarter Notion task search** — a progressive 3-tier strategy (exact phrase, all-words AND, longest-word fallback) means Alfred finds tasks like "Acme M&A" reliably, even with partial or reordered words.
 
-Themes have **relevance decay** — yesterday's obsession fades at 5% per day unless reinforced by new activity. This means Alfred's understanding of your headspace stays current, not cluttered with last month's rabbit holes.
+**Coaching posture routing** — each intent maps to a coaching posture (reflection, prioritization, accountability, planning, deep reflection) so Alfred's coaching stays on-topic. Ask about messages and Alfred coaches on communication dynamics; ask about tasks and it coaches on leverage and avoidance.
 
-**Where it shows up:**
-- Coaching prompts inject "What's on your mind" context so Alfred coaches with awareness of your intellectual state, not just your task list
-- The reflection tab in Settings shows your active themes, open questions, and capture interface
-- Weekly reflection narratives are generated and saved to Notion
-- The daily ingestion cadence runs automatically — no manual work needed
+### Previous highlights
 
-### Memory Notion Sync
+**Reflection Mode (v2.1.0)** — Alfred as thinking partner. Ingests Chrome history, YouTube transcripts, Notion Second Brain, Claude exports, and manual captures to build a living map of your intellectual landscape. Extracts active themes, open questions, mental model shifts, and decisions. Themes decay at 5% per day unless reinforced.
 
-Alfred now publishes "What Alfred Knows About You" — its accumulated memory of your rules, patterns, and preferences — to a read-only Notion page. Updated during daily pattern computation. You can see exactly what Alfred has learned, and it stays in sync with your Second Brain.
+**Memory Notion Sync (v2.1.0)** — "What Alfred Knows About You" published as a read-only Notion page, updated during daily pattern computation.
 
-### Learning System v3
-
-The learning engine has been upgraded with a **Unified Memory Index** that consolidates all of Alfred's knowledge — learned patterns, coaching themes, user rules, reflection context — into a single queryable layer. This means every part of Alfred draws from the same compounding understanding of who you are.
+**Unified Memory Index (v2.1.0)** — All of Alfred's knowledge consolidated into a single queryable layer: learned patterns, coaching themes, user rules, and reflection context.
 
 ---
 
@@ -70,7 +71,7 @@ The learning engine has been upgraded with a **Unified Memory Index** that conso
 
 Alfred's primary surface is a conversation. No dashboards, no tabs — you talk to Alfred and it talks back with full context.
 
-- **Natural language** — Ask anything: "What do I owe Soaib?", "Prep me for my 3pm", "What am I avoiding?"
+- **Natural language** — Ask anything: "What do I owe Steve?", "Prep me for my 3pm", "What am I avoiding?"
 - **Slash commands** — `/calendar`, `/commitments`, `/messages`, `/todos`, `/1on1`, `/roast` with inline parameter forms
 - **Suggestion chips** — Contextual prompts that appear based on time of day and state
 - **Streaming responses** — SSE-powered real-time chat with tool execution indicators
@@ -152,7 +153,7 @@ Tracks who completes commitments on time and who doesn't. This data feeds into r
 **4. Workflow patterns**
 Computes your most productive days, task completion rates by type, and triage patterns. Injected into coaching prompts so Alfred coaches with *your* data, not generic advice.
 
-**5. Reflection context** *(new in v2.1.0)*
+**5. Reflection context** *(v2.1.0)*
 Builds an evolving understanding of your intellectual landscape — what you're researching, deciding, creating, and monitoring — and weaves it into every coaching interaction. Alfred doesn't just know what's on your calendar; it knows what's on your mind.
 
 All learning is stored in `workflow_learning.db` and `reflection.db`. Computed patterns are refreshed on cadence.
@@ -185,27 +186,36 @@ Alfred treats Notion as your operational backbone:
 - **Commitments database** — Auto-created if missing, tracks both directions with source thread, platform, due date, and priority
 - **Second Brain** — Pulls context from your notes databases for meeting prep and coaching
 - **Coaching sync** — Persistent coaching memory (themes, patterns, follow-ups) syncs to a Notion page
-- **Memory sync** — "What Alfred Knows About You" published as a read-only Notion page *(new in v2.1.0)*
-- **Reflections** — Weekly reflection narratives saved to a dedicated Notion database *(new in v2.1.0)*
+- **Memory sync** — "What Alfred Knows About You" published as a read-only Notion page *(v2.1.0)*
+- **Reflections** — Weekly reflection narratives saved to a dedicated Notion database *(v2.1.0)*
 - **Playbook sync** — Procedures and playbooks stored in Notion, referenced during coaching
 
 ### Intent recognition
 
 When you talk to Alfred, it first recognizes your **intent** using a fast classifier, then routes to the right tool:
 
-| Intent | What Alfred does |
-|--------|-----------------|
-| `calendar` | Fetches schedule, preps for meetings, creates events |
-| `commitments` | Shows dashboard, scans for specific person, tracks closures |
-| `messages` | Summarizes threads, analyzes groups, extracts action items |
-| `todos` | Scans messages for tasks, creates Notion items |
-| `task_update` | Marks tasks done, updates priority or status |
-| `1on1` | Prepares a 1:1 agenda with relationship context |
-| `weekly_review` | Matt Mochary-style weekly assessment |
-| `roast` | Humorous but data-backed challenge of your week |
-| `conversation` | Free-form coaching with full context injection |
+| Target | Actions | What Alfred does |
+|--------|---------|-----------------|
+| `calendar` | list, check, create, update, delete | Fetches schedule, checks availability, manages events |
+| `commitments` | list, scan, check | Shows dashboard, scans for specific person, tracks closures |
+| `messages` | find, summarize, analyze | Summarizes threads, analyzes groups, extracts action items |
+| `thread` | find, analyze | Deep-dives into specific contact conversations |
+| `tasks` | list, find, update, create, delete | Full Notion task CRUD — search, status changes, priority |
+| `todos` | list, update, delete | Message-extracted todo management |
+| `meeting` | generate | AI-powered meeting brief with attendee context |
+| `briefing` | generate, summarize | Morning briefing with coaching cards |
+| `focus` | list, generate, create, delete | Pin/unpin top goal, suggest focus from active tasks |
+| `reflections` | list, analyze, summarize | Themes, open questions, theme deep-dives |
+| `memory` | list, create, delete | View learned patterns, teach rules, forget |
+| `cadences` | list, scan | Show cadence status, trigger manual runs |
+| `favorites` | list, create, delete | Manage favorite contacts and groups |
+| `contacts` | analyze | Contact participation analysis |
+| `conversations` | list | Recent conversation history |
+| `skills` | list | Active coaching skills and their descriptions |
+| `attention` | check | Mid-day focus defense with prioritization |
+| `drafts` | generate | AI-drafted responses with communication coaching |
 
-The intent router also detects **person mentions** and **commitment keywords** in your messages, automatically injecting the relevant commitment ledger and recent message excerpts into the coaching context.
+The intent router also detects **person mentions** and **commitment keywords** in your messages, automatically injecting the relevant commitment ledger and recent message excerpts into the coaching context. Each intent maps to a **coaching posture** (reflection, prioritization, accountability, planning, deep reflection, or operational) so Alfred's follow-up coaching stays on-topic.
 
 ### Attention defense
 
@@ -216,7 +226,7 @@ A 3PM check-in that asks: given what's left today, what must get done and what c
 Alfred maintains three layers of persistent memory:
 - **Coaching memory** (`~/.alfred/coaching_context.md`) — Active themes, resolved themes, session log, personality notes, open follow-ups. Compounds across sessions.
 - **User-taught rules** — Explicit preferences you teach Alfred ("always be brief with Bob", "don't flag messages from the family group"). Stored as transparent, editable markdown files.
-- **Reflection memory** (`~/.alfred/reflection.db`) — Themes, open questions, mental model shifts, and decisions extracted from your browsing, watching, reading, and thinking. Decays and reinforces over time. *(new in v2.1.0)*
+- **Reflection memory** (`~/.alfred/reflection.db`) — Themes, open questions, mental model shifts, and decisions extracted from your browsing, watching, reading, and thinking. Decays and reinforces over time. *(v2.1.0)*
 
 ---
 
@@ -226,7 +236,7 @@ Alfred is a single Swift binary that runs as a macOS LaunchAgent. One process, o
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                      Coach Alfred v2.1.0                         │
+│                      Coach Alfred v2.2.1                         │
 │                                                                  │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────────┐  │
 │  │ Coaching  │  │  Skills  │  │  Trust   │  │   Learning     │  │
@@ -234,7 +244,7 @@ Alfred is a single Swift binary that runs as a macOS LaunchAgent. One process, o
 │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └───────┬────────┘  │
 │       │              │             │                 │            │
 │  ┌────▼──────────────▼─────────────▼─────────────────▼────────┐  │
-│  │              Unified Memory Index (v2.1.0)                  │  │
+│  │                    Unified Memory Index                      │  │
 │  │  coaching themes + user rules + reflections + patterns      │  │
 │  └─────────────────────────┬──────────────────────────────────┘  │
 │                             │                                    │
@@ -294,7 +304,7 @@ Every recurring action in Alfred is a **cadence** — a scheduled tool with its 
 | Commitment Scan | 17:00 daily | Track promises + detect closures |
 | Auto Summary | 18:00 daily | Summarize high-volume groups |
 | Pattern Learning | Thursday 18:00 | Compute workflow patterns from feedback |
-| Reflection Ingestion | Daily | Ingest browsing, videos, notes → reflection themes *(new)* |
+| Reflection Ingestion | Daily | Ingest browsing, videos, notes → reflection themes *(v2.1.0)* |
 | Group Analysis | Monday 09:00 | Analyze group chat health |
 | Weekly Review | Friday 17:00 | Matt Mochary-style weekly assessment |
 | Message Summary | On-demand | Per-thread deep summary |
