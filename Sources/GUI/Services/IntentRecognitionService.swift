@@ -224,6 +224,10 @@ class IntentRecognitionService {
         - "what patterns have you learned about me?" -> action:"list", target:"memory"
         - "teach: always CC finance on budget emails" -> action:"create", target:"memory", filters.teach_text:"Always CC finance on budget emails"
         - "forget the pattern about morning meetings" -> action:"delete", target:"memory", filters.task_search_term:"morning meetings"
+        - IMPORTANT: "stop reminding me about X", "don't surface X", "mute X", "ignore X group", "I've muted X", "stop flagging X" are ALL memory/teach intents. Route to action:"create", target:"memory" with teach_text capturing the preference.
+          - "I muted the MARS group, stop reminding me" -> action:"create", target:"memory", filters.teach_text:"Do not surface or remind about the MARS WhatsApp group"
+          - "stop flagging messages from the family group" -> action:"create", target:"memory", filters.teach_text:"Do not flag or surface messages from the family group"
+        - NEVER route behavioral preferences like "stop doing X" or "don't remind me about Y" to target:"preferences". Those are memory rules.
 
         CADENCE TRIGGER RULES:
         - "run attention check now" -> action:"scan", target:"cadences", filters.cadence_name:"attention"
@@ -257,14 +261,20 @@ class IntentRecognitionService {
     }
 
     private func buildIntentRecognitionPrompt(query: String, conversationTurns: [ConversationTurn], session: ConversationSession) -> String {
-        let today = ISO8601DateFormatter().string(from: Date())
+        let now = Date()
+        let dateFmt = DateFormatter()
+        dateFmt.dateFormat = "yyyy-MM-dd"
+        let dayFmt = DateFormatter()
+        dayFmt.dateFormat = "EEEE"
+        let timeFmt = DateFormatter()
+        timeFmt.dateFormat = "HH:mm"
 
         var prompt = """
         Parse this user query into a structured intent:
 
         Query: "\(query)"
 
-        Today's date: \(today)
+        Today: \(dateFmt.string(from: now)) (\(dayFmt.string(from: now))), current time: \(timeFmt.string(from: now)), timezone: \(TimeZone.current.identifier)
         """
 
         // Add conversation context if available

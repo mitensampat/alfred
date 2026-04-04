@@ -1022,6 +1022,39 @@
             margin: 0 auto;
         }
 
+        /* ── PULL-TO-REFRESH (PWA) ── */
+        .ptr-indicator {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%) translateY(-40px);
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: var(--surface);
+            border: 1px solid var(--line);
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: var(--ink-tertiary);
+            transition: transform 0.2s ease, opacity 0.2s ease;
+            opacity: 0;
+            z-index: 50;
+            pointer-events: none;
+        }
+        .ptr-indicator.visible { opacity: 1; }
+        .ptr-indicator.refreshing {
+            opacity: 1;
+            transform: translateX(-50%) translateY(12px);
+            animation: ptrSpin 0.8s linear infinite;
+        }
+        @keyframes ptrSpin {
+            from { transform: translateX(-50%) translateY(12px) rotate(0deg); }
+            to { transform: translateX(-50%) translateY(12px) rotate(360deg); }
+        }
+
         /* ── INPUT AREA (conversation-first) ── */
         .input-area {
             padding: 10px 16px max(16px, env(safe-area-inset-bottom, 16px));
@@ -2328,7 +2361,8 @@
         </div>
 
         <!-- CONVERSATION -->
-        <div class="conversation" id="conversationScroll">
+        <div class="conversation" id="conversationScroll" style="position:relative;">
+            <div class="ptr-indicator" id="ptrIndicator">&#8635;</div>
             <div class="conversation-inner" id="conversation">
                 <!-- Health warning -->
                 <div id="healthWarningBanner" class="card evidence-card hidden" style="margin-bottom:12px;">
@@ -2818,6 +2852,68 @@
             sessionStorage.setItem('alfred_force_refresh', '1');
             location.reload();
         }
+
+        // ── Pull-to-Refresh (PWA touch gesture) ──
+        (function initPullToRefresh() {
+            var scrollEl = null;
+            var indicator = null;
+            var startY = 0;
+            var pulling = false;
+            var threshold = 100;  // px to pull before triggering refresh (intentional gesture)
+            var lastRefreshAt = 0;
+            var cooldownMs = 30000;  // 30 second cooldown between refreshes
+
+            function getEls() {
+                if (!scrollEl) scrollEl = document.getElementById('conversationScroll');
+                if (!indicator) indicator = document.getElementById('ptrIndicator');
+            }
+
+            document.addEventListener('touchstart', function(e) {
+                getEls();
+                if (!scrollEl || !indicator) return;
+                // Only activate when scrolled to top and on the conversation area
+                if (scrollEl.scrollTop > 5) return;
+                // Cooldown — don't allow refresh if one happened recently
+                if (Date.now() - lastRefreshAt < cooldownMs) return;
+                // Don't activate on overlays or settings
+                var settingsScreen = document.querySelector('.settings-screen.open');
+                var toolOverlay = document.querySelector('.tool-overlay.visible');
+                if (settingsScreen || toolOverlay) return;
+                startY = e.touches[0].clientY;
+                pulling = true;
+            }, { passive: true });
+
+            document.addEventListener('touchmove', function(e) {
+                if (!pulling || !indicator) return;
+                var dy = e.touches[0].clientY - startY;
+                if (dy < 0) { pulling = false; indicator.classList.remove('visible'); return; }
+                var progress = Math.min(dy / threshold, 1);
+                indicator.style.transform = 'translateX(-50%) translateY(' + (dy * 0.4 - 20) + 'px) rotate(' + (progress * 180) + 'deg)';
+                if (dy > 20) indicator.classList.add('visible');
+            }, { passive: true });
+
+            document.addEventListener('touchend', function() {
+                if (!pulling || !indicator) { pulling = false; return; }
+                pulling = false;
+                var dy = parseFloat(indicator.style.transform.match(/translateY\(([\d.-]+)px\)/)?.[1] || '0');
+                if (dy > threshold * 0.4 - 20) {
+                    // Trigger refresh
+                    lastRefreshAt = Date.now();
+                    indicator.classList.add('refreshing');
+                    cacheDelete('pulse');
+                    cacheDelete('coaching_cards');
+                    _morningWalkLoading = false;
+                    loadMorningWalk().finally(function() {
+                        indicator.classList.remove('refreshing', 'visible');
+                        indicator.style.transform = 'translateX(-50%) translateY(-40px)';
+                        showToast('Refreshed');
+                    });
+                } else {
+                    indicator.classList.remove('visible');
+                    indicator.style.transform = 'translateX(-50%) translateY(-40px)';
+                }
+            }, { passive: true });
+        })();
 
         // Load version from server
         (async function loadVersion() {
@@ -3340,6 +3436,19 @@
             loadMorningWalk();
             if (isSunday()) loadWeeklyReflection();
             registerPushNotifications();
+
+            // Restore notification intent that survived auth/login
+            const pendingAction = sessionStorage.getItem('alfred_pending_notify_action');
+            if (pendingAction) {
+                sessionStorage.removeItem('alfred_pending_notify_action');
+                console.log('[Capture] Restoring notification intent after login:', pendingAction);
+                if (pendingAction === 'post-meeting') {
+                    setTimeout(checkPendingCapture, 500);
+                }
+            } else {
+                // Normal flow: still check for pending captures (covers visibilitychange, etc.)
+                setTimeout(checkPendingCapture, 2000);
+            }
         }
 
         function authenticate() {
@@ -5380,17 +5489,48 @@
         }
 
         async function pinFocus(notionId) {
+            // Find the task data from suggestions so we can render instantly
+            var taskData = (_pinAllSuggestions || []).find(function(s) { return s.notionId === notionId; });
             closePinSuggestions();
-            showToast('Pinning...');
+
+            // Optimistic UI: update focus card immediately with known data
+            if (taskData) {
+                var focusCard = document.querySelector('.focus-card');
+                var optimisticGoal = { title: taskData.title, pinned: true, notionId: taskData.notionId, dueDate: taskData.dueDate || null, priority: taskData.priority || 'None' };
+                if (focusCard) focusCard.outerHTML = buildFocusCardElement(optimisticGoal);
+                showToast('Pinned');
+            } else {
+                showToast('Pinning...');
+            }
+
+            // Fire API in background — no await needed for UI
             try {
-                const response = await authFetch('/api/focus-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notionId }) });
-                if (!response.ok) throw new Error('Pin failed');
+                var response = await authFetch('/api/focus-pin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notionId: notionId }) });
+                if (!response.ok) {
+                    showToast('Pin failed — reverting');
+                    cacheDelete('pulse'); await loadMorningWalk();
+                    return;
+                }
+                // Silently refresh cache in background for next load
+                cacheDelete('pulse');
+                authFetch('/api/home/pulse').then(function(r) { return r.json(); }).then(function(d) { cacheSet('pulse', d); }).catch(function() {});
+            } catch (err) {
+                showToast('Pin failed');
                 cacheDelete('pulse'); await loadMorningWalk();
-            } catch (err) { showToast('Pin failed'); }
+            }
         }
 
         async function unpinFocus() {
             closePinSuggestions();
+
+            // Optimistic UI: show algorithmic focus immediately
+            var focusCard = document.querySelector('.focus-card');
+            if (focusCard) {
+                focusCard.innerHTML = '<div class="card-header"><span>FOCUS</span></div>'
+                    + '<div class="focus-title" style="opacity:0.5;">Finding your top priority...</div>'
+                    + '<div class="focus-actions"></div>';
+            }
+
             try { await authFetch('/api/focus-pin', { method: 'DELETE' }); } catch (e) {}
             cacheDelete('pulse'); await loadMorningWalk();
         }
@@ -6518,7 +6658,8 @@
                 _captureCheckInFlight = false;
             }
         }
-        setTimeout(checkPendingCapture, 2000);
+        // NOTE: checkPendingCapture is now called from showApp() after auth completes,
+        // not here at page load when auth token may not exist yet.
 
         // Listen for messages from service worker (notification clicks)
         if ('serviceWorker' in navigator) {
@@ -6896,6 +7037,16 @@
         document.addEventListener('DOMContentLoaded', () => {
             const urlParams = new URLSearchParams(window.location.search);
             const urlPasscode = urlParams.get('passcode');
+
+            // Preserve notification intent BEFORE auth — survives login redirect
+            const notifyAction = urlParams.get('notify_action');
+            if (notifyAction) {
+                sessionStorage.setItem('alfred_pending_notify_action', notifyAction);
+                // Clean URL without losing other params
+                urlParams.delete('notify_action');
+                const cleanSearch = urlParams.toString();
+                window.history.replaceState({}, '', window.location.pathname + (cleanSearch ? '?' + cleanSearch : ''));
+            }
 
             if (urlPasscode) {
                 document.getElementById('passcodeInput').value = urlPasscode;

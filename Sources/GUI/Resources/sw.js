@@ -2,7 +2,7 @@
 // Handles push notifications and offline caching for PWA experience.
 // Cache version is auto-bumped by the server — no manual update needed.
 
-const CACHE_NAME = 'alfred-v2.2.1';
+const CACHE_NAME = 'alfred-v2.2.0';
 
 // Install: skip waiting to activate immediately
 self.addEventListener('install', function(event) {
@@ -107,8 +107,12 @@ self.addEventListener('notificationclick', function(event) {
                     });
                 }
             }
-            // No existing window — open a new one
-            return clients.openWindow(targetUrl);
+            // No existing window — open a new one, preserving notification intent in URL
+            var openUrl = targetUrl;
+            if (notifType) {
+                openUrl += (openUrl.indexOf('?') === -1 ? '?' : '&') + 'notify_action=' + encodeURIComponent(notifType);
+            }
+            return clients.openWindow(openUrl);
         })
     );
 });

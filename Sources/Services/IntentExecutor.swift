@@ -2368,8 +2368,16 @@ class IntentExecutor {
     private func handleCalendarAvailabilityCheck(intent: UserIntent) async throws -> IntentExecutionResult {
         let filters = intent.filters
 
-        // Determine the date/time to check
-        let checkDate = filters.specificDate ?? Date()
+        // Determine the date/time to check — extract date from eventTime if specificDate not set
+        let checkDate: Date
+        if let specificDate = filters.specificDate {
+            checkDate = specificDate
+        } else if let eventTimeStr = filters.eventTime,
+                  let eventTime = UserIntent.IntentFilters.parseFlexibleDate(eventTimeStr) {
+            checkDate = eventTime
+        } else {
+            checkDate = Date()
+        }
 
         let events = try await orchestrator.calendarServicePublic.fetchEventsFromAllCalendars(
             for: checkDate,

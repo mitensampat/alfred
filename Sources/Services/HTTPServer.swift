@@ -5169,11 +5169,12 @@ The Commitment Check feature requires a properly configured Notion database.
                     var fullCoachingResponse = ""
 
                     // For successful create actions, the card has all the info — no text response needed
-                    // For update actions, stream the confirmation directly (no coaching overlay)
+                    // For update/delete actions, stream the confirmation directly (no coaching overlay)
+                    // For check actions (availability, status checks), stream the answer directly — benign queries don't need coaching
                     // Exception: if needsFollowUp is set (e.g. unresolved attendees), stream the text
                     let wasRendered = structuredPayload["rendered"] as? Bool != false
                     let needsFollowUp = structuredPayload["needsFollowUp"] as? Bool == true
-                    let skipCoaching = (intentResponse.intent.action == .create && wasRendered && !needsFollowUp) || intentResponse.intent.action == .update
+                    let skipCoaching = (intentResponse.intent.action == .create && wasRendered && !needsFollowUp) || intentResponse.intent.action == .update || intentResponse.intent.action == .check || intentResponse.intent.action == .delete
 
                     if intentResponse.intent.action == .create && wasRendered && !needsFollowUp {
                         // Card-only — no text streamed, just record internally

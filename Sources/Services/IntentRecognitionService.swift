@@ -339,6 +339,11 @@ class IntentRecognitionService {
         - "remember that I prefer morning meetings" -> action:"create", target:"memory", filters.teach_text:"Prefers morning meetings"
         - "forget the pattern about morning meetings" -> action:"delete", target:"memory", filters.task_search_term:"morning meetings"
         - teach_text: the rule text to teach Alfred (extract from user's message, clean up to a clear rule statement)
+        - IMPORTANT: "stop reminding me about X", "don't surface X", "mute X", "ignore X group", "I've muted X", "stop flagging X" are ALL memory/teach intents. Route to action:"create", target:"memory" with teach_text capturing the preference. Examples:
+          - "I muted the MARS group, stop reminding me" -> action:"create", target:"memory", filters.teach_text:"Do not surface or remind about the MARS WhatsApp group"
+          - "stop flagging messages from the family group" -> action:"create", target:"memory", filters.teach_text:"Do not flag or surface messages from the family group"
+          - "don't remind me about overdue tasks from last quarter" -> action:"create", target:"memory", filters.teach_text:"Do not remind about overdue tasks from last quarter"
+        - NEVER route behavioral preferences like "stop doing X" or "don't remind me about Y" to target:"preferences". Those are memory rules.
 
         CADENCE TRIGGER RULES:
         - "run attention check now" -> action:"scan", target:"cadences", filters.cadence_name:"attention"
@@ -366,7 +371,9 @@ class IntentRecognitionService {
         - "do I have anything at 2pm tomorrow?" -> action:"check", target:"calendar", filters.event_time:"<ISO8601 datetime for tomorrow 2pm>"
         - "what's open on Monday afternoon?" -> action:"check", target:"calendar", filters.specific_date:"<YYYY-MM-DD for Monday>"
         - "is my calendar clear tomorrow morning?" -> action:"check", target:"calendar", filters.specific_date:"<YYYY-MM-DD for tomorrow>"
+        - "am I free at 11am on Wednesday" -> action:"check", target:"calendar", filters.event_time:"<ISO8601 datetime for NEXT Wednesday 11am>"
         - For availability checks: use action:"check" with target:"calendar". Set event_time for specific time queries, specific_date for general day queries.
+        - CRITICAL: Use the Today date and day-of-week provided below to compute the ACTUAL calendar date. "Wednesday" means the NEXT upcoming Wednesday from today. "next Friday" means the Friday of NEXT week. Always output a real ISO8601 datetime, never a placeholder.
 
         CONVERSATION HISTORY RULES:
         - "show my recent conversations" -> action:"list", target:"conversations"
@@ -405,11 +412,20 @@ class IntentRecognitionService {
     }
 
     private func buildIntentRecognitionPrompt(query: String, conversationTurns: [ConversationTurn], session: ConversationSession) -> String {
+        let now = Date()
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
-        let today = dateFormatter.string(from: Date())
+        let today = dateFormatter.string(from: now)
 
-        var prompt = "Query: \"\(query)\"\nToday: \(today)"
+        let dayOfWeekFmt = DateFormatter()
+        dayOfWeekFmt.dateFormat = "EEEE"
+        let dayOfWeek = dayOfWeekFmt.string(from: now)
+
+        let timeFmt = DateFormatter()
+        timeFmt.dateFormat = "HH:mm"
+        let currentTime = timeFmt.string(from: now)
+
+        var prompt = "Query: \"\(query)\"\nToday: \(today) (\(dayOfWeek)), current time: \(currentTime), timezone: \(userTimezone)"
 
         // Add conversation context if available
         if !conversationTurns.isEmpty {
