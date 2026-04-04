@@ -939,7 +939,117 @@ class CadenceRunner {
             }
         }
 
-        // 3. Import Folder Ingestion
+        // 3. Messages Ingestion (favorites only, substantive messages)
+        if reflectionConfig?.messagesEnabled ?? true {
+            let favorites = FavoritesService.shared.getFavorites()
+            let favoriteNames = favorites.allNames
+
+            if favoriteNames.isEmpty {
+                summary.append("Messages: no favorites configured")
+            }
+
+            let msgSince = Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date()
+            let minLength = reflectionConfig?.messagesMinLength ?? 80
+            var msgProcessed = 0
+
+            // WhatsApp
+            if config.messaging.whatsapp.enabled {
+                do {
+                    let reader = WhatsAppReader.shared(dbPath: config.messaging.whatsapp.dbPath)
+                    try reader.connect()
+                    let threads = try reader.fetchThreads(since: msgSince)
+                    reader.disconnect()
+
+                    let favoriteThreads = threads.filter { thread in
+                        let name = thread.contactName ?? thread.contactIdentifier
+                        return favorites.isFavorite(name)
+                    }
+
+                    for thread in favoriteThreads {
+                        let formatted = Self.formatThreadForReflection(thread, minLength: minLength)
+                        guard !formatted.isEmpty else { continue }
+
+                        let extraction = try await extractionService.extract(
+                            from: formatted,
+                            source: "conversation",
+                            existingThemes: existingThemes + Array(allNewThemes)
+                        )
+
+                        if !extraction.themes.isEmpty {
+                            let dateId = Self.todayDateString()
+                            let sourceId = "wa_\(thread.contactIdentifier)_\(dateId)"
+                            ReflectionStore.shared.insertReflection(
+                                source: "conversation",
+                                sourceId: sourceId,
+                                contentSummary: extraction.contentSummary,
+                                themes: extraction.themes,
+                                themeClassifications: extraction.themeClassifications,
+                                openQuestions: extraction.openQuestions,
+                                mentalModelShifts: extraction.mentalModelShifts,
+                                decisions: extraction.decisions
+                            )
+                            allNewThemes.formUnion(extraction.themes)
+                            msgProcessed += 1
+                        }
+                    }
+                } catch {
+                    print("⚠️ Reflection: WhatsApp messages error: \(error)")
+                }
+            }
+
+            // iMessage
+            if config.messaging.imessage.enabled {
+                do {
+                    let reader = iMessageReader.shared(dbPath: config.messaging.imessage.dbPath)
+                    try reader.connect()
+                    let threads = try reader.fetchThreads(since: msgSince)
+                    reader.disconnect()
+
+                    let favoriteThreads = threads.filter { thread in
+                        let name = thread.contactName ?? thread.contactIdentifier
+                        return favorites.isFavorite(name)
+                    }
+
+                    for thread in favoriteThreads {
+                        let formatted = Self.formatThreadForReflection(thread, minLength: minLength)
+                        guard !formatted.isEmpty else { continue }
+
+                        let extraction = try await extractionService.extract(
+                            from: formatted,
+                            source: "conversation",
+                            existingThemes: existingThemes + Array(allNewThemes)
+                        )
+
+                        if !extraction.themes.isEmpty {
+                            let dateId = Self.todayDateString()
+                            let sourceId = "im_\(thread.contactIdentifier)_\(dateId)"
+                            ReflectionStore.shared.insertReflection(
+                                source: "conversation",
+                                sourceId: sourceId,
+                                contentSummary: extraction.contentSummary,
+                                themes: extraction.themes,
+                                themeClassifications: extraction.themeClassifications,
+                                openQuestions: extraction.openQuestions,
+                                mentalModelShifts: extraction.mentalModelShifts,
+                                decisions: extraction.decisions
+                            )
+                            allNewThemes.formUnion(extraction.themes)
+                            msgProcessed += 1
+                        }
+                    }
+                } catch {
+                    print("⚠️ Reflection: iMessage error: \(error)")
+                }
+            }
+
+            if msgProcessed > 0 {
+                summary.append("Messages: \(msgProcessed) conversations processed")
+            } else if !favoriteNames.isEmpty {
+                summary.append("Messages: no substantive conversations found")
+            }
+        }
+
+        // 4. Import Folder Ingestion
         if reflectionConfig?.importFolderEnabled ?? true {
             let importService = ReflectionImportService()
             let imports = importService.checkForNewImports()
@@ -970,7 +1080,7 @@ class CadenceRunner {
             }
         }
 
-        // 4. Apply relevance decay with reinforcement
+        // 5. Apply relevance decay with reinforcement
         ReflectionStore.shared.applyRelevanceDecay(reinforcedThemes: allNewThemes)
 
         let stats = ReflectionStore.shared.getStats()
@@ -989,5 +1099,38 @@ class CadenceRunner {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: Date())
+    }
+
+    /// Format a message thread for reflection extraction.
+    /// Filters to substantive messages (above minLength), returns empty string if nothing worth reflecting on.
+    private static func formatThreadForReflection(_ thread: MessageThread, minLength: Int) -> String {
+        let contactName = thread.contactName ?? thread.contactIdentifier
+        let platform = thread.platform == .whatsapp ? "WhatsApp" : "iMessage"
+
+        // Filter to text messages with substance
+        let substantive = thread.messages.filter { msg in
+            !msg.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            msg.content.count >= minLength &&
+            !msg.hasAttachment
+        }
+
+        guard substantive.count >= 2 else { return "" }
+
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "HH:mm"
+
+        var lines: [String] = []
+        lines.append("Conversation with \(contactName) (\(platform))")
+        lines.append("---")
+
+        // Take up to 30 substantive messages, chronological order
+        let recent = Array(substantive.suffix(30).reversed())
+        for msg in recent {
+            let who = msg.direction == .outgoing ? "Me" : contactName
+            let time = timeFormatter.string(from: msg.timestamp)
+            lines.append("[\(time)] \(who): \(msg.content)")
+        }
+
+        return lines.joined(separator: "\n")
     }
 }

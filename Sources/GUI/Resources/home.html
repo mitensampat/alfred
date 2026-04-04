@@ -695,18 +695,34 @@
         .ftue-toggle small { font-size: 12px; color: var(--ink-tertiary); display: block; }
         .ftue-summary { text-align: center; font-size: 14px; color: var(--growth); line-height: 2; }
         .ftue-launch-btn { width: 100%; padding: 14px; font-family: var(--font-body); font-size: 16px; font-weight: 500; background: var(--coach); color: white; border: none; border-radius: 0; cursor: pointer; margin-top: 16px; }
-        .ftue-permission-card { background: var(--surface-sunken); border-radius: 0; padding: 20px; }
-        .ftue-permission-header { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 16px; }
-        .ftue-permission-header .icon { font-size: 24px; }
-        .ftue-permission-header strong { font-size: 15px; display: block; }
-        .ftue-permission-header p { font-size: 12px; color: var(--ink-secondary); margin-top: 2px; }
-        .ftue-permission-steps { margin: 16px 0; }
-        .ftue-permission-steps .step { display: flex; gap: 10px; align-items: center; padding: 8px 0; font-size: 13px; }
-        .ftue-permission-steps .step-num { width: 22px; height: 22px; background: var(--coach); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
-        .ftue-permission-btn-large { width: 100%; padding: 12px; font-family: var(--font-body); font-size: 14px; background: var(--coach); color: white; border: none; border-radius: 0; cursor: pointer; margin: 12px 0; }
-        .ftue-permission-note { font-size: 12px; color: var(--ink-tertiary); margin-top: 12px; }
-        .ftue-permission-item { display: flex; gap: 12px; align-items: center; }
-        .ftue-permission-btn { font-family: var(--font-body); font-size: 12px; padding: 6px 14px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 0; cursor: pointer; }
+        .ftue-perm-card { background: var(--surface-sunken); border: 1px solid var(--line); padding: 16px; margin-bottom: 12px; transition: all 0.3s ease; }
+        .ftue-perm-card.granted { border-color: var(--growth); background: var(--surface); }
+        .ftue-perm-card-header { display: flex; align-items: center; gap: 10px; }
+        .ftue-perm-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; transition: background 0.3s ease; }
+        .ftue-perm-dot.missing { background: var(--danger); }
+        .ftue-perm-dot.granted { background: var(--growth); }
+        .ftue-perm-dot.pending { background: var(--ink-faint); }
+        .ftue-perm-dot.not-needed { background: var(--ink-faint); }
+        .ftue-perm-card-header strong { font-size: 14px; flex: 1; }
+        .ftue-perm-status { font-size: 12px; font-weight: 500; }
+        .ftue-perm-status.missing { color: var(--danger); }
+        .ftue-perm-status.granted { color: var(--growth); }
+        .ftue-perm-status.pending { color: var(--ink-tertiary); }
+        .ftue-perm-status.not-needed { color: var(--ink-faint); }
+        .ftue-perm-desc { font-size: 12px; color: var(--ink-secondary); margin: 8px 0 0 18px; line-height: 1.5; }
+        .ftue-perm-steps { margin: 12px 0 0 18px; }
+        .ftue-perm-steps .step { display: flex; gap: 10px; align-items: center; padding: 6px 0; font-size: 13px; }
+        .ftue-perm-steps .step-num { width: 20px; height: 20px; background: var(--ink); color: var(--surface); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; flex-shrink: 0; }
+        .ftue-perm-action { margin: 12px 0 0 18px; }
+        .ftue-perm-action button { padding: 10px 20px; font-family: var(--font-body); font-size: 13px; background: var(--ink); color: var(--surface); border: none; cursor: pointer; }
+        .ftue-perm-granted-check { display: none; margin-left: auto; font-size: 16px; color: var(--growth); }
+        .ftue-perm-card.granted .ftue-perm-granted-check { display: block; }
+        .ftue-perm-card.granted .ftue-perm-steps,
+        .ftue-perm-card.granted .ftue-perm-action { display: none; }
+        .ftue-perm-card.not-needed .ftue-perm-steps,
+        .ftue-perm-card.not-needed .ftue-perm-action { display: none; }
+        @keyframes permGranted { 0% { transform: scale(1); } 50% { transform: scale(1.02); } 100% { transform: scale(1); } }
+        .ftue-perm-card.just-granted { animation: permGranted 0.4s ease; }
         .ftue-database-section { margin-bottom: 20px; }
         .ftue-database-section label { font-size: 13px; font-weight: 600; display: block; margin-bottom: 8px; }
         .ftue-database-picker { display: flex; flex-direction: column; gap: 6px; }
@@ -2364,6 +2380,12 @@
         <div class="conversation" id="conversationScroll" style="position:relative;">
             <div class="ptr-indicator" id="ptrIndicator">&#8635;</div>
             <div class="conversation-inner" id="conversation">
+                <!-- Permission banner (post-FTUE) -->
+                <div id="permissionBanner" class="hidden" style="margin-bottom:12px;padding:12px 16px;background:var(--surface-sunken);border:1px solid var(--line);display:flex;align-items:center;gap:10px;">
+                    <span id="permissionBannerText" style="flex:1;font-size:13px;color:var(--ink-secondary);line-height:1.4;"></span>
+                    <button onclick="openPermissionSettings('FullDiskAccess')" style="font-family:var(--font-body);font-size:12px;padding:6px 12px;background:var(--ink);color:var(--surface);border:none;cursor:pointer;white-space:nowrap;">Fix</button>
+                    <button onclick="dismissPermissionBanner()" style="font-family:var(--font-body);font-size:12px;padding:6px 8px;background:none;border:none;color:var(--ink-tertiary);cursor:pointer;">&#10005;</button>
+                </div>
                 <!-- Health warning -->
                 <div id="healthWarningBanner" class="card evidence-card hidden" style="margin-bottom:12px;">
                     <div class="card-header">&#9888; System Health</div>
@@ -3436,6 +3458,7 @@
             loadMorningWalk();
             if (isSunday()) loadWeeklyReflection();
             registerPushNotifications();
+            checkPostFtuePermissions();
 
             // Restore notification intent that survived auth/login
             const pendingAction = sessionStorage.getItem('alfred_pending_notify_action');
@@ -3976,6 +3999,11 @@
         }
 
         function renderFtueStep(stepIndex) {
+            // Stop permission polling when leaving the permissions step
+            var prevStep = FTUE_STEPS[currentFtueStep];
+            if (prevStep === 'permissions' && FTUE_STEPS[stepIndex] !== 'permissions') {
+                stopPermissionPolling();
+            }
             currentFtueStep = stepIndex;
             renderFtueProgress();
             const content = document.getElementById('ftueContent');
@@ -4114,26 +4142,58 @@
                         <p style="font-size: 12px; color: var(--ink-tertiary); margin-top: 12px;">Add your key contacts later in Settings to focus Alfred on the people who matter most.</p>
                     `;
                 case 'permissions':
+                    // Start polling for permission status
+                    startPermissionPolling();
                     return `
                         <h2>Permissions</h2>
-                        <p>Alfred needs one macOS permission to read your local message databases. This is the only system access required — and it stays on your machine.</p>
-                        <div class="ftue-permission-card">
-                            <div class="ftue-permission-header">
-                                <div><strong>Full Disk Access</strong><p style="margin-top:2px;">Lets Alfred read iMessage and WhatsApp databases locally</p></div>
+                        <p style="color:var(--ink-secondary);font-size:14px;line-height:1.6;">Alfred needs a few macOS permissions to work. Grant them below — the status updates live as you go.</p>
+
+                        <div class="ftue-perm-card" id="ftue-perm-fda" data-perm="fda">
+                            <div class="ftue-perm-card-header">
+                                <div class="ftue-perm-dot pending" id="ftue-dot-fda"></div>
+                                <strong>Full Disk Access</strong>
+                                <span class="ftue-perm-status pending" id="ftue-status-fda">Checking...</span>
+                                <span class="ftue-perm-granted-check">&#10003;</span>
                             </div>
-                            <div class="ftue-permission-steps">
-                                <div class="step"><span class="step-num">1</span><span>Open <strong>System Settings</strong> (button below)</span></div>
-                                <div class="step"><span class="step-num">2</span><span>Click <strong>+</strong> and add <strong>/Applications/Alfred.app</strong></span></div>
+                            <div class="ftue-perm-desc">Lets Alfred read iMessage and WhatsApp databases locally on your Mac. Nothing leaves this machine.</div>
+                            <div class="ftue-perm-steps" id="ftue-steps-fda">
+                                <div class="step"><span class="step-num">1</span><span>Click <strong>Open Settings</strong> below</span></div>
+                                <div class="step"><span class="step-num">2</span><span>Click <strong>+</strong> and select <strong>Alfred.app</strong> from Applications</span></div>
                                 <div class="step"><span class="step-num">3</span><span>Ensure the toggle is <strong>on</strong></span></div>
                             </div>
-                            <button class="ftue-permission-btn-large" onclick="openPermissionSettings('FullDiskAccess')">Open System Settings</button>
-                            <div style="margin-top:12px;padding:10px 14px;background:var(--surface);border-radius:8px;">
-                                <p style="font-size:12px;color:var(--ink-secondary);margin:0;line-height:1.5;"><strong style="color:var(--ink);">Why this matters:</strong> Alfred reads databases directly on disk — no cloud APIs, no message forwarding. macOS gates this access so you stay in control.</p>
+                            <div class="ftue-perm-action" id="ftue-action-fda">
+                                <button onclick="openPermissionSettings('FullDiskAccess')">Open System Settings</button>
                             </div>
                         </div>
-                        <div class="ftue-permission-item" style="margin-top: 16px; opacity: 0.7;">
-                            <div class="info" style="flex:1;"><strong>Notifications</strong><p style="font-size:12px;color:var(--ink-tertiary);margin-top:2px;">For scheduled briefings and attention alerts</p></div>
-                            <button class="ftue-permission-btn" onclick="requestNotificationPermission()">Enable</button>
+
+                        <div class="ftue-perm-card" id="ftue-perm-contacts" data-perm="contacts">
+                            <div class="ftue-perm-card-header">
+                                <div class="ftue-perm-dot pending" id="ftue-dot-contacts"></div>
+                                <strong>Contacts</strong>
+                                <span class="ftue-perm-status pending" id="ftue-status-contacts">Checking...</span>
+                                <span class="ftue-perm-granted-check">&#10003;</span>
+                            </div>
+                            <div class="ftue-perm-desc">Resolves names in your iMessage and WhatsApp conversations so Alfred knows who's who.</div>
+                            <div class="ftue-perm-action" id="ftue-action-contacts">
+                                <button onclick="requestContactsPermission()">Grant Access</button>
+                            </div>
+                        </div>
+
+                        <div class="ftue-perm-card" id="ftue-perm-notif" data-perm="notif">
+                            <div class="ftue-perm-card-header">
+                                <div class="ftue-perm-dot pending" id="ftue-dot-notif"></div>
+                                <strong>Notifications</strong>
+                                <span class="ftue-perm-status pending" id="ftue-status-notif">Checking...</span>
+                                <span class="ftue-perm-granted-check">&#10003;</span>
+                            </div>
+                            <div class="ftue-perm-desc">For morning briefings, post-meeting capture prompts, and attention alerts.</div>
+                            <div class="ftue-perm-action" id="ftue-action-notif">
+                                <button onclick="requestNotificationPermission()">Enable</button>
+                            </div>
+                        </div>
+
+                        <div style="margin-top:16px;padding:12px 14px;background:var(--surface-sunken);">
+                            <p style="font-size:12px;color:var(--ink-tertiary);margin:0;line-height:1.5;"><strong style="color:var(--ink-secondary);">Privacy-first.</strong> All processing happens locally on your Mac. Your conversations never leave this machine.</p>
                         </div>
                     `;
                 case 'complete':
@@ -4357,7 +4417,159 @@
         }
 
         function requestNotificationPermission() {
-            if ('Notification' in window) Notification.requestPermission().then(p => { if (p === 'granted') alert('Notifications enabled!'); });
+            if ('Notification' in window) {
+                Notification.requestPermission().then(function(p) {
+                    if (p === 'granted') {
+                        updatePermCard('notif', 'granted', 'Granted');
+                    } else if (p === 'denied') {
+                        updatePermCard('notif', 'missing', 'Blocked');
+                    }
+                });
+            }
+        }
+
+        async function requestContactsPermission() {
+            var btn = document.querySelector('#ftue-action-contacts button');
+            if (btn) btn.textContent = 'Requesting...';
+            try {
+                var resp = await fetch('/api/setup/request-contacts', { method: 'POST' });
+                if (resp.ok) {
+                    var data = await resp.json();
+                    if (data.granted) {
+                        updatePermCard('contacts', 'granted', 'Granted');
+                    } else {
+                        updatePermCard('contacts', 'missing', 'Denied');
+                        if (btn) btn.textContent = 'Open Settings';
+                        btn.onclick = function() { openPermissionSettings('Contacts'); };
+                    }
+                }
+            } catch (e) {
+                if (btn) btn.textContent = 'Grant Access';
+            }
+        }
+
+        // ── Permission polling (live validation during FTUE) ──
+        var _permPollInterval = null;
+        var _permPrevState = {};
+
+        function startPermissionPolling() {
+            stopPermissionPolling();
+            pollPermissions(); // immediate first check
+            _permPollInterval = setInterval(pollPermissions, 3000);
+        }
+
+        function stopPermissionPolling() {
+            if (_permPollInterval) { clearInterval(_permPollInterval); _permPollInterval = null; }
+        }
+
+        async function pollPermissions() {
+            try {
+                var resp = await fetch('/api/setup/permissions');
+                if (!resp.ok) return;
+                var data = await resp.json();
+
+                // FDA
+                if (data.imessageEnabled || data.whatsappEnabled) {
+                    if (data.fullDiskAccess === 'granted') {
+                        updatePermCard('fda', 'granted', 'Granted');
+                    } else if (data.fullDiskAccess === 'denied') {
+                        updatePermCard('fda', 'missing', 'Missing');
+                    } else if (data.fullDiskAccess === 'not_found') {
+                        updatePermCard('fda', 'missing', 'DB not found');
+                    } else {
+                        updatePermCard('fda', 'pending', 'Checking...');
+                    }
+                } else {
+                    updatePermCard('fda', 'not-needed', 'Not needed');
+                    var fdaCard = document.getElementById('ftue-perm-fda');
+                    if (fdaCard) fdaCard.classList.add('not-needed');
+                }
+
+                // Contacts
+                if (data.contacts === 'granted') {
+                    updatePermCard('contacts', 'granted', 'Granted');
+                } else if (data.contacts === 'denied') {
+                    updatePermCard('contacts', 'missing', 'Denied');
+                } else {
+                    updatePermCard('contacts', 'pending', 'Not yet asked');
+                }
+
+                // Notifications
+                if (data.notifications === 'granted') {
+                    updatePermCard('notif', 'granted', 'Granted');
+                } else if (data.notifications === 'denied') {
+                    updatePermCard('notif', 'missing', 'Denied');
+                } else {
+                    updatePermCard('notif', 'pending', 'Not yet enabled');
+                }
+            } catch (e) { /* silent */ }
+        }
+
+        function updatePermCard(key, state, label) {
+            var dot = document.getElementById('ftue-dot-' + key);
+            var status = document.getElementById('ftue-status-' + key);
+            var card = document.getElementById('ftue-perm-' + key);
+            if (!dot || !status || !card) return;
+
+            // Remove old state classes
+            dot.className = 'ftue-perm-dot ' + state;
+            status.className = 'ftue-perm-status ' + state;
+            status.textContent = label;
+
+            var wasGranted = card.classList.contains('granted');
+            if (state === 'granted' && !wasGranted) {
+                card.classList.add('granted', 'just-granted');
+                setTimeout(function() { card.classList.remove('just-granted'); }, 500);
+                // Check if all permissions are granted
+                checkAllPermissionsGranted();
+            } else if (state === 'granted') {
+                card.classList.add('granted');
+            } else {
+                card.classList.remove('granted');
+            }
+        }
+
+        function checkAllPermissionsGranted() {
+            var allCards = document.querySelectorAll('.ftue-perm-card');
+            var allDone = true;
+            allCards.forEach(function(c) {
+                if (!c.classList.contains('granted') && !c.classList.contains('not-needed')) allDone = false;
+            });
+            if (allDone) {
+                showToast('All permissions granted');
+            }
+        }
+
+        // ── Post-FTUE permission banner (nudge on home screen) ──
+        async function checkPostFtuePermissions() {
+            if (sessionStorage.getItem('alfred_perm_banner_dismissed')) return;
+            try {
+                var resp = await authFetch('/api/setup/permissions');
+                if (!resp.ok) return;
+                var data = await resp.json();
+                var issues = [];
+                if ((data.imessageEnabled || data.whatsappEnabled) && data.fullDiskAccess === 'denied') {
+                    issues.push('Full Disk Access needed for message reading');
+                }
+                if (data.contacts === 'denied') {
+                    issues.push('Contacts access needed for name resolution');
+                }
+                if (issues.length > 0) {
+                    var banner = document.getElementById('permissionBanner');
+                    var text = document.getElementById('permissionBannerText');
+                    if (banner && text) {
+                        text.textContent = issues.join('. ') + '.';
+                        banner.classList.remove('hidden');
+                        banner.style.display = 'flex';
+                    }
+                }
+            } catch (e) { /* silent */ }
+        }
+
+        function dismissPermissionBanner() {
+            var banner = document.getElementById('permissionBanner');
+            if (banner) { banner.classList.add('hidden'); banner.style.display = 'none'; }
+            sessionStorage.setItem('alfred_perm_banner_dismissed', '1');
         }
 
         async function completeFtue() {

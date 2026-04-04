@@ -1,6 +1,8 @@
 import Foundation
 import AppKit
 import SQLite3
+import Contacts
+import UserNotifications
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -1001,6 +1003,12 @@ class HTTPServer {
         case ("POST", "/api/setup/open-system-preferences"):
             return await handleOpenSystemPreferences(request)
 
+        case ("GET", "/api/setup/permissions"):
+            return await handleGetPermissionStatus()
+
+        case ("POST", "/api/setup/request-contacts"):
+            return await handleRequestContactsPermission()
+
         // Commitment management endpoints
         case ("PATCH", "/api/tasks/status"):
             return await handleUpdateTaskStatus(request)
@@ -1134,6 +1142,12 @@ class HTTPServer {
 
         case ("GET", "/api/reflect/stats"):
             return handleReflectStats()
+
+        case ("POST", "/api/reflect/pull"):
+            return handleReflectPull(request)
+
+        case ("POST", "/api/reflect/reset"):
+            return handleReflectReset()
 
         default:
             return HTTPResponse(
@@ -10366,6 +10380,93 @@ extension HTTPServer {
         return HTTPResponse(statusCode: 200, body: ["success": true, "panel": panel])
     }
 
+    // MARK: - Permission Status Handlers
+
+    private func handleGetPermissionStatus() async -> HTTPResponse {
+        guard let config = alfredService.orchestrator?.config else {
+            return HTTPResponse(statusCode: 503, body: ["error": "Service not initialized"])
+        }
+
+        // 1. Full Disk Access — test by opening iMessage DB
+        var fdaStatus = "unknown"
+        if config.messaging.imessage.enabled || config.messaging.whatsapp.enabled {
+            let chatDbPath = config.messaging.imessage.enabled
+                ? config.messaging.imessage.expandedPath
+                : config.messaging.whatsapp.expandedPath
+            if FileManager.default.fileExists(atPath: chatDbPath) {
+                var testDb: OpaquePointer?
+                let rc = sqlite3_open_v2(chatDbPath, &testDb, SQLITE_OPEN_READONLY, nil)
+                if rc == SQLITE_OK {
+                    var stmt: OpaquePointer?
+                    let tableName = config.messaging.imessage.enabled ? "message" : "ZWAMESSAGE"
+                    let queryRc = sqlite3_prepare_v2(testDb, "SELECT 1 FROM \(tableName) LIMIT 1", -1, &stmt, nil)
+                    fdaStatus = queryRc == SQLITE_OK ? "granted" : "denied"
+                    sqlite3_finalize(stmt)
+                } else {
+                    fdaStatus = "denied"
+                }
+                sqlite3_close(testDb)
+            } else {
+                fdaStatus = "not_found"
+            }
+        } else {
+            fdaStatus = "not_needed"
+        }
+
+        // 2. Contacts — check CNContactStore authorization
+        let contactsAuth = CNContactStore.authorizationStatus(for: .contacts)
+        let contactsStatus: String
+        switch contactsAuth {
+        case .authorized:
+            contactsStatus = "granted"
+        case .denied, .restricted:
+            contactsStatus = "denied"
+        case .notDetermined:
+            contactsStatus = "not_determined"
+        @unknown default:
+            contactsStatus = "unknown"
+        }
+
+        // 3. Notifications — check UNUserNotificationCenter
+        let notifStatus: String = await withCheckedContinuation { continuation in
+            UNUserNotificationCenter.current().getNotificationSettings { settings in
+                switch settings.authorizationStatus {
+                case .authorized, .provisional, .ephemeral:
+                    continuation.resume(returning: "granted")
+                case .denied:
+                    continuation.resume(returning: "denied")
+                case .notDetermined:
+                    continuation.resume(returning: "not_determined")
+                @unknown default:
+                    continuation.resume(returning: "unknown")
+                }
+            }
+        }
+
+        let result: [String: Any] = [
+            "fullDiskAccess": fdaStatus,
+            "contacts": contactsStatus,
+            "notifications": notifStatus,
+            "imessageEnabled": config.messaging.imessage.enabled,
+            "whatsappEnabled": config.messaging.whatsapp.enabled
+        ]
+
+        return HTTPResponse(statusCode: 200, body: result)
+    }
+
+    private func handleRequestContactsPermission() async -> HTTPResponse {
+        let store = CNContactStore()
+        let granted: Bool = await withCheckedContinuation { continuation in
+            store.requestAccess(for: .contacts) { granted, _ in
+                continuation.resume(returning: granted)
+            }
+        }
+        return HTTPResponse(statusCode: 200, body: [
+            "granted": granted,
+            "status": granted ? "granted" : "denied"
+        ])
+    }
+
     // MARK: - Commitment Management Handlers
 
     /// Update task/commitment status in Notion
@@ -10747,5 +10848,46 @@ extension HTTPServer {
     private func handleReflectStats() -> HTTPResponse {
         let stats = ReflectionStore.shared.getStats()
         return HTTPResponse(statusCode: 200, body: stats)
+    }
+
+    private func handleReflectPull(_ request: HTTPRequest) -> HTTPResponse {
+        // Trigger the reflection ingestion cadence in the background
+        guard let runner = cadenceRunner else {
+            return jsonResponse(["error": "CadenceRunner not available"], status: 503)
+        }
+
+        let sourceFilter: String?
+        if let body = request.body,
+           let json = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+           let source = json["source"] as? String, source != "all" {
+            sourceFilter = source
+        } else {
+            sourceFilter = nil
+        }
+
+        // Look up the built-in reflection ingestion cadence
+        guard let cadence = CadenceService.shared.get(id: "builtin-reflection-ingestion") else {
+            return jsonResponse(["error": "Reflection ingestion cadence not found"], status: 404)
+        }
+
+        Task {
+            do {
+                let summary = try await runner.run(cadence)
+                let timestamp = Self.iso8601Formatter.string(from: Date())
+                CadenceService.shared.markManualRunSuccess(id: cadence.id, timestamp: timestamp)
+                print("✅ [API] Reflection pull completed: \(summary)")
+            } catch {
+                CadenceService.shared.markRunFailure(id: cadence.id, cooldownMinutes: 5)
+                print("❌ [API] Reflection pull failed: \(error)")
+            }
+        }
+
+        let msg = sourceFilter != nil ? "Reflection pull started for \(sourceFilter!)" : "Reflection pull started (all sources)"
+        return jsonResponse(["success": true, "message": msg], status: 202)
+    }
+
+    private func handleReflectReset() -> HTTPResponse {
+        ReflectionStore.shared.clearAll()
+        return jsonResponse(["success": true, "message": "All reflection data cleared"], status: 200)
     }
 }

@@ -117,23 +117,27 @@ struct ReflectionConfig: Codable {
     let enabled: Bool?                  // master toggle, default false
     let chromeEnabled: Bool?            // default true when reflection enabled
     let notionEnabled: Bool?            // default true when reflection enabled
+    let messagesEnabled: Bool?          // default true — pull from favorite contacts' messages
     let youtubeTranscripts: Bool?       // default true — fetch transcripts for watched videos
     let importFolderEnabled: Bool?      // default true when reflection enabled
     let chromeProfilePath: String?      // default "Default"
     let noiseDomains: [String]?         // additional domains to filter
     let dwellTimeSeconds: Int?          // default 30 — minimum time on page to count
     let ingestionTime: String?          // default "22:00"
+    let messagesMinLength: Int?         // default 80 — minimum chars to consider a message substantive
 
     enum CodingKeys: String, CodingKey {
         case enabled
         case chromeEnabled = "chrome_enabled"
         case notionEnabled = "notion_enabled"
+        case messagesEnabled = "messages_enabled"
         case youtubeTranscripts = "youtube_transcripts"
         case importFolderEnabled = "import_folder_enabled"
         case chromeProfilePath = "chrome_profile_path"
         case noiseDomains = "noise_domains"
         case dwellTimeSeconds = "dwell_time_seconds"
         case ingestionTime = "ingestion_time"
+        case messagesMinLength = "messages_min_length"
     }
 }
 

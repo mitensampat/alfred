@@ -87,6 +87,19 @@ class ReflectionStore {
         print("✅ ReflectionStore database initialized")
     }
 
+    // MARK: - Clear / Reset
+
+    /// Delete all reflection data (both reflections and theme states)
+    func clearAll() {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return }
+
+        sqlite3_exec(db, "DELETE FROM reflections", nil, nil, nil)
+        sqlite3_exec(db, "DELETE FROM theme_states", nil, nil, nil)
+        print("🗑️ ReflectionStore: All data cleared")
+    }
+
     // MARK: - Insert / Upsert
 
     /// Insert a reflection, or update if source+source_id already exists
