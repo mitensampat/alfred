@@ -1,6 +1,6 @@
 # Alfred Imperial Design System
 
-Version: 2.2.1
+Version: 2.2.2
 Origin: Inspired by Stitch design assets, adapted for Alfred's single-column coaching UI.
 
 ## Design Philosophy
@@ -236,7 +236,7 @@ Home ←→ Tool Overlay (Reflections, Deep Dive, Commitments, Memory)
 - Both use the same top-bar pattern with back arrow
 - Back always returns to Home
 
-### Settings Full-Page Pattern (v2.2.1)
+### Settings Full-Page Pattern (v2.2.2)
 
 Replaced the old `.slide-panel` bottom sheet (72vh, drag handle) with a proper full-page screen:
 
@@ -273,7 +273,7 @@ Replaced the old `.slide-panel` bottom sheet (72vh, drag handle) with a proper f
 }
 ```
 
-## Reflections Component Library (v2.2.1)
+## Reflections Component Library (v2.2.2)
 
 Reflections uses a full tool overlay with its own component set. All components follow Imperial rules (sharp corners, left accent borders, muted palette).
 

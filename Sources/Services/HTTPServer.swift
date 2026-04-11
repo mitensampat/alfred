@@ -9484,10 +9484,10 @@ extension HTTPServer {
                 let summary = try await runner.run(cadence)
                 let timestamp = Self.iso8601Formatter.string(from: Date())
                 // Manual runs update display timestamp only — don't suppress the scheduled run
-                CadenceService.shared.markManualRunSuccess(id: cadence.id, timestamp: timestamp)
+                CadenceService.shared.markManualRunSuccess(id: cadence.id, timestamp: timestamp, summary: summary)
                 print("✅ [API] Manual cadence run \(cadence.name): \(summary)")
             } catch {
-                CadenceService.shared.markRunFailure(id: cadence.id, cooldownMinutes: 5)
+                CadenceService.shared.markRunFailure(id: cadence.id, cooldownMinutes: 5, errorMessage: "\(error)")
                 print("❌ [API] Manual cadence run \(cadence.name) failed: \(error)")
             }
         }
@@ -11264,10 +11264,10 @@ extension HTTPServer {
             do {
                 let summary = try await runner.run(cadence)
                 let timestamp = Self.iso8601Formatter.string(from: Date())
-                CadenceService.shared.markManualRunSuccess(id: cadence.id, timestamp: timestamp)
+                CadenceService.shared.markManualRunSuccess(id: cadence.id, timestamp: timestamp, summary: summary)
                 print("✅ [API] Reflection pull completed: \(summary)")
             } catch {
-                CadenceService.shared.markRunFailure(id: cadence.id, cooldownMinutes: 5)
+                CadenceService.shared.markRunFailure(id: cadence.id, cooldownMinutes: 5, errorMessage: "\(error)")
                 print("❌ [API] Reflection pull failed: \(error)")
             }
         }

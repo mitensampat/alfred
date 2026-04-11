@@ -102,7 +102,7 @@ class CadenceService {
 
     // MARK: - State Updates (called by scheduler after execution)
 
-    func markRunSuccess(id: String, date: String, timestamp: String) {
+    func markRunSuccess(id: String, date: String, timestamp: String, summary: String) {
         lock.lock()
         defer { lock.unlock() }
 
@@ -110,29 +110,35 @@ class CadenceService {
             cadences[index].lastRunDate = date
             cadences[index].lastRunTimestamp = timestamp
             cadences[index].failureCooldownUntil = nil
+            cadences[index].lastRunSummary = summary
+            cadences[index].lastRunStatus = "success"
             try? save()
         }
     }
 
     /// Mark a manual (API-triggered) run — updates display timestamp but does NOT set lastRunDate,
     /// so the scheduler will still fire the cadence at its scheduled time.
-    func markManualRunSuccess(id: String, timestamp: String) {
+    func markManualRunSuccess(id: String, timestamp: String, summary: String) {
         lock.lock()
         defer { lock.unlock() }
 
         if let index = cadences.firstIndex(where: { $0.id == id }) {
             cadences[index].lastManualRunTimestamp = timestamp
             cadences[index].failureCooldownUntil = nil
+            cadences[index].lastRunSummary = summary
+            cadences[index].lastRunStatus = "success"
             try? save()
         }
     }
 
-    func markRunFailure(id: String, cooldownMinutes: Int) {
+    func markRunFailure(id: String, cooldownMinutes: Int, errorMessage: String? = nil) {
         lock.lock()
         defer { lock.unlock() }
 
         if let index = cadences.firstIndex(where: { $0.id == id }) {
             cadences[index].failureCooldownUntil = Date().addingTimeInterval(Double(cooldownMinutes * 60))
+            cadences[index].lastRunStatus = "failure"
+            if let msg = errorMessage { cadences[index].lastRunSummary = msg }
             try? save()
         }
     }
@@ -350,6 +356,38 @@ class CadenceService {
                 lastRunTimestamp: nil,
                 catchUpWindowHours: 0,
                 notifyOnSuccess: false,
+                emailOnSuccess: false
+            ),
+            Cadence(
+                id: "builtin-coaching-sync",
+                name: "Coaching Sync",
+                icon: "🪞",
+                actionType: .coachingSync,
+                params: [:],
+                schedule: .weekly(day: "thursday", time: "18:30"),
+                enabled: true,
+                isBuiltIn: true,
+                createdAt: now,
+                lastRunDate: nil,
+                lastRunTimestamp: nil,
+                catchUpWindowHours: 0,
+                notifyOnSuccess: false,
+                emailOnSuccess: false
+            ),
+            Cadence(
+                id: "builtin-task-lifecycle-scan",
+                name: "Task Lifecycle Scan",
+                icon: "🔄",
+                actionType: .taskLifecycleScan,
+                params: [:],
+                schedule: .daily(time: "09:00"),
+                enabled: true,
+                isBuiltIn: true,
+                createdAt: now,
+                lastRunDate: nil,
+                lastRunTimestamp: nil,
+                catchUpWindowHours: 3,
+                notifyOnSuccess: true,
                 emailOnSuccess: false
             ),
             Cadence(

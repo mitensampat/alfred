@@ -2222,7 +2222,7 @@ class IntentExecutor {
         }
 
         // Trigger it
-        CadenceService.shared.markManualRunSuccess(id: cadence.id, timestamp: ISO8601DateFormatter().string(from: Date()))
+        CadenceService.shared.markManualRunSuccess(id: cadence.id, timestamp: ISO8601DateFormatter().string(from: Date()), summary: "Triggered via chat")
 
         return IntentExecutionResult(
             data: ["id": cadence.id, "name": cadence.name] as [String: Any],

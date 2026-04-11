@@ -94,7 +94,7 @@ config.json:
   notion.tasks_database_id: "REDACTED_ID..."
 ```
 
-## Chat Intent System (v2.2.1)
+## Chat Intent System (v2.2.2)
 
 The chat pipeline: **User message → IntentRecognitionService → IntentExecutor → coaching overlay → SSE stream**
 
@@ -207,8 +207,8 @@ Alfred's learning system has 3 layers:
 
 ## Git State Notes
 
-- Latest release: `v2.2.1` (Enhanced Chat Experience — Full Intent Wiring)
-- Version in code: `2.2.1` (in `main.swift` line 17 — single source of truth)
+- Latest release: `v2.2.2` (Enhanced Chat Experience — Full Intent Wiring)
+- Version in code: `2.2.2` (in `main.swift` line 17 — single source of truth)
 
 ## Post-Deploy Verification Checklist
 

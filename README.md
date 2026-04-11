@@ -4,7 +4,7 @@
 
 ![macOS](https://img.shields.io/badge/macOS-13%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9%2B-orange)
-![Version](https://img.shields.io/badge/version-2.2.1-green)
+![Version](https://img.shields.io/badge/version-2.2.2-green)
 
 ---
 
@@ -26,36 +26,33 @@ Alfred doesn't just know these frameworks — it learns *you*. Over weeks and mo
 
 ---
 
-## What's new in v2.2.1
+## What's new in v2.2.2
 
-### Enhanced Chat Experience — Alfred gets you a whole lot more
+### Cadence Control — Full visibility and control over your automation
 
-Alfred Chat now understands and acts on **every capability** — not just messages and tasks. Ask anything in natural language and Alfred routes to the right tool, executes it, and coaches you on what it finds.
+Alfred's cadence system is the engine that runs your daily briefings, commitment scans, pattern learning, and more. This release gives you complete control over what was previously invisible.
 
-**14 new chat capabilities wired in v2.2.1:**
+**Grouped layout** — cadences organized by frequency (Daily / Weekly / Recurring) so you can see the shape of your automation at a glance.
 
-| Capability | Example queries |
-|-----------|----------------|
-| **Focus Pins** | "what's my top goal?", "pin the RCA task as my focus", "suggest a focus" |
-| **Reflection Themes** | "what themes have I been thinking about?", "deep dive on Revenue Strategy" |
-| **Open Questions** | "what are my open questions?", "what am I wrestling with?" |
-| **Memory & Learning** | "what patterns have you learned?", "teach: always CC finance on budget emails" |
-| **Cadences** | "show cadence status", "run attention check now" |
-| **Favorites** | "who are my favorites?", "add Jane to my favorites" |
-| **Meeting Briefs** | "brief me on my next meeting", "what's my next meeting about?" |
-| **Calendar Availability** | "am I free next Friday at 4pm?", "is my calendar clear tomorrow?" |
-| **Contact Analysis** | "who have I been talking to most?" |
-| **Conversation History** | "show my recent conversations" |
-| **Active Skills** | "what coaching skills are active?" |
-| **Todo CRUD** | "mark that todo as done", "cancel the groceries todo" |
-| **Pending Closures** | "show pending commitment closures" |
-| **Forget/Unlearn** | "forget the pattern about morning meetings" |
+**Inline toggles** — pause or resume any cadence with a single tap. No popover needed for the most common operation.
 
-**Smarter Notion task search** — a progressive 3-tier strategy (exact phrase, all-words AND, longest-word fallback) means Alfred finds tasks like "Acme M&A" reliably, even with partial or reordered words.
+**Parameter editing** — configure tool-specific settings directly in the UI. Add groups to Auto Summary, change lookback days for Todo Scan, set scan modes for Commitment Scan — all from the edit popover instead of hand-editing JSON.
 
-**Coaching posture routing** — each intent maps to a coaching posture (reflection, prioritization, accountability, planning, deep reflection) so Alfred's coaching stays on-topic. Ask about messages and Alfred coaches on communication dynamics; ask about tasks and it coaches on leverage and avoidance.
+**Active hours** — interval cadences now expose start/end hour controls so you can prevent scans from running at 3am.
+
+**Run output previews** — tap any last-run timestamp to see what the cadence actually produced. Summaries are now persisted and surfaced ("Morning briefing generated with 4 action items", "Todo scan: found 3, created 2, dupes 1").
+
+**Status indicators** — green (success), red (failure), pulsing yellow (cooldown), gray (disabled/never ran). At a glance, you know what's healthy and what needs attention.
+
+**Tool descriptions** — one-line summaries under each cadence name so you know what "Pattern Learning" or "Attention Check" actually does.
+
+**New built-in cadences** — Coaching Sync (weekly Notion sync of coaching context) and Task Lifecycle Scan (daily scan for task state changes) are now visible and configurable.
+
+**Smarter create flow** — selecting a tool auto-fills its description, default schedule, and parameter fields with sensible defaults.
 
 ### Previous highlights
+
+**Enhanced Chat Experience (v2.2.1)** — Alfred Chat understands and acts on every capability. 14 new chat capabilities wired: Focus Pins, Reflection Themes, Open Questions, Memory & Learning, Cadences, Favorites, Meeting Briefs, Calendar Availability, Contact Analysis, Conversation History, Active Skills, Todo CRUD, Pending Closures, Forget/Unlearn. Smarter Notion task search with progressive 3-tier strategy. Coaching posture routing keeps coaching on-topic per intent.
 
 **Reflection Mode (v2.1.0)** — Alfred as thinking partner. Ingests Chrome history, YouTube transcripts, Notion Second Brain, Claude exports, and manual captures to build a living map of your intellectual landscape. Extracts active themes, open questions, mental model shifts, and decisions. Themes decay at 5% per day unless reinforced.
 
@@ -236,7 +233,7 @@ Alfred is a single Swift binary that runs as a macOS LaunchAgent. One process, o
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                      Coach Alfred v2.2.1                         │
+│                      Coach Alfred v2.2.2                         │
 │                                                                  │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────────┐  │
 │  │ Coaching  │  │  Skills  │  │  Trust   │  │   Learning     │  │

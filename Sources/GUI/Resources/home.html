@@ -500,13 +500,13 @@
         .config-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
 
         .cadence-item {
-            display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+            display: flex; align-items: center; gap: 10px; padding: 10px 16px;
             border-bottom: 1px solid var(--line); font-size: 13px;
         }
-        .cadence-item:last-child { border: none; }
-        .cadence-info { flex: 1; }
-        .cadence-name { font-weight: 500; }
-        .cadence-schedule { font-size: 11px; color: var(--ink-tertiary); margin-top: 1px; }
+        .cadence-item:last-child { border-bottom: none; }
+        .cadence-info { flex: 1; min-width: 0; }
+        .cadence-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .cadence-desc { font-size: 11px; color: var(--ink-faint); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .cadence-actions { display: flex; gap: 6px; }
 
         .fav-item { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 13px; }
@@ -883,18 +883,35 @@
 
         /* Cadence items */
         .cadence-item-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
-        .cadence-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-        .cadence-schedule { font-size: 11px; color: var(--ink-tertiary); cursor: pointer; min-width: 60px; text-align: center; }
-        .cadence-last-run { font-size: 11px; color: var(--ink-faint); min-width: 60px; text-align: right; }
+        .cadence-status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+        .cadence-status-dot.success { background: var(--growth); }
+        .cadence-status-dot.failure { background: var(--danger); }
+        .cadence-status-dot.cooldown { background: #c4a33d; animation: cadence-pulse 2s infinite; }
+        .cadence-status-dot.never { background: var(--ink-faint); }
+        .cadence-status-dot.disabled { background: var(--line-strong); }
+        @keyframes cadence-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .cadence-group-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-tertiary); padding: 10px 16px 4px; }
+        .cadence-group-label:first-child { padding-top: 8px; }
+        .cadence-schedule { font-size: 11px; color: var(--ink-tertiary); cursor: pointer; min-width: 60px; text-align: center; white-space: nowrap; }
+        .cadence-schedule:hover { color: var(--ink-secondary); }
+        .cadence-last-run { font-size: 11px; color: var(--ink-faint); min-width: 60px; text-align: right; cursor: pointer; white-space: nowrap; }
+        .cadence-last-run:hover { color: var(--ink-secondary); }
         .cadence-run-btn { font-family: var(--font-body); font-size: 11px; padding: 3px 10px; background: var(--surface-sunken); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; color: var(--ink-secondary); }
         .cadence-run-btn.running { opacity: 0.5; }
         .cadence-run-btn.success { color: var(--growth); border-color: var(--growth); }
-        .cadence-delete-btn { font-family: var(--font-body); font-size: 14px; background: none; border: none; cursor: pointer; color: var(--ink-faint); padding: 0 4px; }
+        .cadence-delete-btn { font-family: var(--font-body); font-size: 14px; background: none; border: none; cursor: pointer; color: var(--ink-faint); padding: 0 4px; opacity: 0; transition: opacity 0.15s; }
+        .cadence-item:hover .cadence-delete-btn { opacity: 1; }
         .cadence-delete-btn:hover { color: var(--danger); }
         .cadence-add-btn { cursor: pointer; justify-content: center; }
         .cadence-add-btn:hover { background: var(--surface-sunken); }
+        .cadence-toggle { width: 32px; height: 18px; border-radius: 9px; background: var(--line-strong); position: relative; cursor: pointer; transition: background 0.2s; flex-shrink: 0; }
+        .cadence-toggle::after { content: ''; width: 14px; height: 14px; border-radius: 50%; background: white; position: absolute; top: 2px; left: 2px; transition: transform 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
+        .cadence-toggle.on { background: var(--growth); }
+        .cadence-toggle.on::after { transform: translateX(14px); }
+        .cadence-summary-preview { font-size: 11px; color: var(--ink-secondary); padding: 8px 16px; border-top: 1px solid var(--line); background: var(--surface-sunken); display: none; line-height: 1.5; }
+        .cadence-summary-preview.visible { display: block; }
         .cadence-edit-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.3); z-index: 999; }
-        .cadence-edit-popover { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px 24px; box-shadow: 0 8px 32px rgba(0,0,0,0.12); z-index: 1000; min-width: 300px; }
+        .cadence-edit-popover { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px 24px; box-shadow: 0 8px 32px rgba(0,0,0,0.12); z-index: 1000; min-width: 300px; max-height: 80vh; overflow-y: auto; }
         .cadence-edit-title { font-size: 15px; font-weight: 600; margin-bottom: 16px; color: var(--ink); }
         .cadence-edit-section { margin-bottom: 12px; }
         .cadence-edit-section-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-tertiary); margin-bottom: 8px; }
@@ -902,9 +919,18 @@
         .cadence-edit-label { font-size: 13px; color: var(--ink-secondary); }
         .cadence-edit-input { font-size: 13px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 4px; width: 100px; text-align: center; font-family: var(--font-body); background: var(--surface); color: var(--ink); }
         .cadence-edit-select { font-size: 13px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 4px; font-family: var(--font-body); background: var(--surface); color: var(--ink); }
+        .cadence-edit-toggle { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+        .cadence-toggle-switch { width: 36px; height: 20px; border-radius: 10px; background: var(--line-strong); position: relative; cursor: pointer; transition: background 0.2s; flex-shrink: 0; }
+        .cadence-toggle-switch::after { content: ''; width: 16px; height: 16px; border-radius: 50%; background: white; position: absolute; top: 2px; left: 2px; transition: transform 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
+        .cadence-toggle-switch.active { background: var(--growth); }
+        .cadence-toggle-switch.active::after { transform: translateX(16px); }
         .cadence-edit-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
         .cadence-edit-save { font-size: 13px; padding: 6px 16px; background: var(--ink); color: var(--surface); border: none; border-radius: 6px; cursor: pointer; font-weight: 500; }
         .cadence-edit-cancel { font-size: 13px; padding: 6px 16px; background: none; color: var(--ink-secondary); border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+        .cadence-tag-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+        .cadence-tag { font-size: 11px; background: var(--surface-sunken); border: 1px solid var(--line); border-radius: 4px; padding: 2px 6px; display: inline-flex; align-items: center; gap: 4px; }
+        .cadence-tag-remove { cursor: pointer; color: var(--ink-faint); font-size: 12px; line-height: 1; }
+        .cadence-tag-remove:hover { color: var(--danger); }
 
         /* Coaching tabs */
         .coaching-tab-nav { display: flex; gap: 0; border-bottom: 1px solid var(--line); margin: 0 -20px 12px; padding: 0 20px; }
@@ -6367,25 +6393,66 @@
         // 12. SETTINGS SCREEN LOADERS
         // ═══════════════════════════════════════════════
 
+        function getCadenceStatusClass(c) {
+            if (!c.enabled) return 'disabled';
+            if (c.failure_cooldown_until && typeof c.failure_cooldown_until === 'string') {
+                if (new Date(c.failure_cooldown_until) > new Date()) return 'cooldown';
+            }
+            if (c.last_run_status === 'failure') return 'failure';
+            if (c.last_run_status === 'success') return 'success';
+            if (!c.last_run_timestamp) return 'never';
+            return 'success';
+        }
+
+        function getCadenceDescription(actionType) {
+            const t = toolCatalog.find(t => t.action_type === actionType);
+            return t ? t.description : '';
+        }
+
         function renderCadenceData(data) {
             cadenceList = data.cadences || [];
             const el = document.getElementById('cadenceStatusContent');
+            const groups = {
+                'DAILY': cadenceList.filter(c => c.schedule?.type === 'daily'),
+                'WEEKLY': cadenceList.filter(c => c.schedule?.type === 'weekly'),
+                'RECURRING': cadenceList.filter(c => c.schedule?.type === 'interval')
+            };
             let html = '';
-            cadenceList.forEach(c => {
-                const dotColor = c.enabled ? (c.last_run_timestamp ? '#448361' : '#c4a33d') : '#999';
-                const lastRunText = c.last_run_timestamp ? formatRelativeTime(c.last_run_timestamp) : 'Never';
-                const schedule = c.schedule_display || '';
-                const deleteBtn = c.is_built_in ? '' : `<button class="cadence-delete-btn" onclick="deleteCadence('${c.id}')" title="Delete">&times;</button>`;
-                html += `<div class="cadence-item"><div class="cadence-item-left"><div class="cadence-dot" style="background: ${dotColor};"></div><span class="cadence-name">${c.icon} ${c.name}</span></div>
-                    <span class="cadence-schedule" onclick="editCadence('${c.id}')" title="Click to edit">${schedule}</span>
-                    <span class="cadence-last-run">${lastRunText}</span>
-                    <button class="cadence-run-btn" id="cadenceRun_${c.id}" onclick="triggerCadence('${c.id}')">Run</button>${deleteBtn}</div>`;
-            });
+            for (const [label, items] of Object.entries(groups)) {
+                if (items.length === 0) continue;
+                html += `<div class="cadence-group-label">${label}</div>`;
+                items.forEach(c => {
+                    const statusClass = getCadenceStatusClass(c);
+                    const desc = getCadenceDescription(c.action_type);
+                    const toggleClass = c.enabled ? 'on' : '';
+                    const lastRunText = c.last_run_timestamp ? formatRelativeTime(c.last_run_timestamp) : 'Never';
+                    const deleteBtn = c.is_built_in ? '' : `<button class="cadence-delete-btn" onclick="deleteCadence('${c.id}')" title="Delete">&times;</button>`;
+                    const summaryText = c.last_run_summary || 'No output recorded yet.';
+                    html += `<div class="cadence-item">
+                        <div class="cadence-item-left">
+                            <div class="cadence-status-dot ${statusClass}"></div>
+                            <div class="cadence-info">
+                                <div class="cadence-name">${c.icon} ${c.name}</div>
+                                ${desc ? `<div class="cadence-desc" title="${escapeHtml(desc)}">${escapeHtml(desc)}</div>` : ''}
+                            </div>
+                        </div>
+                        <div class="cadence-toggle ${toggleClass}" onclick="toggleCadenceEnabled('${c.id}', this)" title="${c.enabled ? 'Enabled' : 'Disabled'}"></div>
+                        <span class="cadence-schedule" onclick="editCadence('${c.id}')" title="Click to edit">${c.schedule_display || ''}</span>
+                        <span class="cadence-last-run" onclick="toggleCadenceSummary('${c.id}')" title="Click for details">${lastRunText}</span>
+                        <button class="cadence-run-btn" id="cadenceRun_${c.id}" onclick="triggerCadence('${c.id}')">Run</button>
+                        ${deleteBtn}
+                    </div>
+                    <div class="cadence-summary-preview" id="cadenceSummary_${c.id}">${escapeHtml(summaryText)}</div>`;
+                });
+            }
             html += `<div class="cadence-item cadence-add-btn" onclick="openCreateCadence()"><span style="color:var(--ink-secondary);font-size:13px;">+ New Cadence</span></div>`;
             el.innerHTML = html || '<div style="color:var(--ink-tertiary);font-size:12px;padding:12px;">No cadences configured</div>';
         }
 
         async function loadCadenceStatus() {
+            if (!toolCatalog.length) {
+                try { const catResp = await authFetch('/api/cadences/catalog'); if (catResp.ok) { const d = await catResp.json(); toolCatalog = d.tools || []; } } catch(e) {}
+            }
             const cached = cacheGet('cadences');
             if (cached && cached.data) renderCadenceData(cached.data);
             try {
@@ -6397,6 +6464,20 @@
             } catch (error) { console.warn('Failed to load cadences:', error); }
         }
 
+        async function toggleCadenceEnabled(id, el) {
+            const isNowOn = el.classList.toggle('on');
+            el.title = isNowOn ? 'Enabled' : 'Disabled';
+            try {
+                await authFetch('/api/cadences', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id, enabled: isNowOn }) });
+                cacheDelete('cadences');
+            } catch (err) { el.classList.toggle('on'); el.title = el.classList.contains('on') ? 'Enabled' : 'Disabled'; }
+        }
+
+        function toggleCadenceSummary(id) {
+            const el = document.getElementById('cadenceSummary_' + id);
+            if (el) el.classList.toggle('visible');
+        }
+
         async function triggerCadence(id) {
             const btn = document.getElementById('cadenceRun_' + id);
             if (!btn || btn.disabled) return;
@@ -6405,22 +6486,104 @@
                 const response = await authFetch('/api/cadences/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) });
                 if (response.ok) {
                     btn.textContent = '\u2713'; btn.classList.remove('running'); btn.classList.add('success');
-                    setTimeout(() => { btn.textContent = 'Run'; btn.disabled = false; btn.classList.remove('success'); loadCadenceStatus(); }, 5000);
+                    setTimeout(() => { btn.textContent = 'Run'; btn.disabled = false; btn.classList.remove('success'); cacheDelete('cadences'); loadCadenceStatus(); }, 5000);
                 } else { btn.textContent = 'Error'; btn.classList.remove('running'); setTimeout(() => { btn.textContent = 'Run'; btn.disabled = false; }, 3000); }
             } catch (err) { btn.textContent = 'Error'; btn.classList.remove('running'); setTimeout(() => { btn.textContent = 'Run'; btn.disabled = false; }, 3000); }
         }
 
         async function deleteCadence(id) {
             if (!confirm('Delete this cadence?')) return;
-            try { const response = await authFetch('/api/cadences?id=' + encodeURIComponent(id), { method: 'DELETE' }); if (response.ok) await loadCadenceStatus(); else { const data = await response.json().catch(() => ({})); alert(data.error || 'Failed to delete'); } } catch (err) { alert('Failed to delete cadence'); }
+            try { const response = await authFetch('/api/cadences?id=' + encodeURIComponent(id), { method: 'DELETE' }); if (response.ok) { cacheDelete('cadences'); await loadCadenceStatus(); } else { const data = await response.json().catch(() => ({})); alert(data.error || 'Failed to delete'); } } catch (err) { alert('Failed to delete cadence'); }
+        }
+
+        function buildParamFieldsHtml(tool, currentParams) {
+            if (!tool || !tool.params || tool.params.length === 0) return '';
+            let html = '<div class="cadence-edit-section"><div class="cadence-edit-section-label">Parameters</div>';
+            tool.params.forEach(p => {
+                const val = currentParams?.[p.key];
+                if (p.type === 'string') {
+                    html += `<div class="cadence-edit-row"><span class="cadence-edit-label">${escapeHtml(p.label)}</span><input type="text" id="cadenceParam_${p.key}" class="cadence-edit-input" value="${escapeHtml(String(val ?? p.default_value ?? ''))}" style="width:160px;text-align:left;"></div>`;
+                } else if (p.type === 'int') {
+                    html += `<div class="cadence-edit-row"><span class="cadence-edit-label">${escapeHtml(p.label)}</span><input type="number" id="cadenceParam_${p.key}" class="cadence-edit-input" value="${val ?? p.default_value ?? ''}" style="width:80px;"></div>`;
+                } else if (p.type === 'select') {
+                    html += `<div class="cadence-edit-row"><span class="cadence-edit-label">${escapeHtml(p.label)}</span><select id="cadenceParam_${p.key}" class="cadence-edit-select">${(p.options||[]).map(o => `<option value="${o}" ${(val ?? p.default_value) === o ? 'selected' : ''}>${o}</option>`).join('')}</select></div>`;
+                } else if (p.type === 'string_array') {
+                    const items = Array.isArray(val) ? val : (Array.isArray(p.default_value) ? p.default_value : []);
+                    html += `<div style="margin-bottom:12px;"><span class="cadence-edit-label">${escapeHtml(p.label)}</span>
+                        <div style="display:flex;gap:4px;margin-top:6px;"><input type="text" id="cadenceParamInput_${p.key}" class="cadence-edit-input" style="flex:1;width:auto;text-align:left;" placeholder="Add item..." onkeydown="if(event.key==='Enter'){event.preventDefault();addParamTag('${p.key}');}"><button class="cadence-run-btn" onclick="addParamTag('${p.key}')" style="padding:4px 8px;">+</button></div>
+                        <div class="cadence-tag-list" id="cadenceParamTags_${p.key}">${items.map(v => `<span class="cadence-tag">${escapeHtml(v)}<span class="cadence-tag-remove" onclick="this.parentElement.remove()">&times;</span></span>`).join('')}</div></div>`;
+                }
+            });
+            html += '</div>';
+            return html;
+        }
+
+        function collectParamsFromForm(tool) {
+            const params = {};
+            if (!tool || !tool.params) return params;
+            tool.params.forEach(p => {
+                if (p.type === 'string') params[p.key] = document.getElementById('cadenceParam_'+p.key)?.value || '';
+                else if (p.type === 'int') params[p.key] = parseInt(document.getElementById('cadenceParam_'+p.key)?.value || '0');
+                else if (p.type === 'select') params[p.key] = document.getElementById('cadenceParam_'+p.key)?.value || '';
+                else if (p.type === 'string_array') {
+                    const tags = document.getElementById('cadenceParamTags_'+p.key);
+                    params[p.key] = tags ? Array.from(tags.querySelectorAll('.cadence-tag')).map(t => t.firstChild.textContent.trim()) : [];
+                }
+            });
+            return params;
+        }
+
+        function addParamTag(key) {
+            const input = document.getElementById('cadenceParamInput_' + key);
+            const list = document.getElementById('cadenceParamTags_' + key);
+            if (!input || !list || !input.value.trim()) return;
+            const tag = document.createElement('span');
+            tag.className = 'cadence-tag';
+            tag.innerHTML = `${escapeHtml(input.value.trim())}<span class="cadence-tag-remove" onclick="this.parentElement.remove()">&times;</span>`;
+            list.appendChild(tag);
+            input.value = '';
+            input.focus();
+        }
+
+        function buildScheduleFieldsHtml(prefix, type, initial) {
+            let html = '';
+            if (type === 'daily') {
+                html = `<div class="cadence-edit-row"><span class="cadence-edit-label">Time</span><input type="time" id="${prefix}_time" class="cadence-edit-input" value="${initial?.time || '17:00'}" style="width:110px;"></div>`;
+            } else if (type === 'weekly') {
+                html = `<div class="cadence-edit-row"><span class="cadence-edit-label">Day</span><select id="${prefix}_day" class="cadence-edit-select">${['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].map(d => `<option value="${d}" ${(initial?.day || '').toLowerCase() === d ? 'selected' : ''}>${d.charAt(0).toUpperCase() + d.slice(1)}</option>`).join('')}</select></div>
+                    <div class="cadence-edit-row"><span class="cadence-edit-label">Time</span><input type="time" id="${prefix}_time" class="cadence-edit-input" value="${initial?.time || '09:00'}" style="width:110px;"></div>`;
+            } else if (type === 'interval') {
+                const activeStart = initial?.active_start ?? 0;
+                const activeEnd = initial?.active_end ?? 23;
+                html = `<div class="cadence-edit-row"><span class="cadence-edit-label">Every</span><div style="display:flex;align-items:center;gap:6px;"><input type="number" id="${prefix}_hours" class="cadence-edit-input" value="${initial?.hours || 3}" min="1" max="24" style="width:60px;"><span class="cadence-edit-label">hours</span></div></div>
+                    <div class="cadence-edit-row"><span class="cadence-edit-label">Active from</span><select id="${prefix}_activeStart" class="cadence-edit-select">${Array.from({length:24},(_,i)=>`<option value="${i}" ${i===activeStart?'selected':''}>${String(i).padStart(2,'0')}:00</option>`).join('')}</select></div>
+                    <div class="cadence-edit-row"><span class="cadence-edit-label">Active until</span><select id="${prefix}_activeEnd" class="cadence-edit-select">${Array.from({length:24},(_,i)=>`<option value="${i}" ${i===activeEnd?'selected':''}>${String(i).padStart(2,'0')}:00</option>`).join('')}</select></div>`;
+            }
+            return html;
+        }
+
+        function collectScheduleFromForm(prefix) {
+            const schedType = document.getElementById(prefix + '_schedType')?.value || 'daily';
+            const schedule = { type: schedType };
+            if (schedType === 'daily') { schedule.time = document.getElementById(prefix + '_time')?.value || '17:00'; }
+            else if (schedType === 'weekly') { schedule.day = document.getElementById(prefix + '_day')?.value || 'monday'; schedule.time = document.getElementById(prefix + '_time')?.value || '09:00'; }
+            else if (schedType === 'interval') {
+                schedule.hours = parseInt(document.getElementById(prefix + '_hours')?.value || '3');
+                schedule.active_start = parseInt(document.getElementById(prefix + '_activeStart')?.value ?? '0');
+                schedule.active_end = parseInt(document.getElementById(prefix + '_activeEnd')?.value ?? '23');
+            }
+            return schedule;
         }
 
         function editCadence(id) {
             const cadence = cadenceList.find(c => c.id === id);
             if (!cadence) return;
             const sched = cadence.schedule || {};
+            const tool = toolCatalog.find(t => t.action_type === cadence.action_type);
+            const paramsHtml = buildParamFieldsHtml(tool, cadence.params);
+
             const overlay = document.createElement('div'); overlay.className = 'cadence-edit-overlay'; overlay.onclick = () => closeCadenceEdit();
-            const popover = document.createElement('div'); popover.className = 'cadence-edit-popover'; popover.id = 'cadenceEditPopover'; popover.style.maxWidth = '360px';
+            const popover = document.createElement('div'); popover.className = 'cadence-edit-popover'; popover.id = 'cadenceEditPopover'; popover.style.maxWidth = '380px';
             popover.innerHTML = `<div class="cadence-edit-title">${cadence.icon} ${cadence.name}</div>
                 <div class="cadence-edit-section"><div class="cadence-edit-section-label">Schedule</div>
                     <div class="cadence-edit-row"><span class="cadence-edit-label">Type</span>
@@ -6429,6 +6592,7 @@
                             <option value="weekly" ${sched.type === 'weekly' ? 'selected' : ''}>Weekly</option>
                             <option value="interval" ${sched.type === 'interval' ? 'selected' : ''}>Every N Hours</option>
                         </select></div><div id="cadenceScheduleFields"></div></div>
+                ${paramsHtml}
                 <div class="cadence-edit-section"><div class="cadence-edit-section-label">Options</div>
                     <div class="cadence-edit-toggle"><span class="cadence-edit-label">Enabled</span><div class="cadence-toggle-switch ${cadence.enabled ? 'active' : ''}" id="cadenceEdit_enabled" onclick="this.classList.toggle('active')"></div></div>
                     <div class="cadence-edit-toggle"><span class="cadence-edit-label">Notifications</span><div class="cadence-toggle-switch ${cadence.notify_on_success ? 'active' : ''}" id="cadenceEdit_notify" onclick="this.classList.toggle('active')"></div></div>
@@ -6436,18 +6600,14 @@
                 </div>
                 <div class="cadence-edit-actions"><button class="cadence-edit-cancel" onclick="closeCadenceEdit()">Cancel</button><button class="cadence-edit-save" onclick="saveCadenceEdit('${id}')">Save</button></div>`;
             document.body.appendChild(overlay); document.body.appendChild(popover);
-            updateScheduleFields(sched);
+            document.getElementById('cadenceScheduleFields').innerHTML = buildScheduleFieldsHtml('cadenceEdit', sched.type || 'daily', sched);
         }
 
         function updateScheduleFields(initial) {
             const container = document.getElementById('cadenceScheduleFields');
             if (!container) return;
             const type = document.getElementById('cadenceEdit_schedType')?.value || 'daily';
-            let html = '';
-            if (type === 'daily') { html = `<div class="cadence-edit-row"><span class="cadence-edit-label">Time</span><input type="time" id="cadenceEdit_time" class="cadence-edit-input" value="${initial?.time || '17:00'}" style="width:110px;"></div>`; }
-            else if (type === 'weekly') { html = `<div class="cadence-edit-row"><span class="cadence-edit-label">Day</span><select id="cadenceEdit_day" class="cadence-edit-select">${['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].map(d => `<option value="${d}" ${(initial?.day || '').toLowerCase() === d ? 'selected' : ''}>${d.charAt(0).toUpperCase() + d.slice(1)}</option>`).join('')}</select></div><div class="cadence-edit-row"><span class="cadence-edit-label">Time</span><input type="time" id="cadenceEdit_time" class="cadence-edit-input" value="${initial?.time || '09:00'}" style="width:110px;"></div>`; }
-            else if (type === 'interval') { html = `<div class="cadence-edit-row"><span class="cadence-edit-label">Every</span><div style="display:flex;align-items:center;gap:6px;"><input type="number" id="cadenceEdit_hours" class="cadence-edit-input" value="${initial?.hours || 3}" min="1" max="24" style="width:60px;"><span class="cadence-edit-label">hours</span></div></div>`; }
-            container.innerHTML = html;
+            container.innerHTML = buildScheduleFieldsHtml('cadenceEdit', type, initial || {});
         }
 
         function closeCadenceEdit() {
@@ -6457,12 +6617,11 @@
         }
 
         async function saveCadenceEdit(id) {
-            const schedType = document.getElementById('cadenceEdit_schedType')?.value;
-            const schedule = { type: schedType };
-            if (schedType === 'daily') schedule.time = document.getElementById('cadenceEdit_time')?.value || '17:00';
-            else if (schedType === 'weekly') { schedule.day = document.getElementById('cadenceEdit_day')?.value || 'monday'; schedule.time = document.getElementById('cadenceEdit_time')?.value || '09:00'; }
-            else if (schedType === 'interval') schedule.hours = parseInt(document.getElementById('cadenceEdit_hours')?.value || '3');
-            const updates = { id, schedule, enabled: document.getElementById('cadenceEdit_enabled')?.classList.contains('active') ?? true, notify_on_success: document.getElementById('cadenceEdit_notify')?.classList.contains('active') ?? true, email_on_success: document.getElementById('cadenceEdit_email')?.classList.contains('active') ?? false };
+            const cadence = cadenceList.find(c => c.id === id);
+            const tool = toolCatalog.find(t => t.action_type === cadence?.action_type);
+            const schedule = collectScheduleFromForm('cadenceEdit');
+            const params = collectParamsFromForm(tool);
+            const updates = { id, schedule, params, enabled: document.getElementById('cadenceEdit_enabled')?.classList.contains('active') ?? true, notify_on_success: document.getElementById('cadenceEdit_notify')?.classList.contains('active') ?? true, email_on_success: document.getElementById('cadenceEdit_email')?.classList.contains('active') ?? false };
             try {
                 const response = await authFetch('/api/cadences', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates) });
                 if (response.ok) { closeCadenceEdit(); cacheDelete('cadences'); await loadCadenceStatus(); } else { const data = await response.json().catch(() => ({})); alert(data.error || 'Failed to save'); }
@@ -6480,9 +6639,11 @@
             const popover = document.createElement('div'); popover.className = 'cadence-edit-popover'; popover.id = 'cadenceEditPopover'; popover.style.maxWidth = '380px';
             popover.innerHTML = `<div class="cadence-edit-title">New Cadence</div>
                 <div class="cadence-edit-section"><div class="cadence-edit-section-label">Basics</div>
-                    <div class="cadence-edit-row"><span class="cadence-edit-label">Name</span><input type="text" id="cadenceCreate_name" class="cadence-edit-input" placeholder="My cadence" style="width:180px;"></div>
-                    <div class="cadence-edit-row"><span class="cadence-edit-label">Tool</span><select id="cadenceCreate_tool" class="cadence-edit-select"><option value="">Choose a tool...</option>${toolOptions}</select></div>
+                    <div class="cadence-edit-row"><span class="cadence-edit-label">Name</span><input type="text" id="cadenceCreate_name" class="cadence-edit-input" placeholder="My cadence" style="width:180px;text-align:left;"></div>
+                    <div class="cadence-edit-row"><span class="cadence-edit-label">Tool</span><select id="cadenceCreate_tool" class="cadence-edit-select" onchange="updateCreateToolParams()"><option value="">Choose a tool...</option>${toolOptions}</select></div>
+                    <div id="cadenceCreateToolDesc" style="font-size:11px;color:var(--ink-faint);margin-top:-4px;margin-bottom:8px;"></div>
                 </div>
+                <div id="cadenceCreateParamFields"></div>
                 <div class="cadence-edit-section"><div class="cadence-edit-section-label">Schedule</div>
                     <div class="cadence-edit-row"><span class="cadence-edit-label">Type</span><select id="cadenceCreate_schedType" class="cadence-edit-select" onchange="updateCreateScheduleFields()"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="interval">Every N Hours</option></select></div>
                     <div id="cadenceCreateScheduleFields"></div></div>
@@ -6491,15 +6652,27 @@
             updateCreateScheduleFields({ type: 'daily', time: '17:00' });
         }
 
+        function updateCreateToolParams() {
+            const actionType = document.getElementById('cadenceCreate_tool')?.value;
+            const descEl = document.getElementById('cadenceCreateToolDesc');
+            const paramContainer = document.getElementById('cadenceCreateParamFields');
+            if (!actionType) { if (descEl) descEl.textContent = ''; if (paramContainer) paramContainer.innerHTML = ''; return; }
+            const tool = toolCatalog.find(t => t.action_type === actionType);
+            if (descEl) descEl.textContent = tool?.description || '';
+            if (paramContainer) paramContainer.innerHTML = buildParamFieldsHtml(tool, {});
+            // Auto-fill schedule from tool defaults
+            if (tool?.default_schedule) {
+                const ds = tool.default_schedule;
+                const schedSelect = document.getElementById('cadenceCreate_schedType');
+                if (schedSelect && ds.type) { schedSelect.value = ds.type; updateCreateScheduleFields(ds); }
+            }
+        }
+
         function updateCreateScheduleFields(initial) {
             const container = document.getElementById('cadenceCreateScheduleFields');
             if (!container) return;
             const type = document.getElementById('cadenceCreate_schedType')?.value || 'daily';
-            let html = '';
-            if (type === 'daily') html = `<div class="cadence-edit-row"><span class="cadence-edit-label">Time</span><input type="time" id="cadenceCreate_time" class="cadence-edit-input" value="${initial?.time || '17:00'}" style="width:110px;"></div>`;
-            else if (type === 'weekly') html = `<div class="cadence-edit-row"><span class="cadence-edit-label">Day</span><select id="cadenceCreate_day" class="cadence-edit-select">${['monday','tuesday','wednesday','thursday','friday','saturday','sunday'].map(d => `<option value="${d}" ${(initial?.day || '').toLowerCase() === d ? 'selected' : ''}>${d.charAt(0).toUpperCase() + d.slice(1)}</option>`).join('')}</select></div><div class="cadence-edit-row"><span class="cadence-edit-label">Time</span><input type="time" id="cadenceCreate_time" class="cadence-edit-input" value="${initial?.time || '09:00'}" style="width:110px;"></div>`;
-            else if (type === 'interval') html = `<div class="cadence-edit-row"><span class="cadence-edit-label">Every</span><div style="display:flex;align-items:center;gap:6px;"><input type="number" id="cadenceCreate_hours" class="cadence-edit-input" value="${initial?.hours || 3}" min="1" max="24" style="width:60px;"><span class="cadence-edit-label">hours</span></div></div>`;
-            container.innerHTML = html;
+            container.innerHTML = buildScheduleFieldsHtml('cadenceCreate', type, initial || {});
         }
 
         async function saveCreateCadence() {
@@ -6508,12 +6681,9 @@
             if (!name) { alert('Please enter a name'); return; }
             if (!actionType) { alert('Please select a tool'); return; }
             const tool = toolCatalog.find(t => t.action_type === actionType);
-            const schedType = document.getElementById('cadenceCreate_schedType')?.value || 'daily';
-            const schedule = { type: schedType };
-            if (schedType === 'daily') schedule.time = document.getElementById('cadenceCreate_time')?.value || '17:00';
-            else if (schedType === 'weekly') { schedule.day = document.getElementById('cadenceCreate_day')?.value || 'monday'; schedule.time = document.getElementById('cadenceCreate_time')?.value || '09:00'; }
-            else if (schedType === 'interval') schedule.hours = parseInt(document.getElementById('cadenceCreate_hours')?.value || '3');
-            const body = { name, action_type: actionType, icon: tool?.icon || '&#9881;', schedule, params: {}, notify_on_success: true, email_on_success: false };
+            const schedule = collectScheduleFromForm('cadenceCreate');
+            const params = collectParamsFromForm(tool);
+            const body = { name, action_type: actionType, icon: tool?.icon || '&#9881;', schedule, params, notify_on_success: true, email_on_success: false };
             try {
                 const response = await authFetch('/api/cadences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
                 if (response.ok) { closeCadenceEdit(); cacheDelete('cadences'); await loadCadenceStatus(); } else { const data = await response.json().catch(() => ({})); alert(data.error || 'Failed to create cadence'); }

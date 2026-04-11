@@ -427,14 +427,14 @@ class MenuBarController: NSObject, NSMenuDelegate {
             do {
                 let summary = try await runner.run(cadence)
                 let timestamp = ISO8601DateFormatter().string(from: Date())
-                CadenceService.shared.markRunSuccess(id: cadence.id, date: todayDate, timestamp: timestamp)
+                CadenceService.shared.markRunSuccess(id: cadence.id, date: todayDate, timestamp: timestamp, summary: summary)
                 logToFile("✅ [Cadence] \(cadence.name): \(summary)", path: logPath)
                 if cadence.notifyOnSuccess {
                     showNotification(title: "Alfred: \(cadence.name)", body: summary)
                 }
             } catch {
                 logToFile("❌ [Cadence] \(cadence.name) failed: \(error)", path: logPath)
-                CadenceService.shared.markRunFailure(id: cadence.id, cooldownMinutes: 30)
+                CadenceService.shared.markRunFailure(id: cadence.id, cooldownMinutes: 30, errorMessage: "\(error)")
             }
             // Release in-flight guard after completion (success or failure)
             inFlightCadenceIds.remove(cadence.id)
