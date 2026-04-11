@@ -52,11 +52,45 @@ struct IntentCoachingRouter {
         }
     }
 
-    // MARK: - Posture → Skill Mapping
+    // MARK: - Posture → Tenet Pack Mapping
 
-    /// Get the installed skill IDs most relevant to this posture.
-    /// Tenets from these skills are injected into the coaching overlay.
-    /// Core skill IDs injected into every posture (always-on tenets)
+    /// Map a coaching posture to the capability scope used by tenet packs.
+    /// This replaces the old hardcoded skill ID mapping.
+    static func scopesForPosture(_ posture: CoachingPosture) -> [String] {
+        switch posture {
+        case .reflection:
+            return ["relationship", "attention"]
+        case .prioritization:
+            return ["leverage", "avoidance"]
+        case .accountability:
+            return ["relationship", "avoidance"]
+        case .planning:
+            return ["attention"]
+        case .deepReflection:
+            return ["relationship", "attention"]
+        case .operational, .general:
+            return []
+        }
+    }
+
+    /// Get the relevant tenet principles for this posture (v2: from TenetPackLoader).
+    /// Returns formatted tenet text for injection into coaching overlay.
+    static func relevantTenetsForPosture(_ posture: CoachingPosture) -> String {
+        let scopes = scopesForPosture(posture)
+        let packs = TenetPackLoader.shared.getEnabledTenetPacks()
+
+        // Include packs that apply to "all" or match any of the posture's scopes
+        let relevant = packs.filter { pack in
+            pack.scope.contains("all") || !Set(pack.scope).isDisjoint(with: scopes)
+        }
+
+        guard !relevant.isEmpty else { return "" }
+
+        return relevant.map { "[\($0.name)]: \($0.principles)" }.joined(separator: "\n")
+    }
+
+    /// Legacy: Get the installed skill IDs most relevant to this posture.
+    /// Kept for backward compatibility — used when TenetPackLoader has no packs.
     private static let coreSkillIds = ["alfred-voice", "alfred-rules", "campbell-rules", "mochary-rules"]
 
     static func relevantSkillIds(for posture: CoachingPosture) -> [String] {

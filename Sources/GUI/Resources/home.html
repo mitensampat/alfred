@@ -2533,8 +2533,14 @@
                 <!-- COACHING TAB (merged: tenets + skills + library + previews) -->
                 <div id="panelTabCoaching" style="display:none;">
                     <div class="panel-section">
-                        <div class="panel-section-label">COACHING TENETS</div>
-                        <div id="tenetSectionsList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
+                        <div class="panel-section-label">COACHING PHILOSOPHY</div>
+                        <div style="font-size:11px;color:var(--ink-tertiary);margin-bottom:8px;">Tenet packs define HOW Alfred coaches you — principles that shape tone, priorities, and framing across all capabilities.</div>
+                        <div id="tenetPacksList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
+                    </div>
+                    <div class="panel-section">
+                        <div class="panel-section-label">ANALYSIS LENSES</div>
+                        <div style="font-size:11px;color:var(--ink-tertiary);margin-bottom:8px;">Lenses detect patterns in your data and emit structured signals. These feed into coaching cards and chat.</div>
+                        <div id="analysisLensesList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
                     </div>
                     <div class="panel-section">
                         <div class="panel-section-label">MEETING BRIEF PROMPT</div>
@@ -3146,6 +3152,7 @@
             document.getElementById('settingsPanel').classList.add('open');
             // Load data for active tab
             loadTenets();
+            loadAnalysisLenses();
             loadSkillsList();
             loadCadenceStatus();
             loadFavorites();
@@ -5235,6 +5242,18 @@
                 }
             }
 
+            // Start coaching card SSE stream AND other fetches IN PARALLEL
+            // Previously cards waited for all fetches to complete first — now they start immediately
+            let pulseData = (cachedPulse && cachedPulse.data) || {};
+            let openerData = (cachedOpener && cachedOpener.data) || null;
+            let pendingClosures = [];
+            let meetingBrief = (cachedBrief && cachedBrief.data) || null;
+            let morningBriefing = (cachedMorningBriefing && cachedMorningBriefing.data) || null;
+
+            // Start SSE stream immediately — uses cached values for progressive renders,
+            // then does a final render once parallel fetches complete
+            const cardsPromise = streamCoachingCards(forceCards, () => pulseData, () => openerData, () => pendingClosures, () => meetingBrief, () => morningBriefing);
+
             // Fetch pulse, opener, pending closures, meeting brief, and morning briefing in parallel
             const [pulseResult, openerResult, pendingClosuresResult, meetingBriefResult, morningBriefingResult] = await Promise.allSettled([
                 (async () => {
@@ -5307,14 +5326,15 @@
                 })()
             ]);
 
-            const pulseData = pulseResult.status === 'fulfilled' ? pulseResult.value : (cachedPulse && cachedPulse.data) || {};
-            const openerData = openerResult.status === 'fulfilled' ? openerResult.value : (cachedOpener && cachedOpener.data) || null;
-            const pendingClosures = pendingClosuresResult.status === 'fulfilled' ? pendingClosuresResult.value : [];
-            const meetingBrief = meetingBriefResult.status === 'fulfilled' ? meetingBriefResult.value : null;
-            const morningBriefing = morningBriefingResult.status === 'fulfilled' ? morningBriefingResult.value : (cachedMorningBriefing && cachedMorningBriefing.data) || null;
+            // Update shared state with fresh data
+            pulseData = pulseResult.status === 'fulfilled' ? pulseResult.value : pulseData;
+            openerData = openerResult.status === 'fulfilled' ? openerResult.value : openerData;
+            pendingClosures = pendingClosuresResult.status === 'fulfilled' ? pendingClosuresResult.value : [];
+            meetingBrief = meetingBriefResult.status === 'fulfilled' ? meetingBriefResult.value : meetingBrief;
+            morningBriefing = morningBriefingResult.status === 'fulfilled' ? morningBriefingResult.value : morningBriefing;
 
-            // Stream coaching cards via SSE (progressive loading)
-            const streamedCards = await streamCoachingCards(forceCards, pulseData, openerData, pendingClosures, meetingBrief, morningBriefing);
+            // Wait for card streaming to finish
+            const streamedCards = await cardsPromise;
             cacheSet('coaching_cards', streamedCards);
 
             // Final render with all data
@@ -5337,7 +5357,8 @@
         }
 
         // Stream coaching cards via SSE, rendering each card progressively as it arrives
-        function streamCoachingCards(forceRefresh, pulseData, openerData, pendingClosures, meetingBrief, morningBriefing) {
+        // Accepts getter functions for parallel-fetched data so progressive renders use latest values
+        function streamCoachingCards(forceRefresh, getPulse, getOpener, getClosures, getMeetingBrief, getBriefing) {
             return new Promise((resolve) => {
                 const url = '/api/coaching/cards/stream' +
                     '?passcode=' + encodeURIComponent(getPasscode()) +
@@ -5371,9 +5392,9 @@
                     try {
                         const card = JSON.parse(e.data);
                         cards.push(card);
-                        // Progressive render: replace cached cards with fresh ones as they arrive
-                        renderMorningWalk(pulseData, cards, openerData, pendingClosures, meetingBrief, morningBriefing);
-                        _lastPulseJSON = JSON.stringify([pulseData, cards, openerData, pendingClosures, morningBriefing]);
+                        // Progressive render: use getter functions to pick up latest parallel-fetched data
+                        renderMorningWalk(getPulse(), cards, getOpener(), getClosures(), getMeetingBrief(), getBriefing());
+                        _lastPulseJSON = JSON.stringify([getPulse(), cards, getOpener(), getClosures(), getBriefing()]);
                     } catch(ex) {
                         console.error('[Cards] Failed to parse card:', ex);
                     }
@@ -5946,74 +5967,113 @@
             try { const response = await authFetch(`/api/skills?id=${encodeURIComponent(id)}`, { method: 'DELETE' }); if (response.ok) loadSkillsList(); } catch (e) {}
         }
 
+        // --- v2 Tenet Packs (from /api/tenets) ---
         async function loadTenets() {
-            const container = document.getElementById('tenetSectionsList');
+            const container = document.getElementById('tenetPacksList');
             if (!container) return;
             try {
-                const resp = await authFetch('/api/skills');
-                if (!resp.ok) { container.innerHTML = '<div class="settings-item-desc">Failed to load tenets</div>'; return; }
+                const resp = await authFetch('/api/tenets');
+                if (!resp.ok) { container.innerHTML = '<div class="settings-item-desc">Failed to load tenet packs</div>'; return; }
                 const data = await resp.json();
-                const tenetSkills = (data.skills || []).filter(s => s.frequency === 'none' && s.origin === 'installed');
-                if (tenetSkills.length === 0) { container.innerHTML = '<div class="settings-item-desc">No tenets configured.</div>'; return; }
+                const packs = data.tenets || [];
+                if (packs.length === 0) { container.innerHTML = '<div class="settings-item-desc">No tenet packs configured.</div>'; return; }
                 let html = '';
-                for (const skill of tenetSkills) {
-                    const detailResp = await authFetch('/api/skills/detail?id=' + encodeURIComponent(skill.id));
+                for (const pack of packs) {
+                    const detailResp = await authFetch('/api/tenets/detail?id=' + encodeURIComponent(pack.id));
                     const detailData = detailResp.ok ? await detailResp.json() : {};
-                    const tenetsText = (detailData.skill || detailData).tenets || '';
-                    const tenetsHtml = tenetsText.split('\n').map(line => {
+                    const principlesText = detailData.principles || '';
+                    const principlesHtml = principlesText.split('\n').map(line => {
                         if (line.startsWith('- ')) return '<div style="padding-left:8px;margin:3px 0;font-size:12px;color:var(--ink-secondary);line-height:1.5;">&bull; ' + escapeHtml(line.slice(2)) + '</div>';
                         return line.trim() ? '<div style="font-size:12px;color:var(--ink-secondary);">' + escapeHtml(line) + '</div>' : '';
                     }).join('');
-                    const rawTenets = tenetsText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-                    html += '<div class="tenet-section-card ' + (skill.enabled ? '' : 'disabled') + '" id="tenet-' + escapeHtml(skill.id) + '">'
+                    const scopeTags = (pack.scope || ['all']).map(s => '<span style="display:inline-block;font-size:10px;padding:1px 6px;border-radius:8px;background:var(--bg-tertiary);color:var(--ink-tertiary);margin-left:4px;">' + escapeHtml(s) + '</span>').join('');
+                    html += '<div class="tenet-section-card ' + (pack.enabled ? '' : 'disabled') + '" id="tenet-' + escapeHtml(pack.id) + '">'
                         + '<div class="tenet-section-header">'
-                        + '<label class="skill-toggle" style="flex-shrink:0;" onclick="event.stopPropagation()"><input type="checkbox" ' + (skill.enabled ? 'checked' : '') + ' onchange="toggleSkill(\'' + escapeHtml(skill.id) + '\')"><span class="skill-toggle-slider"></span></label>'
-                        + '<div class="tenet-section-title" onclick="expandTenetSection(this.closest(\'.tenet-section-card\'))">' + escapeHtml(skill.effectiveName || skill.name) + '</div>'
-                        + '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); editTenet(\'' + escapeHtml(skill.id) + '\')" style="font-size:11px;padding:2px 8px;">Edit</button>'
+                        + '<label class="skill-toggle" style="flex-shrink:0;" onclick="event.stopPropagation()"><input type="checkbox" ' + (pack.enabled ? 'checked' : '') + ' onchange="toggleTenetPack(\'' + escapeHtml(pack.id) + '\')"><span class="skill-toggle-slider"></span></label>'
+                        + '<div class="tenet-section-title" onclick="expandTenetSection(this.closest(\'.tenet-section-card\'))" style="flex:1;">' + escapeHtml(pack.name) + scopeTags + '</div>'
+                        + (pack.author ? '<span style="font-size:10px;color:var(--ink-faint);margin-right:4px;">' + escapeHtml(pack.author) + '</span>' : '')
                         + '<svg class="tenet-chevron" onclick="expandTenetSection(this.closest(\'.tenet-section-card\'))" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>'
                         + '</div>'
-                        + '<div class="tenet-section-body" id="tenet-display-' + escapeHtml(skill.id) + '">' + tenetsHtml + '</div>'
-                        + '<div class="tenet-section-body" id="tenet-editor-' + escapeHtml(skill.id) + '" style="display:none;">'
-                        + '<textarea id="tenet-textarea-' + escapeHtml(skill.id) + '" style="width:100%;min-height:120px;font-size:12px;font-family:inherit;border:1px solid var(--line);border-radius:6px;padding:8px;resize:vertical;background:var(--surface);color:var(--ink-primary);line-height:1.5;">' + rawTenets + '</textarea>'
-                        + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">'
-                        + '<button class="btn btn-ghost btn-sm" onclick="cancelTenetEdit(\'' + escapeHtml(skill.id) + '\')">Cancel</button>'
-                        + '<button class="btn btn-primary btn-sm" onclick="saveTenet(\'' + escapeHtml(skill.id) + '\')">Save</button>'
-                        + '</div></div></div>';
+                        + '<div class="tenet-section-body" id="tenet-display-' + escapeHtml(pack.id) + '">'
+                        + '<div style="font-size:11px;color:var(--ink-tertiary);margin-bottom:6px;">' + escapeHtml(pack.description || '') + '</div>'
+                        + principlesHtml
+                        + '</div>'
+                        + '</div>';
                 }
                 container.innerHTML = html;
-            } catch (e) { container.innerHTML = '<div class="settings-item-desc">Failed to load tenets</div>'; }
+            } catch (e) { container.innerHTML = '<div class="settings-item-desc">Failed to load tenet packs</div>'; }
+        }
+
+        async function toggleTenetPack(packId) {
+            try {
+                await authFetch('/api/tenets/toggle?id=' + encodeURIComponent(packId), { method: 'POST' });
+                await loadTenets();
+            } catch (e) { console.error('Failed to toggle tenet pack:', e); }
         }
 
         function expandTenetSection(el) { if (el) el.classList.toggle('expanded'); }
 
-        function editTenet(skillId) {
-            const card = document.getElementById('tenet-' + skillId);
-            if (card && !card.classList.contains('expanded')) card.classList.add('expanded');
-            const display = document.getElementById('tenet-display-' + skillId);
-            const editor = document.getElementById('tenet-editor-' + skillId);
-            if (display) display.style.display = 'none';
-            if (editor) editor.style.display = 'block';
-        }
-        function cancelTenetEdit(skillId) {
-            const display = document.getElementById('tenet-display-' + skillId);
-            const editor = document.getElementById('tenet-editor-' + skillId);
-            if (display) display.style.display = '';
-            if (editor) editor.style.display = 'none';
-        }
-        async function saveTenet(skillId) {
-            const textarea = document.getElementById('tenet-textarea-' + skillId);
-            if (!textarea) return;
-            const tenets = textarea.value.trim();
-            if (!tenets) { alert('Tenets cannot be empty'); return; }
+        // --- v2 Analysis Lenses (from /api/analyses) ---
+        async function loadAnalysisLenses() {
+            const container = document.getElementById('analysisLensesList');
+            if (!container) return;
             try {
-                const resp = await authFetch('/api/skills?id=' + encodeURIComponent(skillId), {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ tenets })
-                });
-                if (!resp.ok) { const err = await resp.json(); alert(err.error || 'Failed to save'); return; }
-                await loadTenets();
-            } catch (e) { alert('Failed to save: ' + e.message); }
+                const resp = await authFetch('/api/analyses');
+                if (!resp.ok) { container.innerHTML = '<div class="settings-item-desc">Failed to load analysis lenses</div>'; return; }
+                const data = await resp.json();
+                const lenses = data.analyses || [];
+                if (lenses.length === 0) { container.innerHTML = '<div class="settings-item-desc">No analysis lenses configured.</div>'; return; }
+
+                // Also fetch today's signal counts
+                let signalCounts = {};
+                try {
+                    const sigResp = await authFetch('/api/signals/today');
+                    if (sigResp.ok) {
+                        const sigData = await sigResp.json();
+                        (sigData.signals || []).forEach(s => {
+                            signalCounts[s.lensId] = (signalCounts[s.lensId] || 0) + 1;
+                        });
+                    }
+                } catch (e) {}
+
+                let html = '';
+                for (const lens of lenses) {
+                    const sigCount = signalCounts[lens.id] || 0;
+                    const signalTypes = (lens.signals || '').split(',').map(s => s.trim()).filter(Boolean);
+                    const dataSourcePills = (lens.dataSources || []).map(ds =>
+                        '<span style="display:inline-block;font-size:10px;padding:1px 6px;border-radius:8px;background:var(--bg-tertiary);color:var(--ink-tertiary);margin-right:3px;">' + escapeHtml(ds) + '</span>'
+                    ).join('');
+                    html += '<div class="tenet-section-card ' + (lens.enabled ? '' : 'disabled') + '">'
+                        + '<div class="tenet-section-header">'
+                        + '<label class="skill-toggle" style="flex-shrink:0;" onclick="event.stopPropagation()"><input type="checkbox" ' + (lens.enabled ? 'checked' : '') + ' onchange="toggleAnalysisLens(\'' + escapeHtml(lens.id) + '\')"><span class="skill-toggle-slider"></span></label>'
+                        + '<div class="tenet-section-title" onclick="expandTenetSection(this.closest(\'.tenet-section-card\'))" style="flex:1;">'
+                        + escapeHtml(lens.name)
+                        + (sigCount > 0 ? ' <span style="display:inline-block;font-size:10px;padding:1px 6px;border-radius:8px;background:var(--coach);color:#fff;margin-left:4px;">' + sigCount + ' signal' + (sigCount !== 1 ? 's' : '') + '</span>' : '')
+                        + '</div>'
+                        + '<svg class="tenet-chevron" onclick="expandTenetSection(this.closest(\'.tenet-section-card\'))" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>'
+                        + '</div>'
+                        + '<div class="tenet-section-body">'
+                        + '<div style="font-size:11px;color:var(--ink-tertiary);margin-bottom:6px;">' + escapeHtml(lens.description || '') + '</div>'
+                        + '<div style="margin-bottom:4px;">'
+                        + '<span style="font-size:10px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.5px;">Data: </span>' + dataSourcePills
+                        + '</div>'
+                        + '<div style="margin-bottom:4px;">'
+                        + '<span style="font-size:10px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.5px;">Emits: </span>'
+                        + signalTypes.map(s => '<span style="display:inline-block;font-size:10px;padding:1px 6px;border-radius:8px;border:1px solid var(--line);color:var(--ink-secondary);margin-right:3px;">' + escapeHtml(s) + '</span>').join('')
+                        + '</div>'
+                        + (lens.author ? '<div style="font-size:10px;color:var(--ink-faint);">by ' + escapeHtml(lens.author) + '</div>' : '')
+                        + '</div>'
+                        + '</div>';
+                }
+                container.innerHTML = html;
+            } catch (e) { container.innerHTML = '<div class="settings-item-desc">Failed to load analysis lenses</div>'; }
+        }
+
+        async function toggleAnalysisLens(lensId) {
+            try {
+                await authFetch('/api/analyses/toggle?id=' + encodeURIComponent(lensId), { method: 'POST' });
+                await loadAnalysisLenses();
+            } catch (e) { console.error('Failed to toggle analysis lens:', e); }
         }
 
         async function loadQAPreview(force = false) {

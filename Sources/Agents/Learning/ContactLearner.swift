@@ -145,14 +145,14 @@ class ContactLearner {
     /// Get context for a specific thread
     func getThreadContext(platform: String, threadId: String) -> ThreadRecord? {
         let key = threadKey(platform: platform, threadId: threadId)
-        return store.threads[key]
+        return queue.sync { store.threads[key] }
     }
 
     /// Get prompt context to inject into AI prompts
     func getPromptContext(platform: String, threadId: String) -> String {
         let key = threadKey(platform: platform, threadId: threadId)
 
-        guard let thread = store.threads[key] else {
+        guard let thread = queue.sync(execute: { store.threads[key] }) else {
             return "" // No history for this thread
         }
 
@@ -300,20 +300,20 @@ class ContactLearner {
 
     /// Get all thread records
     func getAllThreads() -> [ThreadRecord] {
-        return Array(store.threads.values)
+        return queue.sync { Array(store.threads.values) }
     }
 
     /// Get threads by classification
     func getThreads(classification: ThreadClassification) -> [ThreadRecord] {
-        return store.threads.values.filter { $0.classification == classification }
+        return queue.sync { store.threads.values.filter { $0.classification == classification } }
     }
 
     /// Get a cross-platform summary for a specific contact (Learning v3: Phase 6)
     func getContactSummary(name: String) -> ContactSummary? {
         let nameLower = name.lowercased()
-        let matchingThreads = store.threads.values.filter {
+        let matchingThreads = queue.sync { store.threads.values.filter {
             $0.threadName.lowercased().contains(nameLower) && !$0.isGroup
-        }
+        }}
         guard !matchingThreads.isEmpty else { return nil }
 
         let platforms = Set(matchingThreads.map { $0.platform })
@@ -351,7 +351,7 @@ class ContactLearner {
 
     /// Get stats summary
     func getStats() -> ContactStats {
-        let threads = Array(store.threads.values)
+        let threads = queue.sync { Array(store.threads.values) }
         let observe = threads.filter { $0.classification == .observe }.count
         let minimal = threads.filter { $0.classification == .minimal }.count
         let active = threads.filter { $0.classification == .active }.count

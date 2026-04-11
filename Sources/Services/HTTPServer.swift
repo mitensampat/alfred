@@ -1108,6 +1108,54 @@ class HTTPServer {
         case ("POST", "/api/skills/library/install"):
             return handleInstallLibrarySkill(request)
 
+        // MARK: Tenet Pack Endpoints (v2)
+        case ("GET", "/api/tenets"):
+            return handleGetTenetPacks()
+
+        case ("GET", "/api/tenets/detail"):
+            return handleGetTenetPackDetail(request)
+
+        case ("POST", "/api/tenets/toggle"):
+            return handleToggleTenetPack(request)
+
+        case ("POST", "/api/tenets"):
+            return handleCreateTenetPack(request)
+
+        case ("PUT", "/api/tenets"):
+            return handleUpdateTenetPack(request)
+
+        case ("DELETE", "/api/tenets"):
+            return handleDeleteTenetPack(request)
+
+        // MARK: Analysis Lens Endpoints (v2)
+        case ("GET", "/api/analyses"):
+            return handleGetAnalysisLenses()
+
+        case ("GET", "/api/analyses/detail"):
+            return handleGetAnalysisLensDetail(request)
+
+        case ("POST", "/api/analyses/toggle"):
+            return handleToggleAnalysisLens(request)
+
+        case ("POST", "/api/analyses"):
+            return handleCreateAnalysisLens(request)
+
+        case ("PUT", "/api/analyses"):
+            return handleUpdateAnalysisLens(request)
+
+        case ("DELETE", "/api/analyses"):
+            return handleDeleteAnalysisLens(request)
+
+        // MARK: Signal Endpoints (v2)
+        case ("GET", "/api/signals/today"):
+            return handleGetTodaysSignals()
+
+        case ("GET", "/api/signals/history"):
+            return handleGetSignalHistory(request)
+
+        case ("GET", "/api/signals/stats"):
+            return handleGetSignalStats()
+
         // MARK: Past Conversations Endpoints
         case ("GET", "/api/conversations"):
             return handleGetConversations(request)
@@ -5217,11 +5265,16 @@ The Commitment Check feature requires a properly configured Notion database.
                             for: intentResponse.intent.action,
                             target: intentResponse.intent.target
                         )
-                        let relevantSkillIds = IntentCoachingRouter.relevantSkillIds(for: posture)
-                        let relevantTenets = SkillLoader.shared.getEnabledSkills()
-                            .filter { relevantSkillIds.contains($0.id) }
-                            .map { "[\($0.effectiveName)]: \($0.tenets)" }
-                            .joined(separator: "\n")
+                        // v2: Pull tenets from TenetPackLoader (scope-based), fallback to legacy skill tenets
+                        var relevantTenets = IntentCoachingRouter.relevantTenetsForPosture(posture)
+                        if relevantTenets.isEmpty {
+                            // Fallback: legacy skill-based tenets
+                            let relevantSkillIds = IntentCoachingRouter.relevantSkillIds(for: posture)
+                            relevantTenets = SkillLoader.shared.getEnabledSkills()
+                                .filter { relevantSkillIds.contains($0.id) }
+                                .map { "[\($0.effectiveName)]: \($0.tenets)" }
+                                .joined(separator: "\n")
+                        }
 
                         let coachingOverlayPrompt = IntentCoachingRouter.buildCoachingOverlay(
                             posture: posture,
@@ -5482,6 +5535,23 @@ The Commitment Check feature requires a properly configured Notion database.
 
         let forceRefresh = request.queryParams["force"] == "true"
         let isoFormatter = Self.iso8601Formatter
+
+        // Warm engine's in-memory cache from disk cache (survives restarts)
+        if !forceRefresh && engine.cachedCards == nil,
+           let diskCached = cache.getCached(endpoint: "/api/coaching/cards"),
+           let data = diskCached.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let cardsArray = json["cards"] as? [[String: Any]] {
+            let restoredCards = cardsArray.compactMap { dict -> CoachingEngine.CoachingCard? in
+                guard let type = dict["type"] as? String,
+                      let label = dict["label"] as? String,
+                      let insight = dict["insight"] as? String else { return nil }
+                return CoachingEngine.CoachingCard(type: type, label: label, insight: insight, context: dict["context"] as? String)
+            }
+            if !restoredCards.isEmpty {
+                engine.restoreFromDiskCache(restoredCards)
+            }
+        }
 
         // Emit skill manifest first so frontend knows how many cards to expect
         let allSkills = SkillLoader.shared.getEnabledSkills().filter { $0.origin == .installed || $0.frequency == "daily" }
@@ -6073,6 +6143,326 @@ The Commitment Check feature requires a properly configured Notion database.
         cache.deleteByEndpoint("/api/coaching/cards")
 
         return HTTPResponse(statusCode: 200, body: ["id": skillId, "deleted": true])
+    }
+
+    // MARK: - Signal Handlers (v2)
+
+    private func handleGetTodaysSignals() -> HTTPResponse {
+        let signals = SignalStore.shared.getTodaysSignals()
+        let signalDicts: [[String: Any]] = signals.map { signal in
+            var dict: [String: Any] = [
+                "type": signal.type,
+                "lensId": signal.lensId,
+                "confidence": signal.confidence,
+                "timestamp": signal.timestamp
+            ]
+            if let subject = signal.subject { dict["subject"] = subject }
+            if let evidence = signal.evidence { dict["evidence"] = evidence }
+            if let metadata = signal.metadata { dict["metadata"] = metadata }
+
+            // Add temporal context
+            let streak = SignalStore.shared.getStreak(lensId: signal.lensId, signalType: signal.type)
+            if streak > 1 { dict["streak"] = streak }
+
+            return dict
+        }
+        return HTTPResponse(statusCode: 200, body: [
+            "signals": signalDicts,
+            "count": signals.count,
+            "date": {
+                let df = DateFormatter()
+                df.dateFormat = "yyyy-MM-dd"
+                return df.string(from: Date())
+            }()
+        ])
+    }
+
+    private func handleGetSignalHistory(_ request: HTTPRequest) -> HTTPResponse {
+        guard let lensId = request.queryParams["lens"], !lensId.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'lens' query parameter"])
+        }
+        let days = Int(request.queryParams["days"] ?? "7") ?? 7
+        let history = SignalStore.shared.getSignalHistory(lensId: lensId, days: days)
+
+        let historyDicts: [[String: Any]] = history.map { day in
+            [
+                "date": day.date,
+                "lensId": day.lensId,
+                "signalCount": day.signals.count,
+                "signals": day.signals.map { signal -> [String: Any] in
+                    var dict: [String: Any] = [
+                        "type": signal.type,
+                        "confidence": signal.confidence
+                    ]
+                    if let subject = signal.subject { dict["subject"] = subject }
+                    if let evidence = signal.evidence { dict["evidence"] = evidence }
+                    return dict
+                }
+            ]
+        }
+
+        return HTTPResponse(statusCode: 200, body: [
+            "lensId": lensId,
+            "days": days,
+            "history": historyDicts
+        ])
+    }
+
+    private func handleGetSignalStats() -> HTTPResponse {
+        return HTTPResponse(statusCode: 200, body: SignalStore.shared.getStats())
+    }
+
+    // MARK: - Tenet Pack Handlers (v2)
+
+    private func handleGetTenetPacks() -> HTTPResponse {
+        let packs = TenetPackLoader.shared.loadTenetPacks()
+        return HTTPResponse(statusCode: 200, body: [
+            "tenets": packs.map { $0.toDictionary() },
+            "count": packs.count,
+            "enabledCount": packs.filter { $0.enabled }.count
+        ])
+    }
+
+    private func handleGetTenetPackDetail(_ request: HTTPRequest) -> HTTPResponse {
+        guard let packId = request.queryParams["id"], !packId.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' query parameter"])
+        }
+        guard let pack = TenetPackLoader.shared.getTenetPack(id: packId) else {
+            return HTTPResponse(statusCode: 404, body: ["error": "Tenet pack not found"])
+        }
+        var dict = pack.toDictionary()
+        dict["principles"] = pack.principles
+        return HTTPResponse(statusCode: 200, body: dict)
+    }
+
+    private func handleToggleTenetPack(_ request: HTTPRequest) -> HTTPResponse {
+        guard let packId = request.queryParams["id"], !packId.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' query parameter"])
+        }
+        let newState = TenetPackLoader.shared.toggleTenetPack(id: packId)
+
+        // Bust coaching caches — tenets affect all coaching prompts
+        coachingEngine = nil
+        invalidateMemoryCache("coaching_cards")
+        cache.deleteByEndpoint("/api/coaching/cards")
+
+        return HTTPResponse(statusCode: 200, body: [
+            "id": packId,
+            "enabled": newState,
+            "message": newState ? "Tenet pack enabled" : "Tenet pack disabled"
+        ])
+    }
+
+    private func handleCreateTenetPack(_ request: HTTPRequest) -> HTTPResponse {
+        let body = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+
+        guard let name = body["name"] as? String, !name.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'name' field"])
+        }
+        guard let principles = body["principles"] as? String, !principles.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'principles' field"])
+        }
+
+        let description = body["description"] as? String ?? ""
+        let icon = body["icon"] as? String ?? "📜"
+        let scope = body["scope"] as? [String] ?? ["all"]
+
+        guard let pack = TenetPackLoader.shared.createTenetPack(
+            name: name, description: description, icon: icon,
+            scope: scope, principles: principles
+        ) else {
+            return HTTPResponse(statusCode: 409, body: ["error": "Tenet pack already exists or invalid name"])
+        }
+
+        coachingEngine = nil
+        invalidateMemoryCache("coaching_cards")
+        cache.deleteByEndpoint("/api/coaching/cards")
+
+        return HTTPResponse(statusCode: 201, body: pack.toDictionary())
+    }
+
+    private func handleUpdateTenetPack(_ request: HTTPRequest) -> HTTPResponse {
+        guard let packId = request.queryParams["id"], !packId.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' query parameter"])
+        }
+
+        guard let existing = TenetPackLoader.shared.getTenetPack(id: packId) else {
+            return HTTPResponse(statusCode: 404, body: ["error": "Tenet pack not found"])
+        }
+        guard existing.isEditable else {
+            return HTTPResponse(statusCode: 403, body: ["error": "Installed tenet packs cannot be edited"])
+        }
+
+        let body = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+
+        guard let updated = TenetPackLoader.shared.updateTenetPack(
+            id: packId,
+            name: body["name"] as? String,
+            description: body["description"] as? String,
+            icon: body["icon"] as? String,
+            scope: body["scope"] as? [String],
+            principles: body["principles"] as? String
+        ) else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to update tenet pack"])
+        }
+
+        coachingEngine = nil
+        invalidateMemoryCache("coaching_cards")
+        cache.deleteByEndpoint("/api/coaching/cards")
+
+        return HTTPResponse(statusCode: 200, body: updated.toDictionary())
+    }
+
+    private func handleDeleteTenetPack(_ request: HTTPRequest) -> HTTPResponse {
+        guard let packId = request.queryParams["id"], !packId.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' query parameter"])
+        }
+
+        guard let existing = TenetPackLoader.shared.getTenetPack(id: packId) else {
+            return HTTPResponse(statusCode: 404, body: ["error": "Tenet pack not found"])
+        }
+        guard existing.isEditable else {
+            return HTTPResponse(statusCode: 403, body: ["error": "Installed tenet packs cannot be deleted"])
+        }
+
+        guard TenetPackLoader.shared.deleteTenetPack(id: packId) else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to delete tenet pack"])
+        }
+
+        coachingEngine = nil
+        invalidateMemoryCache("coaching_cards")
+        cache.deleteByEndpoint("/api/coaching/cards")
+
+        return HTTPResponse(statusCode: 200, body: ["id": packId, "deleted": true])
+    }
+
+    // MARK: - Analysis Lens Handlers (v2)
+
+    private func handleGetAnalysisLenses() -> HTTPResponse {
+        let lenses = AnalysisLensLoader.shared.loadLenses()
+        return HTTPResponse(statusCode: 200, body: [
+            "analyses": lenses.map { $0.toDictionary() },
+            "count": lenses.count,
+            "enabledCount": lenses.filter { $0.enabled }.count
+        ])
+    }
+
+    private func handleGetAnalysisLensDetail(_ request: HTTPRequest) -> HTTPResponse {
+        guard let lensId = request.queryParams["id"], !lensId.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' query parameter"])
+        }
+        guard let lens = AnalysisLensLoader.shared.getLens(id: lensId) else {
+            return HTTPResponse(statusCode: 404, body: ["error": "Analysis lens not found"])
+        }
+        var dict = lens.toDictionary()
+        dict["prompt"] = lens.prompt
+        if let schema = lens.outputSchema { dict["outputSchema"] = schema }
+        return HTTPResponse(statusCode: 200, body: dict)
+    }
+
+    private func handleToggleAnalysisLens(_ request: HTTPRequest) -> HTTPResponse {
+        guard let lensId = request.queryParams["id"], !lensId.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' query parameter"])
+        }
+        let newState = AnalysisLensLoader.shared.toggleLens(id: lensId)
+
+        coachingEngine = nil
+        invalidateMemoryCache("coaching_cards")
+        cache.deleteByEndpoint("/api/coaching/cards")
+
+        return HTTPResponse(statusCode: 200, body: [
+            "id": lensId,
+            "enabled": newState,
+            "message": newState ? "Analysis lens enabled" : "Analysis lens disabled"
+        ])
+    }
+
+    private func handleCreateAnalysisLens(_ request: HTTPRequest) -> HTTPResponse {
+        let body = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+
+        guard let name = body["name"] as? String, !name.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'name' field"])
+        }
+        guard let prompt = body["prompt"] as? String, !prompt.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'prompt' field"])
+        }
+
+        let description = body["description"] as? String ?? ""
+        let icon = body["icon"] as? String ?? "🔍"
+        let dataSources = body["dataSources"] as? [String] ?? []
+        let signals = body["signals"] as? String ?? ""
+        let outputSchema = body["outputSchema"] as? String
+
+        guard let lens = AnalysisLensLoader.shared.createLens(
+            name: name, description: description, icon: icon,
+            dataSources: dataSources, signals: signals, prompt: prompt,
+            outputSchema: outputSchema
+        ) else {
+            return HTTPResponse(statusCode: 409, body: ["error": "Analysis lens already exists or invalid name"])
+        }
+
+        coachingEngine = nil
+        invalidateMemoryCache("coaching_cards")
+        cache.deleteByEndpoint("/api/coaching/cards")
+
+        return HTTPResponse(statusCode: 201, body: lens.toDictionary())
+    }
+
+    private func handleUpdateAnalysisLens(_ request: HTTPRequest) -> HTTPResponse {
+        guard let lensId = request.queryParams["id"], !lensId.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' query parameter"])
+        }
+
+        guard let existing = AnalysisLensLoader.shared.getLens(id: lensId) else {
+            return HTTPResponse(statusCode: 404, body: ["error": "Analysis lens not found"])
+        }
+        guard existing.isEditable else {
+            return HTTPResponse(statusCode: 403, body: ["error": "Installed analysis lenses cannot be edited"])
+        }
+
+        let body = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+
+        guard let updated = AnalysisLensLoader.shared.updateLens(
+            id: lensId,
+            name: body["name"] as? String,
+            description: body["description"] as? String,
+            icon: body["icon"] as? String,
+            dataSources: body["dataSources"] as? [String],
+            signals: body["signals"] as? String,
+            prompt: body["prompt"] as? String,
+            outputSchema: body["outputSchema"] as? String
+        ) else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to update analysis lens"])
+        }
+
+        coachingEngine = nil
+        invalidateMemoryCache("coaching_cards")
+        cache.deleteByEndpoint("/api/coaching/cards")
+
+        return HTTPResponse(statusCode: 200, body: updated.toDictionary())
+    }
+
+    private func handleDeleteAnalysisLens(_ request: HTTPRequest) -> HTTPResponse {
+        guard let lensId = request.queryParams["id"], !lensId.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id' query parameter"])
+        }
+
+        guard let existing = AnalysisLensLoader.shared.getLens(id: lensId) else {
+            return HTTPResponse(statusCode: 404, body: ["error": "Analysis lens not found"])
+        }
+        guard existing.isEditable else {
+            return HTTPResponse(statusCode: 403, body: ["error": "Installed analysis lenses cannot be deleted"])
+        }
+
+        guard AnalysisLensLoader.shared.deleteLens(id: lensId) else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to delete analysis lens"])
+        }
+
+        coachingEngine = nil
+        invalidateMemoryCache("coaching_cards")
+        cache.deleteByEndpoint("/api/coaching/cards")
+
+        return HTTPResponse(statusCode: 200, body: ["id": lensId, "deleted": true])
     }
 
     /// Lint a skill prompt for patterns known to induce hallucination

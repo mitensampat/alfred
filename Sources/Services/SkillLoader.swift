@@ -88,7 +88,8 @@ class SkillLoader {
             dataSources: dataSources.filter { SkillDefinition.validDataSources.contains($0) },
             frequency: frequency, tenets: tenets, prompt: prompt,
             fallback: fallback, enabled: true, displayName: nil,
-            origin: .user, author: nil, version: nil
+            origin: .user, author: nil, version: nil,
+            usesTenets: nil, usesAnalyses: nil
         )
 
         let filePath = (userDirectory as NSString).appendingPathComponent("\(id).md")
@@ -136,7 +137,9 @@ class SkillLoader {
             displayName: current.displayName,
             origin: .user,
             author: nil,
-            version: nil
+            version: nil,
+            usesTenets: current.usesTenets,
+            usesAnalyses: current.usesAnalyses
         )
 
         let content = updated.toMarkdown()
@@ -177,7 +180,9 @@ class SkillLoader {
             displayName: current.displayName,
             origin: .installed,
             author: current.author,
-            version: current.version
+            version: current.version,
+            usesTenets: current.usesTenets,
+            usesAnalyses: current.usesAnalyses
         )
 
         let content = updated.toMarkdown()
@@ -243,6 +248,16 @@ class SkillLoader {
         let dataSourcesRaw = parseMetadataField(content: content, key: "Data Sources") ?? "tasks"
         let frequency = parseMetadataField(content: content, key: "Frequency") ?? "daily"
         let fallback = parseMetadataField(content: content, key: "Fallback")
+        let usesTenetsRaw = parseMetadataField(content: content, key: "Uses Tenets")
+        let usesAnalysesRaw = parseMetadataField(content: content, key: "Uses Analyses")
+
+        // Parse tenet/analysis references (comma-separated, trimmed)
+        let usesTenets: [String]? = usesTenetsRaw?.components(separatedBy: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let usesAnalyses: [String]? = usesAnalysesRaw?.components(separatedBy: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
 
         // Parse data sources (comma-separated, trimmed)
         let dataSources = dataSourcesRaw
@@ -269,7 +284,8 @@ class SkillLoader {
             id: id, name: name, description: description, icon: icon,
             dataSources: dataSources, frequency: frequency, tenets: tenets, prompt: prompt,
             fallback: fallback, enabled: enabled, displayName: displayName,
-            origin: origin, author: author, version: version
+            origin: origin, author: author, version: version,
+            usesTenets: usesTenets, usesAnalyses: usesAnalyses
         )
     }
 

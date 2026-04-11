@@ -272,6 +272,19 @@ struct CoachingPromptBuilder {
             """
         }
 
+        // ANALYSIS SIGNALS — v2 pipeline: structured signals from analysis lenses
+        let signalSummary = LensExecutionEngine.shared.buildSignalSummary()
+        if !signalSummary.isEmpty {
+            prompt += """
+
+            ## ANALYSIS SIGNALS (today's pattern detection)
+            \(signalSummary)
+
+            These are structured signals detected by your analysis lenses. Each has a confidence level and evidence. Use these to inform your coaching — higher confidence signals deserve more weight. Streak counts (e.g., "3 days in a row") indicate recurring patterns worth calling out directly.
+
+            """
+        }
+
         // COMMITMENT LEDGER — on-demand, injected when user mentions commitments or a person
         if !detailedCommitments.isEmpty {
             prompt += """
@@ -374,12 +387,19 @@ struct CoachingPromptBuilder {
         return prompt
     }
 
-    /// Load coaching tenets from installed tenet-only skill files.
+    /// Load coaching tenets from TenetPackLoader (v2) with fallback to legacy tenet-only skills.
     /// Only enabled tenets are included in the coaching prompt.
     private static func loadCoachingTenets() -> String {
+        // v2: Load from dedicated tenet packs
+        let tenetPacks = TenetPackLoader.shared.getEnabledTenetPacks()
+
+        if !tenetPacks.isEmpty {
+            return tenetPacks.map { "### \($0.name)\n\($0.principles)" }.joined(separator: "\n\n")
+        }
+
+        // Fallback: legacy tenet-only skills (backward compatibility)
         let sections = getTenetSectionsWithState().filter { $0.enabled }
 
-        // Safety: if all sections disabled, use defaults
         if sections.isEmpty {
             return defaultTenets
         }

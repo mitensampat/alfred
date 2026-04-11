@@ -9,7 +9,7 @@ class CoachingEngine {
     private let alfredService: AlfredService
 
     // Cache coaching cards for 2 hours (expensive to compute)
-    private var cachedCards: [CoachingCard]?
+    private(set) var cachedCards: [CoachingCard]?
     private var cacheTimestamp: Date?
     private let cacheTTL: TimeInterval = 7200 // 2 hours
 
@@ -141,6 +141,21 @@ class CoachingEngine {
 
         // Clear per-source cache at the start of each generation cycle
         dataSourceCache.removeAll()
+
+        // --- v2 Pipeline: Layer 1 — Run analysis lenses in parallel (Haiku, fast extraction) ---
+        // Signals are persisted by LensExecutionEngine and available to skills + coaching prompt
+        let enabledLenses = AnalysisLensLoader.shared.getEnabledLenses()
+        if !enabledLenses.isEmpty {
+            do {
+                let dataContext = try await buildLensDataContext()
+                let lensResults = try await LensExecutionEngine.shared.runAllLenses(dataContext: dataContext)
+                let totalSignals = lensResults.reduce(0) { $0 + $1.signals.count }
+                print("[CoachingEngine] Layer 1 complete: \(totalSignals) signals from \(lensResults.count) lenses")
+            } catch {
+                print("[CoachingEngine] Layer 1 lens execution failed: \(error.localizedDescription)")
+                // Non-fatal — skills can still run without fresh signals
+            }
+        }
 
         let weekday = Calendar.current.component(.weekday, from: Date())
         let isWeekendOrFriday = weekday == 1 || weekday == 6 || weekday == 7  // Sun=1, Fri=6, Sat=7
@@ -853,6 +868,14 @@ CRITICAL RULES (override everything else):
         lastGeneratedAt = Date()
     }
 
+    // MARK: - Disk Cache Restore
+
+    /// Restore cards from HTTP disk cache into in-memory cache (survives app restarts).
+    func restoreFromDiskCache(_ cards: [CoachingCard]) {
+        cachedCards = cards
+        cacheTimestamp = Date()
+    }
+
     // MARK: - Single Skill Refresh (for QA/Preview)
 
     /// Refresh a single skill by ID, returning the run result for immediate use.
@@ -878,5 +901,42 @@ CRITICAL RULES (override everything else):
         }
 
         return lastSkillResults[id]
+    }
+
+    // MARK: - v2 Pipeline Helpers
+
+    /// Build a DataContext for lens execution by pre-fetching all data sources that lenses need.
+    /// Reuses the existing data source cache to avoid redundant API calls.
+    private func buildLensDataContext() async throws -> LensExecutionEngine.DataContext {
+        let lenses = AnalysisLensLoader.shared.getEnabledLenses()
+        let allSources = Array(Set(lenses.flatMap { $0.dataSources }))
+
+        // Pre-fetch all needed data sources in parallel
+        await withTaskGroup(of: (String, String).self) { group in
+            for source in allSources {
+                if dataSourceCache[source] == nil {
+                    group.addTask {
+                        let data = await self.fetchSingleDataSource(source)
+                        return (source, data)
+                    }
+                }
+            }
+            for await (source, data) in group {
+                dataSourceCache[source] = (data: data, timestamp: Date())
+            }
+        }
+
+        // Map cached data into the DataContext struct
+        var ctx = LensExecutionEngine.DataContext()
+        ctx.tasks = dataSourceCache["tasks"]?.data ?? ""
+        ctx.tasksDetailed = dataSourceCache["tasks_detailed"]?.data ?? ""
+        ctx.calendar = dataSourceCache["calendar"]?.data ?? ""
+        ctx.messages = dataSourceCache["messages"]?.data ?? ""
+        ctx.messagesDetailed = dataSourceCache["messages_detailed"]?.data ?? ""
+        ctx.commitments = dataSourceCache["commitments"]?.data ?? ""
+        ctx.commitmentsByPerson = dataSourceCache["commitments_by_person"]?.data ?? ""
+        ctx.coachingMemory = dataSourceCache["coaching_memory"]?.data ?? ""
+
+        return ctx
     }
 }

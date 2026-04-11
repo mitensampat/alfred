@@ -24,6 +24,8 @@ struct SkillDefinition: Codable {
     let origin: SkillOrigin     // user-created vs installed (coach-authored)
     let author: String?         // from **Author:** field (for installed skills)
     let version: String?        // from **Version:** field (for installed skills)
+    let usesTenets: [String]?   // from **Uses Tenets:** field — tenet pack IDs to inject (v2 pipeline)
+    let usesAnalyses: [String]? // from **Uses Analyses:** field — analysis lens IDs to consume signals from (v2 pipeline)
 
     /// The name to show in the UI and on cards (displayName override or original name)
     var effectiveName: String { displayName ?? name }
@@ -60,6 +62,8 @@ struct SkillDefinition: Codable {
         if let version = version { dict["version"] = version }
         if let fallback = fallback { dict["fallback"] = fallback }
         if let displayName = displayName { dict["displayName"] = displayName }
+        if let usesTenets = usesTenets { dict["usesTenets"] = usesTenets }
+        if let usesAnalyses = usesAnalyses { dict["usesAnalyses"] = usesAnalyses }
         return dict
     }
 
@@ -78,6 +82,12 @@ struct SkillDefinition: Codable {
         }
         if let fallback = fallback {
             lines.append("**Fallback:** \(fallback)")
+        }
+        if let usesTenets = usesTenets, !usesTenets.isEmpty {
+            lines.append("**Uses Tenets:** \(usesTenets.joined(separator: ", "))")
+        }
+        if let usesAnalyses = usesAnalyses, !usesAnalyses.isEmpty {
+            lines.append("**Uses Analyses:** \(usesAnalyses.joined(separator: ", "))")
         }
         lines.append("**Data Sources:** \(dataSources.joined(separator: ", "))")
         lines.append("**Frequency:** \(frequency)")
