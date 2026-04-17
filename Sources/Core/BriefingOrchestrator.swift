@@ -37,7 +37,7 @@ class BriefingOrchestrator {
         // Initialize commitment analyzer
         self.commitmentAnalyzer = CommitmentAnalyzer(
             anthropicApiKey: config.ai.anthropicApiKey,
-            model: config.ai.model,
+            model: config.ai.effectiveMessageModel,
             userInfo: CommitmentAnalyzer.UserInfo(
                 name: config.user.name,
                 email: config.user.email
@@ -977,7 +977,7 @@ class BriefingOrchestrator {
         var actionItems: [ActionItem] = []
         do {
             let tasks = try await notionService.queryActiveTasks(type: nil)
-            let capped = Array(tasks.prefix(25)) // Reduced from 50 to prevent AI response truncation
+            let capped = Array(tasks.prefix(15)) // Capped at 15 for cost efficiency (attention defense on Haiku)
             actionItems = capped.map { convertTaskItemToActionItem($0) }
             print("✓ Loaded \(actionItems.count) active tasks from Notion")
         } catch {

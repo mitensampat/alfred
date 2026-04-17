@@ -515,8 +515,9 @@ class ClaudeAIService {
         Keep reasons brief (under 15 words each).
         """
 
-        // Use higher max_tokens for attention check since response includes all tasks
-        let response = try await sendRequest(prompt: prompt, maxTokens: 8192)
+        // Attention defense: Haiku is sufficient (structured JSON, no deep reasoning).
+        // Cap max_tokens at 4096 (response is always structured and bounded).
+        let response = try await sendRequest(prompt: prompt, maxTokens: 4096, useModel: "claude-haiku-4-5-20251001")
         let analysis = try parseAttentionDefenseAnalysis(response, actionItems: actionItems)
 
         return analysis
@@ -919,7 +920,7 @@ class ClaudeAIService {
         - Questions directed at someone else
         """
 
-        let response = try await sendRequest(prompt: prompt)
+        let response = try await sendRequest(prompt: prompt, maxTokens: 512, useModel: "claude-haiku-4-5-20251001")
 
         guard let jsonData = extractJSON(from: response)?.data(using: .utf8),
               let todoData = try? JSONDecoder().decode(TodoDetection.self, from: jsonData),
