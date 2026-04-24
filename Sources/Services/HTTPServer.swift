@@ -1949,12 +1949,32 @@ class HTTPServer {
         }
 
         // Step 3: Compile user's meeting brief prompt into a data plan, then resolve
-        let externalAttendees = event.attendees.filter { attendee in
-            let email = attendee.email.lowercased()
-            let userEmail = config.user.email.lowercased()
-            return email != userEmail && !attendee.isOrganizer
+        // Classify each attendee as internal/external based on email domain (excluding the user themselves)
+        let userEmailLower = config.user.email.lowercased()
+        let otherAttendees = event.attendees.filter { $0.email.lowercased() != userEmailLower }
+
+        // Use explicit internal/external classification from config — do NOT let the LLM guess
+        func nameFor(_ a: Attendee) -> String {
+            return a.name ?? a.email.components(separatedBy: "@").first ?? a.email
         }
-        let attendeeNames = externalAttendees.prefix(6).compactMap { $0.name ?? $0.email.components(separatedBy: "@").first }
+        let internalAttendees = otherAttendees.filter { config.user.isInternal(email: $0.email) }
+        let externalAttendees = otherAttendees.filter { !config.user.isInternal(email: $0.email) }
+        let internalNames = internalAttendees.map { nameFor($0) }
+        let externalNames = externalAttendees.map { nameFor($0) }
+
+        // Build an explicit classified list for the LLM — domain of external attendees is the signal
+        var classifiedAttendeeLines: [String] = []
+        for a in otherAttendees.prefix(12) {
+            let name = nameFor(a)
+            let domain = a.email.components(separatedBy: "@").last ?? ""
+            let label = config.user.isInternal(email: a.email) ? "internal" : "external"
+            classifiedAttendeeLines.append("- \(name) @\(domain) [\(label)]")
+        }
+        let classifiedAttendeesStr = classifiedAttendeeLines.isEmpty ? "(none)" : classifiedAttendeeLines.joined(separator: "\n")
+
+        // attendeeNames is used by the data plan resolver for message/commitment lookups — prioritize external attendees
+        let prioritizedForLookup = externalAttendees + internalAttendees
+        let attendeeNames = prioritizedForLookup.prefix(6).compactMap { $0.name ?? $0.email.components(separatedBy: "@").first }
 
         let userPrompt = config.home?.meetingBriefPrompt ?? Self.defaultMeetingBriefPrompt
 
@@ -1994,17 +2014,40 @@ class HTTPServer {
         let attendeeListStr = attendeeNames.isEmpty ? "Solo event" : attendeeNames.joined(separator: ", ")
         let locationStr = event.location ?? "No location"
 
+        // Build a definitive internal/external summary — this is ground truth, not a guess
+        let totalAttendeeCount = event.attendees.count
+        let internalCount = internalAttendees.count + (event.attendees.contains { $0.email.lowercased() == userEmailLower } ? 1 : 0)
+        let externalCount = externalAttendees.count
+        let classificationSummary: String
+        if externalCount == 0 {
+            classificationSummary = "This is an INTERNAL meeting — all \(totalAttendeeCount) attendees are from \(config.user.companyDomain)."
+        } else if internalCount == 0 {
+            classificationSummary = "This is fully EXTERNAL — no internal \(config.user.companyDomain) attendees."
+        } else {
+            let extNames = externalNames.prefix(4).joined(separator: ", ")
+            classificationSummary = "This is a MIXED meeting: \(internalCount) internal (\(config.user.companyDomain)) + \(externalCount) external attendees. External: \(extNames)\(externalNames.count > 4 ? ", …" : "")."
+        }
+
         let systemPrompt = """
         You are Coach Alfred, a concise executive assistant. The user has an upcoming meeting and wants a briefing.
 
         MEETING: \(event.title)
         TIME: \(startStr) - \(endStr) (\(countdown))
         LOCATION: \(locationStr)
-        ATTENDEES: \(attendeeListStr)
         MEETING DESCRIPTION: \(event.description ?? "None")
+
+        ATTENDEE CLASSIFICATION (ground truth — do NOT guess internal vs external from names):
+        \(classificationSummary)
+
+        FULL ATTENDEE LIST with domains and classification:
+        \(classifiedAttendeesStr)
 
         RESOLVED DATA (gathered from Alfred's data sources based on the user's briefing configuration):
         \(resolvedContext)
+
+        CRITICAL:
+        - When the brief mentions internal vs external, use the classification above as absolute ground truth. Never infer it from names.
+        - If external attendees are present, name them explicitly and flag their organizations (derived from their email domain).
 
         Respond to the user's briefing request below. Be concise, use bullet points. No emojis. Use markdown formatting (bold for names, bullet lists). Reference the resolved data above — do NOT say you cannot access any data source.
         """
