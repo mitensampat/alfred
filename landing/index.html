@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Alfred — A coach for founders</title>
+<meta name="description" content="Alfred listens to the way you work — messages, calendar, notes, commitments — and coaches you toward the conversations you're avoiding and the work that actually matters. Runs locally on your Mac." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --canvas: #fafaf7;
+    --surface: #ffffff;
+    --ink: #191919;
+    --ink-2: #6f6e69;
+    --ink-3: #a8a6a1;
+    --line: #ecebe6;
+    --line-2: #f4f3ef;
+    --accent: #2d5a3d;
+    --serif: "Newsreader", "Iowan Old Style", "Georgia", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif;
+    --r-sm: 6px;
+    --r-md: 10px;
+    --r-lg: 16px;
+    --shadow-soft: 0 1px 2px rgba(25, 25, 25, 0.04);
+    --shadow-lift: 0 20px 48px rgba(25, 25, 25, 0.10), 0 4px 12px rgba(25, 25, 25, 0.04);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    line-height: 1.55;
+    font-size: 16px;
+  }
+  a { color: inherit; text-decoration: none; }
+  img { max-width: 100%; display: block; }
+  button { font: inherit; cursor: pointer; }
+
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 28px; }
+
+  /* ===== Nav ===== */
+  .nav {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(250, 250, 247, 0.8);
+    backdrop-filter: saturate(1.4) blur(14px);
+    -webkit-backdrop-filter: saturate(1.4) blur(14px);
+    border-bottom: 1px solid transparent;
+    transition: border-color .2s;
+  }
+  .nav.scrolled { border-bottom-color: var(--line); }
+  .nav-inner {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 0;
+  }
+  .brand {
+    font-family: var(--serif);
+    font-size: 20px;
+    font-weight: 500;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+  }
+  .nav-cta {
+    font-size: 14px; font-weight: 500;
+    color: var(--ink);
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    transition: border-color .15s, background .15s;
+  }
+  .nav-cta:hover { border-color: var(--ink); }
+
+  /* ===== Type scale ===== */
+  h1, h2, h3 { margin: 0; font-weight: 500; letter-spacing: -0.02em; }
+  h1 {
+    font-family: var(--serif);
+    font-size: clamp(44px, 7vw, 80px);
+    line-height: 1.02;
+    letter-spacing: -0.03em;
+    font-weight: 500;
+  }
+  h1 em { font-style: italic; color: var(--ink-2); font-weight: 400; }
+  h2 {
+    font-family: var(--serif);
+    font-size: clamp(30px, 4.2vw, 48px);
+    line-height: 1.1;
+    letter-spacing: -0.025em;
+  }
+  h2 em { font-style: italic; color: var(--ink-2); font-weight: 400; }
+  h3 {
+    font-family: var(--serif);
+    font-size: 22px;
+    font-weight: 500;
+    letter-spacing: -0.015em;
+  }
+  p { margin: 0; color: var(--ink-2); font-size: 17px; line-height: 1.6; }
+  .eyebrow {
+    font-size: 12px; font-weight: 500;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 20px;
+  }
+
+  /* ===== Sections ===== */
+  section { padding: 112px 0; }
+
+  /* ===== Hero ===== */
+  .hero { padding: 140px 0 96px; }
+  .hero h1 { margin-bottom: 28px; max-width: 14ch; }
+  .hero-sub {
+    font-size: 20px;
+    color: var(--ink-2);
+    max-width: 54ch;
+    margin-bottom: 40px;
+    line-height: 1.5;
+  }
+  .hero-sub strong { color: var(--ink); font-weight: 500; }
+  .cta-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .btn-primary {
+    background: var(--ink); color: var(--canvas);
+    padding: 13px 22px;
+    border-radius: 999px;
+    border: 1px solid var(--ink);
+    font-size: 15px; font-weight: 500;
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: transform .12s, box-shadow .15s;
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: var(--shadow-lift); }
+  .btn-secondary {
+    color: var(--ink);
+    padding: 13px 18px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    font-size: 15px; font-weight: 500;
+    transition: border-color .15s;
+  }
+  .btn-secondary:hover { border-color: var(--ink); }
+  .hero-trust {
+    margin-top: 56px;
+    padding-top: 28px;
+    border-top: 1px solid var(--line);
+    display: flex; gap: 40px; flex-wrap: wrap;
+    font-size: 13px; color: var(--ink-3);
+  }
+  .hero-trust span { display: inline-flex; align-items: center; gap: 8px; }
+  .hero-trust .dot {
+    width: 4px; height: 4px; border-radius: 50%;
+    background: var(--ink-3);
+  }
+
+  /* ===== Tenets ===== */
+  .tenets { border-top: 1px solid var(--line); }
+  .tenets-lede { max-width: 48ch; margin-bottom: 72px; }
+  .tenet-list { display: flex; flex-direction: column; }
+  .tenet {
+    display: grid;
+    grid-template-columns: 96px 1fr;
+    gap: 32px;
+    padding: 44px 0;
+    border-top: 1px solid var(--line);
+    align-items: baseline;
+  }
+  .tenet:last-child { border-bottom: 1px solid var(--line); }
+  .tenet-num {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 22px;
+    color: var(--ink-3);
+    font-weight: 400;
+  }
+  .tenet-body { max-width: 62ch; }
+  .tenet h3 { margin-bottom: 12px; color: var(--ink); }
+  .tenet p { font-size: 17px; }
+
+  /* ===== Marquee (preserved) ===== */
+  .see-it { background: var(--line-2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); overflow: hidden; }
+  .see-it-header { max-width: 52ch; margin-bottom: 72px; }
+  .stage {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1.6fr 1fr;
+    gap: 28px;
+    align-items: center;
+    justify-items: center;
+  }
+
+  .phone {
+    position: relative;
+    width: 260px;
+    height: 540px;
+    background: #0c0d10;
+    border-radius: 40px;
+    padding: 10px;
+    box-shadow: var(--shadow-lift);
+  }
+  .phone::before {
+    content: "";
+    position: absolute;
+    top: 14px; left: 50%; transform: translateX(-50%);
+    width: 90px; height: 24px;
+    background: #0c0d10;
+    border-radius: 16px;
+    z-index: 3;
+  }
+  .phone-screen {
+    position: relative;
+    width: 100%; height: 100%;
+    border-radius: 30px;
+    overflow: hidden;
+    background: var(--canvas);
+  }
+  .phone-track {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    will-change: transform;
+    transition: transform 1s cubic-bezier(.7, 0, .25, 1);
+  }
+  .phone-track img {
+    width: 100%;
+    height: 100%;
+    flex-shrink: 0;
+    object-fit: cover;
+    object-position: top center;
+  }
+  .phone.lag .phone-track { transition-delay: .35s; }
+
+  .desktop {
+    width: 100%;
+    max-width: 520px;
+    background: #0c0d10;
+    border-radius: 12px;
+    padding: 10px 10px 12px;
+    box-shadow: var(--shadow-lift);
+  }
+  .desktop-chrome {
+    display: flex; gap: 6px;
+    padding: 4px 4px 10px;
+  }
+  .desktop-chrome span {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #3a3b3f;
+  }
+  .desktop-chrome span:nth-child(1) { background: #ff5f57; }
+  .desktop-chrome span:nth-child(2) { background: #febc2e; }
+  .desktop-chrome span:nth-child(3) { background: #28c840; }
+  .desktop-screen {
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    border-radius: 6px;
+    overflow: hidden;
+    background: var(--canvas);
+  }
+  .desktop-screen img {
+    width: 100%; height: 100%; object-fit: cover; object-position: top center;
+  }
+  .caption {
+    margin-top: 40px;
+    text-align: center;
+    font-size: 13px; color: var(--ink-3);
+    letter-spacing: 0.04em;
+  }
+
+  /* ===== Integrations strip (inside marquee) ===== */
+  .integrations {
+    margin-top: 28px;
+    text-align: center;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: var(--ink-3);
+    text-transform: uppercase;
+  }
+
+  /* ===== Access ===== */
+  .access {
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .access-wrap { max-width: 560px; }
+  .access h2 { margin-bottom: 16px; }
+  .access > .wrap > p { max-width: 48ch; }
+
+  .form-card {
+    margin-top: 48px;
+    padding: 32px;
+    background: var(--canvas);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+  }
+  .form-step { display: none; }
+  .form-step.active { display: block; }
+  .email-row {
+    display: flex; gap: 10px;
+    flex-wrap: wrap;
+  }
+  .email-row input {
+    flex: 1 1 260px;
+    font: inherit;
+    padding: 13px 18px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 15px;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .email-row input::placeholder { color: var(--ink-3); }
+  .email-row input:focus {
+    border-color: var(--ink);
+    box-shadow: 0 0 0 3px rgba(25, 25, 25, 0.06);
+  }
+  .form-note {
+    font-size: 13px; color: var(--ink-3);
+    margin-top: 14px;
+  }
+
+  .chip-group { margin-top: 24px; }
+  .chip-group:first-of-type { margin-top: 0; }
+  .chip-label {
+    font-size: 13px; font-weight: 500;
+    color: var(--ink);
+    margin-bottom: 10px;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    font-size: 14px;
+    transition: border-color .15s, background .15s, color .15s;
+  }
+  .chip:hover { border-color: var(--ink-2); }
+  .chip.selected { background: var(--ink); color: var(--canvas); border-color: var(--ink); }
+  .chip-actions {
+    margin-top: 28px;
+    display: flex; gap: 12px; align-items: center;
+  }
+  .link-skip {
+    background: transparent;
+    color: var(--ink-2);
+    border: none;
+    font-size: 14px;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    padding: 6px 4px;
+  }
+  .link-skip:hover { color: var(--ink); }
+  .profile-intro {
+    font-size: 15px; color: var(--ink-2);
+    margin-bottom: 24px;
+  }
+
+  .form-done { display: none; }
+  .form-done.active { display: block; }
+  .check {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: rgba(45, 90, 61, 0.12);
+    color: var(--accent);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    margin-bottom: 18px;
+  }
+  .form-done h3 { margin-bottom: 10px; color: var(--ink); }
+  .form-done p { font-size: 15px; }
+
+  /* ===== Footer ===== */
+  footer {
+    padding: 56px 0 72px;
+    border-top: 1px solid var(--line);
+  }
+  .footer-inner {
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px;
+    font-size: 13px; color: var(--ink-3);
+  }
+  .footer-brand {
+    font-family: var(--serif);
+    font-size: 15px;
+    color: var(--ink);
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+
+  /* ===== Responsive ===== */
+  @media (max-width: 900px) {
+    section { padding: 64px 0; }
+    .hero { padding: 72px 0 48px; }
+    .tenet { grid-template-columns: 1fr; gap: 10px; padding: 32px 0; }
+    .tenet-num { font-size: 18px; }
+    .tenets-lede { margin-bottom: 40px; }
+    .see-it-header { margin-bottom: 40px; }
+    .stage { grid-template-columns: 1fr; gap: 32px; }
+    .phone.side { display: none; }
+    .desktop { max-width: 100%; }
+    .form-card { margin-top: 32px; }
+  }
+  @media (max-width: 600px) {
+    .wrap { padding: 0 20px; }
+    section { padding: 48px 0; }
+    .hero { padding: 40px 0 32px; }
+    .hero h1 { margin-bottom: 20px; }
+    .hero-sub { font-size: 17px; margin-bottom: 28px; }
+    .hero-trust { margin-top: 36px; padding-top: 20px; gap: 14px; }
+    .tenet { padding: 24px 0; }
+    .tenet h3 { font-size: 20px; }
+    .tenet p { font-size: 15px; }
+    .tenets-lede { margin-bottom: 24px; }
+    .see-it-header { margin-bottom: 32px; }
+    .desktop { display: none; }
+    .stage { gap: 0; }
+    .phone { width: 240px; height: 500px; }
+    .caption, .integrations { margin-top: 20px; }
+    .form-card { padding: 22px; margin-top: 28px; }
+    .chip-actions { flex-direction: column; align-items: stretch; }
+    .chip-actions .btn-primary { width: 100%; justify-content: center; }
+  }
+</style>
+</head>
+<body>
+
+<header class="nav" id="nav">
+  <div class="wrap nav-inner">
+    <a href="#top" class="brand">Alfred</a>
+    <a href="#access" class="nav-cta">Request access</a>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- ============ HERO ============ -->
+  <section class="hero">
+    <div class="wrap">
+      <h1>A coach for <em>founders.</em></h1>
+      <p class="hero-sub">
+        Alfred listens to the way you work — <strong>messages, calendar, notes, commitments</strong> — and coaches you toward the conversations you're avoiding and the work that actually matters. Not a dashboard. Not an assistant. A coach.
+      </p>
+      <div class="cta-row">
+        <a href="#access" class="btn-primary">Request access →</a>
+        <a href="#see" class="btn-secondary">See how it works</a>
+      </div>
+      <div class="hero-trust">
+        <span><span class="dot"></span> macOS 13+</span>
+        <span><span class="dot"></span> Runs on your Mac</span>
+        <span><span class="dot"></span> Your data never leaves it</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TENETS ============ -->
+  <section class="tenets">
+    <div class="wrap">
+      <p class="eyebrow">What Alfred is for</p>
+      <h2>The work that matters usually isn't <em>on a list.</em></h2>
+      <p class="tenets-lede" style="margin-top:18px;">
+        Alfred is built around three things operators kept asking for.
+      </p>
+
+      <div class="tenet-list">
+        <div class="tenet">
+          <div class="tenet-num">i.</div>
+          <div class="tenet-body">
+            <h3>Stop dropping commitments.</h3>
+            <p>Alfred reads your threads across iMessage, WhatsApp, and email, spots promises you made — inbound and outbound — and surfaces what's rotting before it costs a relationship.</p>
+          </div>
+        </div>
+        <div class="tenet">
+          <div class="tenet-num">ii.</div>
+          <div class="tenet-body">
+            <h3>Spend your hours on what compounds.</h3>
+            <p>Every morning, a coached briefing names the one lever — not the todo list. An afternoon check-in asks whether today was spent on what mattered, learned over weeks.</p>
+          </div>
+        </div>
+        <div class="tenet">
+          <div class="tenet-num">iii.</div>
+          <div class="tenet-body">
+            <h3>Name what you're avoiding.</h3>
+            <p>The hard conversation you've been delaying. The email sitting in drafts for three weeks. The feedback you haven't given. Alfred notices the patterns of avoidance — and nudges, privately.</p>
+          </div>
+        </div>
+        <div class="tenet">
+          <div class="tenet-num">iv.</div>
+          <div class="tenet-body">
+            <h3>A coach in the voice you choose.</h3>
+            <p>Alfred ships with a Coaching Skills library — distinct methods and voices you can turn on or off. Pick the coach you'd actually listen to. Gentle at first. Direct when you've earned it.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SEE IT (marquee) ============ -->
+  <section class="see-it" id="see">
+    <div class="wrap">
+      <div class="see-it-header">
+        <p class="eyebrow">A live look</p>
+        <h2>Mobile and desktop, <em>one coach.</em></h2>
+        <p style="margin-top:18px;">
+          The same Alfred follows you across devices — a progressive web app on phone, a full surface on your Mac.
+        </p>
+      </div>
+
+      <div class="stage">
+        <div class="phone side" aria-hidden="true">
+          <div class="phone-screen">
+            <div class="phone-track" data-track="a">
+              <img src="assets/02_observations_expanded.png" alt="Observations" loading="lazy" />
+              <img src="assets/04_calendar_tool_card.png" alt="Calendar card" loading="lazy" />
+              <img src="assets/11_chat_conversation.png" alt="Chat" loading="lazy" />
+              <img src="assets/05_overdue_commitments.png" alt="Overdue commitments" loading="lazy" />
+              <img src="assets/01_home_evening_wrapup.png" alt="Home" loading="lazy" />
+            </div>
+          </div>
+        </div>
+
+        <div class="desktop">
+          <div class="desktop-chrome"><span></span><span></span><span></span></div>
+          <div class="desktop-screen">
+            <img src="assets/14_desktop_layout.png" alt="Alfred desktop layout" loading="lazy" />
+          </div>
+        </div>
+
+        <div class="phone lag">
+          <div class="phone-screen">
+            <div class="phone-track" data-track="b">
+              <img src="assets/01_home_evening_wrapup.png" alt="Home evening wrap-up" loading="lazy" />
+              <img src="assets/05_overdue_commitments.png" alt="Overdue commitments" loading="lazy" />
+              <img src="assets/02_observations_expanded.png" alt="Observations" loading="lazy" />
+              <img src="assets/11_chat_conversation.png" alt="Chat" loading="lazy" />
+              <img src="assets/04_calendar_tool_card.png" alt="Calendar card" loading="lazy" />
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="caption">Home · Overdue commitments · Chat · Calendar · Observations</p>
+      <p class="integrations">Reads iMessage · WhatsApp · Gmail · Google Calendar · Notion</p>
+    </div>
+  </section>
+
+  <!-- ============ REQUEST ACCESS ============ -->
+  <section class="access" id="access">
+    <div class="wrap access-wrap">
+      <p class="eyebrow">Request access</p>
+      <h2>Alfred is opening up <em>slowly.</em></h2>
+      <p>
+        We're onboarding operators one by one. Drop your email — you'll get the DMG and a short install guide, usually within a day.
+      </p>
+
+      <div class="form-card">
+        <!-- Step 1: email -->
+        <form class="form-step active" id="step-email" novalidate>
+          <div class="email-row">
+            <input type="email" name="email" id="email" placeholder="you@company.com" required autocomplete="email" />
+            <button type="submit" class="btn-primary">Request access →</button>
+          </div>
+          <p class="form-note">No newsletter. One email from Alfred, then your install link.</p>
+        </form>
+
+        <!-- Step 2: chip profile -->
+        <form class="form-step" id="step-profile" novalidate>
+          <p class="profile-intro">
+            You're on the list. Three quick taps and we'll bump you up the queue — all optional.
+          </p>
+
+          <div class="chip-group">
+            <div class="chip-label">What kind of work?</div>
+            <div class="chips" data-field="role">
+              <button type="button" class="chip">Founder</button>
+              <button type="button" class="chip">Operator</button>
+              <button type="button" class="chip">IC</button>
+              <button type="button" class="chip">Investor</button>
+              <button type="button" class="chip">Other</button>
+            </div>
+          </div>
+
+          <div class="chip-group">
+            <div class="chip-label">What do you want Alfred to fix?</div>
+            <div class="chips" data-field="problem">
+              <button type="button" class="chip">Dropped commitments</button>
+              <button type="button" class="chip">Scattered focus</button>
+              <button type="button" class="chip">Too many meetings</button>
+              <button type="button" class="chip">Thinking partner</button>
+            </div>
+          </div>
+
+          <div class="chip-group">
+            <div class="chip-label">How soon?</div>
+            <div class="chips" data-field="timing">
+              <button type="button" class="chip">Today</button>
+              <button type="button" class="chip">This week</button>
+              <button type="button" class="chip">Just curious</button>
+            </div>
+          </div>
+
+          <div class="chip-actions">
+            <button type="submit" class="btn-primary">Send</button>
+            <button type="button" class="link-skip" id="skip-profile">Skip</button>
+          </div>
+        </form>
+
+        <!-- Step 3: done -->
+        <div class="form-done" id="step-done">
+          <div class="check">✓</div>
+          <h3>You're in.</h3>
+          <p>Watch your inbox. Alfred will write shortly — serif, signed, short.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap footer-inner">
+    <span class="footer-brand">Alfred</span>
+    <span>By MS Foundry · Runs locally on macOS</span>
+  </div>
+</footer>
+
+<script>
+  // Nav border on scroll
+  const nav = document.getElementById('nav');
+  window.addEventListener('scroll', () => {
+    nav.classList.toggle('scrolled', window.scrollY > 8);
+  }, { passive: true });
+
+  // Phone marquee rotation
+  (function () {
+    const tracks = document.querySelectorAll('.phone-track');
+    let idx = 0;
+    const count = tracks.length ? tracks[0].children.length : 0;
+    if (!count) return;
+    setInterval(() => {
+      idx = (idx + 1) % count;
+      tracks.forEach(t => {
+        t.style.transform = `translateY(-${idx * 100}%)`;
+      });
+    }, 3400);
+  })();
+
+  // Form progressive reveal
+  const stepEmail = document.getElementById('step-email');
+  const stepProfile = document.getElementById('step-profile');
+  const stepDone = document.getElementById('step-done');
+  const skipBtn = document.getElementById('skip-profile');
+
+  function show(el) {
+    [stepEmail, stepProfile, stepDone].forEach(s => s.classList.remove('active'));
+    el.classList.add('active');
+  }
+
+  stepEmail.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const email = document.getElementById('email').value.trim();
+    if (!email || !email.includes('@')) {
+      document.getElementById('email').focus();
+      return;
+    }
+    // TODO: POST { email } to access endpoint
+    console.log('prospect email', email);
+    show(stepProfile);
+  });
+
+  document.querySelectorAll('.chips').forEach(group => {
+    group.addEventListener('click', (e) => {
+      const chip = e.target.closest('.chip');
+      if (!chip) return;
+      group.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
+      chip.classList.add('selected');
+    });
+  });
+
+  stepProfile.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const profile = {};
+    document.querySelectorAll('.chips').forEach(g => {
+      const selected = g.querySelector('.chip.selected');
+      profile[g.dataset.field] = selected ? selected.textContent.trim() : null;
+    });
+    // TODO: POST profile to access endpoint (upsert by email)
+    console.log('prospect profile', profile);
+    show(stepDone);
+  });
+
+  skipBtn.addEventListener('click', () => show(stepDone));
+</script>
+</body>
+</html>
