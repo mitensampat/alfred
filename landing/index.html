@@ -108,18 +108,19 @@
   }
 
   /* ===== Sections ===== */
-  section { padding: 112px 0; }
+  section { padding: 80px 0; }
 
   /* ===== Hero ===== */
-  .hero { padding: 140px 0 96px; }
-  .hero h1 { margin-bottom: 28px; max-width: 14ch; }
+  .hero { padding: 96px 0 64px; }
+  .hero h1 { margin-bottom: 22px; max-width: 14ch; }
   .hero-sub {
-    font-size: 20px;
+    font-size: 19px;
     color: var(--ink-2);
-    max-width: 54ch;
-    margin-bottom: 40px;
+    max-width: 56ch;
+    margin-bottom: 28px;
     line-height: 1.5;
   }
+  .hero-sub + .cta-row { margin-top: 8px; }
   .hero-sub strong { color: var(--ink); font-weight: 500; }
   .cta-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .btn-primary {
@@ -143,8 +144,8 @@
   }
   .btn-secondary:hover { border-color: var(--ink); }
   .hero-trust {
-    margin-top: 56px;
-    padding-top: 28px;
+    margin-top: 40px;
+    padding-top: 22px;
     border-top: 1px solid var(--line);
     display: flex; gap: 40px; flex-wrap: wrap;
     font-size: 13px; color: var(--ink-3);
@@ -163,7 +164,7 @@
     display: grid;
     grid-template-columns: 96px 1fr;
     gap: 32px;
-    padding: 44px 0;
+    padding: 32px 0;
     border-top: 1px solid var(--line);
     align-items: baseline;
   }
@@ -181,7 +182,7 @@
 
   /* ===== Marquee (preserved) ===== */
   .see-it { background: var(--line-2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); overflow: hidden; }
-  .see-it-header { max-width: 52ch; margin-bottom: 72px; }
+  .see-it-header { max-width: 52ch; margin-bottom: 48px; }
   .stage {
     position: relative;
     display: grid;
@@ -498,8 +499,8 @@
   .access > .wrap > p { max-width: 48ch; }
 
   .form-card {
-    margin-top: 48px;
-    padding: 32px;
+    margin-top: 32px;
+    padding: 28px;
     background: var(--canvas);
     border: 1px solid var(--line);
     border-radius: var(--r-lg);
@@ -658,7 +659,10 @@
     <div class="wrap">
       <h1>a coach for <em>founders.</em></h1>
       <p class="hero-sub">
-        Alfred listens to your messages, calendar, commitments. coaches you on the conversations you're avoiding. not a dashboard. a coach.
+        alfred observes how you work across your messages, calendar, tasks, commitments, notes and more. coaches you with context on what matters most. attention, avoidance, leverage, and relationships.
+      </p>
+      <p class="hero-sub" style="margin-top:18px;">
+        alfred isn't a dashboard. it's your performance coach.
       </p>
       <div class="cta-row">
         <a href="#access" class="btn-primary">request access →</a>
