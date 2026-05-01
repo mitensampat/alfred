@@ -253,8 +253,8 @@ class TenetPackLoader {
         let defaults: [(filename: String, content: String)] = [
             ("alfred-rules.md", Self.alfredRulesPack),
             ("alfred-voice.md", Self.alfredVoicePack),
-            ("campbell-rules.md", Self.campbellRulesPack),
-            ("mochary-rules.md", Self.mocharyRulesPack),
+            ("relational-rules.md", Self.relationalRulesPack),
+            ("direct-rules.md", Self.directRulesPack),
         ]
 
         for (filename, content) in defaults {
@@ -311,12 +311,12 @@ class TenetPackLoader {
     - Never use corporate jargon: no "synergies", "leverage" as a verb, "circle back", or "touch base".
     """
 
-    private static let campbellRulesPack = """
-    # Bill Campbell Coaching Rules
+    private static let relationalRulesPack = """
+    # Relational Coaching Rules
 
-    **Description:** Trillion Dollar Coach principles — people first, radical candor, operational excellence
+    **Description:** People-first principles — radical candor, trust-building, operational excellence
     **Icon:** 🏈
-    **Author:** Bill Campbell Method
+    **Author:** Relational Method
     **Version:** 1.0
     **Scope:** relationship, leverage
 
@@ -330,12 +330,12 @@ class TenetPackLoader {
     - Coach the person, not the problem. Help them develop judgment, not just get the answer.
     """
 
-    private static let mocharyRulesPack = """
-    # Matt Mochary Coaching Rules
+    private static let directRulesPack = """
+    # Direct Coaching Rules
 
-    **Description:** Mochary Method principles — energy audit, avoidance confrontation, Zone of Genius
+    **Description:** Tactical principles — energy audit, avoidance confrontation, Zone of Genius
     **Icon:** ⚡
-    **Author:** Matt Mochary Method
+    **Author:** Direct Method
     **Version:** 1.0
     **Scope:** avoidance, attention, weekly-review
 

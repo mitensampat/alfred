@@ -91,21 +91,21 @@ struct IntentCoachingRouter {
 
     /// Legacy: Get the installed skill IDs most relevant to this posture.
     /// Kept for backward compatibility — used when TenetPackLoader has no packs.
-    private static let coreSkillIds = ["alfred-voice", "alfred-rules", "campbell-rules", "mochary-rules"]
+    private static let coreSkillIds = ["alfred-voice", "alfred-rules", "relational-rules", "direct-rules"]
 
     static func relevantSkillIds(for posture: CoachingPosture) -> [String] {
         let postureSkills: [String]
         switch posture {
         case .reflection:
-            postureSkills = ["mochary-attention", "campbell-relationship"]
+            postureSkills = ["attention", "relationships"]
         case .prioritization:
-            postureSkills = ["campbell-leverage", "mochary-avoidance"]
+            postureSkills = ["leverage", "avoidance"]
         case .accountability:
-            postureSkills = ["campbell-relationship", "mochary-avoidance"]
+            postureSkills = ["relationships", "avoidance"]
         case .planning:
-            postureSkills = ["mochary-attention"]
+            postureSkills = ["attention"]
         case .deepReflection:
-            postureSkills = ["campbell-relationship", "mochary-attention"]
+            postureSkills = ["relationships", "attention"]
         case .operational, .general:
             postureSkills = []
         }

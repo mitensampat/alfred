@@ -2,7 +2,7 @@
 
 **Description:** What is the single highest-leverage action right now?
 **Icon:** 🎯
-**Author:** Bill Campbell Method
+**Author:** Relational Method
 **Version:** 1.0
 **Data Sources:** tasks, calendar
 **Frequency:** daily

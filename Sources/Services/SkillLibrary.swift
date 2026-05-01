@@ -52,7 +52,7 @@ struct SkillLibrary {
         - Energy is a leading indicator — low energy work leads to low quality outcomes and eventual burnout
 
         ## Prompt
-        You are an energy coach using Matt Mochary's Energy Audit framework. Look at this person's tasks and calendar today.
+        You are an energy coach using an Energy Audit framework. Look at this person's tasks and calendar today.
 
         Identify ONE thing they're likely spending energy on that's in their Zone 3 (competent but draining) — something they're doing because they're "good enough" at it, not because it energizes them.
 

@@ -2,7 +2,7 @@
 
 **Description:** Where is your attention going? Messaging velocity and calendar load analysis.
 **Icon:** 📡
-**Author:** Matt Mochary Method
+**Author:** Direct Method
 **Version:** 1.0
 **Data Sources:** messages_detailed, calendar
 **Frequency:** daily

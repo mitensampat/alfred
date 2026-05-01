@@ -304,7 +304,7 @@ class BriefingOrchestrator {
         }.joined(separator: "\n")
 
         let prompt = """
-        You are a world-class executive coach inspired by Bill Campbell and Matt Mochary. Generate exactly 3 coaching insights based on this person's current state. Be specific, name names and tasks, and give ONE concrete action per card.
+        You are a world-class executive coach blending two voices — relational (people-first, trust-led) and direct (tactical, avoidance-naming). Generate exactly 3 coaching insights based on this person's current state. Be specific, name names and tasks, and give ONE concrete action per card.
 
         CRITICAL: ONLY mention people and tasks listed below. Never invent or guess names.
 

@@ -2133,6 +2133,14 @@
         .rf-question-age {
             font-size: 10px; color: var(--ink-faint); margin-left: auto;
         }
+        .rf-research-btn {
+            font-family: var(--font-body); font-size: 10px; font-weight: 500;
+            color: var(--ink-tertiary); background: none; border: 1px solid var(--line);
+            padding: 2px 8px; cursor: pointer; border-radius: 0; margin-left: 8px;
+            opacity: 0; transition: opacity 0.15s;
+        }
+        .rf-question-card:hover .rf-research-btn { opacity: 1; }
+        .rf-research-btn:hover { color: var(--coach); border-color: var(--coach); }
 
         /* ── Deep-dive state progression ── */
         .rf-dd-state {
@@ -2611,14 +2619,25 @@
                         <div class="config-card">
                             <div class="config-row">
                                 <span>Browser Permission</span>
-                                <span id="pushNotifStatus" style="font-size:12px;color:var(--ink-secondary);">Checking...</span>
+                                <div style="display:flex;align-items:center;gap:8px;">
+                                    <span id="pushNotifStatus" style="font-size:12px;color:var(--ink-secondary);">Checking...</span>
+                                    <button class="btn btn-sm hidden" id="enablePushBtn" onclick="enablePushFromSettings()" style="font-size:10px;padding:2px 10px;">Enable</button>
+                                </div>
+                            </div>
+                            <div id="pushPermissionDeniedBanner" class="hidden" style="padding:8px 16px 12px;">
+                                <div style="font-size:11px;color:var(--warning);line-height:1.4;">
+                                    Notifications are blocked. To re-enable, open your browser settings and allow notifications for this site, then reload the page.
+                                </div>
                             </div>
                             <div class="config-row">
                                 <span>Subscribed Devices</span>
                                 <span id="pushSubCount" style="font-size:12px;color:var(--ink-secondary);">-</span>
                             </div>
                             <div class="config-row">
-                                <span>Test Push</span>
+                                <div>
+                                    <span>Test Push</span>
+                                    <div id="notifBudgetStatus" style="font-size:10px;color:var(--ink-tertiary);"></div>
+                                </div>
                                 <button class="btn btn-sm" id="testPushBtn" onclick="sendTestPush()">Send Test</button>
                             </div>
                             <div id="testPushStatus" class="hidden" style="padding:4px 16px 8px;font-size:11px;"></div>
@@ -2654,10 +2673,10 @@
                             <div class="config-row">
                                 <div>
                                     <span>Max Per Day</span>
-                                    <div id="notifBudgetStatus" style="font-size:10px;color:var(--ink-tertiary);"></div>
+                                    <div style="font-size:10px;color:var(--ink-tertiary);">1 reserved for morning nudge, rest for post-meeting</div>
                                 </div>
                                 <div style="display:flex;align-items:center;gap:8px;">
-                                    <input type="range" id="notifMaxPerDay" min="1" max="15" value="5" style="width:80px;" oninput="document.getElementById('notifMaxLabel').textContent=this.value">
+                                    <input type="range" id="notifMaxPerDay" min="2" max="15" value="5" style="width:80px;" oninput="document.getElementById('notifMaxLabel').textContent=this.value">
                                     <span id="notifMaxLabel" style="font-size:13px;font-weight:500;color:var(--ink);min-width:18px;text-align:center;">5</span>
                                 </div>
                             </div>
@@ -2685,8 +2704,19 @@
                     </div>
                     <!-- Devices -->
                     <div class="panel-section">
-                        <div class="panel-section-label">DEVICES</div>
-                        <div class="config-card" id="notifDevicesList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px;">Loading...</div></div>
+                        <div class="panel-section-label" style="display:flex;justify-content:space-between;align-items:center;">
+                            DEVICES
+                            <span id="pushDeviceCount" style="font-size:10px;color:var(--ink-tertiary);font-weight:400;"></span>
+                        </div>
+                        <div id="notifDevicesList"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px;">Loading...</div></div>
+                    </div>
+                    <!-- Recent Push Log -->
+                    <div class="panel-section">
+                        <div class="panel-section-label" style="display:flex;justify-content:space-between;align-items:center;">
+                            RECENT ACTIVITY
+                            <button class="btn btn-sm" onclick="loadPushLogs()" style="font-size:10px;padding:2px 8px;">Refresh</button>
+                        </div>
+                        <div class="config-card" id="notifPushLogs"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px;">Loading...</div></div>
                     </div>
                     <!-- Save -->
                     <div class="panel-section" style="padding-top:0;">
@@ -5078,10 +5108,10 @@
             if (nonWeeklyCards.length === 0) {
                 // Skeleton placeholders
                 const skeletonTypes = [
-                    { label: 'Leverage', type: 'campbell-leverage' },
-                    { label: 'Relationship', type: 'campbell-relationship' },
-                    { label: 'Avoidance', type: 'mochary-avoidance' },
-                    { label: 'Attention', type: 'mochary-attention' }
+                    { label: 'Leverage', type: 'leverage' },
+                    { label: 'Relationship', type: 'relationships' },
+                    { label: 'Avoidance', type: 'avoidance' },
+                    { label: 'Attention', type: 'attention' }
                 ];
                 skeletonTypes.forEach((s, i) => {
                     html += '<div class="coaching-card skeleton" data-type="' + s.type + '" style="animation:pulse 1.5s ease-in-out infinite;animation-delay:' + (i * 0.15) + 's;">'
@@ -5475,10 +5505,11 @@
 
         function skillMethodology(type) {
             if (!type) return '';
-            if (type.startsWith('campbell-')) return 'Bill Campbell Method';
-            if (type.startsWith('mochary-')) return 'Matt Mochary Method';
-            if (type === 'deep-work-guard') return 'Cal Newport Method';
-            if (type === 'deal-pipeline') return 'Bill Campbell Method';
+            // Relational method: warm, team-first, leverage-led
+            if (['leverage', 'relationships', 'deal-pipeline'].includes(type)) return 'Relational Method';
+            // Direct method: ruthlessly tactical, names avoidance and energy patterns
+            if (['attention', 'avoidance', 'weekly-review'].includes(type)) return 'Direct Method';
+            if (type === 'deep-work-guard') return 'Focus Method';
             return '';
         }
 
@@ -6780,12 +6811,38 @@
 
         async function loadNotificationStatus() {
             // Browser permission status
-            const statusEl = document.getElementById('pushNotifStatus');
+            var statusEl = document.getElementById('pushNotifStatus');
+            var deniedBanner = document.getElementById('pushPermissionDeniedBanner');
+            var enableBtn = document.getElementById('enablePushBtn');
             if (statusEl) {
                 if ('Notification' in window) {
-                    if (Notification.permission === 'granted') { statusEl.textContent = 'Granted'; statusEl.style.color = 'var(--growth)'; }
-                    else if (Notification.permission === 'denied') { statusEl.textContent = 'Blocked'; statusEl.style.color = 'var(--danger)'; }
-                    else { statusEl.textContent = 'Not enabled'; statusEl.style.color = 'var(--warning)'; }
+                    // Check if this browser is already subscribed
+                    var thisBrowserSubscribed = false;
+                    if ('serviceWorker' in navigator) {
+                        try {
+                            var swReg = await navigator.serviceWorker.ready;
+                            var existingSub = await swReg.pushManager.getSubscription();
+                            thisBrowserSubscribed = !!existingSub;
+                        } catch(e) {}
+                    }
+
+                    if (Notification.permission === 'granted' && thisBrowserSubscribed) {
+                        statusEl.textContent = 'Subscribed'; statusEl.style.color = 'var(--growth)';
+                        if (deniedBanner) deniedBanner.classList.add('hidden');
+                        if (enableBtn) enableBtn.classList.add('hidden');
+                    } else if (Notification.permission === 'granted' && !thisBrowserSubscribed) {
+                        statusEl.textContent = 'Permitted (not subscribed)'; statusEl.style.color = 'var(--warning)';
+                        if (deniedBanner) deniedBanner.classList.add('hidden');
+                        if (enableBtn) { enableBtn.textContent = 'Subscribe'; enableBtn.classList.remove('hidden'); }
+                    } else if (Notification.permission === 'denied') {
+                        statusEl.textContent = 'Blocked'; statusEl.style.color = 'var(--danger)';
+                        if (deniedBanner) deniedBanner.classList.remove('hidden');
+                        if (enableBtn) enableBtn.classList.add('hidden');
+                    } else {
+                        statusEl.textContent = 'Not enabled'; statusEl.style.color = 'var(--warning)';
+                        if (deniedBanner) deniedBanner.classList.add('hidden');
+                        if (enableBtn) { enableBtn.textContent = 'Enable'; enableBtn.classList.remove('hidden'); }
+                    }
                 } else { statusEl.textContent = 'Not supported'; }
             }
 
@@ -6802,9 +6859,9 @@
 
             // Fetch notification config from server
             try {
-                const r = await authFetch('/api/config/notifications');
+                var r = await authFetch('/api/config/notifications');
                 if (!r.ok) return;
-                const d = await r.json();
+                var d = await r.json();
 
                 // Schedule
                 var timeEl = document.getElementById('notifBriefingTime');
@@ -6830,25 +6887,175 @@
                 // Devices
                 var subCountEl = document.getElementById('pushSubCount');
                 if (subCountEl) subCountEl.textContent = d.subscriberCount || 0;
-                var devicesEl = document.getElementById('notifDevicesList');
-                if (devicesEl) {
-                    var subs = d.subscriptions || [];
-                    if (subs.length === 0) {
-                        devicesEl.innerHTML = '<div style="font-size:12px;color:var(--ink-tertiary);padding:8px;">No devices subscribed. Open Alfred in a browser and allow notifications.</div>';
-                    } else {
-                        var html = '';
-                        subs.forEach(function(sub, i) {
-                            var ago = sub.subscribedAt ? formatAgo(sub.subscribedAt) : '';
-                            var lastPush = sub.lastPushAt ? 'Last push: ' + formatAgo(sub.lastPushAt) : 'No pushes yet';
-                            html += '<div class="config-row" style="flex-direction:column;align-items:flex-start;gap:2px;">'
-                                + '<div style="font-size:12px;font-weight:500;color:var(--ink);">Device ' + (i + 1) + '</div>'
-                                + '<div style="font-size:10px;color:var(--ink-tertiary);">Subscribed ' + ago + ' · ' + lastPush + '</div>'
-                                + '</div>';
-                        });
-                        devicesEl.innerHTML = html;
+                var deviceCountEl = document.getElementById('pushDeviceCount');
+                if (deviceCountEl) deviceCountEl.textContent = (d.subscriberCount || 0) + ' registered';
+                renderDevicesList(d.subscriptions || []);
+
+                // Load push logs
+                loadPushLogs();
+            } catch(e) { console.error('Notification config load failed:', e); }
+        }
+
+        function renderDevicesList(subs) {
+            var devicesEl = document.getElementById('notifDevicesList');
+            if (!devicesEl) return;
+
+            if (subs.length === 0) {
+                devicesEl.innerHTML = '<div class="config-card"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px;">No devices subscribed. Open Alfred in a browser and allow notifications.</div></div>';
+                return;
+            }
+
+            var html = '';
+            subs.forEach(function(sub, i) {
+                var ago = sub.subscribedAt ? formatAgo(sub.subscribedAt) : '';
+                var lastPush = sub.lastPushAt ? formatAgo(sub.lastPushAt) : null;
+                var deviceName = sub.name || ('Device ' + (i + 1));
+                var endpoint = sub.endpoint || '';
+                var escapedEndpoint = endpoint.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                var escapedName = deviceName.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
+                html += '<div class="config-card" style="margin-bottom:8px;position:relative;" '
+                    + 'onmouseenter="this.querySelector(\'.device-actions\').style.opacity=1" '
+                    + 'onmouseleave="this.querySelector(\'.device-actions\').style.opacity=0">'
+                    + '<div class="config-row" style="padding:10px 12px;">'
+                    + '<div style="flex:1;min-width:0;">'
+                    + '<div style="display:flex;align-items:center;gap:6px;">'
+                    + '<span style="font-size:13px;font-weight:500;color:var(--ink);">' + deviceName + '</span>'
+                    + '</div>'
+                    + '<div style="font-size:10px;color:var(--ink-tertiary);margin-top:2px;">'
+                    + 'Subscribed ' + ago
+                    + (lastPush ? ' &middot; Last push ' + lastPush : ' &middot; No pushes yet')
+                    + '</div>'
+                    + '</div>'
+                    + '<div class="device-actions" style="display:flex;gap:4px;opacity:0;transition:opacity 0.15s;">'
+                    + '<button class="btn btn-sm" onclick="renameDevice(\'' + escapedEndpoint + '\',\'' + escapedName + '\')" '
+                    + 'style="font-size:10px;padding:2px 8px;" title="Rename">Rename</button>'
+                    + '<button class="btn btn-sm" onclick="removeDevice(\'' + escapedEndpoint + '\',\'' + escapedName + '\')" '
+                    + 'style="font-size:10px;padding:2px 8px;color:var(--danger);border-color:var(--danger);" title="Remove">Remove</button>'
+                    + '</div>'
+                    + '</div>'
+                    + '</div>';
+            });
+            devicesEl.innerHTML = html;
+        }
+
+        async function renameDevice(endpoint, currentName) {
+            var newName = prompt('Rename device:', currentName);
+            if (!newName || newName.trim() === '' || newName.trim() === currentName) return;
+            try {
+                var r = await authFetch('/api/push/rename', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ endpoint: endpoint, name: newName.trim() })
+                });
+                if (r.ok) {
+                    loadNotificationStatus();
+                } else {
+                    var d = await r.json();
+                    alert(d.error || 'Rename failed');
+                }
+            } catch(e) { alert('Connection failed'); }
+        }
+
+        async function removeDevice(endpoint, deviceName) {
+            if (!confirm('Remove "' + deviceName + '" from push notifications?')) return;
+            try {
+                var r = await authFetch('/api/push/subscribe', {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ endpoint: endpoint })
+                });
+                if (r.ok) {
+                    loadNotificationStatus();
+                } else {
+                    var d = await r.json();
+                    alert(d.error || 'Remove failed');
+                }
+            } catch(e) { alert('Connection failed'); }
+        }
+
+        async function loadPushLogs() {
+            var logsEl = document.getElementById('notifPushLogs');
+            if (!logsEl) return;
+            try {
+                var r = await authFetch('/api/push/logs');
+                if (!r.ok) { logsEl.innerHTML = '<div style="font-size:11px;color:var(--ink-tertiary);padding:8px;">No logs available</div>'; return; }
+                var d = await r.json();
+                var logs = (d.logs || []).reverse().slice(0, 15);
+                if (logs.length === 0) {
+                    logsEl.innerHTML = '<div style="font-size:11px;color:var(--ink-tertiary);padding:8px;">No push activity yet</div>';
+                    return;
+                }
+                var html = '';
+                logs.forEach(function(log) {
+                    var icon = log.success ? '<span style="color:var(--growth);">Sent</span>' : '<span style="color:var(--danger);">Failed</span>';
+                    var ts = log.timestamp ? formatAgo(log.timestamp) : '';
+                    var target = log.deviceName || 'Unknown device';
+                    var typeLabel = log.type === 'morning' ? 'Morning nudge' : log.type === 'post-meeting' ? 'Post-meeting' : log.type === 'test' ? 'Test' : log.type;
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 12px;border-bottom:1px solid var(--line-light,var(--line));">'
+                        + '<div style="font-size:11px;color:var(--ink-secondary);">'
+                        + typeLabel + ' &rarr; ' + target
+                        + (log.retryCount > 0 ? ' <span style="color:var(--warning);">(' + log.retryCount + ' retries)</span>' : '')
+                        + '</div>'
+                        + '<div style="display:flex;align-items:center;gap:8px;">'
+                        + '<span style="font-size:10px;">' + icon + '</span>'
+                        + '<span style="font-size:10px;color:var(--ink-tertiary);">' + ts + '</span>'
+                        + '</div>'
+                        + '</div>';
+                });
+                logsEl.innerHTML = html;
+            } catch(e) {
+                logsEl.innerHTML = '<div style="font-size:11px;color:var(--ink-tertiary);padding:8px;">Failed to load logs</div>';
+            }
+        }
+
+        async function enablePushFromSettings() {
+            var btn = document.getElementById('enablePushBtn');
+            if (btn) { btn.disabled = true; btn.textContent = 'Enabling...'; }
+            try {
+                // This is triggered by a user click, so browsers will allow the permission prompt
+                if (Notification.permission === 'default') {
+                    var perm = await Notification.requestPermission();
+                    if (perm !== 'granted') {
+                        if (btn) { btn.disabled = false; btn.textContent = 'Enable'; }
+                        loadNotificationStatus();
+                        return;
                     }
                 }
-            } catch(e) { console.error('Notification config load failed:', e); }
+
+                // Register SW and subscribe
+                var reg = await navigator.serviceWorker.register('/sw.js?v=2.2.0', { updateViaCache: 'none' });
+                await navigator.serviceWorker.ready;
+
+                var existingSub = await reg.pushManager.getSubscription();
+                if (existingSub) {
+                    // Already subscribed, just re-send to server
+                    await authFetch('/api/push/subscribe', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(existingSub.toJSON())
+                    });
+                } else {
+                    var vapidResp = await authFetch('/api/push/vapid-public-key');
+                    if (!vapidResp.ok) { if (btn) { btn.disabled = false; btn.textContent = 'Enable'; } return; }
+                    var vapidData = await vapidResp.json();
+                    var sub = await reg.pushManager.subscribe({
+                        userVisibleOnly: true,
+                        applicationServerKey: urlBase64ToUint8Array(vapidData.vapid_public_key)
+                    });
+                    await authFetch('/api/push/subscribe', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(sub.toJSON())
+                    });
+                }
+
+                if (btn) { btn.textContent = 'Enabled'; btn.style.color = 'var(--growth)'; }
+                loadNotificationStatus();
+            } catch(e) {
+                console.error('[Push] Enable failed:', e);
+                if (btn) { btn.disabled = false; btn.textContent = 'Failed - Retry'; }
+            }
         }
 
         function toggleNotifType(type, el) {
@@ -6974,10 +7181,10 @@
 
             try {
                 // Register service worker (version param forces re-check on updates)
-                const reg = await navigator.serviceWorker.register('/sw.js?v=2.1.1');
+                const reg = await navigator.serviceWorker.register('/sw.js?v=2.2.0', { updateViaCache: 'none' });
                 console.log('[Push] Service worker registered, scope:', reg.scope);
 
-                // Force update check on every page load
+                // Force update check on every page load (bypasses 24h browser cache)
                 reg.update().catch(function() {});
 
                 // Check if already subscribed
@@ -7642,11 +7849,13 @@
                         const qText = typeof q === 'string' ? q : (q.text || q.question || '');
                         const qTheme = typeof q === 'object' ? (q.theme || '') : '';
                         const qAge = typeof q === 'object' ? (q.age || q.days_open || '') : '';
+                        const qSlug = (qTheme || 'general').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
                         html += `<div class="rf-question-card" onclick="startReflectionChat('${escapeHtml(qText).replace(/'/g, "\\'")}')">
                             <div class="rf-question-text">${escapeHtml(qText)}</div>
                             <div class="rf-question-footer">
                                 ${qTheme ? `<span class="rf-question-tag">${escapeHtml(qTheme)}</span>` : ''}
                                 ${qAge ? `<span class="rf-question-age">${qAge} days</span>` : ''}
+                                <button class="rf-research-btn" onclick="event.stopPropagation(); startResearchLoop('${escapeHtml(qText).replace(/'/g, "\\'")}', '${qSlug}', '${escapeHtml(qTheme || 'General').replace(/'/g, "\\'")}')">Research</button>
                             </div>
                         </div>`;
                     });
@@ -7687,6 +7896,44 @@
                 const container = document.getElementById('reflections-page');
                 if (container) container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger);">Failed to load reflections. <button class="pill" onclick="showReflectionsPage()">Retry</button></div>`;
             }
+        }
+
+        async function startResearchLoop(question, themeSlug, themeName) {
+            showToast('Starting research loop...', 'info');
+            try {
+                const resp = await authFetch('/api/research/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question: question, theme_slug: themeSlug, theme_name: themeName, max_cycles: 5 })
+                });
+                if (resp.ok) {
+                    showToast('Research running for "' + themeName + '"', 'success');
+                    // Poll for completion
+                    pollResearchStatus(themeSlug, themeName);
+                } else {
+                    const err = await resp.text();
+                    showToast('Research failed: ' + err, 'error');
+                }
+            } catch (e) {
+                showToast('Research failed: ' + e.message, 'error');
+            }
+        }
+
+        function pollResearchStatus(themeSlug, themeName) {
+            let polls = 0;
+            const interval = setInterval(async () => {
+                polls++;
+                if (polls > 60) { clearInterval(interval); return; } // 5 min max
+                try {
+                    const resp = await authFetch('/api/research/status?theme_slug=' + encodeURIComponent(themeSlug));
+                    if (!resp.ok) { clearInterval(interval); return; }
+                    const data = await resp.json();
+                    if (!data.running) {
+                        clearInterval(interval);
+                        showToast('Research complete: ' + (data.cycles_completed || 0) + ' cycles on "' + themeName + '"', 'success');
+                    }
+                } catch (e) { clearInterval(interval); }
+            }, 5000); // check every 5s
         }
 
         function startReflectionChat(question) {
@@ -7784,6 +8031,16 @@
                 html += `<div class="rf-dd-cta" onclick="startReflectionChat('Let\\'s think through ${escapeHtml(themeName).replace(/'/g, "\\'")}')">
                     <div class="rf-dd-cta-text">Talk through this with Alfred</div>
                     <div class="rf-dd-cta-hint">Coaching &#8250;</div>
+                </div>`;
+
+                // Research CTA
+                const deepDiveSlug = themeName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+                const topQuestion = (data.open_questions && data.open_questions.length > 0)
+                    ? (typeof data.open_questions[0] === 'string' ? data.open_questions[0] : data.open_questions[0].text || data.open_questions[0].question || '')
+                    : 'What are the key insights and tensions in ' + themeName + '?';
+                html += `<div class="rf-dd-cta" id="research-cta-${deepDiveSlug}" onclick="startResearchLoop('${escapeHtml(topQuestion).replace(/'/g, "\\'")}', '${deepDiveSlug}', '${escapeHtml(themeName).replace(/'/g, "\\'")}')">
+                    <div class="rf-dd-cta-text">Research this theme</div>
+                    <div class="rf-dd-cta-hint">Auto-research &#8250;</div>
                 </div>`;
 
                 // Timeline

@@ -521,7 +521,7 @@ class AnalysisLensLoader {
     ```
 
     ## Prompt
-    You are an energy pattern detector using Matt Mochary's Zone of Genius framework. Analyze task and calendar data to assess energy allocation.
+    You are an energy pattern detector using a Zone of Genius framework. Analyze task and calendar data to assess energy allocation.
 
     Detection rules:
     - **completion_velocity**: Compare tasks completed this week vs last week. Notable increase or decrease (>30% change).

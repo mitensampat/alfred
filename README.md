@@ -18,11 +18,11 @@ Most productivity tools make you do the organizing. Alfred flips that. It runs c
 4. **Push notifications** that nudge you after meetings, flag overdue commitments, and protect your focus time
 5. **A reflection layer** that tracks what you're thinking about — not just what you're doing
 
-The coaching voice is inspired by two frameworks:
-- **Bill Campbell** — the Silicon Valley coach who asked "what's the one thing?" before every meeting
-- **Matt Mochary** — the CEO coach who taught leaders to spot avoidance patterns and relationship debt
+The coaching voice draws on two complementary methods:
+- **Relational** — warm, team-first, asks "what's the one thing?" before every meeting
+- **Direct** — ruthlessly tactical, names avoidance patterns and relationship debt out loud
 
-Alfred doesn't just know these frameworks — it learns *you*. Over weeks and months, it builds a trust relationship, remembers your patterns, and adjusts its coaching voice from gentle observation to direct challenge.
+Alfred doesn't just know these methods — it learns *you*. Over weeks and months, it builds a trust relationship, remembers your patterns, and adjusts its coaching voice from gentle observation to direct challenge.
 
 ---
 
@@ -87,7 +87,7 @@ Alfred's coaching is driven by **skills** — modular coaching programs that eac
 | **Relationship** | Daily | Who needs your attention — based on message and commitment data |
 | **Avoidance** | Daily | What you're putting off, and why it matters |
 | **Attention** | Daily | Where your attention is actually going vs. where it should be |
-| **Weekly Review** | Weekly | Matt Mochary-style end-of-week assessment |
+| **Weekly Review** | Weekly | End-of-week assessment with direct-method framing |
 
 **Skill anatomy** (each `.md` file):
 ```markdown
@@ -95,7 +95,7 @@ Alfred's coaching is driven by **skills** — modular coaching programs that eac
 Name: Leverage
 Description: Identifies highest-leverage action
 Icon: 🎯
-Author: Bill Campbell Method
+Author: Relational Method
 Version: 1.0
 Frequency: daily
 Data Sources: tasks, calendar, commitments
@@ -303,7 +303,7 @@ Every recurring action in Alfred is a **cadence** — a scheduled tool with its 
 | Pattern Learning | Thursday 18:00 | Compute workflow patterns from feedback |
 | Reflection Ingestion | Daily | Ingest browsing, videos, notes → reflection themes *(v2.1.0)* |
 | Group Analysis | Monday 09:00 | Analyze group chat health |
-| Weekly Review | Friday 17:00 | Matt Mochary-style weekly assessment |
+| Weekly Review | Friday 17:00 | Direct-method weekly assessment |
 | Message Summary | On-demand | Per-thread deep summary |
 | Playbook Sync | On-demand | Sync playbooks from Notion |
 | Coaching Sync | On-demand | Sync coaching context to Notion |

@@ -2,7 +2,7 @@
 
 **Description:** Who needs attention? Unusual silence, piling-up obligations.
 **Icon:** 👤
-**Author:** Bill Campbell Method
+**Author:** Relational Method
 **Version:** 1.0
 **Data Sources:** commitments_by_person, messages
 **Frequency:** daily

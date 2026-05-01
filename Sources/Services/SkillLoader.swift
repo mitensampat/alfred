@@ -28,7 +28,12 @@ class SkillLoader {
         // Migration: move any .md files from old flat directory into user/
         migrateOldSkills()
 
-        // Install default coaching skills (Bill Campbell + Matt Mochary methodologies)
+        // Migration: rename old methodology-prefixed skill files to method-neutral names.
+        // Must run BEFORE installDefaultSkills so user edits in old files are preserved
+        // by being renamed (not overwritten by a fresh default).
+        migrateSkillRenames()
+
+        // Install default coaching skills (relational + direct methods)
         installDefaultSkills()
     }
 
@@ -324,18 +329,128 @@ class SkillLoader {
         }
     }
 
+    /// Migrate old methodology-prefixed skill IDs to method-neutral names.
+    /// Renames files in installed/ and user/ directories, plus rewrites the
+    /// skills_state.json keys. Idempotent — safe to run on every launch.
+    private func migrateSkillRenames() {
+        let renames: [String: String] = [
+            "campbell-leverage": "leverage",
+            "campbell-relationship": "relationships",
+            "mochary-attention": "attention",
+            "mochary-avoidance": "avoidance",
+            "mochary-weekly-review": "weekly-review",
+            "campbell-rules": "relational-rules",
+            "mochary-rules": "direct-rules",
+        ]
+
+        let fm = FileManager.default
+
+        // 1. Rename .md files in both installed/ and user/ directories
+        for directory in [installedDirectory, userDirectory] {
+            for (oldId, newId) in renames {
+                let oldPath = (directory as NSString).appendingPathComponent("\(oldId).md")
+                let newPath = (directory as NSString).appendingPathComponent("\(newId).md")
+                if fm.fileExists(atPath: oldPath), !fm.fileExists(atPath: newPath) {
+                    try? fm.moveItem(atPath: oldPath, toPath: newPath)
+                    print("[SkillLoader] Renamed \(oldId).md → \(newId).md")
+                } else if fm.fileExists(atPath: oldPath), fm.fileExists(atPath: newPath) {
+                    // Both exist — keep the new one, remove the old to avoid duplicates
+                    try? fm.removeItem(atPath: oldPath)
+                    print("[SkillLoader] Removed duplicate \(oldId).md (kept \(newId).md)")
+                }
+            }
+        }
+
+        // 2. Rewrite stale author/title strings inside any of the renamed files
+        //    (handles files that were renamed on disk but still hold old content).
+        let contentReplacements: [(old: String, new: String)] = [
+            // Author fields
+            ("**Author:** Bill Campbell Method", "**Author:** Relational Method"),
+            ("**Author:** Matt Mochary Method", "**Author:** Direct Method"),
+            // Title headers (multiple variants seen in the wild)
+            ("# Bill Campbell Coaching Rules", "# Relational Coaching Rules"),
+            ("# Matt Mochary Coaching Rules", "# Direct Coaching Rules"),
+            ("# Campbell Rules", "# Relational Rules"),
+            ("# Mochary Rules", "# Direct Rules"),
+            // Description prefixes
+            ("Bill Campbell's coaching principles", "Relational coaching principles"),
+            ("Matt Mochary's coaching principles", "Direct coaching principles"),
+            ("Bill Campbell's", "the relational"),
+            ("Matt Mochary's", "the direct"),
+            // Catch-all (less safe but covers stray mentions)
+            ("Bill Campbell", "Relational"),
+            ("Matt Mochary", "Direct"),
+            ("Campbell Method", "Relational Method"),
+            ("Mochary Method", "Direct Method"),
+        ]
+        for directory in [installedDirectory, userDirectory] {
+            guard let files = try? fm.contentsOfDirectory(atPath: directory) else { continue }
+            for filename in files where filename.hasSuffix(".md") {
+                let path = (directory as NSString).appendingPathComponent(filename)
+                guard var content = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+                var changed = false
+                for (oldStr, newStr) in contentReplacements where content.contains(oldStr) {
+                    content = content.replacingOccurrences(of: oldStr, with: newStr)
+                    changed = true
+                }
+                if changed {
+                    try? content.write(toFile: path, atomically: true, encoding: .utf8)
+                    print("[SkillLoader] Rewrote stale attribution in \(filename)")
+                }
+            }
+        }
+
+        // 2b. Same rewrites for the user's coaching_tenets.md if it has stale labels
+        let coachingTenetsPath = NSString(string: "~/.alfred/coaching_tenets.md").expandingTildeInPath
+        if var tenetsContent = try? String(contentsOfFile: coachingTenetsPath, encoding: .utf8) {
+            var changed = false
+            let tenetsReplacements: [(old: String, new: String)] = [
+                ("## Campbell Rules", "## Relational Rules"),
+                ("## Mochary Rules", "## Direct Rules"),
+                ("**Campbell Rules:**", "**Relational Rules:**"),
+                ("**Mochary Rules:**", "**Direct Rules:**"),
+            ]
+            for (oldStr, newStr) in tenetsReplacements where tenetsContent.contains(oldStr) {
+                tenetsContent = tenetsContent.replacingOccurrences(of: oldStr, with: newStr)
+                changed = true
+            }
+            if changed {
+                try? tenetsContent.write(toFile: coachingTenetsPath, atomically: true, encoding: .utf8)
+                print("[SkillLoader] Migrated coaching_tenets.md labels")
+            }
+        }
+
+        // 3. Rename keys in skills_state.json
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: statePath)),
+           var state = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            var changed = false
+            for (oldId, newId) in renames where state[oldId] != nil {
+                if state[newId] == nil {
+                    state[newId] = state[oldId]
+                }
+                state.removeValue(forKey: oldId)
+                changed = true
+            }
+            if changed,
+               let outData = try? JSONSerialization.data(withJSONObject: state, options: [.prettyPrinted, .sortedKeys]) {
+                try? outData.write(to: URL(fileURLWithPath: statePath))
+                print("[SkillLoader] Migrated skills_state.json keys")
+            }
+        }
+    }
+
     /// Install default coaching skills if they don't already exist in the installed/ directory.
-    /// These are the 5 methodology-based skills (Bill Campbell + Matt Mochary).
+    /// These are the 5 default coaching skills, grouped by method (relational + direct).
     /// Never overwrites existing files — preserves user toggles and any manual edits.
     private func installDefaultSkills() {
         let fm = FileManager.default
 
         let defaultSkills: [(filename: String, content: String)] = [
-            ("campbell-leverage.md", Self.campbellLeverageSkill),
-            ("campbell-relationship.md", Self.campbellRelationshipSkill),
-            ("mochary-avoidance.md", Self.mocharyAvoidanceSkill),
-            ("mochary-attention.md", Self.mocharyAttentionSkill),
-            ("mochary-weekly-review.md", Self.mocharyWeeklyReviewSkill),
+            ("leverage.md", Self.leverageSkill),
+            ("relationships.md", Self.relationshipsSkill),
+            ("avoidance.md", Self.avoidanceSkill),
+            ("attention.md", Self.attentionSkill),
+            ("weekly-review.md", Self.weeklyReviewSkill),
         ]
 
         for (filename, content) in defaultSkills {
@@ -353,12 +468,12 @@ class SkillLoader {
 
     // MARK: - Default Skill Content
 
-    private static let campbellLeverageSkill = """
+    private static let leverageSkill = """
     # Leverage
 
     **Description:** What is the single highest-leverage action right now?
     **Icon:** 🎯
-    **Author:** Bill Campbell Method
+    **Author:** Relational Method
     **Version:** 1.0
     **Data Sources:** tasks, calendar
     **Frequency:** daily
@@ -384,12 +499,12 @@ class SkillLoader {
     Respond with ONLY the coaching insight text. No JSON, no labels, no preamble.
     """
 
-    private static let campbellRelationshipSkill = """
+    private static let relationshipsSkill = """
     # Relationship
 
     **Description:** Who needs attention? Unusual silence, piling-up obligations.
     **Icon:** 👤
-    **Author:** Bill Campbell Method
+    **Author:** Relational Method
     **Version:** 1.0
     **Data Sources:** commitments_by_person, messages
     **Frequency:** daily
@@ -416,12 +531,12 @@ class SkillLoader {
     Respond with ONLY the coaching insight text. No JSON, no labels, no preamble.
     """
 
-    private static let mocharyAvoidanceSkill = """
+    private static let avoidanceSkill = """
     # Avoidance
 
     **Description:** What are you avoiding? Tasks created >14 days ago still not started.
     **Icon:** 🪞
-    **Author:** Matt Mochary Method
+    **Author:** Direct Method
     **Version:** 1.0
     **Fallback:** No stale or avoided tasks detected. Your task hygiene looks clean.
     **Data Sources:** tasks_detailed
@@ -448,12 +563,12 @@ class SkillLoader {
     Respond with ONLY the coaching insight text. No JSON, no labels, no preamble.
     """
 
-    private static let mocharyAttentionSkill = """
+    private static let attentionSkill = """
     # Attention
 
     **Description:** Where is your attention going? Messaging velocity and calendar load analysis.
     **Icon:** 📡
-    **Author:** Matt Mochary Method
+    **Author:** Direct Method
     **Version:** 1.0
     **Data Sources:** messages_detailed, calendar
     **Frequency:** daily
@@ -480,12 +595,12 @@ class SkillLoader {
     Respond with ONLY the coaching insight text. No JSON, no labels, no preamble.
     """
 
-    private static let mocharyWeeklyReviewSkill = """
+    private static let weeklyReviewSkill = """
     # Weekly Review
 
-    **Description:** Matt Mochary-style weekly review: wins, energy, relationships, carry-forward.
+    **Description:** direct-method weekly review: wins, energy, relationships, carry-forward.
     **Icon:** 📋
-    **Author:** Matt Mochary Method
+    **Author:** Direct Method
     **Version:** 1.0
     **Data Sources:** tasks_detailed, commitments, coaching_memory
     **Frequency:** weekly
@@ -497,7 +612,7 @@ class SkillLoader {
     - One carry-forward focus beats a list of aspirations every time
 
     ## Prompt
-    You are an executive coach running a weekly review (Matt Mochary style). Assess this person's week across 4 dimensions:
+    You are an executive coach running a weekly review (direct method). Assess this person's week across 4 dimensions:
 
     Dimensions to assess:
     1. WINS: What did they accomplish? Name specifics from the completed tasks.

@@ -2,7 +2,7 @@ import Foundation
 
 /// Generates AI coaching cards from a unified skill pipeline.
 /// All coaching cards (installed methodologies + user-created) flow through the same architecture.
-/// Installed skills: Bill Campbell Method (Leverage, Relationship) + Matt Mochary Method (Avoidance, Attention, Weekly Review).
+/// Installed skills: Relational Method (Leverage, Relationships) + Direct Method (Avoidance, Attention, Weekly Review).
 /// User skills: custom coaching cards created by the user in ~/.alfred/skills/user/.
 class CoachingEngine {
     private let claudeService: ClaudeAIService

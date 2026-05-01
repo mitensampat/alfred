@@ -2,7 +2,7 @@
 
 **Description:** What are you avoiding? Tasks created >14 days ago still not started.
 **Icon:** 🪞
-**Author:** Matt Mochary Method
+**Author:** Direct Method
 **Version:** 1.0
 **Fallback:** No stale or avoided tasks detected. Your task hygiene looks clean.
 **Data Sources:** tasks_detailed

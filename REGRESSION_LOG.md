@@ -40,7 +40,7 @@
 - [x] Focus card visible ✅
 - [x] Suggestion chips render (Calendar, Overdue, Nudge, Focus) ✅
 - [x] Pending Reviews (5) showing with Confirm Done / Keep Open buttons ✅
-- [x] Coaching cards loaded (7 cards: mochary-attention, mochary-avoidance, campbell-leverage, campbell-relationship, deep-work-guard, energy-audit, deal-pipeline) ✅
+- [x] Coaching cards loaded (7 cards: attention, avoidance, leverage, relationships, deep-work-guard, energy-audit, deal-pipeline) ✅
 - [x] Lead insight card visible with colored left-accent ✅
 - [x] "6 more observations" collapsed toggle ✅
 - [x] Weekly review section present ✅
@@ -73,7 +73,7 @@
 - [x] Favorites section visible with contacts ✅
 
 #### 4b. Coaching Tab ✅
-- [x] Coaching Tenets: 4 tenets (Alfred Rules, Campbell Rules, Mochary Rules, Voice & Tone) with toggles and Edit buttons ✅
+- [x] Coaching Tenets: 4 tenets (Alfred Rules, Relational Rules, Direct Rules, Voice & Tone) with toggles and Edit buttons ✅
 - [x] Meeting Brief Prompt: textarea with current prompt, Save button ✅
 - [x] Your Skills: Deep Work Guard, Energy Audit visible with Edit/Delete/toggle ✅
 - [x] "+ New" skill button ✅

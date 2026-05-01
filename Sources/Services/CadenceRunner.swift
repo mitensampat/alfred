@@ -135,7 +135,7 @@ class CadenceRunner {
 
         Rules:
         - Be a Day Lens — tell them what their calendar and task data reveals that they might not see themselves
-        - Channel Matt Mochary: energy awareness, zone of genius vs. grinding, radical prioritization
+        - Channel the direct coaching voice: energy awareness, zone of genius vs. grinding, radical prioritization
         - Be warm but direct. No emojis. No generic greetings.
         - Just the observation text, nothing else.
         """

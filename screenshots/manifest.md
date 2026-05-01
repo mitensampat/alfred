@@ -12,7 +12,7 @@ Base URL: `http://<your-ip>:8080/home.html?passcode=REDACTED_PASSCODE`
 **URL:** Load home.html after 5pm
 
 ## 2. Home — Observations Expanded (Mobile)
-**What it shows:** Multiple coaching observation cards (Leverage, Follow Through, Attention, Focus types) each with colored dot indicators and source attribution (Bill Campbell Method, Matt Mochary Method)
+**What it shows:** Multiple coaching observation cards (Leverage, Follow Through, Attention, Focus types) each with colored dot indicators and method attribution (Relational Method, Direct Method)
 **Action:** Tap the "6 more observations" expander
 
 ## 3. Focus Card with Follow Through (Mobile)
@@ -32,7 +32,7 @@ Base URL: `http://<your-ip>:8080/home.html?passcode=REDACTED_PASSCODE`
 **Action:** Tap gear icon, configurations tab
 
 ## 7. Settings — Tenets (Mobile)
-**What it shows:** Coaching tenets with toggle switches (Alfred Rules, Campbell Rules, Mochary Rules, Voice & Tone) each with Edit/expand controls
+**What it shows:** Coaching tenets with toggle switches (Alfred Rules, Relational Rules, Direct Rules, Voice & Tone) each with Edit/expand controls
 **Action:** Tap tenets tab
 
 ## 8. Settings — Coaching Skills (Mobile)
