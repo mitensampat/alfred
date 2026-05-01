@@ -222,12 +222,10 @@
     will-change: transform;
     transition: transform 1s cubic-bezier(.7, 0, .25, 1);
   }
-  .phone-track img {
+  .phone-track > * {
     width: 100%;
     height: 100%;
     flex-shrink: 0;
-    object-fit: cover;
-    object-position: top center;
   }
   .phone.lag .phone-track { transition-delay: .35s; }
 
@@ -257,8 +255,221 @@
     overflow: hidden;
     background: var(--canvas);
   }
-  .desktop-screen img {
-    width: 100%; height: 100%; object-fit: cover; object-position: top center;
+  .desktop-screen > * { width: 100%; height: 100%; }
+
+  /* ===== Synthetic Alfred screen mocks (no real data) ===== */
+  .screen {
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 11px;
+    line-height: 1.4;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .screen-statusbar {
+    height: 38px;
+    flex-shrink: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding: 0 18px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .screen-statusbar .icons { letter-spacing: 1px; }
+  .screen-header {
+    padding: 8px 16px 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--line);
+  }
+  .screen-brand {
+    font-family: var(--serif);
+    font-size: 13px;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+  }
+  .screen-meta { font-size: 10px; color: var(--ink-3); }
+  .screen-body {
+    flex: 1;
+    padding: 14px 14px 18px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .screen-label {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .screen-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  .screen-card + .screen-card { margin-top: 8px; }
+  .screen-card-eyebrow {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .screen-card-eyebrow .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #c49a3c;
+  }
+  .screen-card-eyebrow.danger .dot { background: #8b2332; }
+  .screen-card-eyebrow.growth .dot { background: var(--accent); }
+  .screen-card-title {
+    font-size: 12px;
+    color: var(--ink);
+    line-height: 1.35;
+    font-weight: 500;
+  }
+  .screen-card-body {
+    font-size: 11px;
+    color: var(--ink-2);
+    line-height: 1.45;
+  }
+  .screen-card-time {
+    font-size: 9px;
+    color: var(--ink-3);
+    margin-top: 6px;
+  }
+  .screen-card-meta {
+    font-size: 10px;
+    color: var(--ink-3);
+    margin-top: 3px;
+  }
+  .screen-pill-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .screen-pill {
+    font-size: 10px;
+    color: var(--ink-2);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: 4px 10px;
+    border-radius: 999px;
+  }
+  .screen-mini-actions { display: flex; gap: 6px; margin-top: 8px; }
+  .screen-mini-actions span {
+    font-size: 10px;
+    color: var(--ink-2);
+    background: var(--canvas);
+    border: 1px solid var(--line);
+    padding: 4px 10px;
+    border-radius: 6px;
+  }
+  .screen-row {
+    display: flex;
+    flex-direction: column;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .screen-row-top {
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .screen-row-name {
+    font-size: 12px; font-weight: 500; color: var(--ink);
+  }
+  .screen-row-age {
+    font-size: 10px; color: #8b2332;
+  }
+  .screen-row-text {
+    font-size: 11px; color: var(--ink-2);
+    margin-top: 3px; line-height: 1.4;
+  }
+  .screen-bubble {
+    max-width: 78%;
+    padding: 8px 12px;
+    border-radius: 14px;
+    font-size: 11px;
+    line-height: 1.45;
+  }
+  .screen-bubble.user {
+    align-self: flex-end;
+    background: var(--ink);
+    color: var(--canvas);
+    border-bottom-right-radius: 4px;
+  }
+  .screen-bubble.alfred {
+    align-self: flex-start;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    border-bottom-left-radius: 4px;
+  }
+  .screen-input {
+    margin-top: auto;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 10px;
+    color: var(--ink-3);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .screen-input .send-dot {
+    width: 22px; height: 22px;
+    background: var(--ink);
+    border-radius: 50%;
+    color: var(--canvas);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px;
+  }
+  .screen-event {
+    display: flex; gap: 10px; align-items: baseline;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .screen-event:last-child { border-bottom: 0; }
+  .screen-event .time {
+    font-size: 10px; color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
+    width: 60px; flex-shrink: 0;
+  }
+  .screen-event .title {
+    font-size: 11px; color: var(--ink);
+  }
+
+  /* Desktop-flavored screen */
+  .screen-desktop { padding: 18px 0 0; font-size: 12px; line-height: 1.5; }
+  .screen-desktop .screen-header {
+    border-bottom: 1px solid var(--line);
+    padding: 0 28px 12px;
+  }
+  .screen-desktop .screen-body {
+    max-width: 540px;
+    margin: 0 auto;
+    padding: 24px 28px;
+    flex: 1;
+  }
+  .screen-desktop .screen-label { font-size: 10px; }
+  .screen-desktop .screen-card { padding: 14px 16px; border-radius: 12px; }
+  .screen-desktop .screen-card-title { font-size: 14px; }
+  .screen-desktop .screen-card-body { font-size: 12px; }
+  .screen-desktop .review {
+    font-size: 12px; color: var(--ink-2);
+    line-height: 1.55;
+  }
+  .screen-desktop .review strong { color: var(--ink); font-weight: 500; }
+  .screen-desktop .screen-input {
+    max-width: 540px;
+    margin: 14px auto 18px;
   }
   .caption {
     margin-top: 40px;
@@ -517,32 +728,18 @@
       <div class="stage">
         <div class="phone side" aria-hidden="true">
           <div class="phone-screen">
-            <div class="phone-track" data-track="a">
-              <img src="assets/02_observations_expanded.png" alt="Observations" loading="lazy" />
-              <img src="assets/04_calendar_tool_card.png" alt="Calendar card" loading="lazy" />
-              <img src="assets/11_chat_conversation.png" alt="Chat" loading="lazy" />
-              <img src="assets/05_overdue_commitments.png" alt="Overdue commitments" loading="lazy" />
-              <img src="assets/01_home_evening_wrapup.png" alt="Home" loading="lazy" />
-            </div>
+            <div class="phone-track" data-track="a" data-order="observations,calendar,chat,overdue,home"></div>
           </div>
         </div>
 
         <div class="desktop">
           <div class="desktop-chrome"><span></span><span></span><span></span></div>
-          <div class="desktop-screen">
-            <img src="assets/14_desktop_layout.png" alt="Alfred desktop layout" loading="lazy" />
-          </div>
+          <div class="desktop-screen" data-screen="desktop"></div>
         </div>
 
         <div class="phone lag">
           <div class="phone-screen">
-            <div class="phone-track" data-track="b">
-              <img src="assets/01_home_evening_wrapup.png" alt="Home evening wrap-up" loading="lazy" />
-              <img src="assets/05_overdue_commitments.png" alt="Overdue commitments" loading="lazy" />
-              <img src="assets/02_observations_expanded.png" alt="Observations" loading="lazy" />
-              <img src="assets/11_chat_conversation.png" alt="Chat" loading="lazy" />
-              <img src="assets/04_calendar_tool_card.png" alt="Calendar card" loading="lazy" />
-            </div>
+            <div class="phone-track" data-track="b" data-order="home,overdue,observations,chat,calendar"></div>
           </div>
         </div>
       </div>
@@ -638,6 +835,161 @@
   window.addEventListener('scroll', () => {
     nav.classList.toggle('scrolled', window.scrollY > 8);
   }, { passive: true });
+
+  // Synthetic Alfred screens — no real data, fully rendered in HTML
+  const SCREENS = {
+    home: `
+      <div class="screen screen-home">
+        <div class="screen-statusbar"><span>9:41</span><span class="icons">●●●</span></div>
+        <div class="screen-header">
+          <span class="screen-brand">coach alfred</span>
+          <span class="screen-meta">Tue · 8:15 AM</span>
+        </div>
+        <div class="screen-body">
+          <div class="screen-label">Morning briefing</div>
+          <div class="screen-card">
+            <div class="screen-card-eyebrow growth">Focus</div>
+            <div class="screen-card-title">→ Alex Park: close Northwind partnership decision</div>
+            <div class="screen-card-meta">due Thu · 2 days</div>
+            <div class="screen-mini-actions"><span>Done</span><span>Change</span></div>
+          </div>
+          <div class="screen-card">
+            <div class="screen-card-eyebrow danger">Attention</div>
+            <div class="screen-card-body">"Beacon launch" group has 47 unread with no replies from you. If it's no longer a priority, mute it — or assign someone. Half-attention is the worst attention.</div>
+            <div class="screen-card-time">just now</div>
+          </div>
+          <div class="screen-pill-row" style="margin-top:auto;">
+            <span class="screen-pill">Calendar</span>
+            <span class="screen-pill">Overdue</span>
+            <span class="screen-pill">Nudge</span>
+            <span class="screen-pill">Focus</span>
+          </div>
+        </div>
+      </div>
+    `,
+    overdue: `
+      <div class="screen screen-overdue">
+        <div class="screen-statusbar"><span>9:41</span><span class="icons">●●●</span></div>
+        <div class="screen-header">
+          <span class="screen-brand">overdue</span>
+          <span class="screen-meta">5 commitments</span>
+        </div>
+        <div class="screen-body" style="gap:0;">
+          <div class="screen-row">
+            <div class="screen-row-top"><div class="screen-row-name">Alex Park</div><div class="screen-row-age">5d overdue</div></div>
+            <div class="screen-row-text">"send the cap table by Friday"</div>
+          </div>
+          <div class="screen-row">
+            <div class="screen-row-top"><div class="screen-row-name">Sam Rivera</div><div class="screen-row-age">3d overdue</div></div>
+            <div class="screen-row-text">"will introduce you to the Helio team"</div>
+          </div>
+          <div class="screen-row">
+            <div class="screen-row-top"><div class="screen-row-name">Jordan Lee</div><div class="screen-row-age">2d overdue</div></div>
+            <div class="screen-row-text">"feedback on the Q2 plan, end of week"</div>
+          </div>
+          <div class="screen-row">
+            <div class="screen-row-top"><div class="screen-row-name">Morgan Chen</div><div class="screen-row-age">1d overdue</div></div>
+            <div class="screen-row-text">"draft the offer letter and send for review"</div>
+          </div>
+        </div>
+      </div>
+    `,
+    chat: `
+      <div class="screen screen-chat">
+        <div class="screen-statusbar"><span>9:41</span><span class="icons">●●●</span></div>
+        <div class="screen-header">
+          <span class="screen-brand">chat</span>
+          <span class="screen-meta">today</span>
+        </div>
+        <div class="screen-body" style="gap:8px;">
+          <div class="screen-bubble user">What's the one thing today?</div>
+          <div class="screen-bubble alfred">Close the Northwind partnership decision with Alex. You've been circling it for nine days. Pick a yes or a no by EOD — either answer compounds.</div>
+          <div class="screen-bubble user">Why not the Helio intro?</div>
+          <div class="screen-bubble alfred">It's optional. Northwind is a deciding question. Don't trade a decision for a meeting.</div>
+          <div class="screen-input"><span>Talk to Alfred…</span><span class="send-dot">↑</span></div>
+        </div>
+      </div>
+    `,
+    calendar: `
+      <div class="screen screen-calendar">
+        <div class="screen-statusbar"><span>9:41</span><span class="icons">●●●</span></div>
+        <div class="screen-header">
+          <span class="screen-brand">today</span>
+          <span class="screen-meta">Tue · 6 events</span>
+        </div>
+        <div class="screen-body" style="gap:0;">
+          <div class="screen-event"><div class="time">8:00</div><div class="title">Gym</div></div>
+          <div class="screen-event"><div class="time">9:30</div><div class="title">1:1 — Jordan Lee</div></div>
+          <div class="screen-event"><div class="time">11:00</div><div class="title">Northwind partnership · decide</div></div>
+          <div class="screen-event"><div class="time">12:30</div><div class="title">Lunch — Sam Rivera</div></div>
+          <div class="screen-event"><div class="time">15:00</div><div class="title">Attention check-in</div></div>
+          <div class="screen-event"><div class="time">17:00</div><div class="title">Weekly review</div></div>
+        </div>
+      </div>
+    `,
+    observations: `
+      <div class="screen screen-observations">
+        <div class="screen-statusbar"><span>9:41</span><span class="icons">●●●</span></div>
+        <div class="screen-header">
+          <span class="screen-brand">observations</span>
+          <span class="screen-meta">this week</span>
+        </div>
+        <div class="screen-body">
+          <div class="screen-card">
+            <div class="screen-card-eyebrow">Pattern</div>
+            <div class="screen-card-body">You ship faster on days with no morning meetings. The Northwind decision keeps slipping past mornings with three calls before noon.</div>
+          </div>
+          <div class="screen-card">
+            <div class="screen-card-eyebrow">Avoidance</div>
+            <div class="screen-card-body">Three threads with Jordan are aging. The last thing you wrote was "let me think on this." Eight days ago.</div>
+          </div>
+          <div class="screen-card">
+            <div class="screen-card-eyebrow growth">Win</div>
+            <div class="screen-card-body">Closed twelve commitments this week. Highest week in a month. Most were inbound replies you'd been delaying.</div>
+          </div>
+        </div>
+      </div>
+    `,
+    desktop: `
+      <div class="screen screen-desktop">
+        <div class="screen-header">
+          <span class="screen-brand">coach alfred</span>
+          <span class="screen-meta">Tuesday · 8:15 AM</span>
+        </div>
+        <div class="screen-body">
+          <div class="screen-label">Morning briefing</div>
+          <div class="screen-card">
+            <div class="screen-card-eyebrow growth">Focus</div>
+            <div class="screen-card-title">→ Alex Park: close the Northwind partnership decision</div>
+            <div class="screen-card-meta">due Thu · 2 days</div>
+            <div class="screen-mini-actions"><span>Done</span><span>Change</span></div>
+          </div>
+          <div class="screen-card">
+            <div class="screen-card-eyebrow danger">Attention</div>
+            <div class="screen-card-body">"Beacon launch" group has 47 unread with no replies from you. If it's no longer a priority, mute it — or assign someone. Half-attention is the worst attention.</div>
+            <div class="screen-card-time">just now</div>
+          </div>
+          <div class="screen-pill-row" style="margin-top:6px;">
+            <span class="screen-pill">Calendar</span>
+            <span class="screen-pill">Overdue</span>
+            <span class="screen-pill">Nudge</span>
+            <span class="screen-pill">Focus</span>
+          </div>
+          <div class="screen-label" style="margin-top:14px;">Weekly review</div>
+          <p class="review">You closed <strong>twelve commitments</strong> this week — your highest in a month — and shipped the Northwind brief through Jordan. That's real velocity. The harder story is in what's aging: three relationship threads (Jordan on Q2 plan, Sam on Helio intro, Morgan on offer letter) while strategic items with Alex sit waiting on a decision you keep moving past. Carry forward one thing: schedule thirty minutes with Alex this week and pick a yes or no on Northwind. That single conversation likely unlocks more than clearing the rest of your medium-priority backlog.</p>
+        </div>
+        <div class="screen-input"><span>Talk to Alfred…</span><span class="send-dot">↑</span></div>
+      </div>
+    `,
+  };
+
+  // Inject screens into phone tracks and the desktop frame
+  document.querySelectorAll('.phone-track').forEach(track => {
+    const order = (track.dataset.order || '').split(',').map(s => s.trim()).filter(Boolean);
+    track.innerHTML = order.map(name => SCREENS[name] || '').join('');
+  });
+  const desktopFrame = document.querySelector('[data-screen="desktop"]');
+  if (desktopFrame) desktopFrame.innerHTML = SCREENS.desktop;
 
   // Phone marquee rotation
   (function () {
