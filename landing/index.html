@@ -258,11 +258,12 @@
   .desktop-chrome span:nth-child(3) { background: #28c840; }
   .desktop-screen {
     width: 100%;
-    aspect-ratio: 16 / 10;
+    min-height: 260px;
     border-radius: 6px;
     overflow: hidden;
     background: var(--canvas);
   }
+  .desktop-screen > * { height: auto; min-height: 260px; }
   .desktop-screen > * { width: 100%; height: 100%; }
 
   /* ===== Synthetic Alfred screen mocks (no real data) ===== */
@@ -968,21 +969,7 @@
             <div class="screen-card-eyebrow growth">Focus</div>
             <div class="screen-card-title">→ Alex Park: close the Northwind partnership decision</div>
             <div class="screen-card-meta">due Thu · 2 days</div>
-            <div class="screen-mini-actions"><span>Done</span><span>Change</span></div>
           </div>
-          <div class="screen-card">
-            <div class="screen-card-eyebrow danger">Attention</div>
-            <div class="screen-card-body">"Beacon launch" group has 47 unread with no replies from you. If it's no longer a priority, mute it — or assign someone. Half-attention is the worst attention.</div>
-            <div class="screen-card-time">just now</div>
-          </div>
-          <div class="screen-pill-row" style="margin-top:6px;">
-            <span class="screen-pill">Calendar</span>
-            <span class="screen-pill">Overdue</span>
-            <span class="screen-pill">Nudge</span>
-            <span class="screen-pill">Focus</span>
-          </div>
-          <div class="screen-label" style="margin-top:14px;">Weekly review</div>
-          <p class="review">You closed <strong>twelve commitments</strong> this week — your highest in a month — and shipped the Northwind brief through Jordan. That's real velocity. The harder story is in what's aging: three relationship threads (Jordan on Q2 plan, Sam on Helio intro, Morgan on offer letter) while strategic items with Alex sit waiting on a decision you keep moving past. Carry forward one thing: schedule thirty minutes with Alex this week and pick a yes or no on Northwind. That single conversation likely unlocks more than clearing the rest of your medium-priority backlog.</p>
         </div>
         <div class="screen-input"><span>talk to alfred…</span><span class="send-dot">↑</span></div>
       </div>
