@@ -122,6 +122,13 @@
   }
   .hero-sub + .cta-row { margin-top: 8px; }
   .hero-sub strong { color: var(--ink); font-weight: 500; }
+  .hero-sub .under {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-decoration-color: var(--ink-2);
+    text-underline-offset: 5px;
+    color: var(--ink);
+  }
   .cta-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .btn-primary {
     background: var(--ink); color: var(--canvas);
@@ -659,7 +666,10 @@
     <div class="wrap">
       <h1>a coach for <em>A players.</em></h1>
       <p class="hero-sub">
-        alfred observes how you work across your messages, calendar, tasks, commitments, notes and more. coaches you with context on what matters most. attention, avoidance, leverage, and relationships.
+        alfred <span class="under">observes how you work</span> across your messages, calendar, tasks, commitments, notes and more.
+      </p>
+      <p class="hero-sub" style="margin-top:18px;">
+        coaches you with context on what matters most: <span class="under">attention, avoidance, leverage, and relationships</span>.
       </p>
       <p class="hero-sub" style="margin-top:18px;">
         alfred isn't a dashboard. it's your performance coach.
@@ -741,8 +751,6 @@
           </div>
         </div>
       </div>
-      <p class="caption">home · overdue commitments · chat · calendar · observations</p>
-      <p class="integrations">reads iMessage · WhatsApp · Gmail · Google Calendar · Notion</p>
     </div>
   </section>
 
