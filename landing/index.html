@@ -354,6 +354,12 @@
     padding: 6px 4px;
   }
   .link-skip:hover { color: var(--ink); }
+  .form-error {
+    display: none;
+    margin-top: 16px;
+    font-size: 13px;
+    color: #8b2332;
+  }
   .profile-intro {
     font-size: 15px; color: var(--ink-2);
     margin-bottom: 24px;
@@ -604,6 +610,7 @@
             <button type="submit" class="btn-primary">Send</button>
             <button type="button" class="link-skip" id="skip-profile">Skip</button>
           </div>
+          <p class="form-error" id="form-error" role="alert" aria-live="polite"></p>
         </form>
 
         <!-- Step 3: done -->
@@ -646,26 +653,36 @@
     }, 3400);
   })();
 
-  // Form progressive reveal
+  // Form progressive reveal — single combined POST to Formspree on completion
+  const FORMSPREE_ENDPOINT = 'https://formspree.io/f/mjglvnja';
+
   const stepEmail = document.getElementById('step-email');
   const stepProfile = document.getElementById('step-profile');
   const stepDone = document.getElementById('step-done');
   const skipBtn = document.getElementById('skip-profile');
+  const errEl = document.getElementById('form-error');
+
+  let prospectEmail = '';
 
   function show(el) {
     [stepEmail, stepProfile, stepDone].forEach(s => s.classList.remove('active'));
     el.classList.add('active');
   }
 
+  function setError(msg) {
+    if (!errEl) return;
+    errEl.textContent = msg || '';
+    errEl.style.display = msg ? 'block' : 'none';
+  }
+
   stepEmail.addEventListener('submit', (e) => {
     e.preventDefault();
     const email = document.getElementById('email').value.trim();
-    if (!email || !email.includes('@')) {
+    if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
       document.getElementById('email').focus();
       return;
     }
-    // TODO: POST { email } to access endpoint
-    console.log('prospect email', email);
+    prospectEmail = email;
     show(stepProfile);
   });
 
@@ -678,19 +695,50 @@
     });
   });
 
+  async function submitProspect(includeProfile) {
+    setError('');
+    const submitBtn = stepProfile.querySelector('button[type=submit]');
+    const originalText = submitBtn.textContent;
+    submitBtn.disabled = true;
+    if (skipBtn) skipBtn.disabled = true;
+    submitBtn.textContent = 'Sending…';
+
+    const payload = {
+      email: prospectEmail,
+      role: '',
+      problem: '',
+      timing: '',
+      _subject: `Alfred access request — ${prospectEmail}`,
+    };
+    if (includeProfile) {
+      document.querySelectorAll('.chips').forEach(g => {
+        const selected = g.querySelector('.chip.selected');
+        payload[g.dataset.field] = selected ? selected.textContent.trim() : '';
+      });
+    }
+
+    try {
+      const res = await fetch(FORMSPREE_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      show(stepDone);
+    } catch (err) {
+      submitBtn.disabled = false;
+      if (skipBtn) skipBtn.disabled = false;
+      submitBtn.textContent = originalText;
+      setError("Couldn't send — please try again.");
+    }
+  }
+
   stepProfile.addEventListener('submit', (e) => {
     e.preventDefault();
-    const profile = {};
-    document.querySelectorAll('.chips').forEach(g => {
-      const selected = g.querySelector('.chip.selected');
-      profile[g.dataset.field] = selected ? selected.textContent.trim() : null;
-    });
-    // TODO: POST profile to access endpoint (upsert by email)
-    console.log('prospect profile', profile);
-    show(stepDone);
+    submitProspect(true);
   });
 
-  skipBtn.addEventListener('click', () => show(stepDone));
+  skipBtn.addEventListener('click', () => submitProspect(false));
 </script>
 </body>
 </html>
