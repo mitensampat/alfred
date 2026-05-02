@@ -10,22 +10,27 @@
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap" rel="stylesheet">
 <style>
   :root {
-    --canvas: #fafaf7;
-    --surface: #ffffff;
-    --ink: #191919;
-    --ink-2: #6f6e69;
-    --ink-3: #a8a6a1;
-    --line: #ecebe6;
-    --line-2: #f4f3ef;
-    --accent: #2d5a3d;
+    /* Late-night study palette — warm near-black, ivory ink, lifted sage. */
+    --canvas: #14130f;
+    --surface: #1d1c17;
+    --surface-2: #252320;
+    --ink: #f1ede3;
+    --ink-2: #a8a39a;
+    --ink-3: #6b675f;
+    --line: #2a2823;
+    --line-2: #221f1b;
+    --accent: #7faa8d;
+    --warn: #d4b375;
+    --danger: #c97a85;
     --serif: "Newsreader", "Iowan Old Style", "Georgia", serif;
     --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif;
     --r-sm: 6px;
     --r-md: 10px;
     --r-lg: 16px;
-    --shadow-soft: 0 1px 2px rgba(25, 25, 25, 0.04);
-    --shadow-lift: 0 20px 48px rgba(25, 25, 25, 0.10), 0 4px 12px rgba(25, 25, 25, 0.04);
+    --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-lift: 0 24px 60px rgba(0, 0, 0, 0.55), 0 4px 14px rgba(0, 0, 0, 0.4);
   }
+  ::selection { background: rgba(127, 170, 141, 0.35); color: var(--ink); }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body {
@@ -47,7 +52,7 @@
   /* ===== Nav ===== */
   .nav {
     position: sticky; top: 0; z-index: 50;
-    background: rgba(250, 250, 247, 0.8);
+    background: rgba(20, 19, 15, 0.78);
     backdrop-filter: saturate(1.4) blur(14px);
     -webkit-backdrop-filter: saturate(1.4) blur(14px);
     border-bottom: 1px solid transparent;
@@ -179,12 +184,13 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
-    box-shadow: 0 1px 2px rgba(25, 25, 25, 0.03);
-    transition: border-color .15s, box-shadow .15s;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    transition: border-color .15s, box-shadow .15s, background .15s;
   }
   .tenet:hover {
-    border-color: rgba(25, 25, 25, 0.18);
-    box-shadow: 0 6px 20px rgba(25, 25, 25, 0.05), 0 1px 2px rgba(25, 25, 25, 0.04);
+    border-color: rgba(241, 237, 227, 0.18);
+    background: var(--surface-2);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
   }
   .tenet-num {
     font-family: var(--serif);
@@ -215,7 +221,7 @@
     position: relative;
     width: 260px;
     height: 540px;
-    background: #0c0d10;
+    background: #0a0908;
     border-radius: 40px;
     padding: 10px;
     box-shadow: var(--shadow-lift);
@@ -225,7 +231,7 @@
     position: absolute;
     top: 14px; left: 50%; transform: translateX(-50%);
     width: 90px; height: 24px;
-    background: #0c0d10;
+    background: #0a0908;
     border-radius: 16px;
     z-index: 3;
   }
@@ -252,7 +258,7 @@
   .desktop {
     width: 100%;
     max-width: 520px;
-    background: #0c0d10;
+    background: #0a0908;
     border-radius: 12px;
     padding: 10px 10px 12px;
     box-shadow: var(--shadow-lift);
@@ -350,9 +356,9 @@
   }
   .screen-card-eyebrow .dot {
     width: 6px; height: 6px; border-radius: 50%;
-    background: #c49a3c;
+    background: var(--warn);
   }
-  .screen-card-eyebrow.danger .dot { background: #8b2332; }
+  .screen-card-eyebrow.danger .dot { background: var(--danger); }
   .screen-card-eyebrow.growth .dot { background: var(--accent); }
   .screen-card-title {
     font-size: 12px;
@@ -406,7 +412,7 @@
     font-size: 12px; font-weight: 500; color: var(--ink);
   }
   .screen-row-age {
-    font-size: 10px; color: #8b2332;
+    font-size: 10px; color: var(--danger);
   }
   .screen-row-text {
     font-size: 11px; color: var(--ink-2);
@@ -546,7 +552,7 @@
   .email-row input::placeholder { color: var(--ink-3); }
   .email-row input:focus {
     border-color: var(--ink);
-    box-shadow: 0 0 0 3px rgba(25, 25, 25, 0.06);
+    box-shadow: 0 0 0 3px rgba(241, 237, 227, 0.10);
   }
   .form-note {
     font-size: 13px; color: var(--ink-3);
@@ -590,7 +596,7 @@
     display: none;
     margin-top: 16px;
     font-size: 13px;
-    color: #8b2332;
+    color: var(--danger);
   }
   .profile-intro {
     font-size: 15px; color: var(--ink-2);
@@ -602,7 +608,7 @@
   .check {
     width: 36px; height: 36px;
     border-radius: 50%;
-    background: rgba(45, 90, 61, 0.12);
+    background: rgba(127, 170, 141, 0.18);
     color: var(--accent);
     display: inline-flex; align-items: center; justify-content: center;
     font-size: 18px;
