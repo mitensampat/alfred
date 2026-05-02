@@ -26,7 +26,7 @@ NEW_HASH=$(md5 -q .build/release/alfred 2>/dev/null || echo "new")
 if [ "$OLD_HASH" != "$NEW_HASH" ]; then
     echo "Binary changed — installing + re-signing"
     cp .build/release/alfred /Applications/Alfred.app/Contents/MacOS/Alfred
-    codesign --force --sign - --identifier com.msfoundry.alfred /Applications/Alfred.app/Contents/MacOS/Alfred
+    codesign --force --sign "Alfred Dev (msfoundry)" --identifier com.msfoundry.alfred /Applications/Alfred.app/Contents/MacOS/Alfred
 else
     echo "Binary unchanged — skipping codesign (preserves TCC permissions)"
 fi
@@ -40,7 +40,35 @@ launchctl load ~/Library/LaunchAgents/com.msfoundry.alfred.plist
 
 **Always do this after making code changes.** Never leave a debug binary running alongside the release binary.
 
-**Note on permissions**: `codesign --force --sign -` uses ad-hoc signing which generates a new identity each time, causing macOS to revoke FDA, Contacts, and Notification permissions. The smart-skip above avoids this on HTML-only deploys. For a permanent fix, use a stable Apple Developer identity (see High Priority To-Do in MEMORY.md).
+**Note on permissions**: Uses the stable `"Alfred Dev (msfoundry)"` self-signed identity so TCC permissions (FDA, Contacts, Notifications) survive across local rebuilds. The smart-skip still avoids unnecessary re-signing on HTML-only deploys. This identity is for **local dev only** — distribution builds use a real Apple Developer ID Application certificate (see "Distribution Builds" below).
+
+### Distribution Builds (DMG for external users)
+
+For shipping to external users, the local self-signed identity is NOT enough — Gatekeeper will block first launch. Distribution builds need:
+1. A real **Developer ID Application** certificate from Apple
+2. Hardened runtime + entitlements
+3. Apple notarization + ticket stapling
+
+The `scripts/build-dmg.sh` script handles all of this when the right env vars are set:
+
+```bash
+# One-time setup: store notarization credentials in keychain
+xcrun notarytool store-credentials "alfred-notary" \
+  --apple-id <your-apple-id-email> \
+  --team-id <TEAMID> \
+  --password <app-specific-password-from-appleid.apple.com>
+
+# Build a signed + notarized DMG
+DEVELOPER_ID="Developer ID Application: Miten Sampat (TEAMID)" \
+NOTARY_PROFILE="alfred-notary" \
+./scripts/build-dmg.sh
+```
+
+The script auto-detects mode:
+- **DEVELOPER_ID set** → distribution mode (hardened runtime, real signing, notarization, stapling, signed DMG)
+- **DEVELOPER_ID unset** → ad-hoc fallback with a loud warning (local testing only)
+
+Outputs `Coach-Alfred-<VERSION>.dmg` ready for `gh release create`.
 
 ### Why This Matters
 
@@ -245,7 +273,7 @@ For prompt/LLM behavior changes:
 
 - **Full Disk Access** is required for iMessage (`~/Library/Messages/chat.db`)
 - Grant to `/Applications/Alfred.app` in System Settings → Privacy & Security → Full Disk Access
-- **CRITICAL**: After copying a new binary, you MUST re-sign with `codesign --force --sign - --identifier com.msfoundry.alfred /Applications/Alfred.app/Contents/MacOS/Alfred`
-- Without re-signing, the ad-hoc signature changes on every build, and macOS TCC revokes Full Disk Access
+- **CRITICAL**: After copying a new binary, you MUST re-sign with `codesign --force --sign "Alfred Dev (msfoundry)" --identifier com.msfoundry.alfred /Applications/Alfred.app/Contents/MacOS/Alfred`
+- The stable `"Alfred Dev (msfoundry)"` identity preserves TCC across rebuilds (vs. ad-hoc `--sign -` which revokes on every build)
 - `FileManager.isReadableFile` returns FALSE for TCC-protected files even with FDA granted — always use `sqlite3_open_v2` directly
 - The codesign step is included in the Golden Path above (step 4)
