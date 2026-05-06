@@ -235,8 +235,8 @@ Alfred's learning system has 3 layers:
 
 ## Git State Notes
 
-- Latest release: `v2.2.2` (Enhanced Chat Experience — Full Intent Wiring)
-- Version in code: `2.2.2` (in `main.swift` line 17 — single source of truth)
+- Latest release: `v2.3.0` (External Launch — first signed + notarized public DMG)
+- Version in code: `2.3.0` (in `main.swift` line 17 — single source of truth; also mirrored in `scripts/build-dmg.sh` `VERSION=`)
 
 ## Post-Deploy Verification Checklist
 

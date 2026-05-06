@@ -5,6 +5,27 @@ All notable changes to Alfred will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-05-06
+
+### Added
+- **Distribution build pipeline** (`scripts/build-dmg.sh`): hardened-runtime
+  signing with a real Developer ID, notarization via `notarytool`, ticket
+  stapling for both the app bundle and the DMG. Auto-detects distribution
+  vs ad-hoc fallback based on `DEVELOPER_ID` env var.
+- **Hardened-runtime entitlements** (`Config/Alfred.entitlements`): minimal
+  set (`allow-jit`, `disable-library-validation`) for Swift + system libs.
+- **`NSContactsUsageDescription`** in Info.plist (required for notarization
+  since the app calls `CNContactStore`).
+- **Public landing page** at `landing/` — late-night dark palette, synthetic
+  device mocks, Formspree-backed access form. Served via GitHub Pages.
+
+### Fixed
+- Meeting brief was misclassifying external attendees as internal.
+- Token utilisation tightened across briefing + commitment scan paths.
+
+### Changed
+- Dropped public Bill Campbell / Matt Mochary attribution references.
+
 ## [1.5.4] - 2026-01-31
 
 ### Added
