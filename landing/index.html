@@ -205,6 +205,40 @@
   }
   .tenet p { font-size: 16px; margin: 0; }
 
+  /* ===== Privacy ===== */
+  .privacy { border-top: 1px solid var(--line); }
+  .privacy-lede { max-width: 48ch; margin-bottom: 48px; }
+  .privacy-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 18px;
+    margin-bottom: 28px;
+  }
+  .privacy-col {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 28px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  }
+  .privacy-label {
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 14px;
+  }
+  .privacy-col p { font-size: 16px; color: var(--ink-2); margin: 0; line-height: 1.55; }
+  .privacy-col p strong { color: var(--ink); font-weight: 500; }
+  .privacy-footnote {
+    font-size: 15px;
+    color: var(--ink-3);
+    max-width: 64ch;
+    margin: 0;
+    line-height: 1.55;
+  }
+
   /* ===== Marquee (preserved) ===== */
   .see-it { background: var(--line-2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); overflow: hidden; }
   .see-it-header { max-width: 52ch; margin-bottom: 48px; }
@@ -642,6 +676,9 @@
     .tenet { padding: 24px; }
     .tenet-num { font-size: 12px; }
     .tenets-lede { margin-bottom: 40px; }
+    .privacy-grid { grid-template-columns: 1fr; gap: 14px; }
+    .privacy-col { padding: 24px; }
+    .privacy-lede { margin-bottom: 40px; }
     .see-it-header { margin-bottom: 40px; }
     .stage { grid-template-columns: 1fr; gap: 32px; }
     .phone.side { display: none; }
@@ -659,6 +696,9 @@
     .tenet h3 { font-size: 20px; }
     .tenet p { font-size: 15px; }
     .tenets-lede { margin-bottom: 24px; }
+    .privacy-col { padding: 22px; }
+    .privacy-col p { font-size: 15px; }
+    .privacy-lede { margin-bottom: 24px; }
     .see-it-header { margin-bottom: 32px; }
     .desktop { display: none; }
     .stage { gap: 0; }
@@ -738,6 +778,27 @@
     </div>
   </section>
 
+  <!-- ============ PRIVACY ============ -->
+  <section class="privacy" id="privacy">
+    <div class="wrap">
+      <p class="eyebrow">on privacy</p>
+      <h2 class="privacy-lede">your data, <em>your machine.</em></h2>
+
+      <div class="privacy-grid">
+        <div class="privacy-col">
+          <div class="privacy-label">stays on your Mac</div>
+          <p>every message, contact, calendar event, note. alfred reads them locally and never uploads them.</p>
+        </div>
+        <div class="privacy-col">
+          <div class="privacy-label">leaves your Mac</div>
+          <p>only the snippets alfred needs to think with — sent to Claude (by Anthropic) to generate coaching, then forgotten. <strong>no chat logs. no training. no human review.</strong></p>
+        </div>
+      </div>
+
+      <p class="privacy-footnote">disconnect any source in settings. delete the app, and every trace goes with it.</p>
+    </div>
+  </section>
+
   <!-- ============ SEE IT (marquee) ============ -->
   <section class="see-it" id="see">
     <div class="wrap">
@@ -772,7 +833,7 @@
     <div class="wrap access-wrap">
       <h2>alfred is opening up <em>slowly.</em></h2>
       <p>
-        onboarding A players one by one. drop your email. DMG and install guide land within a day.
+        onboarding A players one by one. drop your email. we'll be in touch.
       </p>
 
       <div class="form-card">
