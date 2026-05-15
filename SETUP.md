@@ -13,7 +13,7 @@ Complete guide to setting up Alfred on your Mac.
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/miten/alfred.git
+git clone https://github.com/mitensampat/alfred.git
 cd alfred
 ```
 

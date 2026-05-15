@@ -15,8 +15,8 @@ Thanks for your interest in Alfred! This guide will help you get started.
 
 1. Clone the repository:
 ```bash
-git clone <your-repo-url>
-cd Alfred
+git clone https://github.com/mitensampat/alfred.git
+cd alfred
 ```
 
 2. Copy and configure the example config:

@@ -62,6 +62,19 @@ Alfred.app/
 PLAN.md
 *IMPROVEMENT_PLAN.md
 
+# Internal dev docs
+docs/internal/
+docs/archive/
+docs/guides/
+
+# Prototypes and FTUE screenshots
+prototypes/
+prototype-*.html
+ftue-screenshots/
+
+# DMG distribution files (use GitHub Releases)
+*.dmg
+
 # Local deployment script (process documented in CLAUDE.md)
 deploy.sh
 .claude/worktrees/

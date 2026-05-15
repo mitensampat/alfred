@@ -4,7 +4,7 @@
 
 ![macOS](https://img.shields.io/badge/macOS-13%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9%2B-orange)
-![Version](https://img.shields.io/badge/version-2.2.2-green)
+![Version](https://img.shields.io/badge/version-2.3.0-green)
 
 ---
 
@@ -26,9 +26,13 @@ Alfred doesn't just know these methods — it learns *you*. Over weeks and month
 
 ---
 
-## What's new in v2.2.2
+## What's new in v2.3.0
 
-### Cadence Control — Full visibility and control over your automation
+### First Public Release — Signed, notarized, and ready to install
+
+v2.3.0 is the first public DMG — signed with Developer ID and notarized by Apple. Download from [Releases](https://github.com/mitensampat/alfred/releases), drag to Applications, and launch.
+
+### Cadence Control (v2.2.2) — Full visibility and control over your automation
 
 Alfred's cadence system is the engine that runs your daily briefings, commitment scans, pattern learning, and more. This release gives you complete control over what was previously invisible.
 
