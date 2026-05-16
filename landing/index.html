@@ -10,7 +10,15 @@
 <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap" rel="stylesheet">
 <style>
   :root {
-    /* Late-night study palette — warm near-black, ivory ink, lifted sage. */
+    --serif: "Newsreader", "Iowan Old Style", "Georgia", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif;
+    --r-sm: 6px;
+    --r-md: 10px;
+    --r-lg: 16px;
+  }
+
+  /* ===== Theme token sets — applied per section ===== */
+  .t-dark {
     --canvas: #14130f;
     --surface: #1d1c17;
     --surface-2: #252320;
@@ -22,20 +30,45 @@
     --accent: #7faa8d;
     --warn: #d4b375;
     --danger: #c97a85;
-    --serif: "Newsreader", "Iowan Old Style", "Georgia", serif;
-    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif;
-    --r-sm: 6px;
-    --r-md: 10px;
-    --r-lg: 16px;
     --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.3);
     --shadow-lift: 0 24px 60px rgba(0, 0, 0, 0.55), 0 4px 14px rgba(0, 0, 0, 0.4);
+    --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    --card-shadow-hover: 0 8px 28px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
+    --card-border-hover: rgba(241, 237, 227, 0.18);
+    --focus-ring: rgba(241, 237, 227, 0.10);
+    --device-border: rgba(241, 237, 227, 0.08);
   }
-  ::selection { background: rgba(127, 170, 141, 0.35); color: var(--ink); }
+  .t-light {
+    --canvas: #faf9f5;
+    --surface: #ffffff;
+    --surface-2: #f4f3ee;
+    --ink: #1a1813;
+    --ink-2: #5f5b52;
+    --ink-3: #938e82;
+    --line: #e7e4dc;
+    --line-2: #f1efe9;
+    --accent: #3f6b52;
+    --warn: #a87a2e;
+    --danger: #9c4049;
+    --shadow-soft: 0 1px 2px rgba(26, 24, 19, 0.05);
+    --shadow-lift: 0 24px 60px rgba(26, 24, 19, 0.12), 0 4px 14px rgba(26, 24, 19, 0.06);
+    --card-shadow: 0 1px 2px rgba(26, 24, 19, 0.04);
+    --card-shadow-hover: 0 8px 28px rgba(26, 24, 19, 0.08), 0 1px 2px rgba(26, 24, 19, 0.05);
+    --card-border-hover: rgba(26, 24, 19, 0.16);
+    --focus-ring: rgba(26, 24, 19, 0.06);
+    --device-border: rgba(26, 24, 19, 0.10);
+  }
+  /* Nav keeps a fixed dark identity — reads over any section */
+  .nav {
+    --canvas: #14130f; --ink: #f1ede3; --line: #2a2823; --surface: #1d1c17;
+  }
+  section { background: var(--canvas); color: var(--ink); }
+  ::selection { background: rgba(127, 170, 141, 0.30); color: inherit; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body {
-    background: var(--canvas);
-    color: var(--ink);
+    background: #14130f;
+    color: #f1ede3;
     font-family: var(--sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -184,13 +217,13 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--card-shadow);
     transition: border-color .15s, box-shadow .15s, background .15s;
   }
   .tenet:hover {
-    border-color: rgba(241, 237, 227, 0.18);
+    border-color: var(--card-border-hover);
     background: var(--surface-2);
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--card-shadow-hover);
   }
   .tenet-num {
     font-family: var(--serif);
@@ -219,7 +252,7 @@
     border: 1px solid var(--line);
     border-radius: 14px;
     padding: 28px;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--card-shadow);
   }
   .privacy-label {
     font-size: 12px;
@@ -240,7 +273,7 @@
   }
 
   /* ===== Marquee (preserved) ===== */
-  .see-it { background: var(--line-2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); overflow: hidden; }
+  .see-it { background: var(--canvas); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); overflow: hidden; }
   .see-it-header { max-width: 52ch; margin-bottom: 48px; }
   .stage {
     position: relative;
@@ -256,6 +289,7 @@
     width: 260px;
     height: 540px;
     background: #0a0908;
+    border: 1px solid var(--device-border);
     border-radius: 40px;
     padding: 10px;
     box-shadow: var(--shadow-lift);
@@ -293,6 +327,7 @@
     width: 100%;
     max-width: 520px;
     background: #0a0908;
+    border: 1px solid var(--device-border);
     border-radius: 12px;
     padding: 10px 10px 12px;
     box-shadow: var(--shadow-lift);
@@ -554,12 +589,12 @@
     border-top: 1px solid var(--line);
     background: var(--surface);
   }
-  .access-wrap { max-width: 560px; }
   .access h2 { margin-bottom: 16px; }
   .access > .wrap > p { max-width: 48ch; }
 
   .form-card {
     margin-top: 32px;
+    max-width: 560px;
     padding: 28px;
     background: var(--canvas);
     border: 1px solid var(--line);
@@ -586,7 +621,7 @@
   .email-row input::placeholder { color: var(--ink-3); }
   .email-row input:focus {
     border-color: var(--ink);
-    box-shadow: 0 0 0 3px rgba(241, 237, 227, 0.10);
+    box-shadow: 0 0 0 3px var(--focus-ring);
   }
   .form-note {
     font-size: 13px; color: var(--ink-3);
@@ -655,6 +690,8 @@
   footer {
     padding: 56px 0 72px;
     border-top: 1px solid var(--line);
+    background: var(--canvas);
+    color: var(--ink);
   }
   .footer-inner {
     display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px;
@@ -721,7 +758,7 @@
 <main id="top">
 
   <!-- ============ HERO ============ -->
-  <section class="hero">
+  <section class="hero t-dark">
     <div class="wrap">
       <h1>a coach for <em>A players.</em></h1>
       <p class="hero-sub">
@@ -749,7 +786,7 @@
   </section>
 
   <!-- ============ TENETS ============ -->
-  <section class="tenets">
+  <section class="tenets t-light">
     <div class="wrap">
       <p class="eyebrow">with alfred you ...</p>
 
@@ -779,7 +816,7 @@
   </section>
 
   <!-- ============ PRIVACY ============ -->
-  <section class="privacy" id="privacy">
+  <section class="privacy t-dark" id="privacy">
     <div class="wrap">
       <p class="eyebrow">on privacy</p>
       <h2 class="privacy-lede">your data, <em>your machine.</em></h2>
@@ -800,7 +837,7 @@
   </section>
 
   <!-- ============ SEE IT (marquee) ============ -->
-  <section class="see-it" id="see">
+  <section class="see-it t-light" id="see">
     <div class="wrap">
       <div class="see-it-header">
         <p class="eyebrow">a live look</p>
@@ -829,7 +866,7 @@
   </section>
 
   <!-- ============ REQUEST ACCESS ============ -->
-  <section class="access" id="access">
+  <section class="access t-dark" id="access">
     <div class="wrap access-wrap">
       <h2>alfred is opening up <em>slowly.</em></h2>
       <p>
@@ -901,7 +938,7 @@
 
 </main>
 
-<footer>
+<footer class="t-light">
   <div class="wrap footer-inner">
     <span class="footer-brand">alfred</span>
     <span>by MS Foundry</span>
