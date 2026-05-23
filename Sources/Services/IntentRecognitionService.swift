@@ -197,7 +197,7 @@ class IntentRecognitionService {
 
         THREAD / GROUP ANALYSIS RULES:
         - "how's my energy on [group/contact]" -> action:"analyze", target:"thread", filters.contact_name:"[group/contact]", filters.platform:"whatsapp"
-        - "summarize the CRED- Kunal Directs group" -> action:"summarize", target:"thread", filters.contact_name:"CRED- Kunal Directs"
+        - "summarize the Team - Alex Directs group" -> action:"summarize", target:"thread", filters.contact_name:"Team - Alex Directs"
         - "what's happening on [group name] on whatsapp" -> action:"analyze", target:"thread", filters.contact_name:"[group name]", filters.platform:"whatsapp"
         - "show me [group name] thread" -> action:"find", target:"thread", filters.contact_name:"[group name]"
         - "how's conversation with [person]" -> action:"analyze", target:"thread", filters.contact_name:"[person]"
@@ -221,14 +221,14 @@ class IntentRecognitionService {
         CALENDAR EVENT CREATION RULES:
         - "block 4PM tomorrow with Mona for 30 minutes at Home, topic is finance" -> action:"create", target:"calendar"
         - "schedule a meeting with Nikhil at 2PM on Friday for 1 hour" -> action:"create", target:"calendar"
-        - "set up a call with Kunal tomorrow morning" -> action:"create", target:"calendar"
+        - "set up a call with Alex tomorrow morning" -> action:"create", target:"calendar"
         - event_title: null (leave blank — the app auto-generates the title from attendees + topic)
         - event_time: MUST be an ISO8601 datetime string (e.g. "2026-02-28T16:00:00\(timezoneOffsetString())"). Compute the ACTUAL date from relative terms like "tomorrow", "Friday", "next Monday". Use the user's timezone (\(userTimezone)).
         - event_duration_minutes: integer, default 30 if not specified. "1 hour" = 60, "45 min" = 45
         - event_location: extract if mentioned ("at Home", "at Office", "at Starbucks"), null if not specified
-        - event_attendees: list of person names mentioned (["Mona"], ["Nikhil", "Kunal"]), null if no one mentioned
+        - event_attendees: list of person names mentioned (["Alice"], ["Bob", "Alex"]), null if no one mentioned
         - event_description: topic or agenda if mentioned, null otherwise
-        - event_attendee_emails: if the user includes email addresses in their message (e.g. "alice@example.com"), extract them into this list. These are DISTINCT from event_attendees (names). Example: "block 3pm with Mona alice@example.com" -> event_attendees: ["Mona"], event_attendee_emails: ["alice@example.com"]. If the message contains ONLY an email (no name), still extract the email and use the local-part as the attendee name. Example: "meeting with nikhil@example.com at 2pm" -> event_attendees: ["nikhil"], event_attendee_emails: ["nikhil@example.com"]
+        - event_attendee_emails: if the user includes email addresses in their message (e.g. "alice@example.com"), extract them into this list. These are DISTINCT from event_attendees (names). Example: "block 3pm with Alice alice@example.com" -> event_attendees: ["Alice"], event_attendee_emails: ["alice@example.com"]. If the message contains ONLY an email (no name), still extract the email and use the local-part as the attendee name. Example: "meeting with nikhil@example.com at 2pm" -> event_attendees: ["nikhil"], event_attendee_emails: ["nikhil@example.com"]
 
         TASK CREATION RULES:
         - "create a task to review the deck" -> action:"create", target:"tasks", filters.task_title:"Review the deck"
@@ -265,7 +265,7 @@ class IntentRecognitionService {
         COMMITMENT CREATION RULES:
         - "I owe Nikhil a deck review by Friday" -> action:"create", target:"commitments", filters.task_title:"Deck review", filters.commitment_direction:"i_owe", filters.commitment_counterparty:"Nikhil", filters.new_due_date:"YYYY-MM-DD"
         - "Mona owes me the Q3 numbers" -> action:"create", target:"commitments", filters.task_title:"Q3 numbers", filters.commitment_direction:"they_owe", filters.commitment_counterparty:"Mona"
-        - "I need to send Kunal the report by Monday" -> action:"create", target:"commitments", filters.task_title:"Send the report", filters.commitment_direction:"i_owe", filters.commitment_counterparty:"Kunal", filters.new_due_date:"YYYY-MM-DD"
+        - "I need to send Alex the report by Monday" -> action:"create", target:"commitments", filters.task_title:"Send the report", filters.commitment_direction:"i_owe", filters.commitment_counterparty:"Alex", filters.new_due_date:"YYYY-MM-DD"
         - commitment_direction: "i_owe" when the user owes someone, "they_owe" when someone owes the user
         - commitment_counterparty: the OTHER person's name (who the commitment is with)
 

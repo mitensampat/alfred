@@ -4,10 +4,15 @@ Build script: Merges production home.html with walk-prototype-v3 layout.
 Transforms the multi-tab production UI into conversation-first single-view.
 """
 
+import os
 import re
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+HOME_HTML = os.path.expanduser('~/.config/alfred/web/home.html')
+SOURCE_HTML = os.path.join(SCRIPT_DIR, 'Sources/GUI/Resources/home.html')
+
 # Read the production file
-with open('/Users/mitensampat/.config/alfred/web/home.html', 'r') as f:
+with open(HOME_HTML, 'r') as f:
     content = f.read()
 
 # ============================================================
@@ -1257,11 +1262,11 @@ content = content.replace(
 # ============================================================
 
 # Write to hot-reload location
-with open('/Users/mitensampat/.config/alfred/web/home.html', 'w') as f:
+with open(HOME_HTML, 'w') as f:
     f.write(content)
 
 # Write to source repo
-with open('/Users/mitensampat/Documents/Claude apps/Alfred/Sources/GUI/Resources/home.html', 'w') as f:
+with open(SOURCE_HTML, 'w') as f:
     f.write(content)
 
 print(f"Done! Wrote {len(content)} chars ({content.count(chr(10))} lines) to both locations.")

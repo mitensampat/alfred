@@ -5492,7 +5492,7 @@
         function getPasscode() {
             // Extract passcode from URL or stored token
             const urlParams = new URLSearchParams(window.location.search);
-            return urlParams.get('passcode') || 'REDACTED_PASSCODE';
+            return urlParams.get('passcode') || localStorage.getItem('alfred_passcode') || '';
         }
 
         function focusChatInput() {

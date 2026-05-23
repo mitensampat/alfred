@@ -6,7 +6,7 @@ class IntentRecognitionService {
     private let conversationContext: ConversationContext
 
     init(config: AppConfig) {
-        self.claudeService = ClaudeAIService(config: config.ai)
+        self.claudeService = ClaudeAIService(config: config.ai, userName: config.user.name)
         self.conversationContext = ConversationContext()
     }
 

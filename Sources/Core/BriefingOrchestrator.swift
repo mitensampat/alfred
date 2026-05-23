@@ -29,7 +29,7 @@ class BriefingOrchestrator {
         self.signalReader = SignalReader(dbPath: config.messaging.signal.dbPath)
         self.gmailReader = config.messaging.email.map { GmailReader(config: $0) }
         self.calendarService = MultiCalendarService(configs: config.calendar.google)
-        self.aiService = ClaudeAIService(config: config.ai)
+        self.aiService = ClaudeAIService(config: config.ai, userName: config.user.name)
         self.researchService = ResearchService(config: config, aiService: aiService)
         self.notificationService = NotificationService(config: config.notifications)
         self.notionService = NotionService(config: config.notion)
@@ -1825,14 +1825,14 @@ class BriefingOrchestrator {
 
         // Generate all possible name combinations
         let possibleVariations = [
-            "\(firstName) \(lastName)",      // "miten sampat"
-            "\(lastName) \(firstName)",      // "sampat miten"
-            "\(firstName)\(lastName)",       // "mitensampat"
-            "\(lastName)\(firstName)",       // "sampatmiten"
-            "\(firstName)_\(lastName)",      // "miten_sampat"
-            "\(lastName)_\(firstName)",      // "sampat_miten"
-            "\(firstName).\(lastName)",      // "miten.sampat"
-            "\(lastName).\(firstName)"       // "sampat.miten"
+            "\(firstName) \(lastName)",      // "jane doe"
+            "\(lastName) \(firstName)",      // "doe jane"
+            "\(firstName)\(lastName)",       // "janedoe"
+            "\(lastName)\(firstName)",       // "doejane"
+            "\(firstName)_\(lastName)",      // "jane_doe"
+            "\(lastName)_\(firstName)",      // "doe_jane"
+            "\(firstName).\(lastName)",      // "jane.doe"
+            "\(lastName).\(firstName)"       // "doe.jane"
         ]
 
         for variation in possibleVariations {

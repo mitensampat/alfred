@@ -336,7 +336,7 @@ class CommitmentAnalyzer {
         Participants (besides \(userName)): \(participantsList)
 
         CRITICAL for group chats:
-        - Use the ACTUAL PERSON'S NAME for committedBy/committedTo fields (e.g., "Kunal", "John")
+        - Use the ACTUAL PERSON'S NAME for committedBy/committedTo fields (e.g., "Alex", "John")
         - Do NOT use the group name as the person (e.g., NOT "Team - Alex Directs")
         - Each message already shows WHO said it - use that person's name
         - If someone says "I'll send the deck", committedBy = that person's name

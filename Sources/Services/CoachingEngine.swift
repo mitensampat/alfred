@@ -64,7 +64,7 @@ class CoachingEngine {
     }
 
     init(config: AppConfig, alfredService: AlfredService) {
-        self.claudeService = ClaudeAIService(config: config.ai)
+        self.claudeService = ClaudeAIService(config: config.ai, userName: config.user.name)
         self.alfredService = alfredService
     }
 

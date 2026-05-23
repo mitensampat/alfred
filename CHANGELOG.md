@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Variable substitution in externalized prompts (e.g., `{{USER_NAME}}`, `{{COUNTERPARTY_NAME}}`)
 
 ### Fixed
-- **Commitment counterparty names**: Now shows contact names (e.g., "Kunal Shah") instead of raw WhatsApp IDs
+- **Commitment counterparty names**: Now shows contact names (e.g., "Alex Johnson") instead of raw WhatsApp IDs
   - Added `threadName` to `CommitmentExtractionRequest` struct
   - Updated AI prompt to use human-readable names for `committedBy`/`committedTo` fields
 - **Correction tracker date parsing**: Fixed ISO8601 date decoding for stored corrections

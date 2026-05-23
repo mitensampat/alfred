@@ -5,12 +5,14 @@ class ClaudeAIService {
     private let model: String
     private let messageModel: String
     private let baseURL: String
+    private let userName: String
 
-    init(config: AIConfig) {
+    init(config: AIConfig, userName: String = "User") {
         self.apiKey = config.anthropicApiKey
         self.model = config.model
         self.messageModel = config.effectiveMessageModel
         self.baseURL = config.effectiveBaseUrl
+        self.userName = userName
     }
 
     func analyzeMessages(_ threads: [MessageThread], favoriteNames: [String] = []) async throws -> [MessageSummary] {
@@ -94,7 +96,7 @@ class ClaudeAIService {
         if userMessageCount == 0 {
             participationContext = """
             ## USER PARTICIPATION: PASSIVE OBSERVER
-            The user (Miten/You) sent 0 messages in this conversation. They are ONLY OBSERVING.
+            The user (\(userName)/You) sent 0 messages in this conversation. They are ONLY OBSERVING.
             """
             actionItemGuidance = """
             CRITICAL RULE FOR ACTION ITEMS:
@@ -141,18 +143,18 @@ class ClaudeAIService {
             return sender
         })
         let isGroupChat = incomingSenders.count > 1
-        let participantList = isGroupChat ? "\nParticipants in this group: \(incomingSenders.sorted().joined(separator: ", ")), and You (Miten)." : ""
+        let participantList = isGroupChat ? "\nParticipants in this group: \(incomingSenders.sorted().joined(separator: ", ")), and You (\(userName))." : ""
 
         var prompt = """
         Analyze this entire WhatsApp message thread and provide a detailed analysis.
 
-        IMPORTANT: In this thread, "You" refers to the user (Miten)\(isGroupChat ? ". This is a GROUP CHAT named \"\(thread.contactName ?? "Unknown")\" with multiple participants" : ", and \"\(thread.contactName ?? "Unknown")\" is the other person").\(participantList)
+        IMPORTANT: In this thread, "You" refers to the user (\(userName))\(isGroupChat ? ". This is a GROUP CHAT named \"\(thread.contactName ?? "Unknown")\" with multiple participants" : ", and \"\(thread.contactName ?? "Unknown")\" is the other person").\(participantList)
         \(isGroupChat ? """
 
         CRITICAL — PARTICIPANT ATTRIBUTION:
         - Each message is prefixed with the sender's name. Pay close attention to WHO said what.
         - When summarizing, ALWAYS attribute statements, requests, and directives to the correct person by name.
-        - Do NOT confuse who made a request with who received it. "Kunal asked Miten to call Vinayak" is very different from "Vinayak asked Kunal to call Miten".
+        - Do NOT confuse who made a request with who received it. "Alex asked \(userName) to call Jordan" is very different from "Jordan asked Alex to call \(userName)".
         - Track the direction of actions: who is asking, who is being asked, and who is the subject.
         - When people disagree, clearly state who holds which position.
         """ : "")
@@ -172,7 +174,7 @@ class ClaudeAIService {
 
         Provide:
         1. A comprehensive summary (3-5 sentences) - be clear about who said what
-        2. Action items for MITEN (the user marked as "You") - ONLY if they participated and were asked to do something
+        2. Action items for \(userName.uppercased()) (the user marked as "You") - ONLY if they participated and were asked to do something
         3. Key quotes or messages from the OTHER PERSON that are most important (include exact quotes with timestamps)
         4. Overall context and what this conversation is about
         5. Any deadlines, commitments, or time-sensitive information
@@ -283,7 +285,7 @@ class ClaudeAIService {
         let isGroupChatQuick = incomingSendersQuick.count > 1
         let groupAttribution = isGroupChatQuick ? """
 
-        IMPORTANT: This is a GROUP CHAT with multiple participants: \(incomingSendersQuick.sorted().joined(separator: ", ")), and You (Miten).
+        IMPORTANT: This is a GROUP CHAT with multiple participants: \(incomingSendersQuick.sorted().joined(separator: ", ")), and You (\(userName)).
         Each message is labeled with the sender's name. Attribute statements and requests to the correct person — do not confuse who said what.
         """ : ""
 
@@ -873,7 +875,7 @@ class ClaudeAIService {
     // MARK: - Todo Detection
 
     func extractTodoFromMessage(_ message: Message) async throws -> TodoItem? {
-        // Only process messages from yourself (Miten Sampat)
+        // Only process outgoing messages (sent by the user)
         guard message.direction == .outgoing,
               !message.content.isEmpty else {
             return nil

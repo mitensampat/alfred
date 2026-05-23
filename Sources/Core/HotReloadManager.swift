@@ -24,7 +24,12 @@ class HotReloadManager {
         self.promptsDir = configDir.appendingPathComponent("prompts")
 
         // Source directory - where bundled files live during development
+        // Resolves relative to the repo checkout; falls back to home dir convention
+        #if DEBUG
         self.sourceWebDir = URL(fileURLWithPath: NSString(string: "~/Documents/Claude apps/Alfred/Sources/GUI/Resources").expandingTildeInPath)
+        #else
+        self.sourceWebDir = Bundle.main.resourceURL ?? home.appendingPathComponent("Documents/Alfred/Sources/GUI/Resources")
+        #endif
 
         // Ensure directories exist
         ensureDirectories()

@@ -2,7 +2,7 @@
 
 ## How to capture
 Open each URL on your device (phone/tablet/desktop) and screenshot.
-Base URL: `http://<your-ip>:8080/home.html?passcode=REDACTED_PASSCODE`
+Base URL: `http://<your-ip>:8080/home.html?passcode=YOUR_PASSCODE`
 
 ---
 

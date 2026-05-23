@@ -15,7 +15,7 @@ Get up and running with Alfred in 10 minutes.
 ### Navigate to Project
 
 ```bash
-cd "/Users/mitensampat/Documents/Claude apps/Alfred"
+cd alfred  # or wherever you cloned the repo
 ```
 
 ### Run Installer
@@ -79,7 +79,7 @@ You should see the help menu with all available commands.
 ### Create Config File
 
 ```bash
-cd "/Users/mitensampat/Documents/Claude apps/Alfred"
+cd alfred  # or wherever you cloned the repo
 cp Config/config.example.json Config/config.json
 ```
 

@@ -1,9 +1,10 @@
 """Capture all key Alfred screenshots using Playwright."""
 import asyncio
+import os
 from playwright.async_api import async_playwright
 
-BASE = "http://127.0.0.1:8080/home.html?passcode=REDACTED_PASSCODE"
-OUT = "/Users/mitensampat/Documents/Claude apps/Alfred/screenshots"
+BASE = f"http://127.0.0.1:8080/home.html?passcode={os.environ.get('ALFRED_PASSCODE', 'YOUR_PASSCODE')}"
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)))
 
 async def hide_health_warning(page):
     await page.evaluate("""() => {

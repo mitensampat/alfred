@@ -1245,7 +1245,7 @@ class WorkflowLearningService {
     /// Use Haiku to classify a batch of chat exchanges for learning signals
     private func classifyExchangeSignals(exchanges: [(userMessage: String, assistantResponse: String, timestamp: Date)], config: AppConfig) async {
         print("🧠 Learning v3: classifyExchangeSignals called with \(exchanges.count) exchanges")
-        let claudeService = ClaudeAIService(config: config.ai)
+        let claudeService = ClaudeAIService(config: config.ai, userName: config.user.name)
 
         let exchangesList = exchanges.enumerated().map { i, ex in
             """
@@ -1754,7 +1754,7 @@ class WorkflowLearningService {
         }
 
         // Use Haiku to extract communication patterns
-        let claudeService = ClaudeAIService(config: config.ai)
+        let claudeService = ClaudeAIService(config: config.ai, userName: config.user.name)
         let correctionsList = corrections.prefix(15).map { "- User said: \"\($0.context)\"" }.joined(separator: "\n")
 
         let prompt = """

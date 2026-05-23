@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 
 echo "🚀 Starting Alfred HTTP Server..."
 echo "📍 Web interface will be available at: http://localhost:8080/web/home.html"
-echo "🔐 Passcode: REDACTED_PASSCODE"
+echo "🔐 Passcode: YOUR_PASSCODE"
 echo ""
 
 # Build and run just the HTTP server

@@ -82,9 +82,9 @@ Outputs `Coach-Alfred-<VERSION>.dmg` ready for `gh release create`.
 ## Port & Server
 
 - **Port**: 8080 (configured in `~/.config/alfred/config.json`)
-- **Passcode**: `REDACTED_PASSCODE`
-- **Health check**: `curl http://localhost:8080/api/health?passcode=REDACTED_PASSCODE`
-- **Web UI**: `http://localhost:8080/home.html?passcode=REDACTED_PASSCODE`
+- **Passcode**: `YOUR_PASSCODE`
+- **Health check**: `curl http://localhost:8080/api/health?passcode=YOUR_PASSCODE`
+- **Web UI**: `http://localhost:8080/home.html?passcode=YOUR_PASSCODE`
 
 ## Hot-Reload System
 
@@ -113,7 +113,7 @@ Outputs `Coach-Alfred-<VERSION>.dmg` ready for `gh release create`.
 ```
 config.json:
   app.port: 8080
-  app.passcode: "REDACTED_PASSCODE"
+  app.passcode: "YOUR_PASSCODE"
   app.briefing_time: "08:15"
   app.attention_alert_time: "15:00"
   notifications.email: { smtp_host, smtp_port, smtp_username, smtp_password, enabled }
@@ -202,7 +202,7 @@ Each intent target maps to a coaching posture via `IntentCoachingRouter`. The po
 - `POST /api/commitment-tracker/cleanup-orphans` - Clean orphaned closure detections
 - `POST /api/commitment-tracker/sync-from-notion` - Bidirectional sync (Notion→local)
 
-All endpoints require `?passcode=REDACTED_PASSCODE` query parameter.
+All endpoints require `?passcode=YOUR_PASSCODE` query parameter.
 
 ## Learning System v2
 
@@ -244,7 +244,7 @@ Alfred's learning system has 3 layers:
 
 After every Golden Path deploy:
 
-1. **Health check** — `curl -s 'http://127.0.0.1:8080/api/health?passcode=REDACTED_PASSCODE'` → confirm `"status":"ok"`
+1. **Health check** — `curl -s 'http://127.0.0.1:8080/api/health?passcode=YOUR_PASSCODE'` → confirm `"status":"ok"`
 2. **Test the specific change** — curl the exact endpoint or trigger the exact user flow that was modified. Not a generic check — the *actual behavior* that changed.
 3. **Show raw output** — paste the curl response, log output, or screenshot. No paraphrasing. Let the evidence speak.
 4. **Only then say "done"** — if the output doesn't match expectations, the fix isn't done. Investigate and iterate.

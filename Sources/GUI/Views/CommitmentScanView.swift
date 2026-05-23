@@ -87,7 +87,7 @@ struct CommitmentScanView: View {
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .font(.system(size: 12))
 
-                Text("Examples: \"Kunal Shah\", \"Akshay Aedula\"")
+                Text("Examples: \"Alex Johnson\", \"Sarah Chen\"")
                     .font(.system(size: 10))
                     .foregroundColor(SlackTheme.tertiaryText)
             }

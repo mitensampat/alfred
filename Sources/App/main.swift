@@ -2459,7 +2459,7 @@ struct AlfredApp {
           # Message analysis
           alfred messages imessage 1h        # Last hour of iMessages
           alfred messages all 24h            # All messages, last 24h
-          alfred messages whatsapp "Kunal Shah" 7d  # Specific contact, 7 days
+          alfred messages whatsapp "Alex Johnson" 7d  # Specific contact, 7 days
 
           # Calendar management
           alfred calendar                    # Today's calendar
@@ -3481,7 +3481,7 @@ class Scheduler {
     private func prewarmCaches() async {
         let config = currentConfig()
         let port = config.api?.port ?? 8080
-        let pc = config.api?.passcode ?? "REDACTED_PASSCODE"
+        let pc = config.api?.passcode ?? "changeme"
         let base = "http://localhost:\(port)"
 
         log("🔥 Pre-warming caches (parallel)...")
@@ -3646,8 +3646,8 @@ func runCommitmentsInit(_ orchestrator: BriefingOrchestrator) async {
     print("1. Create a new database in Notion (anywhere you like)")
     print("2. Add all the properties listed above")
     print("3. Copy the database ID from the URL (the part after the page name)")
-    print("   Example: https://notion.so/Your-Database-1c8308445573809cb43edab74b5e0777")
-    print("            Database ID: 1c8308445573809cb43edab74b5e0777")
+    print("   Example: https://notion.so/Your-Database-abc123def456abc123def456abc12345")
+    print("            Database ID: abc123def456abc123def456abc12345")
     print("4. Add this to your ~/.config/alfred/config.json:\n")
 
     print("""
@@ -3687,9 +3687,9 @@ func printCommitmentsUsage() {
         - contact_name: Name of the contact (optional, scans all if not provided)
         - lookback_period: Days to look back - supports "14" or "14d" (default: from config)
         Examples:
-          alfred commitments scan "Kunal Shah" 14d
-          alfred commitments scan "Akshay Aedula" 14d
-          alfred commitments scan "Swamy Seetharaman" 7
+          alfred commitments scan "Alex Johnson" 14d
+          alfred commitments scan "Sarah Chen" 14d
+          alfred commitments scan "Jordan Lee" 7
           alfred commitments scan 7d (scans all auto_scan_contacts)
 
     alfred commitments list [type]

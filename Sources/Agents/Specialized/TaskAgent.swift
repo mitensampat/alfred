@@ -16,7 +16,7 @@ class TaskAgent: AgentProtocol {
         self.autonomyLevel = config.autonomyLevel
         self.appConfig = appConfig
         self.learningEngine = learningEngine
-        self.aiService = ClaudeAIService(config: appConfig.ai)
+        self.aiService = ClaudeAIService(config: appConfig.ai, userName: appConfig.user.name)
         self.attentionTracker = AttentionTracker(aiService: self.aiService)
         self.memoryService = AgentMemoryService.shared
     }

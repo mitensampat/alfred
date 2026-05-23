@@ -297,7 +297,7 @@ struct CommitmentConfig: Codable {
 struct CommitmentExtractionRequest: Codable {
     let messages: [MessageContext]
     let userInfo: UserInfo
-    let threadName: String  // The contact/group name (e.g., "Kunal Shah" instead of WhatsApp ID)
+    let threadName: String  // The contact/group name (e.g., "Alex Johnson" instead of WhatsApp ID)
 
     struct MessageContext: Codable {
         let sender: String

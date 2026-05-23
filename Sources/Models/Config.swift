@@ -405,6 +405,7 @@ struct NotificationConfig: Codable {
 struct ResearchConfig: Codable {
     let linkedin: LinkedInConfig
     let search: SearchConfig
+    let tavilyApiKey: String?
 
     struct LinkedInConfig: Codable {
         let enabled: Bool
@@ -418,6 +419,12 @@ struct ResearchConfig: Codable {
 
     struct SearchConfig: Codable {
         let enabled: Bool
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case linkedin
+        case search
+        case tavilyApiKey = "tavily_api_key"
     }
 }
 

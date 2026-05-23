@@ -30,7 +30,7 @@ NC='\033[0m'
 BOLD='\033[1m'
 
 BASE_URL="http://127.0.0.1:8080"
-PASSCODE="REDACTED_PASSCODE"
+PASSCODE="${ALFRED_PASSCODE:-YOUR_PASSCODE}"
 DB_PATH="$HOME/.alfred/workflow_learning.db"
 COACHING_MD="$HOME/.alfred/coaching_context.md"
 CONTACTS_JSON="$HOME/.config/alfred/memory/contacts.json"

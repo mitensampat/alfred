@@ -5,12 +5,14 @@ class ClaudeAIService {
     private let model: String
     private let messageModel: String
     private let baseURL: String
+    private let userName: String
 
-    init(config: AIConfig) {
+    init(config: AIConfig, userName: String = "User") {
         self.apiKey = config.anthropicApiKey
         self.model = config.model
         self.messageModel = config.effectiveMessageModel
         self.baseURL = config.effectiveBaseUrl
+        self.userName = userName
     }
 
     func analyzeMessages(_ threads: [MessageThread], favoriteNames: [String] = []) async throws -> [MessageSummary] {
@@ -80,7 +82,7 @@ class ClaudeAIService {
         if userMessageCount == 0 {
             participationContext = """
             ## USER PARTICIPATION: PASSIVE OBSERVER
-            The user (Miten/You) sent 0 messages in this conversation. They are ONLY OBSERVING.
+            The user (\(userName)/You) sent 0 messages in this conversation. They are ONLY OBSERVING.
             """
             actionItemGuidance = """
             CRITICAL RULE FOR ACTION ITEMS:
@@ -117,7 +119,7 @@ class ClaudeAIService {
         var prompt = """
         Analyze this entire WhatsApp message thread and provide a detailed analysis.
 
-        IMPORTANT: In this thread, "You" refers to the user (Miten), and "\(thread.contactName ?? "Unknown")" is the other person/group.
+        IMPORTANT: In this thread, "You" refers to the user (\(userName)), and "\(thread.contactName ?? "Unknown")" is the other person/group.
 
         \(participationContext)
 
@@ -134,7 +136,7 @@ class ClaudeAIService {
 
         Provide:
         1. A comprehensive summary (3-5 sentences) - be clear about who said what
-        2. Action items for MITEN (the user marked as "You") - ONLY if they participated and were asked to do something
+        2. Action items for \(userName.uppercased()) (the user marked as "You") - ONLY if they participated and were asked to do something
         3. Key quotes or messages from the OTHER PERSON that are most important (include exact quotes with timestamps)
         4. Overall context and what this conversation is about
         5. Any deadlines, commitments, or time-sensitive information
@@ -612,7 +614,7 @@ class ClaudeAIService {
     // MARK: - Todo Detection
 
     func extractTodoFromMessage(_ message: Message) async throws -> TodoItem? {
-        // Only process messages from yourself (Miten Sampat)
+        // Only process outgoing messages (sent by the user)
         guard message.direction == .outgoing,
               !message.content.isEmpty else {
             return nil

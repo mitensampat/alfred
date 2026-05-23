@@ -36,8 +36,15 @@ credentials.json
 *.swo
 *~
 *.bak
+*.bak.*
 *.backup
 *.disabled
+
+# Internal support/ops docs
+support/access-pipeline.md
+
+# Old HTML versions
+Sources/GUI/Resources/home-v*.html
 
 # Test/temp scripts
 test_*.swift
