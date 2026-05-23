@@ -3354,7 +3354,7 @@
                         { label: 'Show', key: 'scope', options: ['All', 'Overdue', 'I Owe', 'They Owe'], defaultVal: 'All' }
                     ],
                     contactInput: true,
-                    contactPlaceholder: 'e.g. Mona, Vasanth',
+                    contactPlaceholder: 'e.g. Alice, David',
                     buildQuery: function(s) {
                         var person = s.contact ? ' with ' + s.contact : '';
                         if (s.scope === 'All' && s.contact) return 'Show me commitments with ' + s.contact;
@@ -3632,7 +3632,7 @@
                     ],
                     contactInput: true,
                     contactLabel: 'Person',
-                    contactPlaceholder: 'e.g. Mona, Vasanth',
+                    contactPlaceholder: 'e.g. Alice, David',
                     buildQuery: function(s) {
                         var person = s.contact ? ' with ' + s.contact : '';
                         if (s.scope === 'All' && s.contact) return 'Show me commitments with ' + s.contact;

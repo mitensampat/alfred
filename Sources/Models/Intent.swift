@@ -124,17 +124,17 @@ struct UserIntent: Codable {
 
         // Commitment creation filters (used when action is "create" and target is "commitments")
         let commitmentDirection: String?  // "i_owe" or "they_owe"
-        let commitmentCounterparty: String? // person name (e.g., "Nikhil")
+        let commitmentCounterparty: String? // person name (e.g., "Bob")
 
         // Calendar event search/update filters
-        let eventSearchTerm: String?      // fuzzy search for existing events ("3pm", "standup", "Nikhil")
+        let eventSearchTerm: String?      // fuzzy search for existing events ("3pm", "standup", "Bob")
 
         // Calendar event creation filters (used when action is "create" and target is "calendar")
-        let eventTitle: String?           // "Meeting with Mona about finance"
+        let eventTitle: String?           // "Meeting with Alice about finance"
         let eventTime: String?            // ISO8601 datetime computed from natural language
         let eventDurationMinutes: Int?    // 30 (default)
         let eventLocation: String?        // "Home", "Office", etc.
-        let eventAttendees: [String]?     // ["Mona", "Nikhil"] — contact names
+        let eventAttendees: [String]?     // ["Alice", "Bob"] — contact names
         let eventAttendeeEmails: [String]? // ["alice@example.com"] — extracted email addresses
         let eventDescription: String?     // topic/agenda
 

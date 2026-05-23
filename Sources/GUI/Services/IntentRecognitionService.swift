@@ -235,8 +235,8 @@ class IntentRecognitionService {
 
         FAVORITES RULES:
         - "who are my favorites?" -> action:"list", target:"favorites"
-        - "add Vinay to my favorites" -> action:"create", target:"favorites", filters.contact_name:"Vinay"
-        - "remove Vinay from favorites" -> action:"delete", target:"favorites", filters.contact_name:"Vinay"
+        - "add Charlie to my favorites" -> action:"create", target:"favorites", filters.contact_name:"Charlie"
+        - "remove Charlie from favorites" -> action:"delete", target:"favorites", filters.contact_name:"Charlie"
 
         CALENDAR AVAILABILITY RULES:
         - "am I free next Friday at 4pm?" -> action:"check", target:"calendar", filters.event_time:"<ISO8601 datetime>"

@@ -249,5 +249,5 @@ pkill alfred
 
 ## Support
 
-- Issues: https://github.com/miten/alfred/issues
+- Issues: https://github.com/mitensampat/alfred/issues
 - Documentation: See `/docs` folder for detailed guides

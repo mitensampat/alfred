@@ -991,7 +991,7 @@ class IntentExecutor {
         case .memory:
             return "I can show learned patterns, teach me new rules, or forget old ones. Try 'what patterns have you learned?' or 'teach: always do X'."
         case .favorites:
-            return "I can list, add, or remove favorites. Try 'show my favorites' or 'add Vinay to my favorites'."
+            return "I can list, add, or remove favorites. Try 'show my favorites' or 'add Charlie to my favorites'."
         case .focus:
             return "I can show your focus, suggest one, or pin/unpin it. Try 'what's my top goal?' or 'pin the RCA task as my focus'."
         case .cadences:
@@ -1444,7 +1444,7 @@ class IntentExecutor {
         let durationMinutes = filters.eventDurationMinutes ?? 30
         let endTime = startTime.addingTimeInterval(Double(durationMinutes) * 60)
 
-        // Build title: "Miten <> Mona : Coffee-time" format
+        // Build title: "You <> Alice : Coffee-time" format
         let title: String
         if let explicit = filters.eventTitle, !explicit.isEmpty {
             title = explicit

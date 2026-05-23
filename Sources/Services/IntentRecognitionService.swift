@@ -219,8 +219,8 @@ class IntentRecognitionService {
         - Multiple updates in one request are supported: "mark the RCA as high priority and due Monday" -> set both new_priority and new_due_date
 
         CALENDAR EVENT CREATION RULES:
-        - "block 4PM tomorrow with Mona for 30 minutes at Home, topic is finance" -> action:"create", target:"calendar"
-        - "schedule a meeting with Nikhil at 2PM on Friday for 1 hour" -> action:"create", target:"calendar"
+        - "block 4PM tomorrow with Alice for 30 minutes at Home, topic is finance" -> action:"create", target:"calendar"
+        - "schedule a meeting with Bob at 2PM on Friday for 1 hour" -> action:"create", target:"calendar"
         - "set up a call with Alex tomorrow morning" -> action:"create", target:"calendar"
         - event_title: null (leave blank — the app auto-generates the title from attendees + topic)
         - event_time: MUST be an ISO8601 datetime string (e.g. "2026-02-28T16:00:00\(timezoneOffsetString())"). Compute the ACTUAL date from relative terms like "tomorrow", "Friday", "next Monday". Use the user's timezone (\(userTimezone)).
@@ -256,27 +256,27 @@ class IntentRecognitionService {
         - "show me commitments I owe" -> action:"list", target:"commitments", filters.commitment_type:"i_owe"
         - "show me commitments others owe me" -> action:"list", target:"commitments", filters.commitment_type:"they_owe"
         - "show me overdue commitments" -> action:"list", target:"commitments", filters.urgency:"overdue"
-        - "show me commitments with Mona" -> action:"list", target:"commitments", filters.contact_name:"Mona"
+        - "show me commitments with Alice" -> action:"list", target:"commitments", filters.contact_name:"Alice"
         - "how are my commitments looking?" -> action:"list", target:"commitments"
         - "do I have overdue commitments?" -> action:"list", target:"commitments", filters.urgency:"overdue"
         - "what commitments am I behind on?" -> action:"list", target:"commitments", filters.urgency:"overdue"
-        - "mark the commitment with Nikhil as done" -> action:"update", target:"commitments", filters.task_search_term:"Nikhil", filters.new_status:"Done"
+        - "mark the commitment with Bob as done" -> action:"update", target:"commitments", filters.task_search_term:"Bob", filters.new_status:"Done"
 
         COMMITMENT CREATION RULES:
-        - "I owe Nikhil a deck review by Friday" -> action:"create", target:"commitments", filters.task_title:"Deck review", filters.commitment_direction:"i_owe", filters.commitment_counterparty:"Nikhil", filters.new_due_date:"YYYY-MM-DD"
-        - "Mona owes me the Q3 numbers" -> action:"create", target:"commitments", filters.task_title:"Q3 numbers", filters.commitment_direction:"they_owe", filters.commitment_counterparty:"Mona"
+        - "I owe Bob a deck review by Friday" -> action:"create", target:"commitments", filters.task_title:"Deck review", filters.commitment_direction:"i_owe", filters.commitment_counterparty:"Bob", filters.new_due_date:"YYYY-MM-DD"
+        - "Alice owes me the Q3 numbers" -> action:"create", target:"commitments", filters.task_title:"Q3 numbers", filters.commitment_direction:"they_owe", filters.commitment_counterparty:"Alice"
         - "I need to send Alex the report by Monday" -> action:"create", target:"commitments", filters.task_title:"Send the report", filters.commitment_direction:"i_owe", filters.commitment_counterparty:"Alex", filters.new_due_date:"YYYY-MM-DD"
         - commitment_direction: "i_owe" when the user owes someone, "they_owe" when someone owes the user
         - commitment_counterparty: the OTHER person's name (who the commitment is with)
 
         COMMITMENT DELETION RULES:
         - "cancel my commitment to review the budget" -> action:"delete", target:"commitments", filters.task_search_term:"budget review"
-        - "remove the commitment with Mona about Q3" -> action:"delete", target:"commitments", filters.task_search_term:"Mona Q3"
+        - "remove the commitment with Alice about Q3" -> action:"delete", target:"commitments", filters.task_search_term:"Alice Q3"
         - Deletion is soft: commitments are marked as "Cancelled", not permanently removed
 
         CALENDAR UPDATE RULES:
         - "move my 3pm to 4pm" -> action:"update", target:"calendar", filters.event_search_term:"3pm", filters.event_time:"<new ISO8601 datetime for 4pm today>"
-        - "reschedule the meeting with Nikhil to tomorrow" -> action:"update", target:"calendar", filters.event_search_term:"Nikhil", filters.event_time:"<tomorrow ISO8601>"
+        - "reschedule the meeting with Bob to tomorrow" -> action:"update", target:"calendar", filters.event_search_term:"Bob", filters.event_time:"<tomorrow ISO8601>"
         - "change my standup location to Conference Room" -> action:"update", target:"calendar", filters.event_search_term:"standup", filters.event_location:"Conference Room"
         - "push back the 2pm by 30 minutes" -> action:"update", target:"calendar", filters.event_search_term:"2pm", filters.event_time:"<ISO8601 for 2:30pm>"
         - event_search_term: keywords to fuzzy-match an existing event (time like "3pm", title words, attendee names)
@@ -289,7 +289,7 @@ class IntentRecognitionService {
         - "delete the standup" -> action:"delete", target:"calendar", filters.event_search_term:"standup"
 
         DRAFT GENERATION RULES:
-        - "draft a reply to Mona" -> action:"generate", target:"drafts", filters.contact_name:"Mona"
+        - "draft a reply to Alice" -> action:"generate", target:"drafts", filters.contact_name:"Alice"
         - "generate drafts for my messages" -> action:"generate", target:"drafts"
 
         TODO UPDATE / DELETE RULES:
@@ -328,7 +328,7 @@ class IntentRecognitionService {
         PENDING COMMITMENT CLOSURES RULES:
         - "any commitments to confirm?" -> action:"check", target:"commitments", filters.urgency:"pending_closure"
         - "pending closures" -> action:"check", target:"commitments", filters.urgency:"pending_closure"
-        - "confirm the commitment with Nikhil" -> action:"update", target:"commitments", filters.task_search_term:"Nikhil", filters.new_status:"Done"
+        - "confirm the commitment with Bob" -> action:"update", target:"commitments", filters.task_search_term:"Bob", filters.new_status:"Done"
         - When urgency is "pending_closure", this specifically queries auto-detected closure suggestions
 
         MEMORY & LEARNING RULES:
@@ -357,9 +357,9 @@ class IntentRecognitionService {
         FAVORITES RULES:
         - "who are my favorites?" -> action:"list", target:"favorites"
         - "show my favorite contacts" -> action:"list", target:"favorites"
-        - "add Vinay to my favorites" -> action:"create", target:"favorites", filters.contact_name:"Vinay"
+        - "add Charlie to my favorites" -> action:"create", target:"favorites", filters.contact_name:"Charlie"
         - "add Acme Leadership group to favorites" -> action:"create", target:"favorites", filters.contact_name:"Acme Leadership"
-        - "remove Vinay from favorites" -> action:"delete", target:"favorites", filters.contact_name:"Vinay"
+        - "remove Charlie from favorites" -> action:"delete", target:"favorites", filters.contact_name:"Charlie"
 
         CONTACT ANALYSIS RULES:
         - "who have I been talking to most?" -> action:"analyze", target:"contacts"

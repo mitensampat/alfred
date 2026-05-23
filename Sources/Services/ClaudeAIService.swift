@@ -910,10 +910,10 @@ class ClaudeAIService {
         - "Buy milk"
         - "Vibin feedback today" (short reminder: give feedback to/about Vibin today)
         - "Call dentist" (two-word action)
-        - "Send deck to Mona" (quick task note)
+        - "Send deck to Alice" (quick task note)
         - "Review Q3 numbers" (self-reminder)
         - "Gym 6pm" (scheduling reminder)
-        - "Nikhil follow up" (terse follow-up reminder)
+        - "Bob follow up" (terse follow-up reminder)
 
         Not todo items:
         - Forwarded articles or news stories

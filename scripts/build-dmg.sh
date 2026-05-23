@@ -12,7 +12,7 @@
 #      - DMG will trip Gatekeeper on other Macs — only useful for local testing
 #
 # Usage:
-#   DEVELOPER_ID="Developer ID Application: Miten Sampat (TEAMID1234)" \
+#   DEVELOPER_ID="Developer ID Application: Your Name (YOUR_TEAM_ID)" \
 #   NOTARY_PROFILE="alfred-notary" \
 #   ./scripts/build-dmg.sh [--skip-build] [--skip-notarize]
 set -e
