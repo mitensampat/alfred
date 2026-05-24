@@ -12,7 +12,7 @@ Hi {{first_name}},
 Thanks for asking. You're in.
 
 Download (macOS 13+):
-https://github.com/mitensampat/alfred/releases/download/v2.3.0/Coach-Alfred-2.3.0.dmg
+https://github.com/mitensampat/alfred/releases/download/v2.3.1/Coach-Alfred-2.3.1.dmg
 
 Install (about 3 minutes):
 1. Open the DMG, drag Alfred to Applications
