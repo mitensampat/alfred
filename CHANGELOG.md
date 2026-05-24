@@ -5,6 +5,29 @@ All notable changes to Alfred will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.1] - 2026-05-16
+
+### Changed
+- **FTUE wizard re-sequenced**: permissions (Full Disk Access) now comes
+  before messaging, since reading iMessage/WhatsApp requires FDA first.
+  New order: welcome → API key → permissions → messaging → calendar →
+  Notion → profile → complete.
+- All four connections (Anthropic, Messages, Calendar, Notion) are now
+  **required** to finish setup — Skip buttons removed.
+
+### Added
+- **Verify-then-advance**: each connection step verifies it actually works
+  before advancing (API key live-tested, FDA must be granted, Google/Notion
+  must be connected). Styled inline errors replace alert() popups.
+- **Resume-from-step**: the wizard resumes after the last completed step
+  if setup is interrupted.
+- **FTUE instrumentation**: per-step view timestamps; furthest-step-reached
+  is observable for support.
+
+### Companion
+- Public self-serve onboarding web guide at `/onboarding/` (download →
+  Anthropic key with real screenshots → install with drag animation).
+
 ## [2.3.0] - 2026-05-06
 
 ### Added
