@@ -126,7 +126,7 @@ class CoachingPushService {
         }.filter { qualifiesForPush($0) }
 
         guard !candidateEvents.isEmpty else { return }
-        guard PushBudgetService.shared.canPush(type: .postMeeting) else { return }
+        guard PushBudgetService.shared.canPush() else { return }
 
         // If multiple meetings ended close together, batch them into one notification
         let event = candidateEvents.first!
@@ -167,7 +167,7 @@ class CoachingPushService {
             vapidPrivateKey: privateKey,
             vapidSubject: subject
         )
-        PushBudgetService.shared.recordPush(type: .postMeeting)
+        PushBudgetService.shared.recordPush()
     }
 
     // MARK: - Morning Nudge
@@ -192,7 +192,7 @@ class CoachingPushService {
         let currentMinutes = hour * 60 + minute
         let targetMinutes = targetHour * 60 + targetMinute
         guard currentMinutes >= targetMinutes && currentMinutes <= targetMinutes + 20 else { return }
-        guard PushBudgetService.shared.canPush(type: .morningNudge) else { return }
+        guard PushBudgetService.shared.canPush() else { return }
 
         morningNudgeSentDate = todayStr
         saveNudgeState()
@@ -239,7 +239,7 @@ class CoachingPushService {
             vapidPrivateKey: privateKey,
             vapidSubject: subject
         )
-        PushBudgetService.shared.recordPush(type: .morningNudge)
+        PushBudgetService.shared.recordPush()
 
         // Pre-warm home page caches so the UI loads instantly when user taps the notification
         await prewarmHomeCache(config: config)
