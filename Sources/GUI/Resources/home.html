@@ -681,6 +681,7 @@
         .ftue-status.success { color: var(--growth); }
         .ftue-status.error { color: var(--danger); }
         .ftue-status.loading { color: var(--ink-tertiary); }
+        .ftue-inline-error { display: none; margin-top: 16px; padding: 10px 14px; font-size: 13px; line-height: 1.5; color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent); border-radius: 8px; }
         .ftue-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 24px; }
         .ftue-btn { font-family: var(--font-body); font-size: 14px; padding: 10px 24px; border-radius: 0; cursor: pointer; border: none; }
         .ftue-btn-primary { background: var(--coach); color: white; font-weight: 500; }
@@ -4043,11 +4044,24 @@
             }
         }
 
-        function showFtueWizard() {
+        async function showFtueWizard() {
             document.getElementById('authScreen').classList.add('hidden');
             document.getElementById('appContainer').classList.add('hidden');
             document.getElementById('ftueWizard').classList.remove('hidden');
-            renderFtueStep(0);
+            // Phase 3: resume where the user left off (progress persisted server-side)
+            let startIndex = 0;
+            try {
+                const s = await checkSetupStatus();
+                if (s && Array.isArray(s.completedSteps) && s.completedSteps.length) {
+                    let last = -1;
+                    FTUE_STEPS.forEach((name, i) => { if (s.completedSteps.includes(name)) last = Math.max(last, i); });
+                    if (last >= 0) startIndex = Math.min(last + 1, FTUE_STEPS.length - 1);
+                    // restore verified flags so already-completed connection steps don't re-block
+                    if (s.completedSteps.includes('googleOauth')) ftueData.googleConnected = true;
+                    if (s.completedSteps.includes('apiKeys')) ftueData.claudeKeyVerified = true;
+                }
+            } catch (e) { /* fall back to step 0 */ }
+            renderFtueStep(startIndex);
         }
 
         function hideFtueWizard() {
@@ -4077,6 +4091,16 @@
             const step = FTUE_STEPS[stepIndex];
             content.innerHTML = getFtueStepContent(step);
             actions.innerHTML = getFtueStepActions(step);
+            recordStepView(step); // Phase 4: instrumentation
+        }
+
+        // Phase 4: record which step the user is viewing + when, so we can see
+        // where people stall (read back via /api/setup/status, surfaced in diagnostics).
+        function recordStepView(step) {
+            try {
+                fetch('/api/setup/step', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ step: '_view', data: { step: step, viewedAt: new Date().toISOString() } }) });
+            } catch (e) { /* non-blocking */ }
         }
 
         function getFtueStepContent(step) {
@@ -4347,19 +4371,79 @@
             showAuthScreen();
         }
 
+        // ── Inline error helper (replaces alert()) ──
+        function setFtueError(msg) {
+            var el = document.getElementById('ftueInlineError');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'ftueInlineError';
+                el.className = 'ftue-inline-error';
+                var content = document.getElementById('ftueContent');
+                if (content) content.appendChild(el);
+            }
+            el.textContent = msg || '';
+            el.style.display = msg ? 'block' : 'none';
+        }
+        function clearFtueError() { setFtueError(''); }
+
+        // ── Verify-then-advance helpers ──
+        async function verifyClaudeKey(apiKey) {
+            try {
+                const r = await fetch('/api/setup/test-api-key', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey }) });
+                const j = await r.json();
+                return !!j.valid;
+            } catch (e) { return false; }
+        }
+        function setContinueBusy(busy, label) {
+            var btn = document.querySelector('#ftueActions .ftue-btn-primary');
+            if (!btn) return;
+            if (busy) { btn.dataset.label = btn.textContent; btn.textContent = label || 'Checking…'; btn.disabled = true; btn.style.opacity = '0.7'; }
+            else { btn.textContent = btn.dataset.label || 'Continue'; btn.disabled = false; btn.style.opacity = ''; }
+        }
+
+        // All four connections (Anthropic, Messages, Calendar, Notion) are REQUIRED.
+        // Each step verifies its connection actually works before advancing.
         async function validateAndSaveFtueStep(step) {
+            clearFtueError();
             switch(step) {
                 case 'apiKeys': {
                     const claudeKey = document.getElementById('ftueClaudeApiKey')?.value?.trim();
-                    if (!claudeKey) { alert('Claude API Key is required'); return false; }
+                    if (!claudeKey) { setFtueError('Enter your Anthropic API key to continue.'); return false; }
+                    // Verify the key actually works (and has billing) before advancing.
+                    if (!(ftueData.claudeKeyVerified && ftueData.claudeApiKey === claudeKey)) {
+                        setContinueBusy(true, 'Verifying key…');
+                        const ok = await verifyClaudeKey(claudeKey);
+                        setContinueBusy(false);
+                        if (!ok) { setFtueError("That key didn't work. Make sure it's correct and has billing credit, then try again."); return false; }
+                        ftueData.claudeKeyVerified = true;
+                    }
                     ftueData.claudeApiKey = claudeKey;
                     await saveFtueStepData('apiKeys', { claudeApiKey: claudeKey });
                     return true;
                 }
+                case 'permissions': {
+                    // Messages is a required connection → Full Disk Access must be granted.
+                    var fdaCard = document.getElementById('ftue-perm-fda');
+                    var fdaOk = fdaCard && fdaCard.classList.contains('granted');
+                    if (!fdaOk) { setFtueError('Grant Full Disk Access to continue — Alfred needs it to read your messages locally. If you just granted it, reopen Alfred so macOS applies it.'); return false; }
+                    return true;
+                }
+                case 'messaging': {
+                    const im = document.getElementById('ftueEnableIMessage')?.checked;
+                    const wa = document.getElementById('ftueEnableWhatsApp')?.checked;
+                    if (!im && !wa) { setFtueError('Pick at least one message source — commitment tracking is core to how Alfred coaches you.'); return false; }
+                    ftueData.enableIMessage = im; ftueData.enableWhatsApp = wa;
+                    await saveFtueStepData('messaging', { enableIMessage: im ? 'true' : 'false', enableWhatsApp: wa ? 'true' : 'false' });
+                    return true;
+                }
+                case 'googleOauth': {
+                    if (!ftueData.googleConnected) { setFtueError('Connect Google Calendar to continue — Alfred uses it for meeting prep and your daily briefing.'); return false; }
+                    return true;
+                }
                 case 'notion': {
                     const notionKey = document.getElementById('ftueNotionApiKey')?.value?.trim();
-                    if (!notionKey) { alert('Notion Integration Token is required'); return false; }
-                    if (!ftueData.tasksDatabaseId) { alert('Please select a Tasks database'); return false; }
+                    if (!notionKey) { setFtueError('Connect Notion to continue.'); return false; }
+                    if (!ftueData.tasksDatabaseId) { setFtueError('Select a Tasks database to continue.'); return false; }
                     ftueData.notionApiKey = notionKey;
                     await saveFtueStepData('notion', { notionApiKey: notionKey, tasksDatabaseId: ftueData.tasksDatabaseId, commitmentsDatabaseId: ftueData.commitmentsDatabaseId || ftueData.tasksDatabaseId });
                     return true;
@@ -4370,17 +4454,11 @@
                     const workStartHour = document.getElementById('ftueWorkStartHour')?.value;
                     const workEndHour = document.getElementById('ftueWorkEndHour')?.value;
                     const workStyle = document.getElementById('ftueWorkStyle')?.value || '';
-                    if (!userName || !userEmail) { alert('Name and Email are required'); return false; }
+                    if (!userName || !userEmail) { setFtueError('Name and email are required.'); return false; }
                     ftueData.userName = userName; ftueData.userEmail = userEmail;
                     ftueData.workStartHour = workStartHour; ftueData.workEndHour = workEndHour;
                     ftueData.workStyle = workStyle;
                     await saveFtueStepData('profile', { name: userName, email: userEmail, workStartHour, workEndHour, workStyle });
-                    return true;
-                }
-                case 'messaging': {
-                    ftueData.enableIMessage = document.getElementById('ftueEnableIMessage')?.checked;
-                    ftueData.enableWhatsApp = document.getElementById('ftueEnableWhatsApp')?.checked;
-                    await saveFtueStepData('messaging', { enableIMessage: ftueData.enableIMessage ? 'true' : 'false', enableWhatsApp: ftueData.enableWhatsApp ? 'true' : 'false' });
                     return true;
                 }
                 default: return true;
@@ -4533,21 +4611,15 @@
                 if (!resp.ok) return;
                 var data = await resp.json();
 
-                // FDA
-                if (data.imessageEnabled || data.whatsappEnabled) {
-                    if (data.fullDiskAccess === 'granted') {
-                        updatePermCard('fda', 'granted', 'Granted');
-                    } else if (data.fullDiskAccess === 'denied') {
-                        updatePermCard('fda', 'missing', 'Missing');
-                    } else if (data.fullDiskAccess === 'not_found') {
-                        updatePermCard('fda', 'missing', 'DB not found');
-                    } else {
-                        updatePermCard('fda', 'pending', 'Checking...');
-                    }
+                // FDA — always required (Messages is a required connection), so always evaluate.
+                if (data.fullDiskAccess === 'granted') {
+                    updatePermCard('fda', 'granted', 'Granted');
+                } else if (data.fullDiskAccess === 'denied') {
+                    updatePermCard('fda', 'missing', 'Missing');
+                } else if (data.fullDiskAccess === 'not_found') {
+                    updatePermCard('fda', 'missing', 'DB not found');
                 } else {
-                    updatePermCard('fda', 'not-needed', 'Not needed');
-                    var fdaCard = document.getElementById('ftue-perm-fda');
-                    if (fdaCard) fdaCard.classList.add('not-needed');
+                    updatePermCard('fda', 'pending', 'Checking...');
                 }
 
                 // Contacts
