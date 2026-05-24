@@ -4024,7 +4024,10 @@
         // 9. FTUE WIZARD
         // ═══════════════════════════════════════════════
 
-        const FTUE_STEPS = ['welcome', 'apiKeys', 'notion', 'googleOauth', 'profile', 'messaging', 'permissions', 'complete'];
+        // Order matters: permissions (Full Disk Access) MUST come before messaging,
+        // since reading iMessage/WhatsApp needs FDA granted first. All four connections
+        // (Anthropic, Messages, Calendar, Notion) are required — no skip.
+        const FTUE_STEPS = ['welcome', 'apiKeys', 'permissions', 'messaging', 'googleOauth', 'notion', 'profile', 'complete'];
         let currentFtueStep = 0;
         let ftueData = {};
         let notionDatabases = [];
@@ -4287,9 +4290,8 @@
             }
             if (step === 'complete') return '';
             const backBtn = currentFtueStep > 0 ? `<button class="ftue-btn ftue-btn-secondary" onclick="prevFtueStep()">Back</button>` : '<div></div>';
-            const isSkippable = ['googleOauth', 'messaging', 'permissions'].includes(step);
+            // All four connections (Anthropic, Messages, Calendar, Notion) are required — no Skip.
             return `${backBtn}<div style="display: flex; gap: 8px;">
-                ${isSkippable ? `<button class="ftue-btn ftue-btn-secondary" onclick="skipFtueStep()">Skip</button>` : ''}
                 <button class="ftue-btn ftue-btn-primary" onclick="nextFtueStep()">Continue</button>
             </div>`;
         }
