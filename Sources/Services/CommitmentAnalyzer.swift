@@ -452,32 +452,28 @@ class CommitmentAnalyzer {
         userName: String,
         threadName: String = ""
     ) -> (committedBy: String, committedTo: String) {
+        // A counterparty is "junk" if empty, "Unknown", the user themselves, or a raw ID.
+        // When junk, fall back to the thread name (already the canonical WhatsApp/Contacts
+        // name). Only fills blanks; never overrides a real name → no mis-attribution risk.
+        func resolved(_ raw: String) -> String {
+            if isJunkParty(raw, userName: userName) {
+                return isJunkParty(threadName, userName: userName) ? "Unknown" : threadName
+            }
+            return raw
+        }
         switch type {
         case .iOwe:
-            // User committed to someone — counterparty is committedTo
-            var to = extracted.committedTo.isEmpty ? "Unknown" : extracted.committedTo
-            // Guard: if AI returned the user's own name as the counterparty, use thread name instead
-            if to.lowercased() == userName.lowercased() {
-                to = threadName.isEmpty ? "Unknown" : threadName
-            }
-            // Guard: if AI returned a raw ID instead of a name, use thread name
-            if isRawId(to) {
-                to = threadName.isEmpty ? "Unknown" : threadName
-            }
-            return (userName, to)
+            return (userName, resolved(extracted.committedTo))
         case .theyOwe:
-            // Someone committed to user — counterparty is committedBy
-            var by = extracted.committedBy.isEmpty ? "Unknown" : extracted.committedBy
-            // Guard: if AI returned the user's own name as the counterparty, use thread name instead
-            if by.lowercased() == userName.lowercased() {
-                by = threadName.isEmpty ? "Unknown" : threadName
-            }
-            // Guard: if AI returned a raw ID instead of a name, use thread name
-            if isRawId(by) {
-                by = threadName.isEmpty ? "Unknown" : threadName
-            }
-            return (by, userName)
+            return (resolved(extracted.committedBy), userName)
         }
+    }
+
+    private func isJunkParty(_ name: String, userName: String) -> Bool {
+        let s = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.isEmpty || s == "Unknown" || s == "Group" { return true }
+        if s.lowercased() == userName.lowercased() { return true }
+        return isRawId(s)
     }
 
     // MARK: - Pattern-Based Detection (Fallback)

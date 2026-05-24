@@ -85,7 +85,8 @@ class CommitmentAnalyzer {
             let (committedBy, committedTo) = determineParties(
                 type: type,
                 extracted: extracted,
-                userName: userInfo.name
+                userName: userInfo.name,
+                threadName: threadName
             )
 
             // Build original context from messages
@@ -453,18 +454,42 @@ class CommitmentAnalyzer {
     private func determineParties(
         type: Commitment.CommitmentType,
         extracted: CommitmentExtractionResponse.ExtractedCommitment,
-        userName: String
+        userName: String,
+        threadName: String
     ) -> (committedBy: String, committedTo: String) {
+        // A counterparty is "junk" if empty, "Unknown", the user themselves, or a raw ID.
+        // When junk, fall back to the thread name — already the canonical WhatsApp/Contacts
+        // name (ZPARTNERNAME). Only ever fills blanks; never overrides a real name, so this
+        // cannot create a mis-attribution.
+        func resolved(_ raw: String) -> String {
+            if isJunkParty(raw, userName: userName) {
+                return isJunkParty(threadName, userName: userName) ? "Unknown" : threadName
+            }
+            return raw
+        }
         switch type {
         case .iOwe:
-            // User committed to someone
-            let to = extracted.committedTo.isEmpty ? "Unknown" : extracted.committedTo
-            return (userName, to)
+            return (userName, resolved(extracted.committedTo))
         case .theyOwe:
-            // Someone committed to user
-            let by = extracted.committedBy.isEmpty ? "Unknown" : extracted.committedBy
-            return (by, userName)
+            return (resolved(extracted.committedBy), userName)
         }
+    }
+
+    private func isJunkParty(_ name: String, userName: String) -> Bool {
+        let s = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.isEmpty || s == "Unknown" || s == "Group" { return true }
+        if s.lowercased() == userName.lowercased() { return true }
+        return isRawId(s)
+    }
+
+    private func isRawId(_ name: String) -> Bool {
+        // Base64 IDs (e.g. CM2E5M0GIABIAZABAPABAg==)
+        if name.hasSuffix("==") || name.hasSuffix("=") { return true }
+        // Phone / numeric IDs
+        if name.allSatisfy({ $0.isNumber || $0 == "+" || $0 == "-" || $0 == " " }) && name.count > 5 { return true }
+        // JID-style IDs (no spaces, contains @)
+        if name.contains("@") && !name.contains(" ") { return true }
+        return false
     }
 }
 
