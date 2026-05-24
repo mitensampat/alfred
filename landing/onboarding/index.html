@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>alfred — setup</title>
+<meta name="description" content="Set up alfred in about 15 minutes. Get your Anthropic key, install the app, connect your world." />
+<meta name="robots" content="noindex" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --serif: "Newsreader", "Iowan Old Style", "Georgia", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif;
+    /* dark token set (matches landing .t-dark) */
+    --canvas: #14130f;
+    --surface: #1d1c17;
+    --surface-2: #252320;
+    --ink: #f1ede3;
+    --ink-2: #a8a39a;
+    --ink-3: #6b675f;
+    --line: #2a2823;
+    --accent: #7faa8d;
+    --warn: #d4b375;
+    --danger: #c97a85;
+    --shadow-lift: 0 24px 60px rgba(0, 0, 0, 0.55), 0 4px 14px rgba(0, 0, 0, 0.4);
+    --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    --r-md: 10px;
+    --r-lg: 16px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    line-height: 1.55;
+    font-size: 16px;
+    min-height: 100dvh;
+  }
+  a { color: inherit; }
+  img { max-width: 100%; display: block; }
+  button { font: inherit; cursor: pointer; }
+  ::selection { background: rgba(127, 170, 141, 0.30); color: inherit; }
+
+  .wrap { max-width: 640px; margin: 0 auto; padding: 0 24px; }
+
+  /* ===== Nav ===== */
+  .nav {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(20, 19, 15, 0.82);
+    backdrop-filter: saturate(1.4) blur(14px);
+    -webkit-backdrop-filter: saturate(1.4) blur(14px);
+    border-bottom: 1px solid transparent;
+    transition: border-color .2s;
+  }
+  .nav.scrolled { border-bottom-color: var(--line); }
+  .nav-inner {
+    max-width: 640px; margin: 0 auto; padding: 16px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .brand {
+    font-family: var(--serif); font-size: 20px; font-weight: 500;
+    letter-spacing: -0.015em; color: var(--ink); text-decoration: none;
+  }
+  .help-link {
+    font-size: 13px; color: var(--ink-3); text-decoration: none;
+    transition: color .15s;
+  }
+  .help-link:hover { color: var(--ink); }
+
+  /* ===== Progress ===== */
+  .progress { padding: 36px 0 8px; }
+  .progress-track { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+  .pdot {
+    height: 6px; border-radius: 999px; flex: 1;
+    background: var(--line); transition: background .3s;
+  }
+  .pdot.done { background: var(--accent); }
+  .pdot.active { background: var(--ink); }
+  .pdot.app { flex: 0 0 6px; opacity: 0.5; }
+  .progress-meta {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 12px; color: var(--ink-3);
+    letter-spacing: 0.04em;
+  }
+  .progress-meta .in-app { font-style: italic; }
+
+  /* ===== Type ===== */
+  h1, h2, h3 { margin: 0; font-weight: 500; letter-spacing: -0.02em; }
+  h1 {
+    font-family: var(--serif); font-size: clamp(32px, 6vw, 46px);
+    line-height: 1.05; letter-spacing: -0.025em; margin-bottom: 16px;
+  }
+  h1 em { font-style: italic; color: var(--ink-2); font-weight: 400; }
+  h3 { font-family: var(--serif); font-size: 18px; font-weight: 500; }
+  p { margin: 0; color: var(--ink-2); font-size: 17px; line-height: 1.6; }
+  .eyebrow {
+    font-size: 12px; font-weight: 500; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 16px;
+  }
+  .lede { margin-bottom: 28px; max-width: 52ch; }
+  strong { color: var(--ink); font-weight: 500; }
+
+  /* ===== Step panels ===== */
+  main { padding-bottom: 80px; }
+  .step { display: none; animation: fade .35s ease; }
+  .step.active { display: block; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  /* ===== Prereq / checklist ===== */
+  .checklist { list-style: none; padding: 0; margin: 0 0 28px; }
+  .checklist li {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 14px 0; border-bottom: 1px solid var(--line);
+    font-size: 16px; color: var(--ink-2);
+  }
+  .checklist li:last-child { border-bottom: 0; }
+  .checklist .mark { color: var(--accent); flex-shrink: 0; font-size: 15px; line-height: 1.6; }
+  .checklist strong { display: block; color: var(--ink); margin-bottom: 2px; font-weight: 500; }
+
+  /* ===== Sub-step cards (Anthropic key) ===== */
+  .substep {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px 22px;
+    margin-bottom: 14px;
+    box-shadow: var(--card-shadow);
+  }
+  .substep-head { display: flex; gap: 14px; align-items: baseline; }
+  .substep-num {
+    font-family: var(--serif); font-size: 13px; color: var(--ink-3);
+    letter-spacing: 0.06em; flex-shrink: 0;
+  }
+  .substep h3 { color: var(--ink); margin-bottom: 8px; }
+  .substep p { font-size: 15px; }
+  .substep p + p { margin-top: 8px; }
+  .substep .ext {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-top: 12px; font-size: 14px; color: var(--ink);
+    text-decoration: none; border: 1px solid var(--line);
+    background: var(--canvas); padding: 8px 14px; border-radius: 999px;
+    transition: border-color .15s;
+  }
+  .substep .ext:hover { border-color: var(--ink); }
+
+  /* code chip */
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 13px; background: var(--surface-2);
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: 2px 7px; color: var(--ink);
+  }
+
+  /* callouts */
+  .callout {
+    display: flex; gap: 12px; align-items: flex-start;
+    background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: var(--r-md); padding: 14px 16px; margin: 18px 0;
+    font-size: 14px; color: var(--ink-2); line-height: 1.5;
+  }
+  .callout .dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+  .callout.good .dot { background: var(--accent); }
+  .callout.warn .dot { background: var(--warn); }
+  .callout strong { color: var(--ink); }
+
+  /* image placeholder */
+  .shot {
+    border: 1px dashed var(--line); border-radius: var(--r-md);
+    background: var(--surface-2);
+    aspect-ratio: 16 / 9; margin: 14px 0;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--ink-3); font-size: 13px; text-align: center; padding: 12px;
+  }
+  .shot.small { aspect-ratio: 21 / 9; }
+
+  /* download button */
+  .download-card { text-align: center; padding: 8px 0 4px; }
+  .dl-meta { font-size: 13px; color: var(--ink-3); margin-top: 10px; }
+
+  /* numbered install steps */
+  .nsteps { counter-reset: n; list-style: none; padding: 0; margin: 24px 0; }
+  .nsteps li {
+    counter-increment: n; position: relative; padding: 0 0 18px 40px;
+    font-size: 16px; color: var(--ink-2);
+  }
+  .nsteps li::before {
+    content: counter(n); position: absolute; left: 0; top: -2px;
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--surface); border: 1px solid var(--line);
+    color: var(--ink); font-size: 13px; font-weight: 500;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .nsteps strong { color: var(--ink); }
+
+  /* ===== Buttons / nav row ===== */
+  .actions { display: flex; gap: 12px; align-items: center; margin-top: 32px; }
+  .btn-primary {
+    background: var(--ink); color: var(--canvas);
+    padding: 13px 24px; border-radius: 999px; border: 1px solid var(--ink);
+    font-size: 15px; font-weight: 500;
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: transform .12s, box-shadow .15s;
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: var(--shadow-lift); }
+  .btn-ghost {
+    background: transparent; color: var(--ink-2); border: none;
+    font-size: 15px; padding: 13px 8px; transition: color .15s;
+  }
+  .btn-ghost:hover { color: var(--ink); }
+  .spacer { flex: 1; }
+
+  .foot {
+    margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line);
+    font-size: 13px; color: var(--ink-3); text-align: center;
+  }
+  .foot a { color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; }
+
+  @media (max-width: 600px) {
+    .wrap { padding: 0 18px; }
+    .progress { padding: 24px 0 4px; }
+    .substep { padding: 18px; }
+    .actions { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+
+<header class="nav" id="nav">
+  <div class="nav-inner">
+    <a href="/alfred/landing/" class="brand">alfred</a>
+    <a href="#" class="help-link" id="help-link">stuck? email us</a>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="progress">
+    <div class="progress-track" id="ptrack"></div>
+    <div class="progress-meta">
+      <span id="pstep">step 1 of 9</span>
+      <span class="in-app">steps 4–9 happen in the app</span>
+    </div>
+  </div>
+</div>
+
+<main>
+<div class="wrap">
+
+  <!-- ========== STEP 1: WELCOME ========== -->
+  <section class="step active" data-step="1">
+    <p class="eyebrow">welcome</p>
+    <h1>let's get you <em>set up.</em></h1>
+    <p class="lede">about 15 minutes. do it in one sitting if you can — each step builds on the last.</p>
+
+    <p class="eyebrow" style="margin-top:8px">before you start, have these ready</p>
+    <ul class="checklist">
+      <li><span class="mark">▸</span><span><strong>a Mac on macOS 13 or later</strong>alfred runs locally on your machine.</span></li>
+      <li><span class="mark">▸</span><span><strong>about 10 minutes and an Anthropic account</strong>we'll help you make one — it's free to start, and ~$5 of credit covers weeks of use.</span></li>
+      <li><span class="mark">▸</span><span><strong>the accounts you want alfred to watch</strong>Google Calendar and Notion, signed in and handy.</span></li>
+    </ul>
+
+    <p class="eyebrow" style="margin-top:8px">what you'll do</p>
+    <ul class="checklist">
+      <li><span class="mark">1</span><span><strong>get your Anthropic key</strong>the brain that powers alfred.</span></li>
+      <li><span class="mark">2</span><span><strong>download &amp; install alfred</strong>a quick drag into Applications.</span></li>
+      <li><span class="mark">3</span><span><strong>connect your world</strong>finished inside the app.</span></li>
+    </ul>
+
+    <div class="actions">
+      <div class="spacer"></div>
+      <button class="btn-primary" data-next>start →</button>
+    </div>
+  </section>
+
+  <!-- ========== STEP 2: ANTHROPIC KEY ========== -->
+  <section class="step" data-step="2">
+    <p class="eyebrow">step 2 · your anthropic key</p>
+    <h1>the brain, <em>once.</em></h1>
+    <p class="lede">this powers alfred's thinking. you create it once, paste it once, done. follow these in order.</p>
+
+    <div class="substep">
+      <div class="substep-head"><span class="substep-num">2a</span><div>
+        <h3>create an Anthropic account</h3>
+        <p>sign up with the email you use most. if you already have one, just sign in.</p>
+        <a class="ext" href="https://console.anthropic.com/" target="_blank" rel="noopener">open console.anthropic.com ↗</a>
+      </div></div>
+    </div>
+
+    <div class="substep">
+      <div class="substep-head"><span class="substep-num">2b</span><div>
+        <h3>add a little credit</h3>
+        <p>go to <strong>Billing → Add credits</strong>. <strong>$5 is plenty</strong> to start — alfred uses pennies a day.</p>
+        <div class="shot small">[ screenshot: Anthropic billing → add credits ]</div>
+      </div></div>
+    </div>
+
+    <div class="substep">
+      <div class="substep-head"><span class="substep-num">2c</span><div>
+        <h3>create a key</h3>
+        <p>go to <strong>API keys → Create Key</strong>. name it <code>alfred</code> so you remember what it's for.</p>
+        <div class="shot small">[ screenshot: Anthropic API keys → create key dialog ]</div>
+      </div></div>
+    </div>
+
+    <div class="substep">
+      <div class="substep-head"><span class="substep-num">2d</span><div>
+        <h3>copy it now</h3>
+        <p>it starts with <code>sk-ant-</code>. you won't be shown it again, so copy it somewhere safe for the next few minutes.</p>
+      </div></div>
+    </div>
+
+    <div class="callout good">
+      <span class="dot"></span>
+      <span>you'll paste this key into alfred in a moment — nothing to enter here. prefer the source? see <a href="https://docs.anthropic.com/en/api/admin-api/apikeys/get-api-key" target="_blank" rel="noopener" style="color:var(--ink)">Anthropic's official guide ↗</a>.</span>
+    </div>
+
+    <div class="actions">
+      <button class="btn-ghost" data-back>← back</button>
+      <div class="spacer"></div>
+      <button class="btn-primary" data-next>I have my key →</button>
+    </div>
+  </section>
+
+  <!-- ========== STEP 3: DOWNLOAD & INSTALL ========== -->
+  <section class="step" data-step="3">
+    <p class="eyebrow">step 3 · download &amp; install</p>
+    <h1>get <em>alfred.</em></h1>
+    <p class="lede">a 4&nbsp;MB download, then a quick drag into Applications.</p>
+
+    <div class="download-card">
+      <a class="btn-primary" id="dl-btn" href="https://github.com/mitensampat/alfred/releases/download/v2.3.0/Coach-Alfred-2.3.0.dmg">⬇ download for macOS</a>
+      <div class="dl-meta">Coach-Alfred-2.3.0.dmg · 4&nbsp;MB · macOS 13+</div>
+    </div>
+
+    <ol class="nsteps">
+      <li><strong>open the file</strong> you just downloaded.</li>
+      <li><strong>drag alfred into Applications.</strong>
+        <div class="shot">[ looping gif: dragging Alfred.app into the Applications folder ]</div>
+      </li>
+      <li><strong>open alfred</strong> from your Applications folder.</li>
+    </ol>
+
+    <div class="callout good">
+      <span class="dot"></span>
+      <span><strong>signed &amp; notarized by Apple</strong> — no scary warnings. if macOS hesitates, right-click alfred → <strong>Open</strong> once.</span>
+    </div>
+
+    <div class="callout warn">
+      <span class="dot"></span>
+      <span>once alfred opens, setup continues <strong>inside the app</strong> — connecting your key, messages, calendar and Notion. keep your Anthropic key handy to paste.</span>
+    </div>
+
+    <div class="actions">
+      <button class="btn-ghost" data-back>← back</button>
+      <div class="spacer"></div>
+      <button class="btn-primary" data-next>alfred is open →</button>
+    </div>
+  </section>
+
+  <!-- ========== STEP 3.5: HANDOFF ========== -->
+  <section class="step" data-step="4">
+    <p class="eyebrow">you're almost there</p>
+    <h1>setup continues <em>in the app.</em></h1>
+    <p class="lede">alfred is now walking you through the rest — your key, full disk access, messages, calendar and Notion. it ends with your first briefing.</p>
+
+    <div class="callout good">
+      <span class="dot"></span>
+      <span>don't see it? look for <strong>alfred</strong> in your menu bar (top-right of your screen), or reopen it from Applications.</span>
+    </div>
+
+    <div class="foot">
+      something not working? <a href="#" id="foot-help">email us</a> — we read every one.
+    </div>
+  </section>
+
+</div>
+</main>
+
+<script>
+  // ---- Support email (placeholder — confirm before go-live) ----
+  var SUPPORT_EMAIL = "SUPPORT_EMAIL_PLACEHOLDER";
+  var mailto = "mailto:" + SUPPORT_EMAIL + "?subject=" + encodeURIComponent("alfred setup — stuck");
+  ["help-link", "foot-help"].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.setAttribute("href", mailto);
+  });
+
+  // ---- Nav border on scroll ----
+  var nav = document.getElementById("nav");
+  window.addEventListener("scroll", function () {
+    nav.classList.toggle("scrolled", window.scrollY > 8);
+  }, { passive: true });
+
+  // ---- Stepper ----
+  var TOTAL = 9;            // full journey (web + in-app)
+  var WEB_STEPS = 4;        // panels in this file (1-3 + handoff)
+  var current = 1;
+  var steps = Array.prototype.slice.call(document.querySelectorAll(".step"));
+  var ptrack = document.getElementById("ptrack");
+  var pstep = document.getElementById("pstep");
+
+  // build progress dots: 9 total; last 6 are small "app" markers after dot 3
+  for (var i = 1; i <= TOTAL; i++) {
+    var d = document.createElement("div");
+    d.className = "pdot" + (i > 3 ? " app" : "");
+    d.dataset.i = i;
+    ptrack.appendChild(d);
+  }
+  var dots = Array.prototype.slice.call(ptrack.children);
+
+  function render() {
+    steps.forEach(function (s) {
+      s.classList.toggle("active", Number(s.dataset.step) === current);
+    });
+    dots.forEach(function (d) {
+      var i = Number(d.dataset.i);
+      d.classList.toggle("done", i < current);
+      d.classList.toggle("active", i === current);
+    });
+    // step 4 panel is the handoff — label it as entering the app
+    if (current >= 4) {
+      pstep.textContent = "step 4 of 9 · in the app";
+    } else {
+      pstep.textContent = "step " + current + " of " + TOTAL;
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  document.addEventListener("click", function (e) {
+    if (e.target.closest("[data-next]")) {
+      if (current < WEB_STEPS) { current++; render(); }
+    } else if (e.target.closest("[data-back]")) {
+      if (current > 1) { current--; render(); }
+    }
+  });
+
+  render();
+</script>
+</body>
+</html>
