@@ -4091,16 +4091,6 @@
             const step = FTUE_STEPS[stepIndex];
             content.innerHTML = getFtueStepContent(step);
             actions.innerHTML = getFtueStepActions(step);
-            recordStepView(step); // Phase 4: instrumentation
-        }
-
-        // Phase 4: record which step the user is viewing + when, so we can see
-        // where people stall (read back via /api/setup/status, surfaced in diagnostics).
-        function recordStepView(step) {
-            try {
-                fetch('/api/setup/step', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ step: '_view', data: { step: step, viewedAt: new Date().toISOString() } }) });
-            } catch (e) { /* non-blocking */ }
         }
 
         function getFtueStepContent(step) {
