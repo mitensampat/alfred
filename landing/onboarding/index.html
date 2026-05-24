@@ -178,6 +178,11 @@
     color: var(--ink-3); font-size: 13px; text-align: center; padding: 12px;
   }
   .shot.small { aspect-ratio: 21 / 9; }
+  .shot-real {
+    width: 100%; display: block; margin: 14px 0;
+    border: 1px solid var(--line); border-radius: var(--r-md);
+    box-shadow: var(--card-shadow);
+  }
 
   /* download button */
   .download-card { text-align: center; padding: 8px 0 4px; }
@@ -295,7 +300,7 @@
       <div class="substep-head"><span class="substep-num">2b</span><div>
         <h3>add a little credit</h3>
         <p>go to <strong>Billing → Add credits</strong>. <strong>$5 is plenty</strong> to start — alfred uses pennies a day.</p>
-        <div class="shot small">[ screenshot: Anthropic billing → add credits ]</div>
+        <img class="shot-real" src="assets/anthropic-billing.png" alt="Anthropic console — Credit balance with a Buy credits button" loading="lazy" />
       </div></div>
     </div>
 
@@ -303,7 +308,7 @@
       <div class="substep-head"><span class="substep-num">2c</span><div>
         <h3>create a key</h3>
         <p>go to <strong>API keys → Create Key</strong>. name it <code>alfred</code> so you remember what it's for.</p>
-        <div class="shot small">[ screenshot: Anthropic API keys → create key dialog ]</div>
+        <img class="shot-real" src="assets/anthropic-create-key.png" alt="Anthropic console — Create API key dialog, named alfred" loading="lazy" />
       </div></div>
     </div>
 
