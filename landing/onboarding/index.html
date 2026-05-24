@@ -184,6 +184,60 @@
     box-shadow: var(--card-shadow);
   }
 
+  /* ===== Drag-to-Applications animation (synthetic Finder window) ===== */
+  .dmg-mock {
+    margin: 16px 0; border: 1px solid var(--line); border-radius: var(--r-md);
+    background: var(--surface); overflow: hidden; box-shadow: var(--card-shadow);
+  }
+  .dmg-bar {
+    display: flex; align-items: center; gap: 7px;
+    padding: 10px 13px; border-bottom: 1px solid var(--line); background: var(--surface-2);
+  }
+  .dmg-bar i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+  .dmg-bar i:nth-child(1) { background: #ff5f57; }
+  .dmg-bar i:nth-child(2) { background: #febc2e; }
+  .dmg-bar i:nth-child(3) { background: #28c840; }
+  .dmg-bar b { margin-left: 8px; font-size: 12px; font-weight: 500; color: var(--ink-3); }
+  .dmg-body { position: relative; min-height: 152px; }
+  .dmg-slot {
+    position: absolute; top: 30px; display: flex; flex-direction: column;
+    align-items: center; gap: 11px; width: 96px;
+  }
+  .dmg-slot.left { left: 13%; }
+  .dmg-slot.right { left: 58%; }
+  .dmg-ico { width: 58px; height: 58px; border-radius: 14px; display: flex; align-items: center; justify-content: center; }
+  .dmg-ico.alfred { background: var(--ink); }
+  .dmg-ico.alfred em { font-family: var(--serif); font-style: italic; font-size: 32px; color: var(--canvas); line-height: 1; }
+  .dmg-ico.folder { color: #8aa0cf; }
+  .dmg-ico.folder svg { width: 48px; height: 48px; }
+  .dmg-cap { font-size: 12px; color: var(--ink-2); }
+  .dmg-target { animation: dmgHi 4.5s ease-in-out infinite; }
+  .dmg-ghost {
+    position: absolute; top: 30px; left: 13%; width: 96px;
+    display: flex; flex-direction: column; align-items: center; gap: 11px;
+    opacity: 0; pointer-events: none; animation: dmgDrag 4.5s ease-in-out infinite;
+  }
+  .dmg-ghost .dmg-cap { visibility: hidden; }
+  .dmg-ghost .cur { position: absolute; right: 14px; bottom: 28px; }
+  .dmg-ghost .cur svg { width: 22px; height: 22px; display: block; }
+  @keyframes dmgDrag {
+    0%, 6%   { left: 13%; opacity: 0; }
+    12%      { opacity: 1; }
+    46%      { left: 58%; opacity: 1; }
+    60%      { left: 58%; opacity: 1; }
+    67%      { left: 58%; opacity: 0; }
+    100%     { left: 13%; opacity: 0; }
+  }
+  @keyframes dmgHi {
+    0%, 40%  { border-radius: 14px; box-shadow: none; }
+    47%, 60% { border-radius: 14px; box-shadow: 0 0 0 3px var(--accent); }
+    67%, 100%{ border-radius: 14px; box-shadow: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dmg-ghost, .dmg-target { animation: none; }
+    .dmg-ghost { opacity: 0; }
+  }
+
   /* download button */
   .download-card { text-align: center; padding: 8px 0 4px; }
   .dl-meta { font-size: 13px; color: var(--ink-3); margin-top: 10px; }
@@ -345,7 +399,24 @@
     <ol class="nsteps">
       <li><strong>open the file</strong> you just downloaded.</li>
       <li><strong>drag alfred into Applications.</strong>
-        <div class="shot">[ looping gif: dragging Alfred.app into the Applications folder ]</div>
+        <div class="dmg-mock" role="img" aria-label="Dragging the Alfred app onto the Applications folder">
+          <div class="dmg-bar"><i></i><i></i><i></i><b>Coach Alfred</b></div>
+          <div class="dmg-body">
+            <div class="dmg-slot left">
+              <div class="dmg-ico alfred"><em>a</em></div>
+              <div class="dmg-cap">Alfred</div>
+            </div>
+            <div class="dmg-slot right">
+              <div class="dmg-ico folder dmg-target"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.5 5h5.1l1.7 1.7h8.2A1.5 1.5 0 0 1 20 8.2v9.3a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5V6.5A1.5 1.5 0 0 1 3.5 5z"/></svg></div>
+              <div class="dmg-cap">Applications</div>
+            </div>
+            <div class="dmg-ghost">
+              <div class="dmg-ico alfred"><em>a</em></div>
+              <div class="dmg-cap">Alfred</div>
+              <span class="cur"><svg viewBox="0 0 24 24" fill="var(--ink)" stroke="var(--canvas)" stroke-width="1.4"><path d="M5 3l15 7.5-6.2 1.8L11 18.8z"/></svg></span>
+            </div>
+          </div>
+        </div>
       </li>
       <li><strong>open alfred</strong> from your Applications folder.</li>
     </ol>
