@@ -1,0 +1,366 @@
+{
+  "timestamp": "2026-05-26T18:06:00.414962+00:00",
+  "fixtures": 35,
+  "passed": 35,
+  "failed": 0,
+  "pass_rate": 1.0,
+  "results": [
+    {
+      "id": "seed_111",
+      "passed": true,
+      "reasons": [],
+      "signals": [],
+      "user_message": "whats clouding my mind you think"
+    },
+    {
+      "id": "seed_110",
+      "passed": true,
+      "reasons": [],
+      "signals": [],
+      "user_message": "got it thank you."
+    },
+    {
+      "id": "seed_109",
+      "passed": true,
+      "reasons": [],
+      "signals": [],
+      "user_message": "good. hows my relationship strength with Kunal Shah"
+    },
+    {
+      "id": "seed_106",
+      "passed": true,
+      "reasons": [],
+      "signals": [
+        {
+          "exchange": 1,
+          "type": "fact",
+          "content": "Works with Anurag Bengani at CRED One; email contact is abegwani@bvp.com",
+          "confidence": 0.9
+        }
+      ],
+      "user_message": "block 30 mins at 4:30 pm tomorrow with Anurag Bengani at CRED One, topic is Catch up abegwani@bvp.com"
+    },
+    {
+      "id": "seed_107",
+      "passed": true,
+      "reasons": [],
+      "signals": [],
+      "user_message": "hows my relationship trending with Kunal Shah"
+    },
+    {
+      "id": "seed_108",
+      "passed": true,
+      "reasons": [],
+      "signals": [
+        {
+          "exchange": 1,
+          "type": "fact",
+          "content": "Has a relationship with someone named Mona",
+          "confidence": 0.9
+        }
+      ],
+      "user_message": "hows my relationship strength with Mona"
+    },
+    {
+      "id": "seed_103",
+      "passed": true,
+      "reasons": [],
+      "signals": [],
+      "user_message": "so what do you recommend? Stay or leave"
+    },
+    {
+      "id": "seed_104",
+      "passed": true,
+      "reasons": [],
+      "signals": [],
+      "user_message": "block calendar for 10 mins tomorrow at 3p \u201ccall Maxence\u201d"
+    },
+    {
+      "id": "seed_105",
+      "passed": true,
+      "reasons": [],
+      "signals": [
+        {
+          "exchange": 1,
+          "type": "fact",
+          "content": "Works with Manish Shara at CRED (manish@zetapp.in)",
+          "confidence": 0.95
+        }
+      ],
+      "user_message": "block 30 mins at 10am tomorrow with Manish Shara at CRED One topic is Catchup Manish@zetapp.in"
+    },
+    {
+      "id": "seed_102",
+      "passed": true,
+      "reasons": [],
+      "signals": [],
+      "user_message": "Yes message activity in \u2018Funders n Founders Club\u2019 group"
+    },
+    {
+      "id": "seed_101",
+      "passed": true,
+      "reasons": [],
+      "signals": [],
+      "user_message": "is \u201c Funders n Founders Club\u201d a noisy whatsapp group for me? \u2014should I exit it"
+    },
+    {
+      "id": "seed_100",
+      "passed": true,
+      "reasons": [],
+      "signals": [
+        {
+          "exchange": 1,
+          "type": "fact",
+          "content": "Works with Vaibhav Garg at CRED One; email is vaibhav.garg@tprcapital.com",
+          "confidence": 0.9
+        }
+      ],
+      "user_message": "block 45 mins on Monday at 1pm at CRED One with Vaibhav Garg topic is Catchup vaibhav.garg@tprcapital.com"
+    },
+    {
+      "id": "seed_99",
+      "passed": true,
+      "reasons": [],
+      "signals": [],
+      "user_message": "Thanks these are valid. I need to work on both."
+    },
+    {
+      "id": "seed_97",
+      "passed": true,
+      "reasons": [],
+      "signals": [],
+      "user_message": "can you look back at my week and tell me the top 5 things i got done"
+    },
+    {
+      "id": "seed_98",
+      "passed": true,
+      "reasons": [],
+      "signals": [],
+      "user_message": "Close the task related to Manasvi it\u2019s done"
+    },
+    {
+      "id": "seed_96",
+      "passed": true,
+      "reasons": [],
+      "signals": [
+        {
+          "exchange": 1,
+          "type": "fact",
+          "content": "Works with or monitors a group called '343+ and the Slay Queens'",
+          "confidence": 0.9
+        }
+      ],
+      "user_message": "\u201c343+ and the Slay Queens\u201d is the group name to summarize for last 3 days"
+    },
+    {
+      "id": "seed_94",
+      "passed": true,
+      "reasons": [],
+      "signals": [],
+      "user_message": "am i being too subservient? --  anything I should be doing differently and more for myself as well"
+    },
+    {
+      "id": "seed_95",
+      "passed": true,
+      "reasons": [],
+      "signals": [],
+      "user_message": "have any of our conversations been about the future of CRED (between Kunal and I) ? -- and the liquidated damages aren't"
+    },
+    {
+      "id": "seed_93",
+      "passed": true,
+      "reasons": [],
+      "signals": [
+        {
+          "exchange": 1,
+          "type": "fact",
+          "content": "Has an ongoing interaction and relationship with Kunal Shah",
+          "confidence": 0.9
+        }
+      ],
+      "user_message": "how am I doing in my interactions and relationship with Kunal Shah"
+    },
+    {
+      "id": "seed_91",
+      "passed": true,
+      "reasons": [],
+      "signals": [
+        {
+          "exchange": 1,
+          "type": "fact",
+          "content": "Works with Pradeep (pradeepsiddharthan@gmail.com) at CRED One",
+          "confidence": 0.9
+        }
+      ],
+      "user_message": "block 10am tomorrow for 45 minutes with Pradeep at CRED One, topic is Catchup pradeepsiddharthan@gmail.com"
+    },
+    {
+      "id": "seed_92",
+      "passed": true,
+      "reasons": [],
+      "signals": [],
+      "user_message": "block 10am with Vaibhav on Saturday for 45 minutes at Araku Indiranagar, topic is Catchup vaibhav.domkundwar@betterlabs."
+    },
+    {
+      "id": "seed_89",
+      "passed": true,
+      "reasons": [],
+      "signals": [],
+      "user_message": "i guess i need to visit Notion and review all open items and close them out"
+    },
+    {
+      "id": "seed_90",
+      "passed": true,
+      "reasons": [],
+      "signals": [
+        {
+          "exchange": 1,
+          "type": "reinforcement",
+          "content": "Appreciates suggestions that align with their goals and approach",
+          "confidence": 0.7
+        }
+      ],
+      "user_message": "yeah good suggestion"
+    },
+    {
+      "id": "seed_88",
+      "passed": true,
+      "reasons": [],
+      "signals": [
+        {
+          "exchange": 1,
+          "type": "fact",
+          "content": "Has commitments tracked with Mona Gandhi",
+          "confidence": 0.9
+        }
+      ],
+      "user_message": "Show me commitments I owe with Mona Gandhi"
+    },
+    {
+      "id": "seed_85",
+      "passed": true,
+      "reasons": [],
+      "signals": [
+        {
+          "exchange": 1,
+          "type": "correction",
+          "content": "Expects calendar invites to match explicitly stated dates, not adjacent alternatives",
+          "confidence": 0.85
+        }
+      ],
+      "user_message": "I said Thursday, you blocked Friday?"
+    },
+    {
+      "id": "seed_86",
+      "passed": true,
+      "reasons": [],
+      "signals": [
+        {
+          "exchange": 1,
+          "type": "correction",
+          "content": "Expects the assistant to interpret relative time references (like 'Thursday') from the current date backward when appropriate, not always forward to the next occurrence",
+          "confidence": 0.75
+        }
+      ],
+      "user_message": "why did you make that error"
+    },
+    {
+      "id": "seed_87",
+      "passed": true,
+      "reasons": [],
+      "signals": [
+        {
+          "exchange": 1,
+          "type": "correction",
+          "content": "Expects accurate calendar calculations and will flag logical inconsistencies in date reasoning",
+          "confidence": 0.9
+        }
+      ],
+      "user_message": "Whatever you are saying doesn\u2019t make sense. Next Thursday isn\u2019t May 1st either"
+    },
+    {
+      "id": "seed_84",
+      "passed": true,
+      "reasons": [],
+      "signals": [
+        {
+          "exchange": 1,
+          "type": "preference",
+          "content": "Prefers summaries focused on significant accomplishments over comprehensive activity logs",
+          "confidence": 0.75
+        }
+      ],
+      "user_message": "what did i get done last 7 days --  focus on the big things."
+    },
+    {
+      "id": "seed_83",
+      "passed": true,
+      "reasons": [],
+      "signals": [],
+      "user_message": "i make a ton of decisions, i suppose i need to delegate a lot more"
+    },
+    {
+      "id": "seed_82",
+      "passed": true,
+      "reasons": [],
+      "signals": [],
+      "user_message": "do you think i am over scheduled as a person"
+    },
+    {
+      "id": "regress_summary_big_things",
+      "passed": true,
+      "reasons": [],
+      "signals": [
+        {
+          "exchange": 1,
+          "type": "preference",
+          "content": "Prefers high-level summaries over granular tactical detail",
+          "confidence": 0.85
+        }
+      ],
+      "user_message": "just give me the big things, not all the tactical detail"
+    },
+    {
+      "id": "regress_summary_cred_today",
+      "passed": true,
+      "reasons": [],
+      "signals": [],
+      "user_message": "summarize my whatsapp from CRED today, first and fastest"
+    },
+    {
+      "id": "regress_thread_grouping",
+      "passed": true,
+      "reasons": [],
+      "signals": [],
+      "user_message": "group these by thread \u2014 there are two major threads here"
+    },
+    {
+      "id": "regress_role_declaration",
+      "passed": true,
+      "reasons": [],
+      "signals": [
+        {
+          "exchange": 1,
+          "type": "fact",
+          "content": "Leads growth at CRED",
+          "confidence": 0.95
+        }
+      ],
+      "user_message": "btw, I lead growth at CRED \u2014 keep that in mind for context"
+    },
+    {
+      "id": "regress_directness",
+      "passed": true,
+      "reasons": [],
+      "signals": [
+        {
+          "exchange": 1,
+          "type": "preference",
+          "content": "Prefers direct, unhedged responses over cautious or qualified language",
+          "confidence": 0.85
+        }
+      ],
+      "user_message": "stop hedging \u2014 just tell me straight"
+    }
+  ]
+}

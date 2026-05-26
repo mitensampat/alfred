@@ -1266,7 +1266,7 @@ class WorkflowLearningService {
                 {
                     "exchange": 1,
                     "type": "correction|preference|reinforcement|fact|none",
-                    "content": "Brief description of what the user is expressing",
+                    "content": "A durable belief about the user phrased as a standing rule, NOT narration of what they said",
                     "confidence": 0.8
                 }
             ]
@@ -1274,12 +1274,27 @@ class WorkflowLearningService {
 
         Classification rules:
         - "correction": User is disagreeing, correcting, or expressing dissatisfaction (even subtly: "hmm not quite", "close but", "I actually meant", "that's not what I was looking for")
-        - "preference": User is expressing how they want things done (tone, format, detail level, approach)
-        - "reinforcement": User is confirming the assistant did something well ("exactly", "perfect", "yes like that", "great")
-        - "fact": User is sharing personal/biographical info (role, schedule, relationships, context)
-        - "none": Neutral query or response with no learning signal
+        - "preference": A durable, recurring preference about how the assistant should behave (tone, format, detail level). NOT a one-off ask for a specific task.
+        - "reinforcement": User confirming the assistant did something well ("exactly", "perfect", "yes like that", "great")
+        - "fact": User sharing durable biographical info (role, team, relationships) — NOT what they want done right now
+        - "none": One-off request, transactional query, or anything that won't hold across future conversations
 
-        Be sensitive to subtle signals. "That's close but not quite" IS a correction. "Sounds good" IS reinforcement. Only use "none" for purely transactional queries.
+        CRITICAL: the "content" field MUST read as a durable belief, phrased like a standing instruction. NEVER narrate what the user just said.
+        BAD examples (DO NOT produce these):
+          ❌ "User is expressing a preference for high-impact summaries"
+          ❌ "User wants WhatsApp messages from CRED filtered by today"
+          ❌ "User is requesting summaries organized by thread"
+        GOOD examples:
+          ✅ "Prefers high-impact summaries over comprehensive tactical detail"
+          ✅ "Leads growth at CRED"
+          ✅ "Wants thread-grouped summaries when reviewing team messages"
+        Rules for content:
+        - Never start with "User is", "User wants", "User prefers", "User requested", "User expressed", "Indicates"
+        - Write as a standing fact or rule, in the third person ("Prefers X", "Leads Y", "Avoids Z")
+        - If you can't extract something that would still be true in future conversations, set type="none"
+        - A single one-off task request is NOT a preference — it's "none". Only flag as "preference" if the user has signaled this as a recurring standard.
+
+        Be sensitive to subtle signals on tone, but be conservative on what qualifies as a durable belief. When in doubt, use "none".
         """
 
         do {
@@ -1348,9 +1363,13 @@ class WorkflowLearningService {
                                 "confidence": confidence
                             ]
                         )
-                        // Learning v3: Immediate pattern creation for high-confidence preferences
-                        // Takes effect on the NEXT chat message, not waiting for daily batch
-                        if confidence >= 0.75 {
+                        // Learning v3: Immediate pattern creation only when the signal is
+                        // (a) phrased as a durable belief (not narration) AND
+                        // (b) recurring — at least one prior similar preference event exists.
+                        // Single-shot promotion produced shallow "User is expressing…" patterns.
+                        if confidence >= 0.85
+                            && !isShallowNarration(content)
+                            && hasRecurringPreferenceSignal(content: content) {
                             createImmediatePattern(
                                 description: content,
                                 type: "communication_style",
@@ -1550,6 +1569,99 @@ class WorkflowLearningService {
         return keywords.contains(where: { lower.contains($0) })
     }
 
+    /// Reject procedural narration like "User is expressing…", "User wants…".
+    /// A durable belief is phrased as a standing rule ("Prefers X"), not a description of what was said.
+    private func isShallowNarration(_ text: String) -> Bool {
+        let lower = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let badPrefixes = [
+            "user is ", "user was ", "user wants ", "user wanted ",
+            "user prefers ", "user preferred ", "user requested ", "user requests ",
+            "user asked ", "user said ", "user expressed ", "user indicates ",
+            "user is expressing ", "user is requesting ", "user is asking ",
+            "user is sharing ", "user is confirming ", "indicates that ",
+            "the user "
+        ]
+        if badPrefixes.contains(where: { lower.hasPrefix($0) }) { return true }
+        let badMarkers = ["is expressing a preference", "is requesting", "suggesting preference"]
+        return badMarkers.contains(where: { lower.contains($0) })
+    }
+
+    /// Detect raw transactional user messages that were captured verbatim as user_context
+    /// "beliefs" — questions, imperative commands, time-specific one-off requests.
+    /// These aren't durable facts and shouldn't be stored as such.
+    private func isTransactionalMessage(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+
+        // Questions are not durable beliefs
+        if trimmed.hasSuffix("?") { return true }
+
+        // Imperative / interrogative openers — these are commands or questions, not facts
+        let transactionalPrefixes = [
+            "block ", "show ", "show me", "summarize", "summarise", "list ",
+            "add a ", "add task", "create ", "delete ", "remove ", "update ",
+            "can you ", "could you ", "please ", "would you ", "will you ",
+            "how am i", "how do i", "how is ", "how are ", "how was ",
+            "what ", "when ", "where ", "why ", "who ", "which ",
+            "do you ", "did you ", "are you ", "is there ", "is it ",
+            "give me ", "tell me ", "find ", "look up ", "schedule ",
+            "send ", "draft ", "write ", "remind me",
+            "1)", "2)", "3)", "- "
+        ]
+        if transactionalPrefixes.contains(where: { lower.hasPrefix($0) }) { return true }
+
+        // Contains specific date/time references suggesting a one-off task
+        // (durable beliefs don't reference "tomorrow at 3pm" or "next Monday")
+        let temporalMarkers = [
+            "tomorrow at", "today at", "yesterday at",
+            "next monday", "next tuesday", "next wednesday", "next thursday",
+            "next friday", "next saturday", "next sunday",
+            " at 9am", " at 10am", " at 11am", " at 12pm", " at 1pm", " at 2pm",
+            " at 3pm", " at 4pm", " at 5pm", " at 6pm", " at 7pm", " at 8pm",
+            " 9.30pm", " 10.30am", " 11.30am", " 5:45 pm", " 10:30",
+            "due date", "this week", "by friday", "by monday"
+        ]
+        if temporalMarkers.contains(where: { lower.contains($0) }) { return true }
+
+        return false
+    }
+
+    /// Check whether a similar preference signal has already been recorded — used to gate
+    /// immediate-pattern promotion so single one-off asks don't become durable patterns.
+    private func hasRecurringPreferenceSignal(content: String) -> Bool {
+        let words = Set(content.lowercased().split(separator: " ").filter { $0.count > 3 }.map(String.init))
+        guard words.count >= 2 else { return false }
+
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let sql = """
+        SELECT signal_value FROM learning_events
+        WHERE event_type = 'chat_preference'
+          AND timestamp > datetime('now', '-30 days')
+        ORDER BY timestamp DESC
+        LIMIT 50
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(stmt) }
+
+        // We need at least one OTHER event with significant overlap (the just-recorded one
+        // is in the table too — require ≥2 matches so this isn't the only occurrence).
+        var matches = 0
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let signal = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
+            let signalWords = Set(signal.lowercased().split(separator: " ").filter { $0.count > 3 }.map(String.init))
+            let overlap = words.intersection(signalWords).count
+            let ratio = Double(overlap) / Double(min(words.count, max(signalWords.count, 1)))
+            if ratio >= 0.5 && overlap >= 2 {
+                matches += 1
+                if matches >= 2 { return true }
+            }
+        }
+        return false
+    }
+
     /// Check if the keyword detector would have caught this as a context fact
     private func isKeywordContextFact(message: String) -> Bool {
         let lower = message.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1669,6 +1781,11 @@ class WorkflowLearningService {
 
     /// Process user context facts — biographical info, role declarations; stored as user_context patterns
     private func processUserContextFacts() {
+        // One-off cleanup: archive existing user_context / communication_style patterns whose
+        // description is shallow procedural narration (e.g. "User is expressing a preference for…").
+        // These slipped in before the LLM prompt was tightened.
+        archiveShallowNarrationPatterns()
+
         dbLock.lock()
         defer { dbLock.unlock() }
 
@@ -1700,7 +1817,39 @@ class WorkflowLearningService {
         sqlite3_finalize(stmt)
 
         for fact in facts {
-            let patternId = "context_\(fact.context.hashValue)"
+            let fromLLM = fact.metadata.contains("\"llm_classification\"")
+
+            // Description selection:
+            // - Keyword fast-path: user literally said "I am the X" / "remember this" — the raw
+            //   message IS the durable fact, use it directly.
+            // - LLM-classified: signal_value is Haiku's rephrasing (tightened prompt forces
+            //   durable-belief voice); raw context is the original user message which is often
+            //   transactional. Prefer the rephrased signal.
+            let description = fromLLM && !fact.signal.isEmpty ? fact.signal : fact.context
+
+            // Reject procedural narration regardless of source — the new prompt should prevent
+            // these but the filter is a hard backstop.
+            if isShallowNarration(description) {
+                print("🧠 Learning: Dropping shallow user_context fact — '\(description.prefix(80))'")
+                continue
+            }
+
+            // Reject transactional one-off messages (questions, imperative commands, time-specific
+            // asks). These were the largest source of bad userContext entries pre-fix.
+            if isTransactionalMessage(description) {
+                print("🧠 Learning: Dropping transactional user_context fact — '\(description.prefix(80))'")
+                continue
+            }
+
+            // Recurrence guard: LLM-classified facts must recur (≥2 events with overlapping
+            // signal) before promotion. Keyword fast-path is already an explicit user
+            // instruction so single-shot is fine.
+            if fromLLM && !hasRecurringContextFact(signal: fact.signal, excludingEventId: fact.id) {
+                print("🧠 Learning: Holding LLM-classified context fact — needs second occurrence")
+                continue
+            }
+
+            let patternId = "context_\(description.hashValue)"
 
             let insertSql = """
             INSERT OR REPLACE INTO learned_patterns
@@ -1710,19 +1859,97 @@ class WorkflowLearningService {
             """
 
             var insertStmt: OpaquePointer?
-            guard sqlite3_prepare_v2(db, insertSql, -1, &insertStmt, nil) == SQLITE_OK else { continue }
+            dbLock.lock()
+            guard sqlite3_prepare_v2(db, insertSql, -1, &insertStmt, nil) == SQLITE_OK else {
+                dbLock.unlock()
+                continue
+            }
 
             sqlite3_bind_text(insertStmt, 1, patternId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-            sqlite3_bind_text(insertStmt, 2, fact.context, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(insertStmt, 2, description, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
 
             let meta = "{\"source_event_id\": \(fact.id), \"trigger\": \"\(fact.signal)\"}"
             sqlite3_bind_text(insertStmt, 3, meta, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
 
             sqlite3_step(insertStmt)
             sqlite3_finalize(insertStmt)
+            dbLock.unlock()
 
-            print("🧠 Learning: User context fact recorded as permanent pattern")
+            print("🧠 Learning: User context fact recorded — '\(description.prefix(80))'")
         }
+    }
+
+    /// Archive learned_patterns whose description is procedural narration. One-off cleanup —
+    /// no-op once the database is clean. Runs at the start of every pattern computation.
+    private func archiveShallowNarrationPatterns() {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let sql = """
+        SELECT pattern_id, description FROM learned_patterns
+        WHERE is_archived = 0
+          AND pattern_type IN ('user_context', 'communication_style', 'explicit_preference')
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+
+        var toArchive: [String] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let id = String(cString: sqlite3_column_text(stmt, 0))
+            let desc = String(cString: sqlite3_column_text(stmt, 1))
+            // Archive shallow narration always; archive transactional messages only when
+            // they leaked into user_context / communication_style (directInstruction stays —
+            // those are genuine "remember this" instructions even if temporal).
+            if isShallowNarration(desc) || (isTransactionalMessage(desc) && !id.hasPrefix("direct_")) {
+                toArchive.append(id)
+            }
+        }
+        sqlite3_finalize(stmt)
+
+        for id in toArchive {
+            let archiveSql = "UPDATE learned_patterns SET is_archived = 1 WHERE pattern_id = ?"
+            var archiveStmt: OpaquePointer?
+            if sqlite3_prepare_v2(db, archiveSql, -1, &archiveStmt, nil) == SQLITE_OK {
+                sqlite3_bind_text(archiveStmt, 1, id, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                sqlite3_step(archiveStmt)
+                sqlite3_finalize(archiveStmt)
+            }
+        }
+        if !toArchive.isEmpty {
+            print("🧠 Learning: Archived \(toArchive.count) shallow narration pattern(s)")
+        }
+    }
+
+    /// Check whether an LLM-classified user_context_fact has recurred — used to gate
+    /// promotion so a single transactional ask doesn't become a durable belief.
+    private func hasRecurringContextFact(signal: String, excludingEventId: Int) -> Bool {
+        let words = Set(signal.lowercased().split(separator: " ").filter { $0.count > 3 }.map(String.init))
+        guard words.count >= 2 else { return false }
+
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let sql = """
+        SELECT id, signal_value FROM learning_events
+        WHERE event_type = 'user_context_fact'
+          AND id != ?
+          AND timestamp > datetime('now', '-60 days')
+        ORDER BY timestamp DESC
+        LIMIT 50
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_int(stmt, 1, Int32(excludingEventId))
+
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let other = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
+            let otherWords = Set(other.lowercased().split(separator: " ").filter { $0.count > 3 }.map(String.init))
+            let overlap = words.intersection(otherWords).count
+            let ratio = Double(overlap) / Double(min(words.count, max(otherWords.count, 1)))
+            if ratio >= 0.5 && overlap >= 2 { return true }
+        }
+        return false
     }
 
     /// Compute communication style patterns from conversation history + corrections
@@ -1758,7 +1985,7 @@ class WorkflowLearningService {
         let correctionsList = corrections.prefix(15).map { "- User said: \"\($0.context)\"" }.joined(separator: "\n")
 
         let prompt = """
-        Analyze these user corrections and instructions to their AI assistant. Extract communication/behavior patterns.
+        Analyze these user corrections and instructions to their AI assistant. Extract DURABLE communication/behavior preferences — beliefs that will hold across future conversations.
 
         \(correctionsList)
 
@@ -1767,18 +1994,29 @@ class WorkflowLearningService {
             "patterns": [
                 {
                     "id": "short_snake_case_id",
-                    "description": "One sentence describing the user's preference or behavioral pattern",
+                    "description": "A standing rule about the user, phrased as a durable belief",
                     "confidence": 0.7,
                     "type": "communication_style"
                 }
             ]
         }
 
+        CRITICAL: descriptions must read as standing rules, NOT narration of what the user said.
+        BAD (DO NOT produce these):
+          ❌ "User is expressing a preference for high-impact summaries"
+          ❌ "User wants thread-grouped summaries when asked"
+          ❌ "User requested concise output in this exchange"
+        GOOD:
+          ✅ "Prefers high-impact summaries over comprehensive tactical detail"
+          ✅ "Appreciates directness — don't hedge or qualify"
+          ✅ "Wants thematic grouping (by thread/topic) when reviewing team communications"
+
         Rules:
-        - Extract 1-5 patterns max
-        - Only extract patterns you're confident about (confidence 0.6+)
-        - Focus on actionable preferences (how they want to be communicated with, what they value/dislike)
-        - Do NOT extract trivial observations
+        - Extract 0-5 patterns. Returning zero is correct when nothing durable can be inferred.
+        - Confidence ≥ 0.6 only. A single one-off ask is NOT a pattern — require recurrence or clear strength of signal.
+        - Never start description with "User is", "User wants", "User prefers", "User requested", "User expressed", "Indicates"
+        - Phrase as a standing rule in third person ("Prefers X", "Avoids Y", "Wants Z when …")
+        - Skip trivial or transactional observations entirely
         """
 
         do {
@@ -1802,6 +2040,12 @@ class WorkflowLearningService {
                 guard let id = pattern["id"] as? String,
                       let description = pattern["description"] as? String,
                       let confidence = pattern["confidence"] as? Double else { continue }
+
+                // Hard backstop: drop procedural narration even if the prompt slipped past.
+                if isShallowNarration(description) {
+                    print("🧠 Learning: Dropping shallow communication pattern — '\(description.prefix(80))'")
+                    continue
+                }
 
                 let patternId = "comm_\(id)"
 
@@ -1909,11 +2153,13 @@ class WorkflowLearningService {
           AND is_archived = 0
         """, nil, nil, nil)
 
-        // explicit_preference and user_context: NEVER stale (even if not direct_instruction)
-        // Ensure none accidentally got marked stale
+        // explicit_preference and user_context: NEVER stale (even if not direct_instruction).
+        // Only clear staleness — do NOT un-archive. Archived patterns were dropped intentionally
+        // (e.g. shallow narration cleanup) and must stay archived.
         sqlite3_exec(db, """
-        UPDATE learned_patterns SET is_stale = 0, is_archived = 0
+        UPDATE learned_patterns SET is_stale = 0
         WHERE pattern_type IN ('explicit_preference', 'user_context')
+          AND is_archived = 0
         """, nil, nil, nil)
     }
 

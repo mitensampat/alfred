@@ -1323,6 +1323,280 @@
         .panel-overlay { display: none; } /* legacy — kept for compat */
         .panel-overlay.open { display: none; }
 
+        /* ── ZEN DATA TAB (visual language borrowed from Reflections page) ── */
+        .zen-lede {
+            font-family: var(--font-display);
+            font-size: 22px;
+            font-weight: 400;
+            letter-spacing: -0.01em;
+            color: var(--ink);
+            margin: 4px 0 4px;
+        }
+        .zen-lede-sub {
+            font-size: 13px;
+            color: var(--ink-tertiary);
+            margin: 0 0 28px;
+            line-height: 1.5;
+        }
+        .zen-section { margin-bottom: 26px; }
+        /* Match Reflections .rfh-sec for section labels inside the Data tab */
+        .zen-section > .panel-section-label.zen-header {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--ink-tertiary);
+            margin: 0 0 12px;
+            padding: 0;
+        }
+        .zen-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .zen-header .zen-actions { display: flex; gap: 14px; opacity: 0; transition: opacity .15s ease; }
+        .zen-section:hover .zen-header .zen-actions,
+        .zen-header .zen-actions:focus-within { opacity: 1; }
+        .zen-link {
+            background: none;
+            border: none;
+            padding: 0;
+            font-family: var(--font-body);
+            font-size: 11px;
+            color: var(--ink-tertiary);
+            cursor: pointer;
+            letter-spacing: 0.02em;
+        }
+        .zen-link:hover { color: var(--ink); }
+        .zen-action { opacity: 0; transition: opacity .15s ease; }
+        .zen-section:hover .zen-action { opacity: 1; }
+        .zen-card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: var(--radius-lg);
+            padding: 18px 20px;
+        }
+        .zen-card.interactive { cursor: pointer; transition: all .15s ease; }
+        .zen-card.interactive:hover { border-color: var(--line-strong); box-shadow: var(--shadow-md); }
+        .zen-summary {
+            font-size: 14px;
+            color: var(--ink-secondary);
+            line-height: 1.5;
+        }
+        .zen-summary strong { color: var(--ink); font-weight: 600; }
+        .zen-themes { margin-top: 14px; display: flex; flex-direction: column; gap: 2px; }
+        .zen-themes:empty { display: none; }
+        /* Theme rows inside the data tab — mini thread cards, Reflections style */
+        .zen-theme-row {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 2px;
+            border-bottom: 1px solid var(--line);
+            cursor: pointer;
+            transition: background .15s ease;
+        }
+        .zen-theme-row:last-child { border-bottom: none; }
+        .zen-theme-row:hover { background: var(--surface-sunken); }
+        .zen-theme-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+        .zen-theme-name {
+            font-family: var(--font-display);
+            font-size: 15px;
+            font-weight: 400;
+            letter-spacing: -0.005em;
+            color: var(--ink);
+            flex: 1;
+            line-height: 1.3;
+        }
+        .zen-theme-state {
+            font-size: 11px; font-weight: 500;
+            color: var(--ink-secondary);
+            background: var(--surface-sunken);
+            padding: 3px 10px;
+            border-radius: 20px;
+            text-transform: lowercase;
+        }
+        .zen-theme-count {
+            font-size: 10px;
+            color: var(--ink-faint);
+            background: var(--surface-sunken);
+            padding: 1px 7px;
+            border-radius: 10px;
+        }
+        .zen-capture textarea {
+            width: 100%;
+            min-height: 80px;
+            font-family: var(--font-body);
+            font-size: 13px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            padding: 10px 12px;
+            background: var(--surface);
+            color: var(--ink);
+            resize: vertical;
+            box-sizing: border-box;
+            margin-bottom: 10px;
+        }
+        .zen-capture textarea:focus {
+            outline: none;
+            border-color: var(--ink-tertiary);
+        }
+        .zen-capture-actions { display: flex; gap: 10px; align-items: center; }
+        .zen-status { font-size: 11px; color: var(--ink-tertiary); }
+        .zen-footer {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+            padding: 28px 0 8px;
+            border-top: 1px solid var(--line);
+            margin-top: 8px;
+        }
+        .zen-footer-link {
+            background: none;
+            border: none;
+            font-family: var(--font-body);
+            font-size: 11px;
+            color: var(--ink-faint);
+            cursor: pointer;
+        }
+        .zen-footer-link:hover { color: var(--ink-tertiary); }
+        /* Hover-reveal action buttons on memory rows */
+        [data-memory-id] .mem-actions { opacity: 0; transition: opacity .15s ease; }
+        [data-memory-id]:hover .mem-actions,
+        [data-memory-id] .mem-actions:focus-within { opacity: 1; }
+        /* Learning signal breakdown — collapsed by default */
+        #learningBreakdown { display: none; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+        #learningBreakdown.open { display: block; }
+
+        /* ── ZEN THREAD CARDS (Reflections language applied to memory) ── */
+        .zen-thread {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: var(--radius-lg);
+            padding: 18px 20px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all .15s ease;
+        }
+        .zen-thread:hover { border-color: var(--line-strong); box-shadow: var(--shadow-md); }
+        .zen-thread-top { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
+        .zen-thread-meta {
+            display: inline-flex; align-items: center; gap: 6px;
+            font-size: 11px; font-weight: 500; color: var(--ink-tertiary);
+        }
+        .zen-thread-meta .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--ink-faint); }
+        .zen-thread-meta .dot.active { background: var(--growth); }
+        .zen-thread-meta .dot.durable { background: var(--info); }
+        .zen-thread-meta .dot.living { background: var(--warning); }
+        .zen-thread-aside { margin-left: auto; font-size: 11px; color: var(--ink-tertiary); }
+        .zen-thread-name {
+            font-family: var(--font-display);
+            font-size: 20px;
+            font-weight: 400;
+            letter-spacing: -0.01em;
+            line-height: 1.2;
+            color: var(--ink);
+        }
+        .zen-thread-body {
+            font-size: 14px;
+            color: var(--ink-secondary);
+            margin-top: 8px;
+            line-height: 1.55;
+        }
+        .zen-thread-body em { font-style: italic; color: var(--ink); font-family: var(--font-display); }
+        .zen-thread-edge {
+            margin-top: 13px;
+            padding: 11px 14px;
+            background: var(--surface-sunken);
+            border-radius: var(--radius-md);
+            display: flex; gap: 10px; align-items: flex-start;
+        }
+        .zen-thread-edge-lbl {
+            font-size: 10px; font-weight: 600; letter-spacing: 0.07em;
+            text-transform: uppercase; color: var(--ink-faint);
+            padding-top: 3px; flex: none;
+        }
+        .zen-thread-edge-q {
+            font-size: 14px; color: var(--ink);
+            font-style: italic; font-family: var(--font-display);
+            line-height: 1.4;
+        }
+        .zen-thread-foot {
+            display: flex; align-items: center; gap: 14px;
+            margin-top: 13px;
+            font-size: 12px; color: var(--ink-tertiary);
+        }
+        .zen-thread-chip {
+            margin-left: auto;
+            font-size: 11px; font-weight: 500;
+            color: var(--ink-secondary);
+            background: var(--surface-sunken);
+            padding: 3px 10px; border-radius: 20px;
+        }
+        .zen-thread-empty { font-size: 13px; color: var(--ink-tertiary); padding: 6px 0; }
+
+        /* ── Merge picker rows ── */
+        .mp-row {
+            display: flex; align-items: center; gap: 10px;
+            padding: 11px 14px;
+            border-bottom: 1px solid var(--line);
+            cursor: pointer;
+            transition: background .15s ease;
+        }
+        .mp-row:last-child { border-bottom: none; }
+        .mp-row:hover { background: var(--surface-sunken); }
+        .mp-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--ink-faint); }
+        .mp-dot.researching { background: var(--ink-faint); }
+        .mp-dot.deciding { background: var(--warning); }
+        .mp-dot.creating { background: var(--coach); }
+        .mp-dot.monitoring { background: var(--growth); }
+        .mp-name {
+            flex: 1;
+            font-family: var(--font-display);
+            font-size: 15px;
+            color: var(--ink);
+            line-height: 1.3;
+        }
+        .mp-meta {
+            font-size: 11px;
+            color: var(--ink-tertiary);
+            text-transform: lowercase;
+        }
+
+        /* ── L2: memory category page ── */
+        .zen-l2-back { font-size: 12px; color: var(--ink-tertiary); cursor: pointer; margin-bottom: 18px; display: inline-flex; align-items: center; gap: 4px; }
+        .zen-l2-back:hover { color: var(--ink-secondary); }
+        .zen-l2-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 11px; color: var(--ink-tertiary); flex-wrap: wrap; }
+        .zen-l2-title { font-family: var(--font-display); font-size: 30px; font-weight: 400; letter-spacing: -0.015em; line-height: 1.15; color: var(--ink); margin-bottom: 8px; }
+        .zen-l2-lede { font-size: 15px; line-height: 1.55; color: var(--ink-secondary); margin-bottom: 26px; }
+        .zen-l2-row {
+            display: flex; align-items: flex-start; gap: 12px;
+            padding: 13px 4px;
+            border-bottom: 1px solid var(--line);
+            font-size: 14px; line-height: 1.5; color: var(--ink);
+        }
+        .zen-l2-row .conf-dot {
+            width: 5px; height: 5px; border-radius: 50%;
+            flex: none; margin-top: 8px;
+        }
+        .zen-l2-row .content { flex: 1; }
+        .zen-l2-row .source-tag {
+            font-size: 10px; color: var(--ink-faint);
+            margin-left: 6px;
+        }
+        .zen-l2-row .mem-actions { opacity: 0; transition: opacity .15s ease; display: flex; gap: 4px; flex-shrink: 0; }
+        .zen-l2-row:hover .mem-actions { opacity: 1; }
+        .zen-l2-more {
+            margin: 22px auto 4px;
+            display: block;
+            background: none; border: 1px solid var(--line);
+            border-radius: var(--radius-md);
+            padding: 9px 18px;
+            font-family: var(--font-body); font-size: 12px;
+            color: var(--ink-secondary); cursor: pointer;
+        }
+        .zen-l2-more:hover { border-color: var(--line-strong); color: var(--ink); }
+
         .settings-screen {
             background: var(--canvas);
             display: none;
@@ -2068,6 +2342,203 @@
             background: var(--surface-sunken); padding: 1px 7px; border-radius: 10px;
         }
 
+        /* ════════════ Reflections home v2 — "what's moving" ════════════ */
+        .rfh-hd { padding: 4px 0 4px; }
+        .rfh-title { font-family: var(--font-display); font-size: 26px; font-weight: 400; letter-spacing: -0.01em; color: var(--ink); }
+        .rfh-sub { font-size: 13px; color: var(--ink-tertiary); margin-top: 3px; }
+
+        .rfh-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 18px 0 24px; }
+        .rfh-tab {
+            font-family: var(--font-body); font-size: 13px; font-weight: 500; color: var(--ink-tertiary);
+            padding: 9px 14px; border: none; background: none; cursor: pointer;
+            border-bottom: 2px solid transparent; position: relative; bottom: -1px;
+        }
+        .rfh-tab:hover { color: var(--ink-secondary); }
+        .rfh-tab.active { color: var(--ink); border-bottom-color: var(--ink); }
+        .rfh-tab .ct { font-size: 11px; color: var(--ink-faint); margin-left: 5px; }
+
+        .rfh-sec { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-tertiary); margin: 0 0 14px; }
+        .rfh-sec.mt { margin-top: 34px; }
+
+        /* Hero thread card */
+        .rfh-thread {
+            background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg);
+            padding: 18px 20px; margin-bottom: 12px; cursor: pointer; transition: all .15s ease;
+        }
+        .rfh-thread:hover { border-color: var(--line-strong); box-shadow: var(--shadow-md); }
+        .rfh-thread-top { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
+        .rfh-temp { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 500; color: var(--ink-tertiary); }
+        .rfh-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+        .rfh-dot.hot { background: var(--warning); }
+        .rfh-dot.warming { background: var(--info); }
+        .rfh-dot.cooling { background: var(--ink-faint); }
+        .rfh-dot.resolved { background: var(--growth); }
+        .rfh-move { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--ink-tertiary); }
+        .rfh-move .ar { color: var(--warning); }
+        .rfh-thread-name { font-family: var(--font-display); font-size: 20px; font-weight: 400; letter-spacing: -0.01em; line-height: 1.2; color: var(--ink); }
+        .rfh-changed { font-size: 14px; color: var(--ink-secondary); margin-top: 8px; line-height: 1.5; }
+        .rfh-edge {
+            margin-top: 13px; padding: 11px 14px; background: var(--surface-sunken);
+            border-radius: var(--radius-md); display: flex; gap: 10px; align-items: flex-start;
+        }
+        .rfh-edge-lbl { font-size: 10px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-faint); padding-top: 3px; flex: none; }
+        .rfh-edge-q { font-size: 14px; color: var(--ink); font-style: italic; font-family: var(--font-display); line-height: 1.4; }
+        .rfh-foot { display: flex; align-items: center; gap: 14px; margin-top: 13px; font-size: 12px; color: var(--ink-tertiary); }
+        .rfh-state-chip { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--ink-secondary); background: var(--surface-sunken); padding: 3px 10px; border-radius: 20px; }
+
+        /* Connection / insight card */
+        .rfh-insight {
+            background: var(--warning-light); border: 1px solid #e8ddc4; border-radius: var(--radius-lg);
+            padding: 17px 20px; margin-bottom: 12px;
+        }
+        .rfh-insight-lbl { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--warning); margin-bottom: 9px; }
+        .rfh-insight-body { font-size: 15px; line-height: 1.55; color: var(--ink); }
+        .rfh-insight-body b { font-weight: 600; }
+        .rfh-insight-body .uline { border-bottom: 1.5px solid #d8c79c; padding-bottom: 1px; }
+        .rfh-insight-act { margin-top: 13px; display: flex; gap: 8px; flex-wrap: wrap; }
+        .rfh-btn { font-family: var(--font-body); font-size: 12px; font-weight: 500; padding: 7px 14px; border-radius: var(--radius-md); cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--ink-secondary); }
+        .rfh-btn.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+        .rfh-btn:hover { border-color: var(--line-strong); }
+        .rfh-btn.primary:hover { opacity: 0.88; }
+
+        /* Quieter threads */
+        .rfh-quiet {
+            display: flex; align-items: center; gap: 12px; padding: 13px 4px;
+            border-bottom: 1px solid var(--line); cursor: pointer;
+        }
+        .rfh-quiet:hover { background: var(--surface); }
+        .rfh-quiet-name { font-size: 14px; font-weight: 500; color: var(--ink); }
+        .rfh-quiet-meta { font-size: 12px; color: var(--ink-tertiary); margin-left: auto; }
+        .rfh-stale { font-size: 11px; font-weight: 500; color: var(--danger); margin-left: auto; }
+
+        /* Tidy your threads */
+        .rfh-tidy-count {
+            font-size: 10px; font-weight: 500;
+            color: var(--ink-tertiary);
+            background: var(--surface-sunken);
+            padding: 2px 8px;
+            border-radius: 10px;
+            text-transform: lowercase;
+        }
+        .rfh-tidy {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: var(--radius-lg);
+            padding: 16px 18px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: border-color .15s ease, box-shadow .15s ease;
+            overflow: hidden;
+        }
+        .rfh-tidy:hover { border-color: var(--line-strong); box-shadow: var(--shadow-sm); }
+        .rfh-tidy-top { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+        .rfh-tidy-reason {
+            font-size: 10px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase;
+            color: var(--ink-tertiary);
+        }
+        .rfh-tidy-aside { margin-left: auto; font-size: 11px; color: var(--ink-faint); }
+        .rfh-tidy-name {
+            font-family: var(--font-display);
+            font-size: 17px;
+            font-weight: 400;
+            letter-spacing: -0.005em;
+            line-height: 1.25;
+            color: var(--ink);
+            margin-bottom: 6px;
+        }
+        .rfh-tidy-body { font-size: 13px; color: var(--ink-secondary); line-height: 1.5; margin-bottom: 12px; }
+        .rfh-tidy-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+        /* Belief shift trophy */
+        .rfh-belief {
+            margin-top: 34px; background: var(--surface); border: 1px solid var(--line);
+            border-radius: var(--radius-lg); padding: 17px 20px;
+        }
+        .rfh-belief-lbl { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--growth); margin-bottom: 12px; }
+        .rfh-belief-row { font-size: 14px; line-height: 1.6; margin-bottom: 6px; }
+        .rfh-belief-from { color: var(--ink-tertiary); text-decoration: line-through; }
+        .rfh-belief-to { color: var(--ink); font-weight: 500; }
+        .rfh-belief-arrow { color: var(--ink-faint); margin: 0 8px; }
+        .rfh-belief-more { font-size: 12px; color: var(--ink-tertiary); margin-top: 10px; cursor: pointer; }
+        .rfh-belief-more:hover { color: var(--ink-secondary); }
+
+        .rfh-empty { font-size: 13px; color: var(--ink-tertiary); padding: 14px 0; }
+
+        /* ════════════ Reflections L2 — thread deep dive ════════════ */
+        .l2-back { font-size: 12px; color: var(--ink-tertiary); cursor: pointer; margin-bottom: 18px; display: inline-flex; align-items: center; gap: 4px; }
+        .l2-back:hover { color: var(--ink-secondary); }
+        .l2-hero { margin-bottom: 22px; }
+        .l2-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 11px; color: var(--ink-tertiary); flex-wrap: wrap; }
+        .l2-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+        .l2-dot.hot { background: var(--warning); }
+        .l2-dot.warming { background: var(--info); }
+        .l2-dot.cooling { background: var(--ink-faint); }
+        .l2-dot.resolved { background: var(--growth); }
+        .l2-state { font-size: 11px; font-weight: 500; color: var(--ink-secondary); background: var(--surface-sunken); padding: 3px 10px; border-radius: 20px; }
+        .l2-title { font-family: var(--font-display); font-size: 30px; font-weight: 400; letter-spacing: -0.015em; line-height: 1.15; color: var(--ink); margin-bottom: 10px; }
+        .l2-lede { font-size: 15px; line-height: 1.55; color: var(--ink-secondary); }
+
+        .l2-edge { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 22px 24px; margin: 24px 0 18px; box-shadow: var(--shadow-md); }
+        .l2-edge-lbl { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--warning); margin-bottom: 10px; }
+        .l2-edge-q { font-family: var(--font-display); font-size: 22px; font-style: italic; line-height: 1.35; color: var(--ink); }
+        .l2-edge-secondary { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-secondary); font-style: italic; font-family: var(--font-display); }
+        .l2-edge-act { margin-top: 18px; display: flex; gap: 8px; flex-wrap: wrap; }
+        .l2-btn { font-family: var(--font-body); font-size: 13px; font-weight: 500; padding: 9px 16px; border-radius: var(--radius-md); cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--ink-secondary); }
+        .l2-btn.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+        .l2-btn.primary:hover { opacity: 0.88; }
+        .l2-btn:hover { border-color: var(--line-strong); }
+
+        .l2-tension { background: var(--warning-light); border: 1px solid #e8ddc4; border-radius: var(--radius-lg); padding: 16px 20px; margin-bottom: 18px; }
+        .l2-tension-lbl { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--warning); margin-bottom: 8px; }
+        .l2-tension-body { font-size: 14px; line-height: 1.55; color: var(--ink); }
+        .l2-tension-body b { font-weight: 600; }
+        .l2-tension-act { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+
+        .l2-sec { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-tertiary); margin: 30px 0 12px; }
+
+        .l2-states { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 18px 22px; }
+        .l2-states-row { display: flex; align-items: flex-start; gap: 0; position: relative; }
+        .l2-step { flex: 1; text-align: center; position: relative; padding-top: 0; }
+        .l2-step-mark { width: 10px; height: 10px; border-radius: 50%; background: var(--line); margin: 0 auto 8px; position: relative; z-index: 1; }
+        .l2-step.past .l2-step-mark { background: var(--ink); }
+        .l2-step.current .l2-step-mark { background: var(--warning); box-shadow: 0 0 0 4px var(--warning-light); }
+        .l2-step-name { font-size: 12px; font-weight: 500; color: var(--ink-faint); text-transform: capitalize; }
+        .l2-step.past .l2-step-name { color: var(--ink-secondary); }
+        .l2-step.current .l2-step-name { color: var(--ink); font-weight: 600; }
+        .l2-step-date { font-size: 10px; color: var(--ink-faint); margin-top: 2px; height: 12px; }
+        .l2-step-bar { position: absolute; top: 4px; left: 50%; width: 100%; height: 2px; background: var(--line); z-index: 0; }
+        .l2-step.past .l2-step-bar { background: var(--ink); }
+        .l2-states-foot { display: flex; justify-content: flex-end; margin-top: 14px; }
+
+        .l2-beat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 14px 18px; margin-bottom: 8px; }
+        .l2-beat-top { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
+        .l2-beat-kind { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+        .l2-beat-kind.decision { color: var(--growth); }
+        .l2-beat-kind.shift { color: var(--warning); }
+        .l2-beat-date { font-size: 11px; color: var(--ink-faint); margin-left: auto; }
+        .l2-beat-body { font-size: 14px; color: var(--ink); line-height: 1.5; }
+        .l2-beat-shift-from { color: var(--ink-tertiary); text-decoration: line-through; }
+        .l2-beat-shift-arr { color: var(--ink-faint); margin: 0 6px; }
+        .l2-beat-shift-to { color: var(--ink); font-weight: 500; }
+
+        .l2-evidence { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 14px 18px; cursor: pointer; }
+        .l2-evidence-row { display: flex; align-items: center; gap: 10px; }
+        .l2-evidence-lbl { font-size: 13px; color: var(--ink-secondary); }
+        .l2-evidence-counts { font-size: 12px; color: var(--ink-faint); margin-left: auto; }
+        .l2-evidence-caret { color: var(--ink-faint); margin-left: 6px; transition: transform 0.15s; }
+        .l2-evidence.expanded .l2-evidence-caret { transform: rotate(180deg); }
+        .l2-evidence-body { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+        .l2-ev-item { padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; line-height: 1.5; }
+        .l2-ev-item:last-child { border-bottom: none; }
+        .l2-ev-kind { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-tertiary); margin-right: 8px; }
+        .l2-ev-date { font-size: 11px; color: var(--ink-faint); margin-left: 8px; }
+        .l2-ev-content { color: var(--ink); }
+
+        .l2-footer { display: flex; gap: 8px; margin-top: 36px; padding-top: 18px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+        .l2-foot-btn { font-family: var(--font-body); font-size: 12px; font-weight: 500; padding: 7px 14px; border-radius: var(--radius-md); cursor: pointer; border: 1px solid var(--line); background: none; color: var(--ink-tertiary); }
+        .l2-foot-btn:hover { color: var(--ink-secondary); border-color: var(--line-strong); }
+        .l2-foot-btn.danger:hover { color: var(--danger); }
+
         /* ── Theme card ── */
         .rf-theme-card {
             background: var(--surface);
@@ -2471,7 +2942,7 @@
             <button class="active" onclick="showSettingsTab('config',this)">general</button>
             <button onclick="showSettingsTab('coaching',this)">coaching</button>
             <button onclick="showSettingsTab('notifications',this)">notifications</button>
-            <button onclick="showSettingsTab('data',this)">data</button>
+            <button onclick="showSettingsTab('data',this)">memory</button>
             </div>
         </div>
         <div class="settings-body">
@@ -2725,57 +3196,65 @@
                         <span id="notifSaveStatus" class="hidden" style="margin-left:8px;font-size:11px;"></span>
                     </div>
                 </div>
-                <!-- DATA TAB (merged: memory + reflection) -->
+                <!-- DATA TAB (zen: reflections → learning → what alfred knows → capture → footer) -->
                 <div id="panelTabData" style="display:none;">
-                    <div class="panel-section">
-                        <div class="panel-section-label" style="display:flex;justify-content:space-between;align-items:center;">
-                            WHAT ALFRED KNOWS
-                            <div style="display:flex;gap:6px;">
-                                <button class="pill" style="font-size:10px;padding:3px 10px;" onclick="syncMemoryToNotion(this)">sync to notion</button>
-                                <button class="pill" style="font-size:10px;padding:3px 10px;" onclick="loadMemoryTab()">refresh</button>
-                            </div>
+                    <div class="zen-lede">Your memory</div>
+                    <div class="zen-lede-sub" id="dataLede">What you're thinking about, what Alfred has come to understand, and the durable picture of you.</div>
+
+                    <!-- REFLECTIONS -->
+                    <div class="panel-section zen-section">
+                        <div class="panel-section-label zen-header">
+                            <span>REFLECTIONS</span>
+                            <button class="zen-link" onclick="showReflectionsPage(); closeSettingsPanel();">Open →</button>
                         </div>
-                        <div id="memoryContent"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
-                    </div>
-                    <div class="panel-section">
-                        <div class="panel-section-label">LEARNING STATS</div>
-                        <div class="config-card" id="memoryStats"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
-                    </div>
-                    <div class="panel-section">
-                        <div class="panel-section-label">REFLECTIONS</div>
-                        <div class="config-card" style="padding:12px 16px;">
-                            <div id="reflectionSummaryStats" style="font-size:12px;color:var(--ink-secondary);margin-bottom:10px;">Loading...</div>
-                            <div id="reflectionThemesList" style="margin-bottom:10px;"></div>
-                            <button class="btn btn-sm btn-coach" onclick="showReflectionsPage(); closeSettingsPanel();" style="margin-bottom:10px;">Open Reflections</button>
+                        <div class="zen-card">
+                            <div id="reflectionSummaryStats" class="zen-summary">Loading…</div>
+                            <div id="reflectionThemesList" class="zen-themes"></div>
                         </div>
                     </div>
-                    <div class="panel-section">
-                        <div class="panel-section-label">CAPTURE</div>
-                        <div class="config-card" style="padding:12px 16px;">
-                            <textarea id="reflectionInput" placeholder="Paste a thought, article excerpt, or insight..." style="width:100%;min-height:80px;font-family:var(--font-body);font-size:13px;border:1px solid var(--line);border-radius:6px;padding:8px;background:var(--surface);color:var(--ink);resize:vertical;box-sizing:border-box;margin-bottom:8px;"></textarea>
-                            <div style="display:flex;gap:8px;align-items:center;">
+
+                    <!-- LEARNING -->
+                    <div class="panel-section zen-section">
+                        <div class="panel-section-label zen-header">
+                            <span>LEARNING</span>
+                            <button class="zen-link zen-action" onclick="document.getElementById('learningBreakdown').classList.toggle('open'); this.textContent = document.getElementById('learningBreakdown').classList.contains('open') ? 'Hide breakdown' : 'Signal breakdown →';">Signal breakdown →</button>
+                        </div>
+                        <div class="zen-card" id="memoryStats">
+                            <div class="zen-summary">Loading…</div>
+                        </div>
+                    </div>
+
+                    <!-- WHAT ALFRED KNOWS -->
+                    <div class="panel-section zen-section">
+                        <div class="panel-section-label zen-header">
+                            <span>WHAT ALFRED KNOWS</span>
+                            <span class="zen-actions">
+                                <button class="zen-link zen-action" onclick="syncMemoryToNotion(this)">Sync ↗</button>
+                                <button class="zen-link zen-action" onclick="loadMemoryTab()">Refresh</button>
+                            </span>
+                        </div>
+                        <div id="memoryContent"><div class="zen-summary">Loading…</div></div>
+                    </div>
+
+                    <!-- CAPTURE (collapsed by default) -->
+                    <div class="panel-section zen-section">
+                        <div class="panel-section-label zen-header">
+                            <span>CAPTURE</span>
+                            <button class="zen-link" id="captureToggleBtn" onclick="toggleCaptureBox()">+ Add a thought</button>
+                        </div>
+                        <div class="zen-card zen-capture" id="captureBox" style="display:none;">
+                            <textarea id="reflectionInput" placeholder="Paste a thought, article excerpt, or insight…"></textarea>
+                            <div class="zen-capture-actions">
                                 <button class="btn btn-sm btn-coach" onclick="submitReflection()">Ingest</button>
-                                <span id="reflectionIngestStatus" style="font-size:11px;color:var(--ink-tertiary);"></span>
+                                <span id="reflectionIngestStatus" class="zen-status"></span>
                             </div>
                         </div>
                     </div>
-                    <div class="panel-section" style="display:none;">
-                        <div class="panel-section-label">STATS</div>
-                        <div class="config-card" id="reflectionStats"><div style="font-size:12px;color:var(--ink-tertiary);padding:8px 0;">Loading...</div></div>
-                    </div>
-                    <div class="panel-section">
-                        <div class="panel-section-label">DATA</div>
-                        <div class="config-card">
-                            <div class="config-row">
-                                <span>Clear Server Cache</span>
-                                <button class="btn btn-sm" onclick="clearCache()">Clear</button>
-                            </div>
-                            <div id="cacheStatus" class="hidden" style="padding:0 16px 8px;"></div>
-                            <div class="config-row">
-                                <span>Patterns & Memory</span>
-                                <button class="btn btn-sm" onclick="showPatternsAndMemory()">View</button>
-                            </div>
-                        </div>
+
+                    <!-- FOOTER (machine-facing) -->
+                    <div class="zen-footer">
+                        <button class="zen-footer-link" onclick="clearCache()">Clear server cache</button>
+                        <span id="cacheStatus" class="hidden zen-status"></span>
                     </div>
                 </div>
                 <div style="text-align:center;padding:20px 0 10px;font-size:10px;color:var(--ink-faint);" id="appVersion">v2.1.0</div>
@@ -3228,7 +3707,7 @@
             const legacyMap = { tenets: 'coaching', skills: 'coaching', previews: 'coaching', library: 'coaching', memory: 'data', reflection: 'data' };
             tab = legacyMap[tab] || tab;
             const tabs = ['config', 'coaching', 'notifications', 'data'];
-            const tabLabels = { config: 'general', coaching: 'coaching', notifications: 'notifications', data: 'data' };
+            const tabLabels = { config: 'general', coaching: 'coaching', notifications: 'notifications', data: 'memory' };
             tabs.forEach(t => {
                 const el = document.getElementById('panelTab' + t.charAt(0).toUpperCase() + t.slice(1));
                 if (el) el.style.display = t === tab ? '' : 'none';
@@ -6272,28 +6751,87 @@
             }
         }
 
+        // ── Memory category metadata (for L1 cards + L2 pages) ──
+        const MEMORY_CATEGORIES = {
+            directInstruction: {
+                name: 'Your explicit preferences',
+                dot: 'durable',
+                kind: 'instructions you\'ve given Alfred',
+                lede: 'Direct rules you\'ve told Alfred to follow. Treated as permanent until you change them.',
+                emptyExcerpt: 'No explicit preferences yet — tell Alfred "always do X" or "never do Y" in chat and they\'ll land here.'
+            },
+            userContext: {
+                name: 'About you',
+                dot: 'living',
+                kind: 'beliefs Alfred has formed',
+                lede: 'What Alfred has come to understand about how you work and what matters to you. Inferred from how you correct, react, and direct.',
+                emptyExcerpt: 'No durable observations yet.'
+            },
+            communicationStyle: {
+                name: 'Communication style',
+                dot: 'living',
+                kind: 'patterns about how you write and receive',
+                lede: 'How you communicate — the format, tone, and pacing you prefer in summaries and replies.',
+                emptyExcerpt: 'No style patterns yet.'
+            },
+            personalityNote: {
+                name: 'Coaching style',
+                dot: 'durable',
+                kind: 'tenets shaping how Alfred coaches you',
+                lede: 'Tenets that shape how Alfred coaches you — directness, framing, what to push back on.',
+                emptyExcerpt: 'No coaching tenets yet.'
+            },
+            coachingTheme: {
+                name: 'Coaching themes',
+                dot: 'living',
+                kind: 'themes Alfred returns to',
+                lede: 'Themes Alfred has returned to in coaching you over time.',
+                emptyExcerpt: 'No themes yet.'
+            },
+            followUp: {
+                name: 'Open follow-ups',
+                dot: 'active',
+                kind: 'threads Alfred is watching',
+                lede: 'Conversations or commitments Alfred is keeping an eye on.',
+                emptyExcerpt: 'Nothing being followed.'
+            },
+            contactIntelligence: {
+                name: 'Contact intelligence',
+                dot: 'durable',
+                kind: 'people Alfred is tracking',
+                lede: 'Engagement state and signal Alfred tracks across your contacts.',
+                emptyExcerpt: 'No contact patterns yet.'
+            },
+            correctionPattern: {
+                name: 'Extraction patterns',
+                dot: 'living',
+                kind: 'corrections Alfred has internalized',
+                lede: 'How Alfred has learned to extract things differently based on your corrections.',
+                emptyExcerpt: 'No extraction patterns yet.'
+            },
+            agentPattern: {
+                name: 'Observed patterns',
+                dot: 'living',
+                kind: 'workflow patterns',
+                lede: 'Patterns observed across your workflows.',
+                emptyExcerpt: 'No observed patterns yet.'
+            }
+        };
+        const MEMORY_GROUP_ORDER = ['directInstruction', 'userContext', 'communicationStyle', 'personalityNote', 'coachingTheme', 'contactIntelligence', 'followUp', 'correctionPattern', 'agentPattern'];
+
+        // Cache last-loaded memory snapshot so L2 pages render without refetching
+        let _lastMemoryData = null;
+
         function renderMemoryItems(data, container) {
+            _lastMemoryData = data;
             const items = data.items || [];
             if (items.length === 0) {
-                container.innerHTML = '<div style="font-size:12px;color:var(--ink-tertiary);padding:16px 0;text-align:center;">No learned patterns yet. Chat with Alfred to start building memory.</div>';
+                container.innerHTML = '<div class="zen-thread-empty">No memory yet. Chat with Alfred to start building it.</div>';
                 return;
             }
 
-            // Group by type for display
+            // Group by type
             const groups = {};
-            const groupOrder = ['directInstruction', 'userContext', 'communicationStyle', 'personalityNote', 'coachingTheme', 'followUp', 'contactIntelligence', 'correctionPattern', 'agentPattern'];
-            const groupLabels = {
-                directInstruction: 'YOUR EXPLICIT PREFERENCES',
-                userContext: 'WHAT ALFRED KNOWS ABOUT YOU',
-                communicationStyle: 'COMMUNICATION STYLE',
-                personalityNote: 'PERSONALITY NOTES',
-                coachingTheme: 'COACHING THEMES',
-                followUp: 'OPEN FOLLOW-UPS',
-                contactIntelligence: 'CONTACT INTELLIGENCE',
-                correctionPattern: 'EXTRACTION PATTERNS',
-                agentPattern: 'OBSERVED PATTERNS'
-            };
-
             items.forEach(item => {
                 const key = item.type || 'other';
                 if (!groups[key]) groups[key] = [];
@@ -6301,38 +6839,100 @@
             });
 
             let html = '';
-            for (const type of groupOrder) {
+            for (const type of MEMORY_GROUP_ORDER) {
                 const group = groups[type];
                 if (!group || group.length === 0) continue;
+                const meta = MEMORY_CATEGORIES[type] || { name: type, dot: 'living', kind: 'items', lede: '' };
 
-                const label = groupLabels[type] || type.toUpperCase();
-                const isContactGroup = type === 'contactIntelligence';
-
-                html += '<div class="config-card" style="margin-bottom:10px;">';
-                html += '<div style="padding:10px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;">';
-                html += '<span style="font-size:10px;font-weight:600;letter-spacing:0.5px;color:var(--ink-secondary);">' + label + '</span>';
-                html += '<span style="font-size:10px;color:var(--ink-tertiary);">' + group.length + '</span>';
-                html += '</div>';
-
-                // For contact intelligence, collapse by default (too many items)
-                if (isContactGroup && group.length > 5) {
-                    html += '<div id="contactIntelCollapsed" style="padding:8px 16px;">';
-                    group.slice(0, 5).forEach(item => { html += renderMemoryRow(item); });
-                    html += '<button class="pill" style="font-size:10px;padding:3px 10px;margin-top:6px;" onclick="document.getElementById(\'contactIntelCollapsed\').style.display=\'none\';document.getElementById(\'contactIntelExpanded\').style.display=\'\';">Show all ' + group.length + '</button>';
-                    html += '</div>';
-                    html += '<div id="contactIntelExpanded" style="padding:8px 16px;display:none;">';
-                    group.forEach(item => { html += renderMemoryRow(item); });
-                    html += '</div>';
-                } else {
-                    html += '<div style="padding:8px 16px;">';
-                    group.forEach(item => { html += renderMemoryRow(item); });
-                    html += '</div>';
+                // Pick a representative excerpt — first item's content, lightly truncated
+                let excerpt = '';
+                if (group[0] && group[0].content) {
+                    const c = group[0].content.length > 140 ? group[0].content.slice(0, 137).trim() + '…' : group[0].content;
+                    excerpt = c;
                 }
+                const more = group.length > 1 ? ` <span style="color:var(--ink-tertiary);">— and ${group.length - 1} more.</span>` : '';
 
-                html += '</div>';
+                html += `<div class="zen-thread" onclick="showMemoryCategoryPage('${type}')">
+                    <div class="zen-thread-top">
+                        <span class="zen-thread-meta"><span class="dot ${meta.dot}"></span>${meta.kind}</span>
+                        <span class="zen-thread-aside">${group.length} item${group.length === 1 ? '' : 's'}</span>
+                    </div>
+                    <div class="zen-thread-name">${escapeHtml(meta.name)}</div>
+                    <div class="zen-thread-body">${excerpt ? '<em>"' + escapeHtml(excerpt) + '"</em>' + more : '<span style="color:var(--ink-tertiary);">Empty.</span>'}</div>
+                    <div class="zen-thread-foot">
+                        <span>Open ${group.length} →</span>
+                    </div>
+                </div>`;
             }
 
             container.innerHTML = html;
+        }
+
+        // ── L2: Memory category page ──
+        function showMemoryCategoryPage(type) {
+            const meta = MEMORY_CATEGORIES[type] || { name: type, lede: '' };
+            const items = ((_lastMemoryData && _lastMemoryData.items) || []).filter(i => (i.type || 'other') === type);
+            const pageState = { type, items, shown: 10 };
+            window._memoryPageState = pageState;
+            renderMemoryCategoryPage();
+            closeSettingsPanel();
+        }
+
+        function renderMemoryCategoryPage() {
+            const st = window._memoryPageState;
+            if (!st) return;
+            const meta = MEMORY_CATEGORIES[st.type] || { name: st.type, lede: '' };
+            const total = st.items.length;
+            const showing = Math.min(st.shown, total);
+
+            let rows = '';
+            st.items.slice(0, st.shown).forEach(item => {
+                rows += renderMemoryL2Row(item);
+            });
+            const moreBtn = showing < total
+                ? `<button class="zen-l2-more" onclick="_memoryPageState.shown += 10; renderMemoryCategoryPage();">See ${Math.min(10, total - showing)} more &middot; ${total - showing} remaining</button>`
+                : '';
+
+            const html = `
+                <div id="memory-l2-page" style="max-width:680px;margin:0 auto;padding:20px 24px 60px;">
+                    <div class="zen-l2-back" onclick="closeToolOverlay(); openSettingsPanel(); showSettingsTab('data');">← Memory</div>
+                    <div class="zen-l2-meta">
+                        <span>${meta.kind || 'items'}</span>
+                        <span>&middot;</span>
+                        <span>${total} item${total === 1 ? '' : 's'}</span>
+                    </div>
+                    <div class="zen-l2-title">${escapeHtml(meta.name)}</div>
+                    <div class="zen-l2-lede">${escapeHtml(meta.lede || '')}</div>
+                    ${total === 0 ? `<div class="zen-thread-empty">${escapeHtml(meta.emptyExcerpt || 'Nothing here yet.')}</div>` : rows}
+                    ${moreBtn}
+                </div>
+            `;
+            showFormPage(meta.name, html, null, true);
+        }
+
+        function renderMemoryL2Row(item) {
+            const confidenceClass = item.confidence >= 0.9 ? 'high' : item.confidence >= 0.7 ? 'mid' : 'low';
+            const confColor = item.confidence >= 0.9 ? 'var(--growth)' : item.confidence >= 0.7 ? 'var(--info)' : 'var(--ink-faint)';
+            const confidencePct = Math.round((item.confidence || 0) * 100);
+            const staleTag = item.isStale ? '<span class="source-tag" style="color:var(--warning);">stale</span>' : '';
+            const sourceTag = item.source ? `<span class="source-tag">${escapeHtml(item.source)}</span>` : '';
+
+            const isEditable = item.source === 'workflow';
+            const actions = isEditable ? `
+                <div class="mem-actions">
+                    <button class="pill" style="font-size:10px;padding:3px 8px;" onclick="memoryFeedback('${item.id}','positive',this)" title="Accurate">&#x2713;</button>
+                    <button class="pill" style="font-size:10px;padding:3px 8px;" onclick="memoryFeedback('${item.id}','negative',this)" title="Wrong">&#x2717;</button>
+                    <button class="pill" style="font-size:10px;padding:3px 8px;" onclick="memoryDelete('${item.id}',this)" title="Delete">&#x2212;</button>
+                </div>
+            ` : '';
+
+            return `
+                <div class="zen-l2-row" data-memory-id="${item.id}">
+                    <span class="conf-dot" style="background:${confColor};" title="${confidencePct}% confidence"></span>
+                    <div class="content">${escapeHtml(item.content)}${sourceTag}${staleTag}</div>
+                    ${actions}
+                </div>
+            `;
         }
 
         function renderMemoryRow(item) {
@@ -6344,10 +6944,10 @@
             // Only show action buttons for workflow patterns (editable)
             const isEditable = item.source === 'workflow';
             const actions = isEditable ? `
-                <div style="display:flex;gap:4px;margin-left:auto;flex-shrink:0;">
-                    <button class="pill" style="font-size:9px;padding:2px 6px;color:var(--growth);border-color:var(--growth);" onclick="memoryFeedback('${item.id}','positive',this)" title="This is accurate">&#x2713;</button>
-                    <button class="pill" style="font-size:9px;padding:2px 6px;color:var(--warning);border-color:var(--warning);" onclick="memoryFeedback('${item.id}','negative',this)" title="This is wrong">&#x2717;</button>
-                    <button class="pill" style="font-size:9px;padding:2px 6px;color:var(--danger);border-color:var(--danger);" onclick="memoryDelete('${item.id}',this)" title="Delete">&#x2212;</button>
+                <div class="mem-actions" style="display:flex;gap:4px;margin-left:auto;flex-shrink:0;">
+                    <button class="pill" style="font-size:9px;padding:2px 6px;" onclick="memoryFeedback('${item.id}','positive',this)" title="This is accurate">&#x2713;</button>
+                    <button class="pill" style="font-size:9px;padding:2px 6px;" onclick="memoryFeedback('${item.id}','negative',this)" title="This is wrong">&#x2717;</button>
+                    <button class="pill" style="font-size:9px;padding:2px 6px;" onclick="memoryDelete('${item.id}',this)" title="Delete">&#x2212;</button>
                 </div>
             ` : '';
 
@@ -6366,30 +6966,65 @@
             const events = v2.totalEvents || 0;
             const active = v2.activePatterns || 0;
             const direct = v2.directInstructions || 0;
-            const stale = v2.stalePatterns || 0;
             const pending = v2.pendingReviews || 0;
             const byType = v2.eventsByType || {};
 
-            let html = '<div style="padding:12px 16px;">';
-            html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;">';
-            html += `<div><span style="color:var(--ink-tertiary);">Learning Events</span><div style="font-size:18px;font-weight:600;font-family:var(--font-display);color:var(--ink);">${events}</div></div>`;
-            html += `<div><span style="color:var(--ink-tertiary);">Active Patterns</span><div style="font-size:18px;font-weight:600;font-family:var(--font-display);color:var(--ink);">${active}</div></div>`;
-            html += `<div><span style="color:var(--ink-tertiary);">Direct Instructions</span><div style="font-size:18px;font-weight:600;font-family:var(--font-display);color:var(--growth);">${direct}</div></div>`;
-            html += `<div><span style="color:var(--ink-tertiary);">Pending Reviews</span><div style="font-size:18px;font-weight:600;font-family:var(--font-display);color:var(--warning);">${pending}</div></div>`;
-            html += '</div>';
+            // Top 3 signal types for the body sentence
+            const topSignals = Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 3);
+            const signalPhrase = topSignals.length
+                ? topSignals.map(([t, c]) => `${t.replace(/_/g, ' ')} (${c})`).join(', ')
+                : '';
 
-            if (Object.keys(byType).length > 0) {
-                html += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line);">';
-                html += '<div style="font-size:10px;font-weight:600;color:var(--ink-secondary);letter-spacing:0.5px;margin-bottom:6px;">SIGNAL BREAKDOWN</div>';
-                Object.entries(byType).sort((a,b) => b[1] - a[1]).forEach(([type, count]) => {
-                    const label = type.replace(/_/g, ' ');
-                    html += `<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0;"><span style="color:var(--ink-secondary);">${label}</span><span style="color:var(--ink);font-weight:500;">${count}</span></div>`;
-                });
-                html += '</div>';
+            // State chip
+            const state = pending > 0 ? 'reviewing' : (active > 0 ? 'active' : 'idle');
+
+            // Body: substantive sentence
+            let body = '';
+            if (events > 0) {
+                body = `<strong>${events}</strong> events collected &middot; <strong>${active}</strong> active patterns &middot; <strong>${direct}</strong> explicit instructions.`;
+                if (signalPhrase) {
+                    body += `<br><span style="color:var(--ink-tertiary);">The strongest signals are ${signalPhrase}.</span>`;
+                }
+            } else {
+                body = 'Nothing learned yet. As you correct Alfred or give it instructions, patterns will form here.';
             }
 
-            html += '</div>';
-            container.innerHTML = html;
+            // Live edge: if there are pending reviews, surface them
+            const edge = pending > 0 ? `
+                <div class="zen-thread-edge">
+                    <span class="zen-thread-edge-lbl">Emerging</span>
+                    <span class="zen-thread-edge-q">${pending} new pattern${pending === 1 ? '' : 's'} ${pending === 1 ? 'is' : 'are'} waiting for your review.</span>
+                </div>
+            ` : '';
+
+            // Foot meta
+            const foot = `
+                <div class="zen-thread-foot">
+                    <span>${active} pattern${active === 1 ? '' : 's'} · ${direct} instruction${direct === 1 ? '' : 's'}</span>
+                    <span class="zen-thread-chip">${state}</span>
+                </div>
+            `;
+
+            // Single thread-style card replaces the old stats box
+            container.outerHTML = `
+                <div class="zen-thread" id="memoryStats" onclick="document.getElementById('learningBreakdown').classList.toggle('open');">
+                    <div class="zen-thread-top">
+                        <span class="zen-thread-meta"><span class="dot active"></span>how Alfred is learning</span>
+                    </div>
+                    <div class="zen-thread-name">Learning</div>
+                    <div class="zen-thread-body">${body}</div>
+                    ${edge}
+                    ${foot}
+                    <div id="learningBreakdown">
+                        ${Object.keys(byType).length > 0
+                            ? Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([t, c]) =>
+                                `<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;"><span style="color:var(--ink-secondary);">${t.replace(/_/g, ' ')}</span><span style="color:var(--ink-tertiary);">${c}</span></div>`
+                            ).join('')
+                            : '<div class="zen-status">No signal data yet.</div>'
+                        }
+                    </div>
+                </div>
+            `;
         }
 
         async function memoryFeedback(patternId, feedback, btn) {
@@ -7813,15 +8448,16 @@
                 if (data.themes && data.themes.length > 0) {
                     themesEl.innerHTML = data.themes.slice(0, 5).map(t => {
                         const state = t.state || t.classification || 'researching';
-                        return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);cursor:pointer;" onclick="showThemeDeepDive('${escapeHtml(t.theme || t.name).replace(/'/g, "\\'")}')">
-                            <span class="rf-theme-dot ${state}" style="width:7px;height:7px;border-radius:50%;flex-shrink:0;"></span>
-                            <span style="font-size:13px;color:var(--ink);flex:1;">${escapeHtml(t.theme || t.name)}</span>
-                            <span style="font-size:10px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.05em;">${state}</span>
-                            <span style="font-size:10px;color:var(--ink-faint);background:var(--surface-sunken);padding:1px 7px;border-radius:10px;">${t.count}</span>
+                        const name = t.theme || t.name;
+                        return `<div class="zen-theme-row" onclick="showThemeDeepDive('${escapeHtml(name).replace(/'/g, "\\'")}'); closeSettingsPanel();">
+                            <span class="zen-theme-dot rf-theme-dot ${state}"></span>
+                            <span class="zen-theme-name">${escapeHtml(name)}</span>
+                            <span class="zen-theme-state">${state}</span>
+                            <span class="zen-theme-count">${t.count}</span>
                         </div>`;
                     }).join('');
                 } else {
-                    themesEl.innerHTML = '<div style="font-size:12px;color:var(--ink-tertiary);padding:4px 0;">No themes yet. Ingest content below to get started.</div>';
+                    themesEl.innerHTML = '<div class="zen-status" style="padding:6px 0;">No themes yet. Add a thought below to get started.</div>';
                 }
                 // Update summary stats
                 const summaryEl = document.getElementById('reflectionSummaryStats');
@@ -7859,107 +8495,350 @@
         // REFLECTIONS FULL PAGE
         // ═══════════════════════════════════════════════
 
+        // Reflections home state (cached across tab switches, no refetch)
+        let _rfData = null;
+        let _rfTab = 'now';
+
         async function showReflectionsPage() {
             const loadingHtml = '<div id="reflections-page" style="padding:20px;color:var(--ink-secondary);">Loading reflections...</div>';
             showFormPage('Reflections', loadingHtml, null, true);
             try {
                 const [themesResp, statsResp] = await Promise.all([
-                    authFetch('/api/reflect/themes?days=30&limit=15'),
+                    authFetch('/api/reflect/themes?days=30&limit=20'),
                     authFetch('/api/reflect/stats')
                 ]);
-                const themesData = await themesResp.json();
-                const statsData = await statsResp.json();
-                const container = document.getElementById('reflections-page');
-                if (!container) return;
-
-                const themes = themesData.themes || [];
-                const questions = themesData.open_questions || [];
-                const totalReflections = statsData.total_reflections || 0;
-
-                let html = '';
-
-                // Header meta
-                html += `<div style="font-size:11px;color:var(--ink-faint);margin-bottom:16px;">${totalReflections} reflections</div>`;
-
-                // Active Themes section
-                html += `<div class="rf-section-title">Active Themes <span class="rf-section-count">${themes.length}</span></div>`;
-
-                if (themes.length > 0) {
-                    themes.forEach(t => {
-                        const state = t.state || t.classification || 'researching';
-                        const name = t.theme || t.name || 'Unnamed';
-                        const subtitle = t.subtitle || '';
-                        const count = t.count || 0;
-                        html += `<div class="rf-theme-card" onclick="showThemeDeepDive('${escapeHtml(name).replace(/'/g, "\\'")}')">
-                            <div class="rf-theme-card-top">
-                                <span class="rf-theme-dot ${state}"></span>
-                                <span class="rf-theme-name">${escapeHtml(name)}</span>
-                                <div class="rf-theme-meta">
-                                    <span class="rf-theme-state">${state}</span>
-                                    <span class="rf-theme-count">${count}</span>
-                                </div>
-                            </div>
-                            ${subtitle ? `<div class="rf-theme-sub">${escapeHtml(subtitle)}</div>` : ''}
-                        </div>`;
-                    });
-                } else {
-                    html += '<div style="font-size:12px;color:var(--ink-tertiary);padding:12px 0;">No themes yet. Ingest content to get started.</div>';
-                }
-
-                // Open Questions section
-                if (questions.length > 0) {
-                    html += `<div class="rf-section-title" style="margin-top:24px;">Open Questions <span class="rf-section-count">${questions.length}</span></div>`;
-                    questions.forEach(q => {
-                        const qText = typeof q === 'string' ? q : (q.text || q.question || '');
-                        const qTheme = typeof q === 'object' ? (q.theme || '') : '';
-                        const qAge = typeof q === 'object' ? (q.age || q.days_open || '') : '';
-                        const qSlug = (qTheme || 'general').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-                        html += `<div class="rf-question-card" onclick="startReflectionChat('${escapeHtml(qText).replace(/'/g, "\\'")}')">
-                            <div class="rf-question-text">${escapeHtml(qText)}</div>
-                            <div class="rf-question-footer">
-                                ${qTheme ? `<span class="rf-question-tag">${escapeHtml(qTheme)}</span>` : ''}
-                                ${qAge ? `<span class="rf-question-age">${qAge} days</span>` : ''}
-                                <button class="rf-research-btn" onclick="event.stopPropagation(); startResearchLoop('${escapeHtml(qText).replace(/'/g, "\\'")}', '${qSlug}', '${escapeHtml(qTheme || 'General').replace(/'/g, "\\'")}')">Research</button>
-                            </div>
-                        </div>`;
-                    });
-                }
-
-                // Reflection Sources section
-                html += `<div class="rf-section-title" style="margin-top:24px;">Reflection Sources</div>`;
-                html += `<div style="background:var(--surface);border:1px solid var(--line);padding:4px 18px;">`;
-                const sources = [
-                    { key: 'chrome', name: 'Chrome browsing', alwaysOn: false },
-                    { key: 'notion', name: 'Notion pages', alwaysOn: false },
-                    { key: 'conversation', name: 'Messages / conversations', alwaysOn: false },
-                    { key: 'youtube', name: 'YouTube', alwaysOn: false },
-                    { key: 'manual', name: 'Manual capture', alwaysOn: true }
-                ];
-                const bySource = statsData.by_source || {};
-                sources.forEach(src => {
-                    const count = bySource[src.key] || 0;
-                    const statusText = count > 0 ? `${count} reflections` : 'No data yet';
-                    html += `<div class="rf-source-row">
-                        <div class="rf-source-info">
-                            <span class="rf-source-name">${src.name}</span>
-                            <span class="rf-source-status">${statusText}</span>
-                        </div>
-                        <div class="rf-source-actions">
-                            ${!src.alwaysOn ? `<button class="rf-source-pull" onclick="event.stopPropagation(); pullReflectionSource('${src.key}', this)">Pull now</button>` : '<span style="font-size:10px;color:var(--ink-faint);">Always on</span>'}
-                        </div>
-                    </div>`;
-                });
-                html += `</div>`;
-                html += `<div style="margin-top:10px;display:flex;gap:8px;">
-                    <button style="font-family:var(--font-body);font-size:11px;font-weight:500;color:var(--ink-secondary);background:none;border:1px solid var(--line);padding:4px 12px;cursor:pointer;border-radius:0;" onclick="pullReflectionSource('all', this)">Pull all now</button>
-                    <button style="font-family:var(--font-body);font-size:11px;font-weight:500;color:var(--danger);background:none;border:1px solid var(--line);padding:4px 12px;cursor:pointer;border-radius:0;" onclick="resetReflectionSources(this)">Reset</button>
-                </div>`;
-
-                container.innerHTML = html;
+                _rfData = {
+                    ...(await themesResp.json()),
+                    stats: await statsResp.json()
+                };
+                _rfTab = 'now';
+                rfhRender();
             } catch (error) {
                 const container = document.getElementById('reflections-page');
                 if (container) container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger);">Failed to load reflections. <button class="pill" onclick="showReflectionsPage()">Retry</button></div>`;
             }
+        }
+
+        // ── Reflections home helpers ──
+        const RF_SOURCE_LABEL = { chrome: 'browsing', notion: 'notes', conversation: 'conversations', youtube: 'videos', claude_export: 'Claude chats', manual: 'captures' };
+        function rfhEscAttr(s) { return escapeHtml(s || '').replace(/'/g, "\\'"); }
+        function rfhShortDate(iso) {
+            if (!iso) return '';
+            const d = new Date(iso.replace(' ', 'T') + (iso.includes('T') ? '' : 'Z'));
+            if (isNaN(d)) return '';
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+        function rfhSourceLine(sources, lastActivity) {
+            const parts = Object.entries(sources || {}).map(([k, n]) => `${n} ${RF_SOURCE_LABEL[k] || k}`);
+            if (parts.length) return parts.join(' · ');
+            const sd = rfhShortDate(lastActivity);
+            return sd ? `last touched ${sd}` : '';
+        }
+        function rfhMovedBadge(t) {
+            if (t.moved) return `moved this week <span class="ar">${escapeHtml(t.moved)}</span>`;
+            const n = t.inputs_this_week || 0;
+            if (n > 0) return `new input <span class="ar">+${n} this week</span>`;
+            return '';
+        }
+        function rfhTempLabel(temp) {
+            return { hot: 'Hot', warming: 'Warming', cooling: 'Cooling', resolved: 'Settled' }[temp] || 'Active';
+        }
+
+        function rfhRender() {
+            const container = document.getElementById('reflections-page');
+            if (!container || !_rfData) return;
+            const d = _rfData;
+            const themes = d.themes || [];
+            const questions = d.open_questions || [];
+            const resolved = themes.filter(t => t.temperature === 'resolved');
+            const allCount = (d.stats && d.stats.active_themes) || themes.length;
+
+            const weekCount = d.week_input_count || 0;
+            const weekSrc = (d.week_sources || []).map(s => RF_SOURCE_LABEL[s] || s);
+            const srcPhrase = weekSrc.length ? ` across ${weekSrc.slice(0, 3).join(', ')}` : '';
+            const now = new Date();
+            const weekOf = new Date(now.getTime() - now.getDay() * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+            let html = `<div class="rfh-hd">
+                <div class="rfh-title">Reflections</div>
+                <div class="rfh-sub">Week of ${weekOf} · ${weekCount} input${weekCount === 1 ? '' : 's'}${srcPhrase}</div>
+            </div>`;
+
+            html += `<div class="rfh-tabs">
+                ${rfhTab('now', 'Now')}
+                ${rfhTab('questions', 'Questions', questions.length)}
+                ${rfhTab('resolved', 'Resolved', resolved.length)}
+                ${rfhTab('all', 'All threads', allCount)}
+            </div><div id="rfh-tabbody"></div>`;
+
+            container.innerHTML = html;
+            rfhRenderBody();
+        }
+
+        function rfhTab(key, label, count) {
+            const c = (count !== undefined) ? `<span class="ct">${count}</span>` : '';
+            return `<button class="rfh-tab ${_rfTab === key ? 'active' : ''}" onclick="rfhSwitchTab('${key}')">${label}${c}</button>`;
+        }
+        function rfhSwitchTab(key) {
+            _rfTab = key;
+            document.querySelectorAll('.rfh-tab').forEach(b => b.classList.remove('active'));
+            const tabs = { now: 0, questions: 1, resolved: 2, all: 3 };
+            const btns = document.querySelectorAll('.rfh-tab');
+            if (btns[tabs[key]]) btns[tabs[key]].classList.add('active');
+            rfhRenderBody();
+        }
+
+        function rfhRenderBody() {
+            const body = document.getElementById('rfh-tabbody');
+            if (!body) return;
+            if (_rfTab === 'now') body.innerHTML = rfhRenderNow();
+            else if (_rfTab === 'questions') body.innerHTML = rfhRenderQuestions();
+            else if (_rfTab === 'resolved') body.innerHTML = rfhRenderResolved();
+            else body.innerHTML = rfhRenderAll();
+        }
+
+        function rfhThreadCard(t) {
+            const name = t.theme || 'Unnamed';
+            const temp = t.temperature || 'warming';
+            const moved = rfhMovedBadge(t);
+            const edge = t.edge || '';
+            const srcLine = rfhSourceLine(t.sources_this_week, t.last_activity);
+            return `<div class="rfh-thread" onclick="showThemeDeepDive('${rfhEscAttr(name)}')">
+                <div class="rfh-thread-top">
+                    <span class="rfh-temp"><span class="rfh-dot ${temp}"></span> ${rfhTempLabel(temp)}</span>
+                    ${moved ? `<span class="rfh-move">${moved}</span>` : ''}
+                </div>
+                <div class="rfh-thread-name">${escapeHtml(name)}</div>
+                ${t.subtitle ? `<div class="rfh-changed">${escapeHtml(t.subtitle)}</div>` : ''}
+                ${edge ? `<div class="rfh-edge"><span class="rfh-edge-lbl">Live edge</span><span class="rfh-edge-q">${escapeHtml(edge)}</span></div>` : ''}
+                <div class="rfh-foot">
+                    ${srcLine ? `<span>${escapeHtml(srcLine)}</span>` : ''}
+                    <span class="rfh-state-chip">${escapeHtml(t.state || 'researching')}</span>
+                </div>
+            </div>`;
+        }
+
+        function rfhRenderNow() {
+            const d = _rfData;
+            const themes = d.themes || [];
+            // Hero = threads with real momentum this week, ranked by intensity
+            const moving = themes
+                .filter(t => (t.inputs_this_week || 0) > 0 || t.moved)
+                .sort((a, b) => (b.inputs_this_week || 0) - (a.inputs_this_week || 0))
+                .slice(0, 5);
+            const movingNames = new Set(moving.map(t => t.theme));
+            // Quieter = genuinely dormant threads (gone cold), most-recently-touched first
+            const quieter = themes
+                .filter(t => !movingNames.has(t.theme) && t.temperature === 'cooling')
+                .sort((a, b) => (a.days_since || 0) - (b.days_since || 0))
+                .slice(0, 8);
+            const beliefs = d.belief_shifts || [];
+
+            let h = '';
+            if (moving.length) {
+                h += `<div class="rfh-sec">Moving this week</div>`;
+                h += moving.map(rfhThreadCard).join('');
+            } else {
+                h += `<div class="rfh-empty">Nothing actively moving right now. Pull a source or capture a thought to get started.</div>`;
+            }
+
+            // Connection insight — gated until the connections endpoint exists
+            if (d.connection && d.connection.body) {
+                h += `<div class="rfh-insight">
+                    <div class="rfh-insight-lbl">Alfred noticed</div>
+                    <div class="rfh-insight-body">${d.connection.body}</div>
+                    <div class="rfh-insight-act">
+                        <button class="rfh-btn primary" onclick="startReflectionChat('${rfhEscAttr(d.connection.prompt || '')}')">Think it through</button>
+                    </div>
+                </div>`;
+            }
+
+            if (quieter.length) {
+                h += `<div class="rfh-sec mt">Also open, quieter</div>`;
+                h += quieter.map(t => {
+                    const weeks = Math.round((t.days_since || 0) / 7);
+                    const stale = (t.days_since || 0) >= 14 && (t.open_questions_count || 0) > 0;
+                    const meta = stale
+                        ? `<span class="rfh-stale">open ${weeks} week${weeks === 1 ? '' : 's'}, no movement</span>`
+                        : `<span class="rfh-quiet-meta">last touched ${rfhShortDate(t.last_activity) || '—'}</span>`;
+                    return `<div class="rfh-quiet" onclick="showThemeDeepDive('${rfhEscAttr(t.theme)}')">
+                        <span class="rfh-dot ${t.temperature || 'cooling'}"></span>
+                        <span class="rfh-quiet-name">${escapeHtml(t.theme)}</span>
+                        ${meta}
+                    </div>`;
+                }).join('');
+            }
+
+            if (beliefs.length) {
+                const b = beliefs[0];
+                h += `<div class="rfh-belief">
+                    <div class="rfh-belief-lbl">A belief you updated recently</div>
+                    <div class="rfh-belief-row">
+                        ${b.from ? `<span class="rfh-belief-from">${escapeHtml(b.from)}</span><span class="rfh-belief-arrow">→</span>` : ''}
+                        <span class="rfh-belief-to">${escapeHtml(b.to)}</span>
+                    </div>
+                    ${beliefs.length > 1 ? `<div class="rfh-belief-more" onclick="rfhSwitchTab('all')">${beliefs.length} beliefs updated · see how your thinking has changed →</div>` : ''}
+                </div>`;
+            }
+
+            // Tidy your threads — async slot, populated by rfhLoadTidy()
+            h += `<div id="rfhTidyMount"></div>`;
+            // Defer the fetch so the rest of the page paints first
+            setTimeout(rfhLoadTidy, 0);
+            return h;
+        }
+
+        // ── Tidy your threads ──
+        async function rfhLoadTidy() {
+            const mount = document.getElementById('rfhTidyMount');
+            if (!mount) return;
+            try {
+                const resp = await authFetch('/api/reflect/tidy');
+                const data = await resp.json();
+                const cands = data.candidates || [];
+                if (cands.length === 0) { mount.innerHTML = ''; return; }
+                let h = `<div class="rfh-sec mt" style="display:flex;align-items:center;gap:10px;">
+                    <span>Tidy your threads</span>
+                    <span class="rfh-tidy-count">${cands.length} to review</span>
+                </div>`;
+                h += cands.map(rfhTidyCard).join('');
+                mount.innerHTML = h;
+            } catch (e) {
+                mount.innerHTML = '';
+            }
+        }
+
+        function rfhTidyCard(c) {
+            const reasonLbl = c.reason === 'stale' ? 'Gone quiet' : 'Thin';
+            const themeAttr = rfhEscAttr(c.theme);
+            // Build action row based on reason
+            let actions;
+            if (c.reason === 'stale') {
+                actions = `
+                    <button class="rfh-btn primary" onclick="event.stopPropagation(); showAdvanceModal('${themeAttr}','${c.state || 'researching'}','archived')">Archive</button>
+                    <button class="rfh-btn" onclick="event.stopPropagation(); rfhTidyDismiss('${themeAttr}', this)">Keep open</button>
+                `;
+            } else {
+                actions = `
+                    <button class="rfh-btn primary" onclick="event.stopPropagation(); showMergePicker('${themeAttr}')">Merge into…</button>
+                    <button class="rfh-btn" onclick="event.stopPropagation(); showAdvanceModal('${themeAttr}','${c.state || 'researching'}','archived')">Archive</button>
+                    <button class="rfh-btn" onclick="event.stopPropagation(); rfhTidyDismiss('${themeAttr}', this)">Keep</button>
+                `;
+            }
+            return `<div class="rfh-tidy" data-tidy-theme="${themeAttr}" onclick="showThemeDeepDive('${themeAttr}')">
+                <div class="rfh-tidy-top">
+                    <span class="rfh-tidy-reason">${reasonLbl}</span>
+                    <span class="rfh-tidy-aside">${c.days_since} days quiet</span>
+                </div>
+                <div class="rfh-tidy-name">${escapeHtml(c.theme)}</div>
+                <div class="rfh-tidy-body">${escapeHtml(c.summary || '')}</div>
+                <div class="rfh-tidy-actions">${actions}</div>
+            </div>`;
+        }
+
+        async function rfhTidyDismiss(theme, btn) {
+            try {
+                if (btn) { btn.disabled = true; btn.textContent = 'Dismissing…'; }
+                const resp = await authFetch('/api/reflect/tidy/dismiss', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ theme })
+                });
+                if (!resp.ok) {
+                    if (btn) { btn.disabled = false; btn.textContent = 'Keep'; }
+                    showToast('Could not dismiss', 'error');
+                    return;
+                }
+                // Fade out the card
+                const card = document.querySelector(`.rfh-tidy[data-tidy-theme="${theme.replace(/"/g, '\\"')}"]`);
+                if (card) {
+                    card.style.transition = 'opacity .3s ease, max-height .3s ease, margin .3s ease';
+                    card.style.opacity = '0';
+                    card.style.maxHeight = '0';
+                    card.style.margin = '0';
+                    setTimeout(() => {
+                        card.remove();
+                        // If list now empty, drop the section header too
+                        const mount = document.getElementById('rfhTidyMount');
+                        if (mount && mount.querySelectorAll('.rfh-tidy').length === 0) mount.innerHTML = '';
+                    }, 320);
+                }
+                showToast('Won\'t suggest again for 30 days', 'info');
+            } catch (e) {
+                if (btn) { btn.disabled = false; btn.textContent = 'Keep'; }
+            }
+        }
+
+        function rfhRenderQuestions() {
+            const questions = _rfData.open_questions || [];
+            if (!questions.length) return `<div class="rfh-empty">No open questions right now.</div>`;
+            return questions.map(q => {
+                const qText = typeof q === 'string' ? q : (q.text || q.question || '');
+                const qTheme = typeof q === 'object' ? (q.theme || '') : '';
+                const qSlug = (qTheme || 'general').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+                return `<div class="rf-question-card" onclick="startReflectionChat('${rfhEscAttr(qText)}')">
+                    <div class="rf-question-text">${escapeHtml(qText)}</div>
+                    <div class="rf-question-footer">
+                        ${qTheme ? `<span class="rf-question-tag">${escapeHtml(qTheme)}</span>` : ''}
+                        <button class="rf-research-btn" onclick="event.stopPropagation(); startResearchLoop('${rfhEscAttr(qText)}', '${qSlug}', '${rfhEscAttr(qTheme || 'General')}')">Research</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function rfhRenderResolved() {
+            const resolved = (_rfData.themes || []).filter(t => t.temperature === 'resolved');
+            if (!resolved.length) return `<div class="rfh-empty">Nothing settled yet. Threads land here once they reach monitoring or get archived.</div>`;
+            return resolved.map(t => `<div class="rfh-quiet" onclick="showThemeDeepDive('${rfhEscAttr(t.theme)}')">
+                <span class="rfh-dot resolved"></span>
+                <span class="rfh-quiet-name">${escapeHtml(t.theme)}</span>
+                <span class="rfh-quiet-meta">${escapeHtml(t.state || '')}</span>
+            </div>`).join('');
+        }
+
+        function rfhRenderAll() {
+            const themes = _rfData.themes || [];
+            let h = '';
+            if (themes.length) {
+                h += themes.map(t => `<div class="rfh-quiet" onclick="showThemeDeepDive('${rfhEscAttr(t.theme)}')">
+                    <span class="rfh-dot ${t.temperature || 'warming'}"></span>
+                    <span class="rfh-quiet-name">${escapeHtml(t.theme)}</span>
+                    <span class="rfh-quiet-meta">${t.count || 0} · ${escapeHtml(t.state || '')}</span>
+                </div>`).join('');
+            } else {
+                h += `<div class="rfh-empty">No threads yet. Pull a source to get started.</div>`;
+            }
+
+            // Source management (moved here to keep the Now view calm)
+            const bySource = (_rfData.stats && _rfData.stats.by_source) || {};
+            const sources = [
+                { key: 'chrome', name: 'Chrome browsing', alwaysOn: false },
+                { key: 'notion', name: 'Notion pages', alwaysOn: false },
+                { key: 'conversation', name: 'Messages / conversations', alwaysOn: false },
+                { key: 'youtube', name: 'YouTube', alwaysOn: false },
+                { key: 'manual', name: 'Manual capture', alwaysOn: true }
+            ];
+            h += `<div class="rfh-sec mt">Sources</div>`;
+            h += `<div style="background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-md);padding:4px 18px;">`;
+            sources.forEach(src => {
+                const count = bySource[src.key] || 0;
+                const statusText = count > 0 ? `${count} reflections` : 'No data yet';
+                h += `<div class="rf-source-row">
+                    <div class="rf-source-info">
+                        <span class="rf-source-name">${src.name}</span>
+                        <span class="rf-source-status">${statusText}</span>
+                    </div>
+                    <div class="rf-source-actions">
+                        ${!src.alwaysOn ? `<button class="rf-source-pull" onclick="event.stopPropagation(); pullReflectionSource('${src.key}', this)">Pull now</button>` : '<span style="font-size:10px;color:var(--ink-faint);">Always on</span>'}
+                    </div>
+                </div>`;
+            });
+            h += `</div>`;
+            h += `<div style="margin-top:10px;display:flex;gap:8px;">
+                <button class="rfh-btn" onclick="pullReflectionSource('all', this)">Pull all now</button>
+                <button class="rfh-btn" style="color:var(--danger);" onclick="resetReflectionSources(this)">Reset</button>
+            </div>`;
+            return h;
         }
 
         async function startResearchLoop(question, themeSlug, themeName) {
@@ -8049,111 +8928,224 @@
         // THEME DEEP-DIVE
         // ═══════════════════════════════════════════════
 
+        // L2 deep-dive state cache (for evidence toggle, think-it-through context)
+        let _l2Data = null;
+        const L2_STATES = ['researching', 'deciding', 'creating', 'monitoring'];
+        const L2_NEXT_ACTION = { deciding: 'Move to deciding', creating: 'Mark as decided', monitoring: 'Mark as shipped' };
+
+        function l2EscAttr(s) { return escapeHtml(s || '').replace(/'/g, "\\'"); }
+        function l2ShortDate(s) {
+            if (!s) return '';
+            const d = new Date(s.replace(' ', 'T') + (s.includes('T') ? '' : 'Z'));
+            if (isNaN(d)) return s.substring(0, 10);
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+        function l2TempLabel(t) { return { hot: 'Hot', warming: 'Warming', cooling: 'Cooling', resolved: 'Settled' }[t] || 'Active'; }
+
         async function showThemeDeepDive(themeName) {
             const loadingHtml = `<div id="theme-deepdive" style="padding:20px;color:var(--ink-secondary);">Loading ${escapeHtml(themeName)}...</div>`;
             showFormPage(themeName, loadingHtml, null, true);
             try {
                 const resp = await authFetch('/api/reflect/theme/detail?name=' + encodeURIComponent(themeName));
                 const data = await resp.json();
+                _l2Data = { themeName, ...data };
                 const container = document.getElementById('theme-deepdive');
                 if (!container) return;
 
-                const currentState = data.state || data.classification || 'researching';
-                const states = ['researching', 'deciding', 'creating', 'monitoring'];
-                const currentIdx = states.indexOf(currentState);
-                const nextState = currentIdx < states.length - 1 ? states[currentIdx + 1] : null;
+                const state = data.state || 'researching';
+                const stats = data.stats || {};
+                const beliefs = data.belief_shifts || [];
+                const decisions = data.decisions_typed || [];
+                const stateHistory = data.state_history || [];
+                const timeline = data.timeline || [];
 
-                let html = '';
+                // Active duration from first_seen
+                const firstSeen = data.first_seen ? new Date(data.first_seen.replace(' ', 'T') + 'Z') : null;
+                const days = firstSeen && !isNaN(firstSeen) ? Math.max(1, Math.floor((Date.now() - firstSeen) / 86400000)) : null;
+                const durStr = days === null ? '' : (days >= 14 ? Math.round(days / 7) + ' weeks' : days + ' days');
+                const refCount = stats.reflections || 0;
 
-                // State progression bar
-                html += `<div class="rf-dd-state">`;
-                states.forEach((s, i) => {
-                    let cls = 'rf-state-step';
-                    if (i < currentIdx) cls += ' past';
-                    else if (i === currentIdx) cls += ' current';
-                    html += `<span class="${cls}">${s}</span>`;
-                    if (i < states.length - 1) html += `<span class="rf-state-sep">&#8250;</span>`;
+                // Temperature derived from most-recent timeline activity (timeline is DESC)
+                let temp = 'cooling';
+                if (timeline.length) {
+                    const latestDate = new Date((timeline[0].date || '') + 'T00:00:00Z');
+                    if (!isNaN(latestDate)) {
+                        const daysSince = Math.floor((Date.now() - latestDate) / 86400000);
+                        if (daysSince <= 3) temp = 'hot';
+                        else if (daysSince <= 10) temp = 'warming';
+                    }
+                }
+                if (state === 'archived') temp = 'resolved';
+
+                // State progression dates from state_history (map "to" → date)
+                const stateDateMap = {};
+                stateHistory.forEach(h => { if (h && h.to && h.at) stateDateMap[h.to] = h.at.substring(0, 10); });
+                // Researching's date defaults to first_seen if no explicit transition recorded
+                if (!stateDateMap.researching && data.first_seen) stateDateMap.researching = data.first_seen.substring(0, 10);
+
+                const currentIdx = Math.max(0, L2_STATES.indexOf(state));
+                const nextState = currentIdx < L2_STATES.length - 1 ? L2_STATES[currentIdx + 1] : null;
+
+                let h = `<div class="l2-back" onclick="showReflectionsPage()">← Reflections</div>`;
+
+                // Hero
+                h += `<div class="l2-hero">
+                    <div class="l2-meta">
+                        <span class="l2-dot ${temp}"></span><span>${l2TempLabel(temp)}</span>
+                        <span class="l2-state">${escapeHtml(state)}</span>
+                        ${durStr ? `<span>·</span><span>active ${durStr} · ${refCount} reflection${refCount === 1 ? '' : 's'}</span>` : ''}
+                    </div>
+                    <div class="l2-title">${escapeHtml(themeName)}</div>
+                    ${data.lede ? `<div class="l2-lede">${escapeHtml(data.lede)}</div>` : ''}
+                </div>`;
+
+                // Live edge
+                if (data.edge) {
+                    h += `<div class="l2-edge">
+                        <div class="l2-edge-lbl">Live edge</div>
+                        <div class="l2-edge-q">${escapeHtml(data.edge)}</div>
+                        ${data.edge_secondary ? `<div class="l2-edge-secondary">Also open: ${escapeHtml(data.edge_secondary)}</div>` : ''}
+                        <div class="l2-edge-act">
+                            <button class="l2-btn primary" onclick="l2ThinkItThrough()">Think it through with Alfred</button>
+                            ${nextState ? `<button class="l2-btn" onclick="showAdvanceModal('${l2EscAttr(themeName)}','${state}','${nextState}')">${L2_NEXT_ACTION[nextState] || ('Advance to ' + nextState)}</button>` : ''}
+                        </div>
+                    </div>`;
+                }
+
+                // Split affordance — gated behind backend flag (added in a later pass with thread-entity work)
+                if (data.multi_idea && Array.isArray(data.multi_idea.topics) && data.multi_idea.topics.length > 1) {
+                    const topics = data.multi_idea.topics.map(t => `<b>${escapeHtml(t)}</b>`).join(', ');
+                    h += `<div class="l2-tension">
+                        <div class="l2-tension-lbl">Alfred noticed</div>
+                        <div class="l2-tension-body">This thread is doing a lot at once. Recent reflections span ${topics}. It might be cleaner as separate threads.</div>
+                        <div class="l2-tension-act">
+                            <button class="l2-btn" onclick="showToast('Thread splitting coming soon','info')">Split into threads…</button>
+                            <button class="l2-btn">Looks right, keep it</button>
+                        </div>
+                    </div>`;
+                }
+
+                // State progression
+                h += `<div class="l2-sec">Where it's been</div><div class="l2-states"><div class="l2-states-row">`;
+                L2_STATES.forEach((s, i) => {
+                    const past = i < currentIdx;
+                    const cur = i === currentIdx;
+                    const cls = cur ? 'current' : (past ? 'past' : '');
+                    const date = stateDateMap[s] || '';
+                    h += `<div class="l2-step ${cls}">
+                        ${i < L2_STATES.length - 1 ? '<div class="l2-step-bar"></div>' : ''}
+                        <div class="l2-step-mark"></div>
+                        <div class="l2-step-name">${s}</div>
+                        <div class="l2-step-date">${date ? l2ShortDate(date) : ''}</div>
+                    </div>`;
                 });
-                if (nextState) {
-                    html += `<button class="rf-dd-advance" onclick="showAdvanceModal('${escapeHtml(themeName).replace(/'/g, "\\'")}', '${currentState}', '${nextState}')">Advance</button>`;
-                }
-                html += `</div>`;
+                h += `</div>${nextState ? `<div class="l2-states-foot"><button class="l2-btn" style="font-size:12px;padding:6px 12px;" onclick="showAdvanceModal('${l2EscAttr(themeName)}','${state}','${nextState}')">Advance to ${nextState} →</button></div>` : ''}</div>`;
 
-                // Summary stats
-                const reflectionCount = data.reflection_count || data.count || 0;
-                const questionCount = data.question_count || 0;
-                const decisionCount = data.decision_count || 0;
-                const shiftCount = data.shift_count || 0;
-                html += `<div class="rf-dd-summary">
-                    <div><div class="rf-dd-stat-value">${reflectionCount}</div><div class="rf-dd-stat-label">Reflections</div></div>
-                    <div><div class="rf-dd-stat-value">${questionCount}</div><div class="rf-dd-stat-label">Questions</div></div>
-                    <div><div class="rf-dd-stat-value">${decisionCount}</div><div class="rf-dd-stat-label">Decisions</div></div>
-                    <div><div class="rf-dd-stat-value">${shiftCount}</div><div class="rf-dd-stat-label">Shifts</div></div>
-                </div>`;
-
-                // Coaching CTA
-                html += `<div class="rf-dd-cta" onclick="startReflectionChat('Let\\'s think through ${escapeHtml(themeName).replace(/'/g, "\\'")}')">
-                    <div class="rf-dd-cta-text">Talk through this with Alfred</div>
-                    <div class="rf-dd-cta-hint">Coaching &#8250;</div>
-                </div>`;
-
-                // Research CTA
-                const deepDiveSlug = themeName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-                const topQuestion = (data.open_questions && data.open_questions.length > 0)
-                    ? (typeof data.open_questions[0] === 'string' ? data.open_questions[0] : data.open_questions[0].text || data.open_questions[0].question || '')
-                    : 'What are the key insights and tensions in ' + themeName + '?';
-                html += `<div class="rf-dd-cta" id="research-cta-${deepDiveSlug}" onclick="startResearchLoop('${escapeHtml(topQuestion).replace(/'/g, "\\'")}', '${deepDiveSlug}', '${escapeHtml(themeName).replace(/'/g, "\\'")}')">
-                    <div class="rf-dd-cta-text">Research this theme</div>
-                    <div class="rf-dd-cta-hint">Auto-research &#8250;</div>
-                </div>`;
-
-                // Timeline
-                const timeline = data.timeline || data.reflections || [];
-                if (timeline.length > 0) {
-                    let lastDate = '';
-                    timeline.forEach(item => {
-                        const itemDate = (item.date || item.created_at || '').substring(0, 10);
-                        const displayDate = rfFormatTimelineDate(itemDate);
-                        if (displayDate !== lastDate) {
-                            html += `<div class="time-marker" style="margin:24px 0 12px;">${displayDate}</div>`;
-                            lastDate = displayDate;
-                        }
-                        const type = (item.type || 'reflection').toLowerCase();
-                        const typeLabels = { reflection: 'Reflection', question: 'Open Question', decision: 'Decision', shift: 'Mental Model Shift' };
-                        const source = item.source || '';
-
-                        html += `<div class="rf-tl-card ${type}">
-                            <div class="rf-tl-head">
-                                <span class="rf-tl-dot ${type}"></span>
-                                <span class="rf-tl-type">${typeLabels[type] || type}</span>
-                                ${source ? `<span class="rf-tl-source">${escapeHtml(source)}</span>` : ''}
+                // Moments — belief shifts + decisions, ranked by date desc
+                const moments = [];
+                beliefs.slice(0, 4).forEach(b => moments.push({ kind: 'shift', from: b.from, to: b.to, date: b.date }));
+                decisions.slice(0, 6).forEach(d => moments.push({ kind: 'decision', content: d.content, date: d.date }));
+                moments.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+                if (moments.length) {
+                    h += `<div class="l2-sec">Moments that mattered</div>`;
+                    moments.slice(0, 6).forEach(m => {
+                        if (m.kind === 'shift') {
+                            h += `<div class="l2-beat">
+                                <div class="l2-beat-top">
+                                    <span class="l2-beat-kind shift">Belief shift</span>
+                                    <span class="l2-beat-date">${l2ShortDate(m.date)}</span>
+                                </div>
+                                <div class="l2-beat-body">
+                                    ${m.from ? `<span class="l2-beat-shift-from">${escapeHtml(m.from)}</span><span class="l2-beat-shift-arr">→</span>` : ''}
+                                    <span class="l2-beat-shift-to">${escapeHtml(m.to)}</span>
+                                </div>
                             </div>`;
-
-                        if (type === 'shift' && item.from && item.to) {
-                            html += `<div class="rf-tl-body"><div class="rf-tl-shift">
-                                <div class="rf-tl-shift-from">${escapeHtml(item.from)}</div>
-                                <div class="rf-tl-shift-to">${escapeHtml(item.to)}</div>
-                            </div></div>`;
                         } else {
-                            const content = item.content || item.text || item.content_summary || '';
-                            html += `<div class="rf-tl-body">${escapeHtml(content)}</div>`;
+                            h += `<div class="l2-beat">
+                                <div class="l2-beat-top">
+                                    <span class="l2-beat-kind decision">Decision</span>
+                                    <span class="l2-beat-date">${l2ShortDate(m.date)}</span>
+                                </div>
+                                <div class="l2-beat-body">${escapeHtml(m.content)}</div>
+                            </div>`;
                         }
-
-                        html += `</div>`;
                     });
-                } else {
-                    html += '<div style="font-size:12px;color:var(--ink-tertiary);padding:20px 0;text-align:center;">No timeline entries yet for this theme.</div>';
                 }
 
-                // Back to reflections link
-                html += `<div style="margin-top:20px;text-align:center;">
-                    <button style="font-family:var(--font-body);font-size:12px;color:var(--ink-tertiary);background:none;border:1px solid var(--line);padding:6px 16px;cursor:pointer;border-radius:0;" onclick="showReflectionsPage()">&#8592; Back to Reflections</button>
+                // Evidence (collapsed)
+                h += `<div class="l2-sec">Evidence</div>
+                    <div class="l2-evidence" id="l2Evidence" onclick="l2ToggleEvidence()">
+                        <div class="l2-evidence-row">
+                            <span class="l2-evidence-lbl">All reflections, questions, and decisions that built this thread</span>
+                            <span class="l2-evidence-counts">${stats.reflections || 0} · ${stats.questions || 0} · ${stats.decisions || 0}</span>
+                            <span class="l2-evidence-caret">▾</span>
+                        </div>
+                        <div class="l2-evidence-body" id="l2EvBody" style="display:none;"></div>
+                    </div>`;
+
+                // Footer actions
+                h += `<div class="l2-footer">
+                    <button class="l2-foot-btn" onclick="showMergePicker('${l2EscAttr(themeName)}')">Merge into another thread</button>
+                    <button class="l2-foot-btn" onclick="showAdvanceModal('${l2EscAttr(themeName)}','${state}','archived')">Archive</button>
                 </div>`;
 
-                container.innerHTML = html;
+                container.innerHTML = h;
             } catch (error) {
                 const container = document.getElementById('theme-deepdive');
-                if (container) container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger);">Failed to load theme detail. <button class="pill" onclick="showThemeDeepDive('${escapeHtml(themeName).replace(/'/g, "\\'")}')">Retry</button></div>`;
+                if (container) container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger);">Failed to load. <button class="pill" onclick="showThemeDeepDive('${l2EscAttr(themeName)}')">Retry</button></div>`;
+            }
+        }
+
+        function l2ToggleEvidence() {
+            const ev = document.getElementById('l2Evidence');
+            const body = document.getElementById('l2EvBody');
+            if (!ev || !body || !_l2Data) return;
+            const expanding = body.style.display === 'none';
+            if (expanding && !body.dataset.rendered) {
+                const tl = _l2Data.timeline || [];
+                const kindLabel = { reflection: 'Reflection', question: 'Question', decision: 'Decision', shift: 'Shift' };
+                body.innerHTML = tl.slice(0, 80).map(item => `<div class="l2-ev-item">
+                    <span class="l2-ev-kind">${kindLabel[item.type] || item.type}</span>
+                    <span class="l2-ev-date">${l2ShortDate(item.date)}</span>
+                    <div class="l2-ev-content">${escapeHtml(item.content || '')}</div>
+                </div>`).join('') + (tl.length > 80 ? `<div class="l2-ev-item" style="color:var(--ink-tertiary);">${tl.length - 80} more not shown</div>` : '');
+                body.dataset.rendered = '1';
+            }
+            body.style.display = expanding ? '' : 'none';
+            ev.classList.toggle('expanded', expanding);
+        }
+
+        function l2ThinkItThrough() {
+            if (!_l2Data) return;
+            const d = _l2Data;
+            const decisions = (d.decisions_typed || []).slice(0, 3);
+            const shifts = (d.belief_shifts || []).slice(0, 2);
+            const lines = [
+                `I want to think through this thread with you.`,
+                ``,
+                `Thread: ${d.themeName} (currently ${d.state || 'researching'})`
+            ];
+            if (d.lede) lines.push(`Where it stands: ${d.lede}`);
+            if (decisions.length) {
+                lines.push(``, `Recent decisions:`);
+                decisions.forEach(x => lines.push(`- ${x.content}`));
+            }
+            if (shifts.length) {
+                lines.push(``, `Belief shifts:`);
+                shifts.forEach(s => lines.push(s.from ? `- Was: ${s.from} → Now: ${s.to}` : `- ${s.to}`));
+            }
+            if (d.edge) lines.push(``, `Live edge: ${d.edge}`);
+            lines.push(``, `Help me push this forward.`);
+            const prompt = lines.join('\n');
+
+            if (typeof closeToolOverlay === 'function') closeToolOverlay();
+            const input = document.getElementById('chatInput');
+            if (input) {
+                input.value = prompt;
+                input.focus();
+                // Trigger autoresize if any listeners are attached
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.scrollTop = 0;
             }
         }
 
@@ -8166,6 +9158,113 @@
             if (diffDays === 1) return 'Yesterday';
             if (diffDays < 7) return d.toLocaleDateString('en-US', { weekday: 'long' });
             return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+
+        // ── Theme merge picker ──
+        async function showMergePicker(sourceTheme) {
+            // Fetch the active theme list (archived themes are filtered server-side already)
+            let candidates = [];
+            try {
+                const resp = await authFetch('/api/reflect/themes?days=365&limit=100');
+                const data = await resp.json();
+                candidates = (data.themes || []).filter(t => (t.theme || t.name) !== sourceTheme);
+            } catch (e) {
+                showToast('Could not load themes', 'error');
+                return;
+            }
+
+            let modal = document.getElementById('mergePickerModal');
+            if (modal) modal.remove();
+            modal = document.createElement('div');
+            modal.id = 'mergePickerModal';
+            modal.className = 'rf-modal-overlay active';
+            modal.onclick = (e) => { if (e.target === modal) closeMergePicker(); };
+
+            const listHtml = candidates.length === 0
+                ? '<div style="font-size:13px;color:var(--ink-tertiary);padding:18px 4px;">No other active themes to merge into.</div>'
+                : candidates.map(t => {
+                    const name = t.theme || t.name;
+                    const state = t.state || 'researching';
+                    const count = t.count || 0;
+                    return `<div class="mp-row" onclick="confirmMerge('${l2EscAttr(sourceTheme)}','${l2EscAttr(name)}')">
+                        <span class="mp-dot ${state}"></span>
+                        <span class="mp-name">${escapeHtml(name)}</span>
+                        <span class="mp-meta">${state} &middot; ${count}</span>
+                    </div>`;
+                }).join('');
+
+            modal.innerHTML = `
+                <div class="rf-modal-sheet" style="max-width:520px;">
+                    <div style="font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--ink-tertiary);margin-bottom:6px;">Merge thread</div>
+                    <div style="font-family:var(--font-display);font-size:22px;letter-spacing:-0.01em;color:var(--ink);line-height:1.25;margin-bottom:8px;">Merge "${escapeHtml(sourceTheme)}" into…</div>
+                    <div style="font-size:13px;color:var(--ink-secondary);line-height:1.5;margin-bottom:14px;">Pick the thread that should absorb this one. All reflections will be reassigned. This cannot be undone.</div>
+                    <input type="text" id="mergePickerSearch" placeholder="Filter…" class="form-input" style="margin-bottom:10px;" oninput="filterMergePicker(this.value)">
+                    <div id="mergePickerList" style="max-height:340px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;">${listHtml}</div>
+                    <div style="margin-top:14px;display:flex;justify-content:flex-end;gap:8px;">
+                        <button class="l2-btn" onclick="closeMergePicker()">Cancel</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            setTimeout(() => document.getElementById('mergePickerSearch')?.focus(), 60);
+        }
+
+        function filterMergePicker(query) {
+            const q = (query || '').toLowerCase().trim();
+            document.querySelectorAll('#mergePickerList .mp-row').forEach(row => {
+                const name = row.querySelector('.mp-name')?.textContent.toLowerCase() || '';
+                row.style.display = (!q || name.includes(q)) ? '' : 'none';
+            });
+        }
+
+        function closeMergePicker() {
+            const m = document.getElementById('mergePickerModal');
+            if (m) m.remove();
+        }
+
+        async function confirmMerge(sourceTheme, targetTheme) {
+            // Two-step confirmation — replace the picker list with a confirm view
+            const list = document.getElementById('mergePickerList');
+            if (!list) return;
+            list.innerHTML = `
+                <div style="padding:18px 14px;">
+                    <div style="font-size:14px;color:var(--ink);line-height:1.55;margin-bottom:14px;">
+                        Merge <em style="font-family:var(--font-display);">"${escapeHtml(sourceTheme)}"</em> into <em style="font-family:var(--font-display);">"${escapeHtml(targetTheme)}"</em>?
+                    </div>
+                    <div style="font-size:12px;color:var(--ink-tertiary);margin-bottom:16px;">All reflections that referenced the first thread will be reassigned to the second. The first thread will be removed. This cannot be undone.</div>
+                    <div style="display:flex;gap:8px;justify-content:flex-end;">
+                        <button class="l2-btn" onclick="closeMergePicker()">Cancel</button>
+                        <button class="l2-btn primary" id="mergeConfirmBtn" onclick="executeMerge('${l2EscAttr(sourceTheme)}','${l2EscAttr(targetTheme)}',this)">Merge</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function executeMerge(sourceTheme, targetTheme, btn) {
+            if (btn) { btn.disabled = true; btn.textContent = 'Merging…'; }
+            try {
+                const resp = await authFetch('/api/reflect/themes/merge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ from: sourceTheme, into: targetTheme })
+                });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    showToast(data.error || 'Merge failed', 'error');
+                    if (btn) { btn.disabled = false; btn.textContent = 'Merge'; }
+                    return;
+                }
+                closeMergePicker();
+                const moved = data.reflections_moved || 0;
+                showToast(`Merged "${sourceTheme}" into "${targetTheme}" · ${moved} reflection${moved === 1 ? '' : 's'} reassigned`, 'success');
+                // Invalidate any cached reflections data so the target page reflects the new count
+                if (typeof _rfData !== 'undefined') _rfData = null;
+                // Reopen the target thread so the user sees the unified result
+                showThemeDeepDive(targetTheme);
+            } catch (e) {
+                showToast('Merge failed: ' + (e.message || 'unknown error'), 'error');
+                if (btn) { btn.disabled = false; btn.textContent = 'Merge'; }
+            }
         }
 
         function showAdvanceModal(themeName, currentState, nextState) {
@@ -8206,7 +9305,7 @@
                 const resp = await authFetch('/api/reflect/theme/advance', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: themeName, new_state: newState, note: note })
+                    body: JSON.stringify({ theme: themeName, new_state: newState, context: note })
                 });
                 if (resp.ok) {
                     if (modal) modal.remove();
@@ -8217,6 +9316,19 @@
                 }
             } catch (e) {
                 showToast('Failed to advance theme', 'error');
+            }
+        }
+
+        function toggleCaptureBox() {
+            const box = document.getElementById('captureBox');
+            const btn = document.getElementById('captureToggleBtn');
+            if (!box) return;
+            const isOpen = box.style.display !== 'none';
+            box.style.display = isOpen ? 'none' : '';
+            if (btn) btn.textContent = isOpen ? '+ Add a thought' : 'Cancel';
+            if (!isOpen) {
+                const ta = document.getElementById('reflectionInput');
+                if (ta) setTimeout(() => ta.focus(), 30);
             }
         }
 

@@ -468,6 +468,14 @@ class ReflectionStore {
         var reflectionCount = 0
         var latestClassification = "researching"
 
+        // L2 enrichment side-collections
+        var lede = ""                                  // freshest reflection summary
+        var edge = ""                                  // freshest open question
+        var edgeSecondary = ""                         // next open question
+        var firstSeen = ""                             // ends as oldest createdAt (DESC loop)
+        var beliefShiftsTyped: [[String: String]] = [] // {from,to,date}
+        var decisionsTyped: [[String: String]] = []    // {content,date}
+
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
             sqlite3_bind_text(stmt, 1, (pattern as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
 
@@ -486,6 +494,8 @@ class ReflectionStore {
 
                 // Reflection item
                 reflectionCount += 1
+                if lede.isEmpty && !summary.isEmpty { lede = summary }
+                firstSeen = createdAt   // DESC loop → last assignment wins = oldest
                 timelineItems.append([
                     "type": "reflection",
                     "date": dateStr,
@@ -498,6 +508,8 @@ class ReflectionStore {
                    let questions = jsonDecode(qJson) as? [String] {
                     for q in questions {
                         questionCount += 1
+                        if edge.isEmpty { edge = q }
+                        else if edgeSecondary.isEmpty && q != edge { edgeSecondary = q }
                         timelineItems.append([
                             "type": "question",
                             "date": dateStr,
@@ -512,6 +524,9 @@ class ReflectionStore {
                    let decisions = jsonDecode(dJson) as? [String] {
                     for d in decisions {
                         decisionCount += 1
+                        if decisionsTyped.count < 25 {
+                            decisionsTyped.append(["content": d, "date": dateStr])
+                        }
                         timelineItems.append([
                             "type": "decision",
                             "date": dateStr,
@@ -529,8 +544,14 @@ class ReflectionStore {
                         var content = ""
                         if let from = shift["from"], let to = shift["to"] {
                             content = "Was: \(from) -> Now: \(to)"
+                            if beliefShiftsTyped.count < 10 {
+                                beliefShiftsTyped.append(["from": from, "to": to, "date": dateStr])
+                            }
                         } else if let desc = shift["description"] {
                             content = desc
+                            if beliefShiftsTyped.count < 10 {
+                                beliefShiftsTyped.append(["from": "", "to": desc, "date": dateStr])
+                            }
                         }
                         timelineItems.append([
                             "type": "shift",
@@ -572,7 +593,13 @@ class ReflectionStore {
                 "questions": questionCount,
                 "decisions": decisionCount,
                 "shifts": shiftCount
-            ]
+            ],
+            "lede": lede,
+            "edge": edge,
+            "edge_secondary": edgeSecondary,
+            "first_seen": firstSeen,
+            "belief_shifts": beliefShiftsTyped,
+            "decisions_typed": decisionsTyped
         ]
         if let s = themeSummary {
             result["summary"] = s
@@ -673,6 +700,150 @@ class ReflectionStore {
         return false
     }
 
+    /// Merge two themes: reassign all reflections from `source` into `target`.
+    /// - Updates `themes_json` and `theme_classifications_json` on every reflection that references `source`.
+    /// - When a reflection already has both themes, the source is removed (themes_json is a set).
+    /// - When both themes have classifications on the same reflection, the target's classification wins.
+    /// - Appends a `merged_from` entry to the target's state_history.
+    /// - Deletes the source's `theme_states` row.
+    /// - This operation is irreversible. Caller is expected to confirm.
+    /// Returns the number of reflections updated, or nil on failure.
+    func mergeThemes(source: String, target: String) -> Int? {
+        guard !source.isEmpty, !target.isEmpty, source != target else {
+            print("❌ ReflectionStore.mergeThemes: invalid args (source='\(source)' target='\(target)')")
+            return nil
+        }
+
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return nil }
+
+        // BEGIN transaction so all updates either land together or roll back.
+        sqlite3_exec(db, "BEGIN IMMEDIATE", nil, nil, nil)
+
+        // 1. Find every reflection that references the source theme.
+        let selectSql = "SELECT id, themes_json, theme_classifications_json FROM reflections WHERE themes_json LIKE ?"
+        var stmt: OpaquePointer?
+        var rowsToUpdate: [(id: Int64, themes: [String], classifications: [String: String])] = []
+
+        if sqlite3_prepare_v2(db, selectSql, -1, &stmt, nil) == SQLITE_OK {
+            // Quoted JSON form so we don't match a theme whose name is a substring of another.
+            let likeNeedle = "%\"\(source)\"%"
+            sqlite3_bind_text(stmt, 1, (likeNeedle as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let id = sqlite3_column_int64(stmt, 0)
+                let themesJson = columnText(stmt, 1) ?? "[]"
+                let classJson = columnText(stmt, 2) ?? "{}"
+
+                let themes = (jsonDecode(themesJson) as? [String]) ?? []
+                // Defensive: only act when the *exact* theme name is present (LIKE could over-match in edge cases)
+                guard themes.contains(source) else { continue }
+                let classifications = (jsonDecode(classJson) as? [String: String]) ?? [:]
+                rowsToUpdate.append((id: id, themes: themes, classifications: classifications))
+            }
+        }
+        sqlite3_finalize(stmt)
+
+        // 2. Update each row in place.
+        let updateSql = "UPDATE reflections SET themes_json = ?, theme_classifications_json = ? WHERE id = ?"
+        var updated = 0
+
+        for row in rowsToUpdate {
+            // Rewrite themes set: replace source with target, dedupe, preserve order.
+            var newThemes: [String] = []
+            var seen = Set<String>()
+            for t in row.themes {
+                let mapped = (t == source) ? target : t
+                if seen.insert(mapped).inserted { newThemes.append(mapped) }
+            }
+
+            // Rewrite classifications dict: if both source and target were keys, target wins.
+            var newClass = row.classifications
+            if let sourceClass = newClass.removeValue(forKey: source) {
+                if newClass[target] == nil { newClass[target] = sourceClass }
+            }
+
+            let themesJson = jsonEncode(newThemes)
+            let classJson = jsonEncode(newClass)
+
+            if sqlite3_prepare_v2(db, updateSql, -1, &stmt, nil) == SQLITE_OK {
+                sqlite3_bind_text(stmt, 1, (themesJson as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                sqlite3_bind_text(stmt, 2, (classJson as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                sqlite3_bind_int64(stmt, 3, row.id)
+                if sqlite3_step(stmt) == SQLITE_DONE { updated += 1 }
+            }
+            sqlite3_finalize(stmt)
+        }
+
+        // Early-exit: no reflections referenced the source, so don't write a misleading
+        // history entry or create a phantom target row.
+        if updated == 0 {
+            sqlite3_exec(db, "COMMIT", nil, nil, nil)
+            print("ℹ️ ReflectionStore.mergeThemes: no reflections referenced '\(source)' — no-op")
+            return 0
+        }
+
+        // 3. Append a `merged_from` entry to the target's state_history (creates the row if missing).
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let timestamp = formatter.string(from: Date())
+        let mergeEntry: [String: String] = [
+            "event": "merged_from",
+            "source": source,
+            "reflections_moved": String(updated),
+            "at": timestamp
+        ]
+
+        // Read target's current history, append, write back (and ensure the row exists).
+        var targetHistory: [[String: String]] = []
+        var targetState = "researching"
+        var targetExists = false
+        let readSql = "SELECT state, state_history_json FROM theme_states WHERE theme = ?"
+        if sqlite3_prepare_v2(db, readSql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (target as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            if sqlite3_step(stmt) == SQLITE_ROW {
+                targetState = columnText(stmt, 0) ?? "researching"
+                if let json = columnText(stmt, 1),
+                   let decoded = jsonDecode(json) as? [[String: String]] {
+                    targetHistory = decoded
+                }
+                targetExists = true
+            }
+        }
+        sqlite3_finalize(stmt)
+        targetHistory.append(mergeEntry)
+        let historyJson = jsonEncode(targetHistory)
+
+        let upsertSql = """
+        INSERT INTO theme_states (theme, state, state_history_json, updated_at)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(theme) DO UPDATE SET
+            state_history_json = excluded.state_history_json,
+            updated_at = CURRENT_TIMESTAMP
+        """
+        if sqlite3_prepare_v2(db, upsertSql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (target as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(stmt, 2, (targetState as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(stmt, 3, (historyJson as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_step(stmt)
+        }
+        sqlite3_finalize(stmt)
+        _ = targetExists  // suppress unused warning; kept for future audit-log use
+
+        // 4. Delete the source's theme_states row.
+        let deleteSql = "DELETE FROM theme_states WHERE theme = ?"
+        if sqlite3_prepare_v2(db, deleteSql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (source as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_step(stmt)
+        }
+        sqlite3_finalize(stmt)
+
+        sqlite3_exec(db, "COMMIT", nil, nil, nil)
+        print("✅ ReflectionStore: merged theme '\(source)' → '\(target)' (\(updated) reflections)")
+        return updated
+    }
+
     /// Ensure a theme_states row exists (does not override manual changes)
     func ensureThemeState(theme: String, classification: String) {
         dbLock.lock()
@@ -706,7 +877,7 @@ class ReflectionStore {
         // First, gather theme data from reflections (same approach as getTopThemes but with more detail)
         let sql = """
         SELECT content_summary, themes_json, theme_classifications_json,
-               open_questions_json, relevance_score, created_at
+               open_questions_json, relevance_score, created_at, source
         FROM reflections
         WHERE created_at >= datetime('now', '-\(days) days')
         ORDER BY created_at DESC
@@ -714,12 +885,25 @@ class ReflectionStore {
 
         var stmt: OpaquePointer?
 
+        // Cutoff for "this week" activity (lexicographic compare works for SQLite's
+        // "YYYY-MM-DD HH:MM:SS" UTC timestamp format)
+        let weekCutoff: String = {
+            let f = DateFormatter()
+            f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+            f.timeZone = TimeZone(identifier: "UTC")
+            return f.string(from: Date().addingTimeInterval(-7 * 86400))
+        }()
+
         struct ThemeAgg {
             var count: Int = 0
             var totalRelevance: Double = 0
             var latestClassification: String = "monitoring"
             var latestSummary: String = ""
             var openQuestionCount: Int = 0
+            var lastActivity: String = ""        // most recent created_at for this theme
+            var inputsThisWeek: Int = 0
+            var sourcesThisWeek: [String: Int] = [:]
+            var edge: String = ""                // freshest open question
         }
 
         var themeData: [String: ThemeAgg] = [:]
@@ -731,6 +915,9 @@ class ReflectionStore {
                 let classJson = columnText(stmt, 2)
                 let questionsJson = columnText(stmt, 3)
                 let relevance = sqlite3_column_double(stmt, 4)
+                let createdAt = columnText(stmt, 5) ?? ""
+                let source = columnText(stmt, 6) ?? "unknown"
+                let isThisWeek = !createdAt.isEmpty && createdAt >= weekCutoff
 
                 guard let themes = jsonDecode(themesJson) as? [String] else { continue }
                 let classifications = jsonDecode(classJson) as? [String: String] ?? [:]
@@ -745,6 +932,15 @@ class ReflectionStore {
                         agg.latestClassification = classifications[theme] ?? "monitoring"
                         agg.latestSummary = summary
                         agg.openQuestionCount = questions.count
+                        agg.lastActivity = createdAt
+                    }
+                    // Freshest open question becomes the "live edge" (rows are DESC)
+                    if agg.edge.isEmpty, let firstQ = questions.first, !firstQ.isEmpty {
+                        agg.edge = firstQ
+                    }
+                    if isThisWeek {
+                        agg.inputsThisWeek += 1
+                        agg.sourcesThisWeek[source, default: 0] += 1
                     }
                     themeData[theme] = agg
                 }
@@ -752,13 +948,27 @@ class ReflectionStore {
         }
         sqlite3_finalize(stmt)
 
-        // Load theme_states for all themes
+        // Load theme_states (state + recent transition) for all themes
         var themeStates: [String: String] = [:]
-        let statesSql = "SELECT theme, state FROM theme_states WHERE state != 'archived'"
+        var themeMoved: [String: String] = [:]   // theme -> "from → to" if transitioned this week
+        let statesSql = "SELECT theme, state, state_history_json FROM theme_states WHERE state != 'archived'"
         if sqlite3_prepare_v2(db, statesSql, -1, &stmt, nil) == SQLITE_OK {
             while sqlite3_step(stmt) == SQLITE_ROW {
                 if let t = columnText(stmt, 0), let s = columnText(stmt, 1) {
                     themeStates[t] = s
+                    // Find the most recent transition within the last 7 days
+                    if let histJson = columnText(stmt, 2),
+                       let history = jsonDecode(histJson) as? [[String: String]] {
+                        let weekAgo = Date().addingTimeInterval(-7 * 86400)
+                        let iso = ISO8601DateFormatter()
+                        for entry in history.reversed() {
+                            if let at = entry["at"], let when = iso.date(from: at), when >= weekAgo,
+                               let from = entry["from"], let to = entry["to"], from != to {
+                                themeMoved[t] = "\(from) → \(to)"
+                                break
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -783,18 +993,273 @@ class ReflectionStore {
             .sorted { $0.value.totalRelevance > $1.value.totalRelevance }
             .prefix(limit)
 
+        let iso = ISO8601DateFormatter()
+        let sqlFmt = DateFormatter()
+        sqlFmt.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        sqlFmt.timeZone = TimeZone(identifier: "UTC")
+
         for (theme, agg) in sorted {
             let state = themeStates[theme] ?? agg.latestClassification
+            let moved = themeMoved[theme]
+
+            // Days since last activity (created_at is "YYYY-MM-DD HH:MM:SS" UTC, sometimes ISO)
+            let lastDate = sqlFmt.date(from: agg.lastActivity) ?? iso.date(from: agg.lastActivity)
+            let daysSince = lastDate.map { Int(Date().timeIntervalSince($0) / 86400) } ?? 999
+
+            // Temperature reflects this-week intensity so the dot maps to real momentum:
+            //   hot = transitioned or repeated deliberate attention (3+ inputs)
+            //   warming = touched this week (1-2 inputs)
+            //   resolved = settled (monitoring/archived with no fresh activity)
+            //   cooling = gone quiet
+            let temperature: String
+            if state == "archived" {
+                temperature = "resolved"
+            } else if moved != nil || agg.inputsThisWeek >= 3 {
+                temperature = "hot"
+            } else if agg.inputsThisWeek >= 1 {
+                temperature = "warming"
+            } else if state == "monitoring" {
+                temperature = "resolved"
+            } else {
+                temperature = "cooling"
+            }
+
             results.append([
                 "theme": theme,
                 "state": state,
                 "count": agg.count,
                 "subtitle": agg.latestSummary,
-                "open_questions_count": agg.openQuestionCount
+                "open_questions_count": agg.openQuestionCount,
+                "edge": agg.edge,
+                "moved": moved as Any,
+                "temperature": temperature,
+                "last_activity": agg.lastActivity,
+                "days_since": daysSince,
+                "inputs_this_week": agg.inputsThisWeek,
+                "sources_this_week": agg.sourcesThisWeek
             ])
         }
 
         return results
+    }
+
+    /// Recent mental-model shifts ("beliefs you've updated"), most recent first, deduped by destination.
+    func getRecentBeliefShifts(days: Int = 60, limit: Int = 5) -> [[String: String]] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return [] }
+
+        let sql = """
+        SELECT mental_model_shifts_json, created_at
+        FROM reflections
+        WHERE created_at >= datetime('now', '-\(days) days')
+          AND mental_model_shifts_json IS NOT NULL
+          AND mental_model_shifts_json != '[]'
+        ORDER BY created_at DESC
+        """
+
+        var stmt: OpaquePointer?
+        var results: [[String: String]] = []
+        var seen: Set<String> = []
+
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let createdAt = columnText(stmt, 1) ?? ""
+                let dateShort = String(createdAt.prefix(10))
+                guard let shifts = jsonDecode(columnText(stmt, 0)) as? [[String: String]] else { continue }
+                for shift in shifts {
+                    let to = shift["to"] ?? shift["description"] ?? ""
+                    let from = shift["from"] ?? ""
+                    guard !to.isEmpty else { continue }
+                    let key = to.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+                    if seen.contains(key) { continue }
+                    seen.insert(key)
+                    results.append(["from": from, "to": to, "date": dateShort])
+                    if results.count >= limit { return results }
+                }
+            }
+        }
+        sqlite3_finalize(stmt)
+        return results
+    }
+
+    /// Count of reflections (inputs) in the last N days, plus distinct sources touched.
+    func getWeekInputSummary(days: Int = 7) -> (count: Int, sources: [String]) {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return (0, []) }
+
+        var count = 0
+        var sources: Set<String> = []
+        let sql = "SELECT source FROM reflections WHERE created_at >= datetime('now', '-\(days) days')"
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                count += 1
+                if let s = columnText(stmt, 0) { sources.insert(s) }
+            }
+        }
+        sqlite3_finalize(stmt)
+        return (count, Array(sources))
+    }
+
+    // MARK: - Tidy ("weekly review" surface)
+
+    /// Returns themes that look like they need attention — stale (long-quiet, not archived)
+    /// or thin (few reflections, old). Skips themes the user dismissed within `dismissCooldownDays`.
+    ///
+    /// Each candidate is one of:
+    ///   - `reason: "stale"`   → suggest Archive (no activity in `staleDays`+ days, not already archived)
+    ///   - `reason: "thin"`    → suggest Merge / Archive (≤ thinMaxReflections reflections, oldest >= thinMinAgeDays days)
+    func getTidyCandidates(
+        staleDays: Int = 45,
+        thinMaxReflections: Int = 2,
+        thinMinAgeDays: Int = 14,
+        dismissCooldownDays: Int = 30,
+        limit: Int = 8
+    ) -> [[String: Any]] {
+        // Lean on getThemesWithState for the aggregated view, then post-filter.
+        // Look back far enough that low-volume themes are included.
+        let themes = getThemesWithState(days: 365, limit: 500)
+        guard !themes.isEmpty else { return [] }
+
+        // Read dismissals from theme_states.state_history_json
+        dbLock.lock()
+        let dismissals: [String: Date] = {
+            var out: [String: Date] = [:]
+            guard let db = db else { return out }
+            let sql = "SELECT theme, state_history_json FROM theme_states WHERE state_history_json LIKE '%tidy_dismissed%'"
+            var stmt: OpaquePointer?
+            let iso = ISO8601DateFormatter()
+            iso.formatOptions = [.withInternetDateTime]
+            if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+                while sqlite3_step(stmt) == SQLITE_ROW {
+                    let theme = columnText(stmt, 0) ?? ""
+                    let json = columnText(stmt, 1) ?? "[]"
+                    guard !theme.isEmpty,
+                          let history = jsonDecode(json) as? [[String: String]] else { continue }
+                    // Find most-recent tidy_dismissed entry
+                    let dismissed = history
+                        .filter { ($0["event"] ?? "") == "tidy_dismissed" }
+                        .compactMap { iso.date(from: $0["at"] ?? "") }
+                        .max()
+                    if let d = dismissed { out[theme] = d }
+                }
+            }
+            sqlite3_finalize(stmt)
+            return out
+        }()
+        dbLock.unlock()
+
+        let cooldownInterval = TimeInterval(dismissCooldownDays * 86400)
+        let now = Date()
+
+        var candidates: [[String: Any]] = []
+
+        for t in themes {
+            guard let name = t["theme"] as? String else { continue }
+            // Skip archived
+            if let state = t["state"] as? String, state == "archived" { continue }
+            // Skip if dismissed recently
+            if let lastDismiss = dismissals[name],
+               now.timeIntervalSince(lastDismiss) < cooldownInterval { continue }
+
+            let count = (t["count"] as? Int) ?? 0
+            let daysSince = (t["days_since"] as? Int) ?? 0
+            let openQs = (t["open_questions_count"] as? Int) ?? 0
+            let state = (t["state"] as? String) ?? "researching"
+            let lastActivity = (t["last_activity"] as? String) ?? ""
+
+            // Thin candidates: very few reflections, old enough that they're unlikely to grow
+            if count <= thinMaxReflections && daysSince >= thinMinAgeDays {
+                candidates.append([
+                    "theme": name,
+                    "reason": "thin",
+                    "count": count,
+                    "days_since": daysSince,
+                    "open_questions_count": openQs,
+                    "state": state,
+                    "last_activity": lastActivity,
+                    "summary": "\(count) reflection\(count == 1 ? "" : "s"), oldest from \(daysSince) days ago — likely worth merging into something bigger, or archiving."
+                ])
+                continue
+            }
+
+            // Stale candidates: gone quiet for a long time
+            if daysSince >= staleDays {
+                candidates.append([
+                    "theme": name,
+                    "reason": "stale",
+                    "count": count,
+                    "days_since": daysSince,
+                    "open_questions_count": openQs,
+                    "state": state,
+                    "last_activity": lastActivity,
+                    "summary": "\(daysSince) days since last activity. Probably done — archive it?"
+                ])
+            }
+        }
+
+        // Sort: thin first (cheap wins), then stale by days_since desc
+        candidates.sort { lhs, rhs in
+            let lr = lhs["reason"] as? String ?? ""
+            let rr = rhs["reason"] as? String ?? ""
+            if lr != rr { return lr == "thin" }
+            return ((lhs["days_since"] as? Int) ?? 0) > ((rhs["days_since"] as? Int) ?? 0)
+        }
+
+        return Array(candidates.prefix(limit))
+    }
+
+    /// Records that the user dismissed a tidy suggestion for `theme`. Re-suggestion is
+    /// suppressed for the cooldown window (default 30 days, enforced by getTidyCandidates).
+    func dismissTidy(theme: String) -> Bool {
+        guard !theme.isEmpty else { return false }
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+        let timestamp = iso.string(from: Date())
+        let entry: [String: String] = ["event": "tidy_dismissed", "at": timestamp]
+
+        // Read existing history (if row exists), append, write back.
+        var history: [[String: String]] = []
+        var currentState = "researching"
+        var stmt: OpaquePointer?
+        let readSql = "SELECT state, state_history_json FROM theme_states WHERE theme = ?"
+        if sqlite3_prepare_v2(db, readSql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (theme as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            if sqlite3_step(stmt) == SQLITE_ROW {
+                currentState = columnText(stmt, 0) ?? "researching"
+                if let json = columnText(stmt, 1),
+                   let decoded = jsonDecode(json) as? [[String: String]] {
+                    history = decoded
+                }
+            }
+        }
+        sqlite3_finalize(stmt)
+        history.append(entry)
+        let historyJson = jsonEncode(history)
+
+        let upsertSql = """
+        INSERT INTO theme_states (theme, state, state_history_json, updated_at)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(theme) DO UPDATE SET
+            state_history_json = excluded.state_history_json,
+            updated_at = CURRENT_TIMESTAMP
+        """
+        if sqlite3_prepare_v2(db, upsertSql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (theme as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(stmt, 2, (currentState as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(stmt, 3, (historyJson as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            let ok = sqlite3_step(stmt) == SQLITE_DONE
+            sqlite3_finalize(stmt)
+            return ok
+        }
+        sqlite3_finalize(stmt)
+        return false
     }
 
     // MARK: - Helpers

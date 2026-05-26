@@ -1,0 +1,6 @@
+# Real exchanges from your local workflow_learning.db — may contain PII
+# (contact names, emails, work content). Keep local.
+fixtures_seed.jsonl
+
+# Side output from the most recent run — only the explicit baseline is committed.
+baselines/last_run.json

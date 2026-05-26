@@ -1187,6 +1187,12 @@ class HTTPServer {
 
         case ("POST", "/api/reflect/theme/advance"):
             return handleReflectThemeAdvance(request)
+        case ("POST", "/api/reflect/themes/merge"):
+            return handleReflectThemesMerge(request)
+        case ("GET", "/api/reflect/tidy"):
+            return handleReflectTidy()
+        case ("POST", "/api/reflect/tidy/dismiss"):
+            return handleReflectTidyDismiss(request)
 
         case ("GET", "/api/reflect/stats"):
             return handleReflectStats()
@@ -11243,11 +11249,16 @@ extension HTTPServer {
 
         let themes = ReflectionStore.shared.getThemesWithState(days: days, limit: limit)
         let questions = ReflectionStore.shared.getOpenQuestions(limit: 5)
+        let beliefShifts = ReflectionStore.shared.getRecentBeliefShifts(days: 60, limit: 5)
+        let week = ReflectionStore.shared.getWeekInputSummary(days: 7)
 
         return HTTPResponse(statusCode: 200, body: [
             "themes": themes,
             "open_questions": questions,
-            "total_themes": themes.count
+            "total_themes": themes.count,
+            "belief_shifts": beliefShifts,
+            "week_input_count": week.count,
+            "week_sources": week.sources
         ])
     }
 
@@ -11281,6 +11292,46 @@ extension HTTPServer {
     private func handleReflectStats() -> HTTPResponse {
         let stats = ReflectionStore.shared.getStats()
         return HTTPResponse(statusCode: 200, body: stats)
+    }
+
+    private func handleReflectTidy() -> HTTPResponse {
+        let candidates = ReflectionStore.shared.getTidyCandidates()
+        return HTTPResponse(statusCode: 200, body: ["candidates": candidates, "count": candidates.count])
+    }
+
+    private func handleReflectTidyDismiss(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let theme = (json["theme"] as? String)?.trimmingCharacters(in: .whitespaces),
+              !theme.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'theme' in request body"])
+        }
+        let ok = ReflectionStore.shared.dismissTidy(theme: theme)
+        return HTTPResponse(statusCode: ok ? 200 : 500, body: ok
+            ? ["message": "Dismissed", "theme": theme]
+            : ["error": "Dismiss failed"])
+    }
+
+    private func handleReflectThemesMerge(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let source = (json["from"] as? String)?.trimmingCharacters(in: .whitespaces),
+              let target = (json["into"] as? String)?.trimmingCharacters(in: .whitespaces),
+              !source.isEmpty, !target.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing or empty 'from' / 'into' in request body"])
+        }
+        if source == target {
+            return HTTPResponse(statusCode: 400, body: ["error": "'from' and 'into' must be different"])
+        }
+        guard let movedCount = ReflectionStore.shared.mergeThemes(source: source, target: target) else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Merge failed"])
+        }
+        return HTTPResponse(statusCode: 200, body: [
+            "message": "Themes merged",
+            "from": source,
+            "into": target,
+            "reflections_moved": movedCount
+        ])
     }
 
     private func handleReflectPull(_ request: HTTPRequest) -> HTTPResponse {

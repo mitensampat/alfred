@@ -2,7 +2,7 @@
 // Handles push notifications and offline caching for PWA experience.
 // Cache version is auto-bumped by the server — no manual update needed.
 
-const CACHE_NAME = 'alfred-v2.2.0';
+const CACHE_NAME = 'alfred-v2.3.2-memory';
 
 // Install: skip waiting to activate immediately
 self.addEventListener('install', function(event) {
