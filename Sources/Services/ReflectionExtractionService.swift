@@ -47,18 +47,24 @@ class ReflectionExtractionService {
         RULES:
         - Extract only topics showing DELIBERATE ATTENTION — repeated engagement, deep reads, content creation, active research
         - Ignore routine activity (email checking, social scrolling, shopping, admin tasks)
-        - Name themes SPECIFICALLY. Not "technology" — say "LLM agent architectures" or "Series A pricing models"
+        - Name themes SPECIFICALLY, derived FROM THE CONTENT YOU SEE.
+          A theme name should make sense to someone who only read the actual material — not a generic label, not a plausible-sounding placeholder.
+          Bad: "technology", "strategy", "finance"
+          Better: a concrete noun phrase that names the specific concept being engaged with
+            (e.g. if the content is about FY28 revenue trajectory and IPO readiness, name it "FY28 revenue trajectory" or "IPO readiness", NOT "Series A pricing models")
+          IMPORTANT: do NOT borrow phrases from these rules. Generate the theme name fresh from the content itself.
         - Classify each theme as: researching (gathering info), deciding (weighing options), creating (producing something), or monitoring (tracking ongoing)
-        - Open questions should be specific, not generic. Not "How to grow?" but "Whether to hire a PM before or after launch"
+        - Open questions should be specific, not generic. Not "How to grow?" but a question phrased from the content's own vocabulary.
         - Mental model shifts are rare and valuable — only include if there's clear evidence of changed thinking
         """
 
         if !existingThemes.isEmpty {
             prompt += """
 
-            THEME NORMALIZATION — CRITICAL:
-            Before naming any theme, check this list of existing themes. If a match exists (even approximate), USE THE EXISTING NAME.
-            Do not create near-duplicates like "SaaS pricing" when "pricing strategy" already exists.
+            THEME NORMALIZATION:
+            Below is a list of themes already in the store. If — and ONLY if — the new content is genuinely about the SAME underlying topic as an existing theme, reuse that exact name to avoid near-duplicates (e.g. don't create "SaaS pricing" when "pricing strategy" already covers it).
+            Do NOT force a match. If the content's actual subject doesn't fit any existing theme, create a new theme name derived from the content. A misleading reuse is worse than a new theme.
+            Test: would someone reading only the new content agree this existing theme name describes it? If not, make a new theme.
             Existing themes: \(existingThemes.joined(separator: ", "))
             """
         }
