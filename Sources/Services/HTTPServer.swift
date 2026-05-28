@@ -1189,6 +1189,10 @@ class HTTPServer {
             return handleReflectThemeAdvance(request)
         case ("POST", "/api/reflect/themes/merge"):
             return handleReflectThemesMerge(request)
+        case ("POST", "/api/reflect/item/move"):
+            return handleReflectItemMove(request)
+        case ("POST", "/api/reflect/item/restore"):
+            return handleReflectItemRestore(request)
         case ("GET", "/api/reflect/tidy"):
             return handleReflectTidy()
         case ("POST", "/api/reflect/tidy/dismiss"):
@@ -11332,6 +11336,62 @@ extension HTTPServer {
             "into": target,
             "reflections_moved": movedCount
         ])
+    }
+
+    /// Hide a moment (belief shift / decision) from a theme, or move it to another theme.
+    /// Body: { reflection_id, item_type ("shift"|"decision"), content, from (shift only),
+    ///         from_theme, to_theme (omit/null → pure exclude) }
+    private func handleReflectItemMove(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let rid = (json["reflection_id"] as? Int) ?? (json["reflection_id"] as? NSNumber)?.intValue,
+              let itemType = (json["item_type"] as? String)?.trimmingCharacters(in: .whitespaces),
+              let content = json["content"] as? String,
+              let fromTheme = (json["from_theme"] as? String)?.trimmingCharacters(in: .whitespaces),
+              !itemType.isEmpty, !content.isEmpty, !fromTheme.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing reflection_id / item_type / content / from_theme"])
+        }
+        guard itemType == "shift" || itemType == "decision" else {
+            return HTTPResponse(statusCode: 400, body: ["error": "item_type must be 'shift' or 'decision'"])
+        }
+        let aux = (json["from"] as? String)   // shift "from" belief; nil for decisions
+        let toTheme = (json["to_theme"] as? String)?.trimmingCharacters(in: .whitespaces)
+        let toThemeClean = (toTheme?.isEmpty ?? true) ? nil : toTheme
+        if let t = toThemeClean, t == fromTheme {
+            return HTTPResponse(statusCode: 400, body: ["error": "to_theme must differ from from_theme"])
+        }
+
+        let ok = ReflectionStore.shared.setItemOverride(
+            reflectionId: rid, itemType: itemType, content: content,
+            aux: aux, fromTheme: fromTheme, toTheme: toThemeClean
+        )
+        guard ok else {
+            return HTTPResponse(statusCode: 500, body: ["error": "Failed to record override"])
+        }
+        return HTTPResponse(statusCode: 200, body: [
+            "success": true,
+            "action": toThemeClean == nil ? "excluded" : "moved",
+            "from_theme": fromTheme,
+            "to_theme": toThemeClean ?? ""
+        ])
+    }
+
+    /// Undo a prior item override (restore the moment to its original theme).
+    private func handleReflectItemRestore(_ request: HTTPRequest) -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any],
+              let rid = (json["reflection_id"] as? Int) ?? (json["reflection_id"] as? NSNumber)?.intValue,
+              let itemType = (json["item_type"] as? String)?.trimmingCharacters(in: .whitespaces),
+              let content = json["content"] as? String,
+              let fromTheme = (json["from_theme"] as? String)?.trimmingCharacters(in: .whitespaces),
+              !itemType.isEmpty, !content.isEmpty, !fromTheme.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing reflection_id / item_type / content / from_theme"])
+        }
+        let aux = json["from"] as? String
+        let ok = ReflectionStore.shared.clearItemOverride(
+            reflectionId: rid, itemType: itemType, content: content, aux: aux, fromTheme: fromTheme
+        )
+        return HTTPResponse(statusCode: 200, body: ["success": ok])
     }
 
     private func handleReflectPull(_ request: HTTPRequest) -> HTTPResponse {

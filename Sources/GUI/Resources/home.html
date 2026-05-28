@@ -2510,8 +2510,15 @@
         .l2-step.past .l2-step-bar { background: var(--ink); }
         .l2-states-foot { display: flex; justify-content: flex-end; margin-top: 14px; }
 
-        .l2-beat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 14px 18px; margin-bottom: 8px; }
+        .l2-beat { position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 14px 18px; margin-bottom: 8px; }
         .l2-beat-top { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
+        /* Hover-reveal moment actions (Zen: opacity 0 → 1 on parent hover) */
+        .l2-beat-acts { position: absolute; top: 10px; right: 14px; display: flex; gap: 4px; opacity: 0; transition: opacity 0.12s ease; }
+        .l2-beat:hover .l2-beat-acts { opacity: 1; }
+        .l2-beat-act { font-size: 11px; line-height: 1; color: var(--ink-tertiary); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 4px 7px; cursor: pointer; white-space: nowrap; }
+        .l2-beat-act:hover { color: var(--ink); border-color: var(--ink-tertiary); }
+        .l2-beat-date.has-acts { transition: opacity 0.12s ease; }
+        .l2-beat:hover .l2-beat-date.has-acts { opacity: 0; }
         .l2-beat-kind { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
         .l2-beat-kind.decision { color: var(--growth); }
         .l2-beat-kind.shift { color: var(--warning); }
@@ -7880,16 +7887,29 @@
 
             try {
                 // Register service worker (version param forces re-check on updates)
-                const reg = await navigator.serviceWorker.register('/sw.js?v=2.2.0', { updateViaCache: 'none' });
+                const reg = await navigator.serviceWorker.register('/sw.js?v=2.3.1', { updateViaCache: 'none' });
                 console.log('[Push] Service worker registered, scope:', reg.scope);
 
                 // Force update check on every page load (bypasses 24h browser cache)
                 reg.update().catch(function() {});
 
-                // Check if already subscribed
+                // Check if already subscribed locally
                 const existingSub = await reg.pushManager.getSubscription();
                 if (existingSub) {
-                    console.log('[Push] Already subscribed');
+                    // Local subscription exists — verify server knows about it too.
+                    // This handles the case where the browser subscribed but the POST
+                    // to /api/push/subscribe failed (network blip, auth, tunnel down).
+                    // The server deduplicates by endpoint, so this is safe to call every load.
+                    try {
+                        await authFetch('/api/push/subscribe', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(existingSub.toJSON())
+                        });
+                        console.log('[Push] Subscription synced with server');
+                    } catch(e) {
+                        console.warn('[Push] Failed to sync subscription with server:', e);
+                    }
                     return;
                 }
 
@@ -9043,17 +9063,27 @@
 
                 // Moments — belief shifts + decisions, ranked by date desc
                 const moments = [];
-                beliefs.slice(0, 4).forEach(b => moments.push({ kind: 'shift', from: b.from, to: b.to, date: b.date }));
-                decisions.slice(0, 6).forEach(d => moments.push({ kind: 'decision', content: d.content, date: d.date }));
+                beliefs.slice(0, 4).forEach(b => moments.push({ kind: 'shift', from: b.from, to: b.to, date: b.date, rid: b.rid }));
+                decisions.slice(0, 6).forEach(d => moments.push({ kind: 'decision', content: d.content, date: d.date, rid: d.rid }));
                 moments.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-                if (moments.length) {
+                const shownMoments = moments.slice(0, 6);
+                // Stash for the action handlers (they reference by index to avoid quoting content in onclick)
+                window._l2Moments = shownMoments;
+                if (shownMoments.length) {
                     h += `<div class="l2-sec">Moments that mattered</div>`;
-                    moments.slice(0, 6).forEach(m => {
+                    shownMoments.forEach((m, i) => {
+                        const hasRid = m.rid !== undefined && m.rid !== null && m.rid !== '';
+                        const acts = hasRid ? `<div class="l2-beat-acts">
+                            <span class="l2-beat-act" title="Move to another thread" onclick="l2MoveMoment(${i})">Move →</span>
+                            <span class="l2-beat-act" title="Remove from this thread" onclick="l2RemoveMoment(${i})">Remove</span>
+                        </div>` : '';
+                        const dateCls = hasRid ? 'l2-beat-date has-acts' : 'l2-beat-date';
                         if (m.kind === 'shift') {
                             h += `<div class="l2-beat">
+                                ${acts}
                                 <div class="l2-beat-top">
                                     <span class="l2-beat-kind shift">Belief shift</span>
-                                    <span class="l2-beat-date">${l2ShortDate(m.date)}</span>
+                                    <span class="${dateCls}">${l2ShortDate(m.date)}</span>
                                 </div>
                                 <div class="l2-beat-body">
                                     ${m.from ? `<span class="l2-beat-shift-from">${escapeHtml(m.from)}</span><span class="l2-beat-shift-arr">→</span>` : ''}
@@ -9062,9 +9092,10 @@
                             </div>`;
                         } else {
                             h += `<div class="l2-beat">
+                                ${acts}
                                 <div class="l2-beat-top">
                                     <span class="l2-beat-kind decision">Decision</span>
-                                    <span class="l2-beat-date">${l2ShortDate(m.date)}</span>
+                                    <span class="${dateCls}">${l2ShortDate(m.date)}</span>
                                 </div>
                                 <div class="l2-beat-body">${escapeHtml(m.content)}</div>
                             </div>`;
@@ -9264,6 +9295,123 @@
             } catch (e) {
                 showToast('Merge failed: ' + (e.message || 'unknown error'), 'error');
                 if (btn) { btn.disabled = false; btn.textContent = 'Merge'; }
+            }
+        }
+
+        // ── Moment-level corrections (remove / move a belief shift or decision) ──
+        function _l2MomentPayload(m, themeName, toTheme) {
+            const body = {
+                reflection_id: parseInt(m.rid, 10),
+                item_type: m.kind,                              // 'shift' | 'decision'
+                content: m.kind === 'shift' ? (m.to || '') : (m.content || ''),
+                from_theme: themeName
+            };
+            if (m.kind === 'shift') body.from = m.from || '';   // disambiguates the shift
+            if (toTheme) body.to_theme = toTheme;
+            return body;
+        }
+
+        async function l2RemoveMoment(idx) {
+            const m = (window._l2Moments || [])[idx];
+            const themeName = _l2Data && _l2Data.themeName;
+            if (!m || !themeName) return;
+            try {
+                const resp = await authFetch('/api/reflect/item/move', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(_l2MomentPayload(m, themeName, null))
+                });
+                const data = await resp.json();
+                if (!resp.ok) { showToast(data.error || 'Could not remove', 'error'); return; }
+                showToast('Removed from this thread', 'success');
+                if (typeof _rfData !== 'undefined') _rfData = null;
+                showThemeDeepDive(themeName);
+            } catch (e) {
+                showToast('Remove failed: ' + (e.message || 'unknown error'), 'error');
+            }
+        }
+
+        async function l2MoveMoment(idx) {
+            const m = (window._l2Moments || [])[idx];
+            const themeName = _l2Data && _l2Data.themeName;
+            if (!m || !themeName) return;
+
+            let candidates = [];
+            try {
+                const resp = await authFetch('/api/reflect/themes?days=365&limit=100');
+                const data = await resp.json();
+                candidates = (data.themes || []).filter(t => (t.theme || t.name) !== themeName);
+            } catch (e) {
+                showToast('Could not load themes', 'error');
+                return;
+            }
+
+            let modal = document.getElementById('momentMoveModal');
+            if (modal) modal.remove();
+            modal = document.createElement('div');
+            modal.id = 'momentMoveModal';
+            modal.className = 'rf-modal-overlay active';
+            modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+
+            const preview = m.kind === 'shift' ? (m.to || '') : (m.content || '');
+            const listHtml = candidates.length === 0
+                ? '<div style="font-size:13px;color:var(--ink-tertiary);padding:18px 4px;">No other active threads to move this into.</div>'
+                : candidates.map(t => {
+                    const name = t.theme || t.name;
+                    const state = t.state || 'researching';
+                    const count = t.count || 0;
+                    return `<div class="mp-row" onclick="executeMoveMoment(${idx}, '${l2EscAttr(name)}', this)">
+                        <span class="mp-dot ${state}"></span>
+                        <span class="mp-name">${escapeHtml(name)}</span>
+                        <span class="mp-meta">${state} &middot; ${count}</span>
+                    </div>`;
+                }).join('');
+
+            modal.innerHTML = `
+                <div class="rf-modal-sheet" style="max-width:520px;">
+                    <div style="font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--ink-tertiary);margin-bottom:6px;">Move ${m.kind === 'shift' ? 'belief shift' : 'decision'}</div>
+                    <div style="font-size:14px;color:var(--ink);line-height:1.5;margin-bottom:6px;">"${escapeHtml(preview.length > 140 ? preview.slice(0,140) + '…' : preview)}"</div>
+                    <div style="font-size:13px;color:var(--ink-secondary);line-height:1.5;margin-bottom:14px;">Move this out of "${escapeHtml(themeName)}" and into the thread where it belongs.</div>
+                    <input type="text" id="momentMoveSearch" placeholder="Filter…" class="form-input" style="margin-bottom:10px;" oninput="filterMomentMove(this.value)">
+                    <div id="momentMoveList" style="max-height:340px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;">${listHtml}</div>
+                    <div style="margin-top:14px;display:flex;justify-content:flex-end;gap:8px;">
+                        <button class="l2-btn" onclick="document.getElementById('momentMoveModal').remove()">Cancel</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            setTimeout(() => document.getElementById('momentMoveSearch')?.focus(), 60);
+        }
+
+        function filterMomentMove(query) {
+            const q = (query || '').toLowerCase().trim();
+            document.querySelectorAll('#momentMoveList .mp-row').forEach(row => {
+                const name = row.querySelector('.mp-name')?.textContent.toLowerCase() || '';
+                row.style.display = (!q || name.includes(q)) ? '' : 'none';
+            });
+        }
+
+        async function executeMoveMoment(idx, toTheme, rowEl) {
+            const m = (window._l2Moments || [])[idx];
+            const themeName = _l2Data && _l2Data.themeName;
+            if (!m || !themeName) return;
+            if (rowEl) rowEl.style.opacity = '0.5';
+            try {
+                const resp = await authFetch('/api/reflect/item/move', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(_l2MomentPayload(m, themeName, toTheme))
+                });
+                const data = await resp.json();
+                if (!resp.ok) { showToast(data.error || 'Move failed', 'error'); if (rowEl) rowEl.style.opacity = ''; return; }
+                const mm = document.getElementById('momentMoveModal');
+                if (mm) mm.remove();
+                showToast(`Moved to "${toTheme}"`, 'success');
+                if (typeof _rfData !== 'undefined') _rfData = null;
+                showThemeDeepDive(themeName);
+            } catch (e) {
+                showToast('Move failed: ' + (e.message || 'unknown error'), 'error');
+                if (rowEl) rowEl.style.opacity = '';
             }
         }
 

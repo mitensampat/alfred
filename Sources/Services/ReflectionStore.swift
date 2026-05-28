@@ -84,6 +84,37 @@ class ReflectionStore {
             }
         }
 
+        // Per-item theme overrides. Sub-items (belief shifts, decisions, questions) have no
+        // independent theme tag — they inherit their parent reflection's themes_json. This table
+        // layers non-destructive, user-driven corrections on top: hide an item from a theme, or
+        // re-tag it to a different theme. Source reflections stay untouched (re-extraction safe,
+        // other themes undisturbed); getThemeDetail applies these at read time.
+        //   action is implicit: to_theme == NULL → pure exclude; to_theme set → move (exclude here + show there)
+        //   item_content / item_aux identify the specific sub-item:
+        //     decision → item_content = decision text, item_aux = NULL
+        //     shift    → item_content = "to" (new belief), item_aux = "from" (old belief)
+        let createItemOverrides = """
+        CREATE TABLE IF NOT EXISTS reflection_item_overrides (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reflection_id INTEGER NOT NULL,
+            item_type TEXT NOT NULL,
+            item_content TEXT NOT NULL,
+            item_aux TEXT,
+            from_theme TEXT NOT NULL,
+            to_theme TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_item_override_from ON reflection_item_overrides(from_theme);
+        CREATE INDEX IF NOT EXISTS idx_item_override_to ON reflection_item_overrides(to_theme);
+        """
+
+        if sqlite3_exec(db, createItemOverrides, nil, nil, &errMsg) != SQLITE_OK {
+            if let err = errMsg {
+                print("❌ ReflectionStore: SQL error creating reflection_item_overrides: \(String(cString: err))")
+                sqlite3_free(errMsg)
+            }
+        }
+
         print("✅ ReflectionStore database initialized")
     }
 
@@ -480,6 +511,7 @@ class ReflectionStore {
             sqlite3_bind_text(stmt, 1, (pattern as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
 
             while sqlite3_step(stmt) == SQLITE_ROW {
+                let rid = Int(sqlite3_column_int64(stmt, 0))
                 let source = columnText(stmt, 1) ?? "unknown"
                 let summary = columnText(stmt, 2) ?? ""
                 let createdAt = columnText(stmt, 8) ?? ""
@@ -525,13 +557,14 @@ class ReflectionStore {
                     for d in decisions {
                         decisionCount += 1
                         if decisionsTyped.count < 25 {
-                            decisionsTyped.append(["content": d, "date": dateStr])
+                            decisionsTyped.append(["content": d, "date": dateStr, "rid": String(rid)])
                         }
                         timelineItems.append([
                             "type": "decision",
                             "date": dateStr,
                             "content": d,
-                            "source": source
+                            "source": source,
+                            "rid": String(rid)
                         ])
                     }
                 }
@@ -542,22 +575,29 @@ class ReflectionStore {
                     for shift in shifts {
                         shiftCount += 1
                         var content = ""
+                        var sFrom = ""
+                        var sTo = ""
                         if let from = shift["from"], let to = shift["to"] {
                             content = "Was: \(from) -> Now: \(to)"
+                            sFrom = from; sTo = to
                             if beliefShiftsTyped.count < 10 {
-                                beliefShiftsTyped.append(["from": from, "to": to, "date": dateStr])
+                                beliefShiftsTyped.append(["from": from, "to": to, "date": dateStr, "rid": String(rid)])
                             }
                         } else if let desc = shift["description"] {
                             content = desc
+                            sTo = desc
                             if beliefShiftsTyped.count < 10 {
-                                beliefShiftsTyped.append(["from": "", "to": desc, "date": dateStr])
+                                beliefShiftsTyped.append(["from": "", "to": desc, "date": dateStr, "rid": String(rid)])
                             }
                         }
                         timelineItems.append([
                             "type": "shift",
                             "date": dateStr,
                             "content": content,
-                            "source": source
+                            "source": source,
+                            "rid": String(rid),
+                            "shift_from": sFrom,
+                            "shift_to": sTo
                         ])
                     }
                 }
@@ -583,6 +623,46 @@ class ReflectionStore {
         }
         sqlite3_finalize(stmt)
 
+        // ── Apply per-item theme overrides (non-destructive user corrections) ──
+        // 1. Remove items the user excluded from / moved away from this theme.
+        // 2. Pull in items the user re-tagged TO this theme from other reflections.
+        let excludeKeys = loadOverrideKeys(fromTheme: theme)   // items to drop from this theme
+        if !excludeKeys.isEmpty {
+            let before = (decisionsTyped.count, beliefShiftsTyped.count)
+            decisionsTyped = decisionsTyped.filter { !excludeKeys.contains(decisionKey($0)) }
+            beliefShiftsTyped = beliefShiftsTyped.filter { !excludeKeys.contains(shiftKey($0)) }
+            timelineItems = timelineItems.filter { item in
+                guard let t = item["type"] as? String else { return true }
+                if t == "decision" { return !excludeKeys.contains(decisionKey(item)) }
+                if t == "shift" { return !excludeKeys.contains(shiftTimelineKey(item)) }
+                return true
+            }
+            decisionCount -= (before.0 - decisionsTyped.count)
+            shiftCount -= (before.1 - beliefShiftsTyped.count)
+        }
+
+        // Pull in items re-tagged to this theme from their source reflections.
+        let movedIn = loadItemsRetagged(toTheme: theme)
+        for item in movedIn {
+            if item["type"] as? String == "decision" {
+                decisionCount += 1
+                decisionsTyped.append(["content": item["content"] ?? "", "date": item["date"] ?? "", "rid": item["rid"] ?? ""])
+                timelineItems.append(["type": "decision", "date": item["date"] ?? "", "content": item["content"] ?? "", "source": item["source"] ?? "", "rid": item["rid"] ?? ""])
+            } else if item["type"] as? String == "shift" {
+                shiftCount += 1
+                let from = item["from"] ?? ""
+                let to = item["to"] ?? ""
+                beliefShiftsTyped.append(["from": from, "to": to, "date": item["date"] ?? "", "rid": item["rid"] ?? ""])
+                timelineItems.append(["type": "shift", "date": item["date"] ?? "", "content": "Was: \(from) -> Now: \(to)", "source": item["source"] ?? "", "rid": item["rid"] ?? "", "shift_from": from, "shift_to": to])
+            }
+        }
+        if !movedIn.isEmpty {
+            // Re-sort moments-relevant arrays by date desc so injected items slot correctly.
+            decisionsTyped.sort { ($0["date"] ?? "") > ($1["date"] ?? "") }
+            beliefShiftsTyped.sort { ($0["date"] ?? "") > ($1["date"] ?? "") }
+            timelineItems.sort { (($0["date"] as? String) ?? "") > (($1["date"] as? String) ?? "") }
+        }
+
         var result: [String: Any] = [
             "theme": theme,
             "state": state,
@@ -607,6 +687,146 @@ class ReflectionStore {
         return result
     }
 
+    // MARK: - Per-item theme overrides
+
+    /// Stable match key for an item: reflection_id ␟ type ␟ content ␟ aux
+    private func itemKey(rid: String, type: String, content: String, aux: String) -> String {
+        return "\(rid)\u{241F}\(type)\u{241F}\(content)\u{241F}\(aux)"
+    }
+    private func decisionKey(_ d: [String: String]) -> String {
+        return itemKey(rid: d["rid"] ?? "", type: "decision", content: d["content"] ?? "", aux: "")
+    }
+    private func shiftKey(_ s: [String: String]) -> String {
+        return itemKey(rid: s["rid"] ?? "", type: "shift", content: s["to"] ?? "", aux: s["from"] ?? "")
+    }
+    private func shiftTimelineKey(_ item: [String: Any]) -> String {
+        return itemKey(rid: (item["rid"] as? String) ?? "", type: "shift",
+                       content: (item["shift_to"] as? String) ?? "", aux: (item["shift_from"] as? String) ?? "")
+    }
+    private func decisionKey(_ item: [String: Any]) -> String {
+        return itemKey(rid: (item["rid"] as? String) ?? "", type: "decision",
+                       content: (item["content"] as? String) ?? "", aux: "")
+    }
+
+    /// Match keys for items the user excluded from (or moved away from) a given theme.
+    /// Caller must hold dbLock.
+    private func loadOverrideKeys(fromTheme: String) -> Set<String> {
+        guard let db = db else { return [] }
+        var keys = Set<String>()
+        let sql = "SELECT reflection_id, item_type, item_content, item_aux FROM reflection_item_overrides WHERE from_theme = ?"
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (fromTheme as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let rid = String(Int(sqlite3_column_int64(stmt, 0)))
+                let type = columnText(stmt, 1) ?? ""
+                let content = columnText(stmt, 2) ?? ""
+                let aux = columnText(stmt, 3) ?? ""
+                keys.insert(itemKey(rid: rid, type: type, content: content, aux: aux))
+            }
+        }
+        sqlite3_finalize(stmt)
+        return keys
+    }
+
+    /// Items the user re-tagged INTO this theme. Fetches the specific sub-item content
+    /// from its source reflection. Caller must hold dbLock.
+    private func loadItemsRetagged(toTheme: String) -> [[String: String]] {
+        guard let db = db else { return [] }
+        var out: [[String: String]] = []
+        let sql = "SELECT reflection_id, item_type, item_content, item_aux FROM reflection_item_overrides WHERE to_theme = ?"
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (toTheme as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let rid = Int(sqlite3_column_int64(stmt, 0))
+                let type = columnText(stmt, 1) ?? ""
+                let content = columnText(stmt, 2) ?? ""
+                let aux = columnText(stmt, 3) ?? ""
+                // Fetch date/source from the source reflection
+                var date = ""
+                var source = "unknown"
+                let rSql = "SELECT created_at, source FROM reflections WHERE id = ?"
+                var rStmt: OpaquePointer?
+                if sqlite3_prepare_v2(db, rSql, -1, &rStmt, nil) == SQLITE_OK {
+                    sqlite3_bind_int64(rStmt, 1, Int64(rid))
+                    if sqlite3_step(rStmt) == SQLITE_ROW {
+                        date = String((columnText(rStmt, 0) ?? "").prefix(10))
+                        source = columnText(rStmt, 1) ?? "unknown"
+                    }
+                }
+                sqlite3_finalize(rStmt)
+                if type == "decision" {
+                    out.append(["type": "decision", "content": content, "date": date, "source": source, "rid": String(rid)])
+                } else if type == "shift" {
+                    out.append(["type": "shift", "from": aux, "to": content, "date": date, "source": source, "rid": String(rid)])
+                }
+            }
+        }
+        sqlite3_finalize(stmt)
+        return out
+    }
+
+    /// Record an item override. toTheme == nil → pure exclude; toTheme set → move.
+    /// Replaces any prior override for the same (item, fromTheme) pair.
+    func setItemOverride(reflectionId: Int, itemType: String, content: String, aux: String?, fromTheme: String, toTheme: String?) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+
+        // Clear any existing override for this exact item + source theme first (idempotent).
+        let delSql = "DELETE FROM reflection_item_overrides WHERE reflection_id = ? AND item_type = ? AND item_content = ? AND IFNULL(item_aux,'') = ? AND from_theme = ?"
+        var delStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, delSql, -1, &delStmt, nil) == SQLITE_OK {
+            sqlite3_bind_int64(delStmt, 1, Int64(reflectionId))
+            sqlite3_bind_text(delStmt, 2, (itemType as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(delStmt, 3, (content as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(delStmt, 4, ((aux ?? "") as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(delStmt, 5, (fromTheme as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_step(delStmt)
+        }
+        sqlite3_finalize(delStmt)
+
+        let insSql = "INSERT INTO reflection_item_overrides (reflection_id, item_type, item_content, item_aux, from_theme, to_theme) VALUES (?, ?, ?, ?, ?, ?)"
+        var insStmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, insSql, -1, &insStmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_int64(insStmt, 1, Int64(reflectionId))
+        sqlite3_bind_text(insStmt, 2, (itemType as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(insStmt, 3, (content as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        if let aux = aux {
+            sqlite3_bind_text(insStmt, 4, (aux as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        } else {
+            sqlite3_bind_null(insStmt, 4)
+        }
+        sqlite3_bind_text(insStmt, 5, (fromTheme as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        if let toTheme = toTheme {
+            sqlite3_bind_text(insStmt, 6, (toTheme as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        } else {
+            sqlite3_bind_null(insStmt, 6)
+        }
+        let ok = sqlite3_step(insStmt) == SQLITE_DONE
+        sqlite3_finalize(insStmt)
+        return ok
+    }
+
+    /// Undo an override (restore the item to its original theme membership).
+    func clearItemOverride(reflectionId: Int, itemType: String, content: String, aux: String?, fromTheme: String) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+        let sql = "DELETE FROM reflection_item_overrides WHERE reflection_id = ? AND item_type = ? AND item_content = ? AND IFNULL(item_aux,'') = ? AND from_theme = ?"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_int64(stmt, 1, Int64(reflectionId))
+        sqlite3_bind_text(stmt, 2, (itemType as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 3, (content as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 4, ((aux ?? "") as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 5, (fromTheme as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        let ok = sqlite3_step(stmt) == SQLITE_DONE
+        sqlite3_finalize(stmt)
+        return ok
+    }
+
     /// Advance a theme's state with validation
     func advanceThemeState(theme: String, newState: String, context: String) -> Bool {
         guard ReflectionStore.validStates.contains(newState) else { return false }
@@ -615,12 +835,15 @@ class ReflectionStore {
         defer { dbLock.unlock() }
         guard let db = db else { return false }
 
-        // Read current state
+        // Read current state. If theme_states has no row yet, fall back to the LLM-derived
+        // classification on the theme's most recent reflection — that's what the UI is
+        // showing as the "current state," so the backend should agree before validating
+        // the requested transition.
         var currentState = "researching"
-        let readSql = "SELECT state FROM theme_states WHERE theme = ?"
         var stmt: OpaquePointer?
         var rowExists = false
 
+        let readSql = "SELECT state FROM theme_states WHERE theme = ?"
         if sqlite3_prepare_v2(db, readSql, -1, &stmt, nil) == SQLITE_OK {
             sqlite3_bind_text(stmt, 1, (theme as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
             if sqlite3_step(stmt) == SQLITE_ROW {
@@ -629,6 +852,31 @@ class ReflectionStore {
             }
         }
         sqlite3_finalize(stmt)
+
+        if !rowExists {
+            // Look up the most recent reflection that references this theme and pull
+            // its theme_classifications_json[theme] value. That's the implicit current state.
+            let fallbackSql = """
+            SELECT theme_classifications_json FROM reflections
+            WHERE themes_json LIKE ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+            if sqlite3_prepare_v2(db, fallbackSql, -1, &stmt, nil) == SQLITE_OK {
+                let likeNeedle = "%\"\(theme)\"%"
+                sqlite3_bind_text(stmt, 1, (likeNeedle as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                if sqlite3_step(stmt) == SQLITE_ROW {
+                    if let json = columnText(stmt, 0),
+                       let classifications = jsonDecode(json) as? [String: String],
+                       let llmState = classifications[theme],
+                       ReflectionStore.validStates.contains(llmState) {
+                        currentState = llmState
+                        print("ℹ️ ReflectionStore.advanceThemeState: seeded current state from LLM classification ('\(theme)' → \(llmState))")
+                    }
+                }
+            }
+            sqlite3_finalize(stmt)
+        }
 
         // Validate transition: any state can go to archived, otherwise must follow progression
         if newState != "archived" {
