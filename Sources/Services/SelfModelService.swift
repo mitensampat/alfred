@@ -71,6 +71,11 @@ enum SelfModelService {
         let patternById = Dictionary(patternFacets.map { (($0["id"] as? String ?? ""), $0) }, uniquingKeysWith: { a, _ in a })
         let beliefById = Dictionary(beliefFacets.map { (($0["id"] as? String ?? ""), $0) }, uniquingKeysWith: { a, _ in a })
 
+        // ---- Belief lineage: which theme did this belief crystallize from? ----
+        var themeIdsByBelief: [String: [String]] = [:]
+        for l in store.allLineage() { themeIdsByBelief[l.belief, default: []].append(l.theme) }
+        let themeById = Dictionary(themeFacets.map { (($0["id"] as? String ?? ""), $0) }, uniquingKeysWith: { a, _ in a })
+
         // ---- Beliefs (trajectory, most recently updated first) ----
         let beliefsSorted = beliefFacets.sorted { ($0["last_seen"] as? String ?? "") > ($1["last_seen"] as? String ?? "") }
         let beliefsOut: [[String: Any]] = beliefsSorted.prefix(6).map { f -> [String: Any] in
@@ -80,6 +85,11 @@ enum SelfModelService {
                 guard let p = patternById[lid] else { return nil }
                 return ["id": lid, "description": p["statement"] as? String ?? ""]
             }
+            let lineage: [[String: Any]] = (themeIdsByBelief[id] ?? []).compactMap { tid in
+                guard let t = themeById[tid] else { return nil }
+                return ["id": tid, "theme": t["statement"] as? String ?? ""]
+            }
+            let origin = f["origin"] as? String ?? "emergent"
             return [
                 "id": id,
                 "from": traj.first?["from"] ?? "",
@@ -88,7 +98,11 @@ enum SelfModelService {
                 "steps": traj.count,
                 "verdict": verdict(f),
                 "confirmed": verdict(f) == "confirmed",
-                "lenses": attached
+                "lenses": attached,
+                "origin": origin,
+                // A declared belief with no supporting lens is an aspiration, not a belief.
+                "aspiration": origin == "declared" && attached.isEmpty,
+                "themes": lineage
             ]
         }
 
@@ -115,7 +129,8 @@ enum SelfModelService {
                 "reinforcements": Int(meta["reinforcements"] ?? "0") ?? 0,
                 "verdict": verdict(f),
                 "confirmed": verdict(f) == "confirmed",
-                "beliefs": attachedTo
+                "beliefs": attachedTo,
+                "origin": f["origin"] as? String ?? "emergent"
             ]
         }
 
@@ -145,6 +160,15 @@ enum SelfModelService {
             ["id": f["id"] as? String ?? "", "statement": f["statement"] as? String ?? ""]
         }
 
+        // Declared values — the slowest-moving thing the user states about themselves.
+        let valuesOut: [[String: Any]] = store.getFacets(kind: "value")
+            .filter { verdict($0) != "dismissed" }
+            .map { f in
+                ["id": f["id"] as? String ?? "",
+                 "statement": f["statement"] as? String ?? "",
+                 "origin": f["origin"] as? String ?? "declared"]
+            }
+
         return [
             "enabled": true,
             "durable": true,
@@ -154,6 +178,7 @@ enum SelfModelService {
             "workspaces": workspacesTop,
             "questions": questions,
             "lenses": ["patterns": patternsOut, "belief_shifts": beliefsOut],
+            "values": valuesOut,
             "all_beliefs": allBeliefs
         ]
     }

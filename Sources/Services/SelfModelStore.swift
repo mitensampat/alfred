@@ -67,6 +67,15 @@ class SelfModelStore {
         );
         CREATE INDEX IF NOT EXISTS idx_facet_link_lens ON facet_link(lens_id);
         CREATE INDEX IF NOT EXISTS idx_facet_link_belief ON facet_link(belief_id);
+
+        CREATE TABLE IF NOT EXISTS belief_lineage (
+            belief_id TEXT NOT NULL,
+            theme_id TEXT NOT NULL,
+            created_at TEXT,
+            PRIMARY KEY (belief_id, theme_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_lineage_belief ON belief_lineage(belief_id);
+        CREATE INDEX IF NOT EXISTS idx_lineage_theme ON belief_lineage(theme_id);
         """
 
         var errMsg: UnsafeMutablePointer<CChar>?
@@ -77,7 +86,28 @@ class SelfModelStore {
             }
         }
 
+        // Migration: `origin` distinguishes facets that condensed up from signal
+        // ('emergent') from ones the user declared outright ('declared'). SQLite has no
+        // ADD COLUMN IF NOT EXISTS, so probe the schema first.
+        if !columnExists(table: "self_facet", column: "origin") {
+            if sqlite3_exec(db, "ALTER TABLE self_facet ADD COLUMN origin TEXT NOT NULL DEFAULT 'emergent'", nil, nil, nil) == SQLITE_OK {
+                print("✅ SelfModelStore: added `origin` column")
+            }
+        }
+
         print("✅ SelfModelStore database initialized")
+    }
+
+    private func columnExists(table: String, column: String) -> Bool {
+        guard let db = db else { return false }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "PRAGMA table_info(\(table))", -1, &stmt, nil) == SQLITE_OK else { return false }
+        var found = false
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let name = columnText(stmt, 1), name == column { found = true; break }
+        }
+        sqlite3_finalize(stmt)
+        return found
     }
 
     // MARK: - Clear / Reset
@@ -107,7 +137,8 @@ class SelfModelStore {
         lastSeen: String?,
         trajectory: [[String: String]],
         evidence: [[String: String]],
-        metadata: [String: String]
+        metadata: [String: String],
+        origin: String = "emergent"
     ) -> Bool {
         dbLock.lock()
         defer { dbLock.unlock() }
@@ -131,8 +162,8 @@ class SelfModelStore {
 
         let sql = """
         INSERT OR REPLACE INTO self_facet
-            (id, kind, statement, confidence, status, first_seen, last_seen, trajectory_json, evidence_json, user_verdict, metadata_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, kind, statement, confidence, status, first_seen, last_seen, trajectory_json, evidence_json, user_verdict, metadata_json, origin)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         var stmt: OpaquePointer?
@@ -163,6 +194,7 @@ class SelfModelStore {
             sqlite3_bind_null(stmt, 10)
         }
         sqlite3_bind_text(stmt, 11, (metadataJson as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 12, (origin as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
 
         let ok = sqlite3_step(stmt) == SQLITE_DONE
         sqlite3_finalize(stmt)
@@ -183,7 +215,7 @@ class SelfModelStore {
 
         var sql = """
         SELECT id, kind, statement, confidence, status, first_seen, last_seen,
-               trajectory_json, evidence_json, user_verdict, metadata_json
+               trajectory_json, evidence_json, user_verdict, metadata_json, origin
         FROM self_facet
         WHERE 1 = 1
         """
@@ -218,7 +250,7 @@ class SelfModelStore {
 
         let sql = """
         SELECT id, kind, statement, confidence, status, first_seen, last_seen,
-               trajectory_json, evidence_json, user_verdict, metadata_json
+               trajectory_json, evidence_json, user_verdict, metadata_json, origin
         FROM self_facet
         WHERE id = ?
         """
@@ -447,6 +479,61 @@ class SelfModelStore {
         return out
     }
 
+    // MARK: - Belief lineage (which theme did this belief crystallize from?)
+    //
+    // Themes are the organic workstreams; beliefs firm up around them. Lineage records
+    // that ancestry so a belief can always answer "where did I come from".
+
+    /// Record that a belief crystallized from a theme. Idempotent.
+    func linkBeliefToTheme(beliefId: String, themeId: String) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+
+        let sql = "INSERT OR IGNORE INTO belief_lineage (belief_id, theme_id, created_at) VALUES (?, ?, ?)"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, (beliefId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 2, (themeId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 3, (isoNow() as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        let ok = sqlite3_step(stmt) == SQLITE_DONE
+        sqlite3_finalize(stmt)
+        return ok
+    }
+
+    /// Remove a belief↔theme lineage edge.
+    func unlinkBeliefFromTheme(beliefId: String, themeId: String) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "DELETE FROM belief_lineage WHERE belief_id = ? AND theme_id = ?", -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, (beliefId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 2, (themeId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        let ok = sqlite3_step(stmt) == SQLITE_DONE
+        sqlite3_finalize(stmt)
+        return ok
+    }
+
+    /// All lineage edges as (belief_id, theme_id) pairs.
+    func allLineage() -> [(belief: String, theme: String)] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return [] }
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT belief_id, theme_id FROM belief_lineage", -1, &stmt, nil) == SQLITE_OK else { return [] }
+        var out: [(belief: String, theme: String)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let b = columnText(stmt, 0) ?? ""
+            let t = columnText(stmt, 1) ?? ""
+            if !b.isEmpty && !t.isEmpty { out.append((belief: b, theme: t)) }
+        }
+        sqlite3_finalize(stmt)
+        return out
+    }
+
     /// Remove every link touching a facet (used when a facet is deleted).
     func clearLinks(forFacet id: String) {
         dbLock.lock()
@@ -535,6 +622,7 @@ class SelfModelStore {
             row["user_verdict"] = NSNull()
         }
         row["metadata"] = (jsonDecode(columnText(stmt, 10)) as? [String: String]) ?? [:]
+        row["origin"] = columnText(stmt, 11) ?? "emergent"
         return row
     }
 

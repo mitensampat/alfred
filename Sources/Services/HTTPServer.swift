@@ -1197,6 +1197,9 @@ class HTTPServer {
         case ("POST", "/api/self-model/link"):
             return handleSelfModelLink(request)
 
+        case ("POST", "/api/self-model/seed"):
+            return handleSelfModelSeed(request)
+
         case ("POST", "/api/self-model/resolve"):
             return handleSelfModelResolve(request)
 
@@ -11422,6 +11425,34 @@ extension HTTPServer {
         let verdict: String? = raw.isEmpty ? nil : raw
         let ok = SelfModelService.setVerdict(id: id, verdict: verdict)
         return HTTPResponse(statusCode: ok ? 200 : 404, body: ["ok": ok, "id": id, "verdict": raw])
+    }
+
+    /// Ingest a declared operating model. Either scans ~/.alfred/imports/ for an
+    /// operating-model markdown drop, or takes the markdown directly in the body.
+    private func handleSelfModelSeed(_ request: HTTPRequest) -> HTTPResponse {
+        guard getConfig()?.features?.selfModel ?? false else {
+            return HTTPResponse(statusCode: 200, body: ["enabled": false])
+        }
+        var result: SelfModelSeeder.SeedResult
+        if let body = request.body, let markdown = String(data: body, encoding: .utf8),
+           !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard SelfModelSeeder.looksLikeOperatingModel(markdown) else {
+                return HTTPResponse(statusCode: 400, body: [
+                    "error": "Body does not look like an operating model (expected ## Values / ## Beliefs / ## How I want to operate)"
+                ])
+            }
+            result = SelfModelSeeder.seed(from: markdown, sourceLabel: "api")
+        } else {
+            result = SelfModelSeeder.scanImports()
+        }
+        return HTTPResponse(statusCode: 200, body: [
+            "ok": true,
+            "values": result.values,
+            "beliefs": result.beliefs,
+            "instructions": result.instructions,
+            "total": result.total,
+            "files": result.files
+        ])
     }
 
     /// Attach / detach / move a lens (pattern) against a belief. Many-to-many.
