@@ -5636,13 +5636,11 @@ The Commitment Check feature requires a properly configured Notion database.
 
         let claude = ClaudeAIService(config: config.ai)
         do {
-            // Use the validated primary model — the configured coachingModel may be a
-            // retired id (effectiveCoachingModel can 404). Primary model is known-good.
             try await claude.streamChat(
                 messages: messages,
                 system: systemPrompt,
                 maxTokens: 700,
-                useModel: config.ai.model,
+                useModel: config.ai.effectiveCoachingModel,
                 onChunk: { text in client.sendSSEJSON(event: "chunk", json: ["text": text]) }
             )
             client.sendSSEJSON(event: "done", json: ["facetId": facetId])
