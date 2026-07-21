@@ -2984,6 +2984,24 @@
       [data-theme="dark"] .sm-fitem .fsrc{color:#1a1408;}
       .sm-fitem .ftext{flex:1;font-size:13px;line-height:1.42;color:var(--ink);}
       .sm-fitem .fwhen{font-family:var(--font-mono);font-size:10px;color:var(--ink-faint);white-space:nowrap;margin-top:1px;}
+      /* ---- callable verbs (Stage 3) ---- */
+      .sm-verb-row{display:flex;align-items:center;gap:8px;margin-top:11px;padding-top:10px;border-top:1px dashed var(--line);}
+      .sm-vbtn{font-family:var(--font-body);font-size:11px;font-weight:600;padding:4px 11px;border-radius:999px;cursor:pointer;border:1px solid var(--line-strong);background:none;color:var(--ink-secondary);transition:all .13s;}
+      .sm-vbtn:hover{border-color:var(--sm-accent);color:var(--sm-accent);}
+      .sm-vbtn.dim{border:none;color:var(--ink-faint);padding-left:4px;padding-right:4px;}
+      .sm-vbtn.dim:hover{color:var(--sm-hot);}
+      .sm-confirmed{display:inline-flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--sm-green);}
+      .sm-qrow .sm-resolve{margin-left:auto;font-family:var(--font-body);font-size:11px;font-weight:600;padding:4px 10px;border-radius:999px;cursor:pointer;border:1px solid var(--line-strong);background:none;color:var(--ink-secondary);white-space:nowrap;transition:all .13s;}
+      .sm-qrow .sm-resolve:hover{border-color:var(--sm-accent);color:var(--sm-accent);}
+      /* ---- Now-card (You→Now loop) ---- */
+      .sm-nowcard{border:1px solid var(--sm-accent-line);background:linear-gradient(180deg,var(--sm-accent-soft),var(--surface) 70%);border-radius:10px;padding:13px 15px;margin-bottom:14px;cursor:pointer;transition:transform .12s,box-shadow .15s;}
+      .sm-nowcard:hover{transform:translateY(-1px);box-shadow:var(--shadow-md);}
+      .sm-nowcard .nc-top{display:flex;align-items:center;gap:7px;margin-bottom:8px;}
+      .sm-nowcard .nc-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--sm-accent);}
+      .sm-nowcard .nc-tag{margin-left:auto;font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--sm-accent);}
+      .sm-nowcard .nc-body{font-family:var(--font-display);font-size:15px;line-height:1.45;color:var(--ink);}
+      .sm-nowcard .nc-belief{font-style:italic;color:var(--sm-accent);}
+      .sm-nowcard .nc-jump{font-family:var(--font-mono);font-size:10.5px;color:var(--sm-accent);margin-top:9px;}
     </style>
 
     <div id="appContainer" class="hidden" style="display:flex;flex-direction:column;height:100dvh;">
@@ -3022,6 +3040,8 @@
                     <div class="card-header">&#9888; System Health</div>
                     <div id="healthWarningList" style="font-size:12px;"></div>
                 </div>
+                <!-- Self-model belief surfaced on Now (You→Now loop) -->
+                <div id="smNowCard"></div>
                 <!-- Morning Walk Thread -->
                 <div id="morningWalkThread"></div>
                 <!-- Weekly review (Sundays) -->
@@ -9674,6 +9694,7 @@
                 document.getElementById('smSurfaceNav').style.display = 'flex';
                 renderSelfModel(data);
                 _smLoaded = true;
+                smLoadNowCard();
             } catch (e) { console.log('[self-model] init skipped:', e); }
         }
 
@@ -9751,7 +9772,8 @@
         function smQuestions(d){
             const items = d.questions || [];
             const inner = items.length ? items.map(q =>
-                `<div class="sm-qrow"><span class="sm-qmark">?</span><span class="sm-qtext">${escapeHtml(q)}</span></div>`
+                `<div class="sm-qrow"><span class="sm-qmark">?</span><span class="sm-qtext">${escapeHtml(q.text||'')}</span>`
+                + `<button type="button" class="sm-resolve" onclick="smResolve('${q.id}', this)">Resolve &rarr;</button></div>`
             ).join('') : `<div class="sm-empty">No open questions surfaced yet.</div>`;
             return smSection('Open questions', 'what you&rsquo;re sitting with', inner);
         }
@@ -9763,10 +9785,11 @@
             let inner = '';
             shifts.slice(0, 4).forEach(s => {
                 inner += `<div class="sm-card"><div class="sm-kind-row"><span class="sm-kdot belief"></span>`
-                    + `<span class="sm-klabel">Belief</span>` + (s.date ? `<span class="sm-kmeta">${escapeHtml(s.date)}</span>` : '') + `</div>`
+                    + `<span class="sm-klabel">Belief${s.steps>1?` &middot; ${s.steps} shifts`:''}</span>` + (s.date ? `<span class="sm-kmeta">${escapeHtml((s.date||'').slice(0,10))}</span>` : '') + `</div>`
                     + `<div class="sm-traj"><div class="sm-traj-step"><span class="stamp">Was</span><div class="val">${escapeHtml(s.from||'—')}</div></div>`
                     + `<div class="sm-traj-arrow">&rarr;</div>`
-                    + `<div class="sm-traj-step now"><span class="stamp">Now</span><div class="val">${escapeHtml(s.to||'')}</div></div></div></div>`;
+                    + `<div class="sm-traj-step now"><span class="stamp">Now</span><div class="val">${escapeHtml(s.to||'')}</div></div></div>`
+                    + smVerbRow(s.id, s.confirmed) + `</div>`;
             });
             patterns.forEach(p => {
                 const conf = Math.round((p.confidence||0) * 100);
@@ -9776,7 +9799,8 @@
                     + `<span class="sm-klabel">${p.isDirect ? 'Instruction' : 'Pattern'}</span>`
                     + (reinf ? `<span class="sm-kmeta">${reinf}&times; reinforced</span>` : '') + `</div>`
                     + `<p class="sm-statement">${escapeHtml(p.description||'')}</p>`
-                    + `<div class="sm-conf"><div class="sm-conf-track"><div class="sm-conf-fill" style="width:${conf}%"></div></div><span class="sm-conf-lbl">${clabel}</span></div></div>`;
+                    + `<div class="sm-conf"><div class="sm-conf-track"><div class="sm-conf-fill" style="width:${conf}%"></div></div><span class="sm-conf-lbl">${clabel}</span></div>`
+                    + smVerbRow(p.id, p.confirmed) + `</div>`;
             });
             if (!inner) inner = `<div class="sm-empty">Patterns and beliefs form as Alfred gathers signal. None yet.</div>`;
             return smSection('Lenses', 'how you operate', inner);
@@ -9829,6 +9853,68 @@
                 + tl.map(it => `<div class="sm-fitem"><span class="fsrc">${escapeHtml((it.type||'·').slice(0,4))}</span><span class="ftext">${escapeHtml(it.content||'')}</span>` + (it.date?`<span class="fwhen">${escapeHtml(it.date)}</span>`:'') + `</div>`).join('') + `</div>` : '';
             const empty = (!shiftHtml && !decHtml && !tlHtml && !edge) ? `<div class="sm-empty" style="margin-top:16px">Not much captured under this theme yet.</div>` : '';
             return back + head + stepper + edge + shiftHtml + decHtml + tlHtml + empty;
+        }
+
+        // ---- callable verbs (Stage 3) ----
+        function smVerbRow(id, confirmed){
+            if (!id) return '';
+            if (confirmed) {
+                return `<div class="sm-verb-row"><span class="sm-confirmed">&#10003; Confirmed</span>`
+                    + `<button type="button" class="sm-vbtn dim" style="margin-left:auto" onclick="smVerdict('${id}','',this)">Undo</button></div>`;
+            }
+            return `<div class="sm-verb-row"><button type="button" class="sm-vbtn" onclick="smVerdict('${id}','confirmed',this)">Sounds right</button>`
+                + `<button type="button" class="sm-vbtn dim" style="margin-left:auto" onclick="smVerdict('${id}','dismissed',this)">Not me</button></div>`;
+        }
+
+        async function smVerdict(id, verdict, btn){
+            if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+            try {
+                await authFetch('/api/self-model/verdict?id=' + encodeURIComponent(id) + '&verdict=' + encodeURIComponent(verdict), { method: 'POST' });
+                await loadSelfModel();      // re-render from server (hides dismissed, badges confirmed)
+                smLoadNowCard();            // surfaced belief may have changed
+            } catch (e) { console.log('[self-model] verdict failed:', e); }
+        }
+
+        function smResolve(id, btn){
+            const row = btn.closest('.sm-qrow');
+            if (!row) return;
+            const qtext = row.querySelector('.sm-qtext').textContent;
+            row.innerHTML = `<span class="sm-qmark">?</span><div style="flex:1"><div class="sm-qtext" style="margin-bottom:9px">${escapeHtml(qtext)}</div>`
+                + `<div style="display:flex;gap:8px"><input type="text" placeholder="What did you land on? (becomes a belief)" `
+                + `style="flex:1;font-family:var(--font-body);font-size:13px;padding:8px 11px;border:1px solid var(--sm-accent-line);border-radius:8px;background:var(--surface-sunken);color:var(--ink)" `
+                + `onkeydown="if(event.key==='Enter')smResolveSubmit('${id}',this)">`
+                + `<button type="button" class="sm-vbtn" onclick="smResolveSubmit('${id}',this)">Mint belief</button></div></div>`;
+            const inp = row.querySelector('input'); if (inp) inp.focus();
+        }
+
+        async function smResolveSubmit(id, el){
+            const row = el.closest('.sm-qrow');
+            const input = row.querySelector('input');
+            const resolution = (input && input.value || '').trim();
+            if (!resolution) { if (input) input.focus(); return; }
+            try {
+                const res = await authFetch('/api/self-model/resolve?id=' + encodeURIComponent(id) + '&resolution=' + encodeURIComponent(resolution), { method: 'POST' });
+                const d = await res.json();
+                if (d && d.ok) { await loadSelfModel(); smLoadNowCard(); }
+            } catch (e) { console.log('[self-model] resolve failed:', e); }
+        }
+
+        // ---- Now-card: a belief surfaced on the Now surface (You→Now loop) ----
+        async function smLoadNowCard(){
+            const el = document.getElementById('smNowCard');
+            if (!el) return;
+            try {
+                const res = await authFetch('/api/self-model/now-card');
+                const d = await res.json();
+                el.innerHTML = (d && d.enabled && d.card) ? smRenderNowCard(d.card) : '';
+            } catch (e) { el.innerHTML = ''; }
+        }
+
+        function smRenderNowCard(c){
+            return `<div class="sm-nowcard" onclick="showSurface('you')">`
+                + `<div class="nc-top"><span class="nc-label">From your self-model</span><span class="nc-tag">&#9673; belief</span></div>`
+                + `<div class="nc-body">A belief you currently hold: <span class="nc-belief">&ldquo;${escapeHtml(c.belief||'')}&rdquo;</span></div>`
+                + `<div class="nc-jump">&#8617; tap to see this in You</div></div>`;
         }
 
     </script>

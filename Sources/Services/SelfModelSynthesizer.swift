@@ -24,6 +24,12 @@ enum SelfModelSynthesizer {
         return String(format: "%016llx", hash)
     }
 
+    /// Stable, deterministic facet id from a prefix + text. Used by callers that
+    /// mint facets outside the materialize pass (e.g. resolving a question → belief).
+    static func stableId(_ prefix: String, _ text: String) -> String {
+        return "\(prefix)_" + fnv1a(text)
+    }
+
     private static func tokens(_ s: String) -> Set<String> {
         Set(s.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init).filter { $0.count > 3 })
     }

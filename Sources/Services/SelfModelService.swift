@@ -1,120 +1,176 @@
 import Foundation
 
-/// Read-only synthesis of Alfred's durable self-model — the "You" surface.
+/// Reads Alfred's durable self-model (SelfModelStore) and shapes the "You" surface.
 ///
-/// Stage 1 is deliberately READ-ONLY: it reads existing stores (ReflectionStore +
-/// WorkflowLearningService) and synthesizes the four registers. It never writes,
-/// and never triggers an LLM call (all sources are SQLite SELECTs).
-///
-/// Registers:
-///   - movement:   what changed recently (belief updates + theme state transitions)
-///   - workspaces: active themes you're working inside
-///   - questions:  open questions you're sitting with
-///   - lenses:     durable patterns/beliefs + belief-shift trajectories
+/// Stage 3: the read path now serves FROM the durable `self_facet` store rather than
+/// re-synthesizing live each call. It throttle-materializes (at most once/60s) so the
+/// surface stays fresh, then applies user verdicts — dismissed/resolved facets are
+/// hidden, confirmed facets are flagged. Every register item carries its facet `id`
+/// so the UI can call verbs (confirm / dismiss / resolve) against it.
 enum SelfModelService {
 
-    /// Temperature ordering so hotter, more-active themes float to the top.
+    private static var lastMaterialize: Date?
     private static let tempRank: [String: Int] = ["hot": 0, "warming": 1, "cooling": 2, "resolved": 3]
 
+    private static func verdict(_ f: [String: Any]) -> String {
+        (f["user_verdict"] as? String) ?? ""
+    }
+
+    /// Ensure the durable store is populated and reasonably fresh.
+    private static func ensureMaterialized(_ store: SelfModelStore) {
+        let empty = store.counts().values.reduce(0, +) == 0
+        let stale = lastMaterialize.map { Date().timeIntervalSince($0) > 60 } ?? true
+        if empty || stale {
+            SelfModelSynthesizer.materialize()
+            lastMaterialize = Date()
+        }
+    }
+
     static func synthesize() -> [String: Any] {
-        let store = ReflectionStore.shared
+        let store = SelfModelStore.shared
+        ensureMaterialized(store)
 
-        let themesRaw = store.getThemesWithState(days: 30, limit: 12)
-        let questions = store.getOpenQuestions(limit: 6)
-        let beliefShifts = store.getRecentBeliefShifts(days: 90, limit: 6)
-        let week = store.getWeekInputSummary(days: 7)
-        // Lenses should show durable beliefs/preferences, not journal-like context dumps.
-        // `user_context` rows are single-session captures ("today I worked on X"), not standing patterns.
-        let patterns = WorkflowLearningService.shared.getLearnedPatterns()
-            .filter { !$0.isArchived && $0.type != "user_context" }
+        let themeFacets = store.getFacets(kind: "theme").filter { verdict($0) != "dismissed" }
+        let questionFacets = store.getFacets(kind: "question").filter { verdict($0) != "dismissed" && verdict($0) != "resolved" }
+        let beliefFacets = store.getFacets(kind: "belief").filter { verdict($0) != "dismissed" }
+        let patternFacets = store.getFacets(kind: "pattern").filter { verdict($0) != "dismissed" }
 
-        // ---- Movement: what changed this week ----
-        // Recent belief updates first (the emotional core), then theme state transitions.
-        var movement: [[String: Any]] = []
-        for shift in store.getRecentBeliefShifts(days: 14, limit: 3) {
-            let to = shift["to"] ?? ""
-            guard !to.isEmpty else { continue }
-            movement.append([
+        // ---- Workspaces (theme facets, hottest + freshest first) ----
+        let workspaces: [[String: Any]] = themeFacets.map { f -> [String: Any] in
+            let meta = f["metadata"] as? [String: String] ?? [:]
+            return [
+                "id": f["id"] as? String ?? "",
+                "theme": f["statement"] as? String ?? "",
+                "state": meta["state"] ?? "",
+                "temperature": meta["temperature"] ?? "cooling",
+                "inputs_this_week": Int(meta["inputs_this_week"] ?? "0") ?? 0,
+                "edge": meta["edge"] ?? "",
+                "verdict": verdict(f)
+            ]
+        }.sorted {
+            let a = tempRank[$0["temperature"] as? String ?? ""] ?? 9
+            let b = tempRank[$1["temperature"] as? String ?? ""] ?? 9
+            if a != b { return a < b }
+            return ($0["inputs_this_week"] as? Int ?? 0) > ($1["inputs_this_week"] as? Int ?? 0)
+        }
+        let workspacesTop = Array(workspaces.prefix(6))
+
+        // ---- Questions ----
+        let questions: [[String: Any]] = questionFacets.prefix(6).map { f in
+            ["id": f["id"] as? String ?? "", "text": f["statement"] as? String ?? "", "verdict": verdict(f)]
+        }
+
+        // ---- Beliefs (trajectory, most recently updated first) ----
+        let beliefsSorted = beliefFacets.sorted { ($0["last_seen"] as? String ?? "") > ($1["last_seen"] as? String ?? "") }
+        let beliefsOut: [[String: Any]] = beliefsSorted.prefix(6).map { f -> [String: Any] in
+            let traj = f["trajectory"] as? [[String: String]] ?? []
+            return [
+                "id": f["id"] as? String ?? "",
+                "from": traj.first?["from"] ?? "",
+                "to": f["statement"] as? String ?? "",
+                "date": f["last_seen"] as? String ?? "",
+                "steps": traj.count,
+                "verdict": verdict(f),
+                "confirmed": verdict(f) == "confirmed"
+            ]
+        }
+
+        // ---- Patterns (direct + high-confidence first) ----
+        let patternsOut: [[String: Any]] = patternFacets.sorted {
+            let ad = (($0["metadata"] as? [String: String])?["isDirect"] ?? "") == "1"
+            let bd = (($1["metadata"] as? [String: String])?["isDirect"] ?? "") == "1"
+            if ad != bd { return ad && !bd }
+            return ($0["confidence"] as? Double ?? 0) > ($1["confidence"] as? Double ?? 0)
+        }.prefix(8).map { f -> [String: Any] in
+            let meta = f["metadata"] as? [String: String] ?? [:]
+            return [
+                "id": f["id"] as? String ?? "",
+                "type": meta["type"] ?? "",
+                "description": f["statement"] as? String ?? "",
+                "confidence": f["confidence"] as? Double ?? 0,
+                "isDirect": meta["isDirect"] == "1",
+                "isStale": (f["status"] as? String) == "fading",
+                "reinforcements": Int(meta["reinforcements"] ?? "0") ?? 0,
+                "verdict": verdict(f),
+                "confirmed": verdict(f) == "confirmed"
+            ]
+        }
+
+        // ---- Movement: most recently updated beliefs ----
+        let movement: [[String: Any]] = beliefsSorted.prefix(3).map { f -> [String: Any] in
+            let traj = f["trajectory"] as? [[String: String]] ?? []
+            return [
                 "kind": "belief_updated",
-                "statement": to,
-                "from": shift["from"] ?? "",
-                "to": to,
-                "when": shift["date"] ?? ""
-            ])
+                "statement": f["statement"] as? String ?? "",
+                "from": traj.first?["from"] ?? "",
+                "to": f["statement"] as? String ?? "",
+                "when": f["last_seen"] as? String ?? ""
+            ]
         }
-        for theme in themesRaw {
-            guard let moved = theme["moved"] as? String, !moved.isEmpty else { continue }
-            let name = theme["theme"] as? String ?? "A theme"
-            movement.append([
-                "kind": "theme_moved",
-                "statement": "\(name) — \(moved)",
-                "theme": name,
-                "when": theme["last_activity"] as? String ?? ""
-            ])
-        }
-        movement = Array(movement.prefix(4))
 
-        // ---- Workspaces: active themes, hottest + freshest first ----
-        let workspaces: [[String: Any]] = themesRaw
-            .filter { ($0["state"] as? String) != "archived" }
-            .sorted {
-                let a = tempRank[$0["temperature"] as? String ?? ""] ?? 9
-                let b = tempRank[$1["temperature"] as? String ?? ""] ?? 9
-                if a != b { return a < b }
-                return ($0["inputs_this_week"] as? Int ?? 0) > ($1["inputs_this_week"] as? Int ?? 0)
-            }
-            .prefix(6)
-            .map { t in
-                [
-                    "theme": t["theme"] as? String ?? "",
-                    "state": t["state"] as? String ?? "",
-                    "temperature": t["temperature"] as? String ?? "cooling",
-                    "inputs_this_week": t["inputs_this_week"] as? Int ?? 0,
-                    "open_questions_count": t["open_questions_count"] as? Int ?? 0,
-                    "edge": t["edge"] as? String ?? "",
-                    "subtitle": t["subtitle"] as? String ?? ""
-                ]
-            }
-
-        // ---- Lenses: durable patterns/beliefs, direct instructions + high-confidence first ----
-        let patternsOut: [[String: Any]] = patterns
-            .sorted {
-                if $0.isDirect != $1.isDirect { return $0.isDirect && !$1.isDirect }
-                return $0.confidence > $1.confidence
-            }
-            .prefix(8)
-            .map { p in
-                [
-                    "id": p.id,
-                    "type": p.type,
-                    "description": p.description,
-                    "confidence": p.confidence,
-                    "isDirect": p.isDirect,
-                    "isStale": p.isStale,
-                    "reinforcements": p.reinforcements
-                ]
-            }
-
-        // ---- Summary (maturity strip) ----
+        let week = ReflectionStore.shared.getWeekInputSummary(days: 7)
         let summary: [String: Any] = [
             "patterns": patternsOut.count,
-            "themes": workspaces.count,
-            "beliefs": beliefShifts.count,
+            "themes": workspacesTop.count,
+            "beliefs": beliefsOut.count,
             "questions": questions.count,
             "signals_this_week": week.count
         ]
 
         return [
             "enabled": true,
+            "durable": true,
             "generated_at": ISO8601DateFormatter().string(from: Date()),
             "summary": summary,
             "movement": movement,
-            "workspaces": workspaces,
+            "workspaces": workspacesTop,
             "questions": questions,
-            "lenses": [
-                "patterns": patternsOut,
-                "belief_shifts": beliefShifts
-            ]
+            "lenses": ["patterns": patternsOut, "belief_shifts": beliefsOut]
+        ]
+    }
+
+    // ───────────── callable verbs ─────────────
+
+    /// Confirm / dismiss a facet (the "you are the final editor" tenet).
+    static func setVerdict(id: String, verdict: String?) -> Bool {
+        return SelfModelStore.shared.setVerdict(id: id, verdict: verdict)
+    }
+
+    /// Resolve an open question into a durable belief: marks the question resolved
+    /// (hidden from the surface) and mints a belief facet from the resolution text.
+    /// Returns the minted belief id, or nil on failure.
+    static func resolveQuestion(id: String, resolution: String) -> String? {
+        let store = SelfModelStore.shared
+        guard let q = store.getFacet(id: id) else { return nil }
+        let questionText = q["statement"] as? String ?? ""
+        let now = ISO8601DateFormatter().string(from: Date())
+        let beliefId = SelfModelSynthesizer.stableId("belief_minted", resolution + "|" + questionText)
+        let ok = store.upsertFacet(
+            id: beliefId, kind: "belief", statement: resolution, confidence: 0.8,
+            status: "active", firstSeen: now, lastSeen: now,
+            trajectory: [["from": "open question: \(questionText)", "to": resolution, "date": now]],
+            evidence: [], metadata: ["minted": "1", "from_question": questionText])
+        guard ok else { return nil }
+        _ = store.setVerdict(id: id, verdict: "resolved")
+        return beliefId
+    }
+
+    /// A single belief to surface on the Now surface — the most recently updated,
+    /// non-dismissed belief. Closes the You→Now loop. Returns nil if none.
+    static func nowCard() -> [String: Any]? {
+        let store = SelfModelStore.shared
+        ensureMaterialized(store)
+        let beliefs = store.getFacets(kind: "belief")
+            .filter { verdict($0) != "dismissed" }
+            .sorted { ($0["last_seen"] as? String ?? "") > ($1["last_seen"] as? String ?? "") }
+        guard let f = beliefs.first else { return nil }
+        let traj = f["trajectory"] as? [[String: String]] ?? []
+        return [
+            "id": f["id"] as? String ?? "",
+            "belief": f["statement"] as? String ?? "",
+            "from": traj.first?["from"] ?? "",
+            "when": f["last_seen"] as? String ?? "",
+            "confirmed": verdict(f) == "confirmed"
         ]
     }
 }

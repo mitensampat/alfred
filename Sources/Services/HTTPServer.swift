@@ -1188,6 +1188,15 @@ class HTTPServer {
         case ("POST", "/api/self-model/compute"):
             return handleSelfModelCompute(request)
 
+        case ("POST", "/api/self-model/verdict"):
+            return handleSelfModelVerdict(request)
+
+        case ("POST", "/api/self-model/resolve"):
+            return handleSelfModelResolve(request)
+
+        case ("GET", "/api/self-model/now-card"):
+            return handleSelfModelNowCard(request)
+
         case ("GET", let p) where p.hasPrefix("/api/reflect/theme/detail"):
             return handleReflectThemeDetail(request)
 
@@ -11294,6 +11303,49 @@ extension HTTPServer {
             "counts": counts,
             "total": counts.values.reduce(0, +)
         ])
+    }
+
+    /// Confirm / dismiss / clear a facet's verdict. Params: id, verdict (confirmed|dismissed|"" to clear).
+    private func handleSelfModelVerdict(_ request: HTTPRequest) -> HTTPResponse {
+        guard getConfig()?.features?.selfModel ?? false else {
+            return HTTPResponse(statusCode: 200, body: ["enabled": false])
+        }
+        guard let id = request.queryParams["id"], !id.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id'"])
+        }
+        let raw = request.queryParams["verdict"] ?? ""
+        let verdict: String? = raw.isEmpty ? nil : raw
+        let ok = SelfModelService.setVerdict(id: id, verdict: verdict)
+        return HTTPResponse(statusCode: ok ? 200 : 404, body: ["ok": ok, "id": id, "verdict": raw])
+    }
+
+    /// Resolve an open question into a durable belief. Params: id, resolution.
+    private func handleSelfModelResolve(_ request: HTTPRequest) -> HTTPResponse {
+        guard getConfig()?.features?.selfModel ?? false else {
+            return HTTPResponse(statusCode: 200, body: ["enabled": false])
+        }
+        guard let id = request.queryParams["id"], !id.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'id'"])
+        }
+        let resolution = (request.queryParams["resolution"]?.removingPercentEncoding ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !resolution.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'resolution'"])
+        }
+        if let beliefId = SelfModelService.resolveQuestion(id: id, resolution: resolution) {
+            return HTTPResponse(statusCode: 200, body: ["ok": true, "belief_id": beliefId, "belief": resolution])
+        }
+        return HTTPResponse(statusCode: 404, body: ["ok": false, "error": "Question not found"])
+    }
+
+    /// One belief to surface on the Now surface (the You→Now loop).
+    private func handleSelfModelNowCard(_ request: HTTPRequest) -> HTTPResponse {
+        guard getConfig()?.features?.selfModel ?? false else {
+            return HTTPResponse(statusCode: 200, body: ["enabled": false])
+        }
+        if let card = SelfModelService.nowCard() {
+            return HTTPResponse(statusCode: 200, body: ["enabled": true, "card": card])
+        }
+        return HTTPResponse(statusCode: 200, body: ["enabled": true, "card": NSNull()])
     }
 
     private func handleReflectThemeDetail(_ request: HTTPRequest) -> HTTPResponse {
