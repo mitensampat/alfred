@@ -23,7 +23,10 @@ enum SelfModelService {
         let questions = store.getOpenQuestions(limit: 6)
         let beliefShifts = store.getRecentBeliefShifts(days: 90, limit: 6)
         let week = store.getWeekInputSummary(days: 7)
-        let patterns = WorkflowLearningService.shared.getLearnedPatterns().filter { !$0.isArchived }
+        // Lenses should show durable beliefs/preferences, not journal-like context dumps.
+        // `user_context` rows are single-session captures ("today I worked on X"), not standing patterns.
+        let patterns = WorkflowLearningService.shared.getLearnedPatterns()
+            .filter { !$0.isArchived && $0.type != "user_context" }
 
         // ---- Movement: what changed this week ----
         // Recent belief updates first (the emotional core), then theme state transitions.

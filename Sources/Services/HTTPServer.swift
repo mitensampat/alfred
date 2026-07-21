@@ -1185,6 +1185,9 @@ class HTTPServer {
         case ("GET", "/api/self-model"):
             return handleSelfModel(request)
 
+        case ("POST", "/api/self-model/compute"):
+            return handleSelfModelCompute(request)
+
         case ("GET", let p) where p.hasPrefix("/api/reflect/theme/detail"):
             return handleReflectThemeDetail(request)
 
@@ -11277,6 +11280,20 @@ extension HTTPServer {
             return HTTPResponse(statusCode: 200, body: ["enabled": false])
         }
         return HTTPResponse(statusCode: 200, body: SelfModelService.synthesize())
+    }
+
+    /// Materialize the durable self-model (self_facet store) from live sources.
+    /// Idempotent — safe to call repeatedly; re-runs upsert in place.
+    private func handleSelfModelCompute(_ request: HTTPRequest) -> HTTPResponse {
+        guard getConfig()?.features?.selfModel ?? false else {
+            return HTTPResponse(statusCode: 200, body: ["enabled": false])
+        }
+        let counts = SelfModelSynthesizer.materialize()
+        return HTTPResponse(statusCode: 200, body: [
+            "enabled": true,
+            "counts": counts,
+            "total": counts.values.reduce(0, +)
+        ])
     }
 
     private func handleReflectThemeDetail(_ request: HTTPRequest) -> HTTPResponse {
