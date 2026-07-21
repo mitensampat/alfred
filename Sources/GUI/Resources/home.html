@@ -3002,6 +3002,16 @@
       .sm-nowcard .nc-body{font-family:var(--font-display);font-size:15px;line-height:1.45;color:var(--ink);}
       .sm-nowcard .nc-belief{font-style:italic;color:var(--sm-accent);}
       .sm-nowcard .nc-jump{font-family:var(--font-mono);font-size:10.5px;color:var(--sm-accent);margin-top:9px;}
+      /* ---- Now V2 operational strip ---- */
+      .now-op-strip{border:1px solid var(--line);border-radius:10px;background:var(--surface);margin-bottom:12px;overflow:hidden;}
+      .now-op-strip>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:11px 14px;}
+      .now-op-strip>summary::-webkit-details-marker{display:none;}
+      .now-op-strip .op-summary{flex:1;min-width:0;font-family:var(--font-mono);font-size:11.5px;color:var(--ink-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+      .now-op-strip .op-chev{width:15px;height:15px;flex-shrink:0;color:var(--ink-tertiary);transition:transform .18s;}
+      .now-op-strip[open] .op-chev{transform:rotate(180deg);}
+      .now-op-strip .op-body{padding:2px 12px 10px;border-top:1px solid var(--line);}
+      .now-op-strip .op-body>*{margin-top:12px;}
+      .now-op-strip .op-body .focus-card,.now-op-strip .op-body .meeting-brief-card,.now-op-strip .op-body .card{box-shadow:none;}
     </style>
 
     <div id="appContainer" class="hidden" style="display:flex;flex-direction:column;height:100dvh;">
@@ -5760,36 +5770,25 @@
 
             let html = '';
 
-            // 1. Time marker
+            // 1. Time marker (orient)
             const h = new Date().getHours();
             const walkLabel = h < 12 ? 'Morning Walk' : h < 17 ? 'Afternoon Check-in' : 'Evening Wrap-up';
-            html += buildTimeMarker(walkLabel);
+            const sTime = buildTimeMarker(walkLabel);
 
-            // 2. Coaching opener (reserved for future — when we can read intent, not just data)
-            // openerText is fetched but intentionally not rendered on home.
-            // The coaching cards already deliver sharp observations; doubling up feels like nagging.
-
-            // 3. Focus card
+            // Operational cards (focus / briefing / meeting / pending reviews) captured as ONE
+            // segment, so Now-V2 can demote them into a compact strip beneath the coach's read.
+            let sOp = '';
             const topGoal = (pulseData && pulseData.topGoal) || null;
-            html += buildFocusCardElement(topGoal);
+            sOp += buildFocusCardElement(topGoal);
+            if (morningBriefing) sOp += buildMorningBriefingCard(morningBriefing);
+            if (meetingBrief && !meetingBrief.noMeeting) sOp += buildMeetingBriefCard(meetingBrief);
 
-            // 3.5. Morning briefing card (auto-hides after 11 AM)
-            if (morningBriefing) {
-                html += buildMorningBriefingCard(morningBriefing);
-            }
-
-            // 2.6. Meeting brief card
-            if (meetingBrief && !meetingBrief.noMeeting) {
-                html += buildMeetingBriefCard(meetingBrief);
-            }
-
-            // 3. Pending closure reviews
             const closures = pendingClosures || [];
             if (closures.length > 0) {
-                html += '<div class="card" style="margin-bottom:12px;"><div class="card-header">PENDING REVIEWS (' + closures.length + ')</div>';
-                html += '<div style="font-size:12px;color:var(--ink-secondary);margin-bottom:8px;">These commitments may be done. Confirm or keep open:</div>';
+                sOp += '<div class="card" style="margin-bottom:12px;"><div class="card-header">PENDING REVIEWS (' + closures.length + ')</div>';
+                sOp += '<div style="font-size:12px;color:var(--ink-secondary);margin-bottom:8px;">These commitments may be done. Confirm or keep open:</div>';
                 closures.slice(0, 5).forEach(c => {
-                    html += '<div style="padding:8px 0;border-bottom:1px solid var(--line);" id="home-closure-' + c.hash + '">'
+                    sOp += '<div style="padding:8px 0;border-bottom:1px solid var(--line);" id="home-closure-' + c.hash + '">'
                         + '<div style="font-size:13px;font-weight:500;">' + escapeHtml(c.title) + '</div>'
                         + '<div style="font-size:11px;color:var(--ink-tertiary);margin:3px 0;">&ldquo;' + escapeHtml(c.signal) + '&rdquo; &middot; ' + Math.round(c.confidence * 100) + '% confident</div>'
                         + '<div style="display:flex;gap:6px;margin-top:6px;">'
@@ -5798,10 +5797,13 @@
                         + '</div></div>';
                 });
                 if (closures.length > 5) {
-                    html += '<div style="text-align:center;padding:8px;"><button class="pill" onclick="showCapabilityCard(\'commitments\')">View all ' + closures.length + ' pending</button></div>';
+                    sOp += '<div style="text-align:center;padding:8px;"><button class="pill" onclick="showCapabilityCard(\'commitments\')">View all ' + closures.length + ' pending</button></div>';
                 }
-                html += '</div>';
+                sOp += '</div>';
             }
+
+            // Coaching insights build into `html` and are captured as sCoach below.
+            html = '';
 
             // 6. Coaching insights — Lead insight + collapsible secondary observations
             const cards = coachingCards || [];
@@ -5923,6 +5925,10 @@
                 }
             }
 
+            // Coaching segment captured; chips build into a fresh `html`.
+            const sCoach = html;
+            html = '';
+
             // Handle weekly review card
             if (weeklyCard) {
                 const weeklySection = document.getElementById('weeklyReviewSection');
@@ -5955,8 +5961,17 @@
             });
             window.chipActions = chipItems.map(function(c) { return c.action || null; });
             html += '</div>';
+            const sChips = html;
 
-            thread.innerHTML = html;
+            if (_smEnabled) {
+                // Now V2 — coach's read leads; operational essentials demote into a compact strip.
+                // Only a genuinely imminent meeting auto-expands it (backlog volume shouldn't re-clutter).
+                const opOpen = smMeetingImminent(meetingBrief);
+                thread.innerHTML = sTime + sCoach + smOpStrip(sOp, topGoal, meetingBrief, closures, opOpen) + sChips;
+            } else {
+                // Legacy order — time → operational → coaching → chips.
+                thread.innerHTML = sTime + sOp + sCoach + sChips;
+            }
 
             // Immediately update countdown from real time (not stale cached value)
             updateMeetingCountdown();
@@ -9681,6 +9696,8 @@
 
         // ═══════════════ SELF-MODEL (You surface) ═══════════════
         let _smData = null, _smLoaded = false, _smInitDone = false;
+        // Cached so the Now-V2 layout applies immediately on reload (no legacy→V2 flash).
+        let _smEnabled = (localStorage.getItem('sm_enabled') === '1');
 
         async function initSelfModel(){
             if (_smInitDone) return;
@@ -9689,12 +9706,19 @@
                 const res = await authFetch('/api/self-model');
                 if (!res || !res.ok) return;
                 const data = await res.json();
-                if (!data || !data.enabled) return;   // flag off → Now-only, nav stays hidden
+                if (!data || !data.enabled) {          // flag off → Now-only, nav hidden, legacy layout
+                    _smEnabled = false; localStorage.removeItem('sm_enabled');
+                    return;
+                }
                 _smData = data;
+                const wasEnabled = _smEnabled;
+                _smEnabled = true; localStorage.setItem('sm_enabled', '1');
                 document.getElementById('smSurfaceNav').style.display = 'flex';
                 renderSelfModel(data);
                 _smLoaded = true;
                 smLoadNowCard();
+                // If the flag flipped on this session, re-lay the Now thread into V2.
+                if (!wasEnabled && typeof loadMorningWalk === 'function') { try { loadMorningWalk(); } catch(e){} }
             } catch (e) { console.log('[self-model] init skipped:', e); }
         }
 
@@ -9915,6 +9939,33 @@
                 + `<div class="nc-top"><span class="nc-label">From your self-model</span><span class="nc-tag">&#9673; belief</span></div>`
                 + `<div class="nc-body">A belief you currently hold: <span class="nc-belief">&ldquo;${escapeHtml(c.belief||'')}&rdquo;</span></div>`
                 + `<div class="nc-jump">&#8617; tap to see this in You</div></div>`;
+        }
+
+        // ---- Now V2: compact operational strip (coach leads, essentials demoted) ----
+        function smShorten(s, n){ s = (s||'').trim(); return s.length > n ? s.slice(0, n-1) + '…' : s; }
+
+        function smMeetingImminent(mb){
+            if (!mb || mb.noMeeting || !mb.meeting) return false;
+            const cd = (mb.meeting.countdown || '').toLowerCase();
+            if (/now|started|ongoing|starting/.test(cd)) return true;
+            const m = cd.match(/(?:in\s*)?(\d+)\s*m(?:in)?\b/);   // minutes-only, no hours
+            return !!(m && !/h/.test(cd) && parseInt(m[1], 10) <= 30);
+        }
+
+        function smOpStrip(opHtml, topGoal, meetingBrief, closures, open){
+            if (!opHtml || !opHtml.trim()) return '';
+            const bits = [];
+            if (topGoal && topGoal.title) bits.push('&#127919; ' + escapeHtml(smShorten(topGoal.title, 30)));
+            if (meetingBrief && !meetingBrief.noMeeting && meetingBrief.meeting) {
+                const cd = meetingBrief.meeting.countdown || '';
+                bits.push('&#128197; ' + escapeHtml(smShorten(meetingBrief.meeting.title || 'Next', 20)) + (cd ? ' &middot; ' + escapeHtml(cd) : ''));
+            }
+            if (closures && closures.length) bits.push('&#9998; ' + closures.length + ' to review');
+            const summary = bits.length ? bits.join('&nbsp;&nbsp;&middot;&nbsp;&nbsp;') : 'Today&rsquo;s details';
+            return '<details class="now-op-strip"' + (open ? ' open' : '') + '><summary>'
+                + '<span class="op-summary">' + summary + '</span>'
+                + '<svg class="op-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>'
+                + '</summary><div class="op-body">' + opHtml + '</div></details>';
         }
 
     </script>
