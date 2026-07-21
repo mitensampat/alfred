@@ -58,6 +58,15 @@ class SelfModelStore {
         );
         CREATE INDEX IF NOT EXISTS idx_self_facet_kind ON self_facet(kind);
         CREATE INDEX IF NOT EXISTS idx_self_facet_status ON self_facet(status);
+
+        CREATE TABLE IF NOT EXISTS facet_link (
+            lens_id TEXT NOT NULL,
+            belief_id TEXT NOT NULL,
+            created_at TEXT,
+            PRIMARY KEY (lens_id, belief_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_facet_link_lens ON facet_link(lens_id);
+        CREATE INDEX IF NOT EXISTS idx_facet_link_belief ON facet_link(belief_id);
         """
 
         var errMsg: UnsafeMutablePointer<CChar>?
@@ -346,6 +355,111 @@ class SelfModelStore {
         let ok = sqlite3_step(stmt) == SQLITE_DONE
         sqlite3_finalize(stmt)
         return ok
+    }
+
+    // MARK: - Lens ↔ Belief links (many-to-many)
+    //
+    // A lens (pattern) is how a belief shows up in behaviour. Links live in their own
+    // table so materialize() — which upserts facets — never disturbs them. Many-to-many:
+    // a lens can support several beliefs, and a belief can hold several lenses.
+
+    /// Attach a lens to a belief. Idempotent.
+    func linkLens(lensId: String, beliefId: String) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+
+        let sql = "INSERT OR IGNORE INTO facet_link (lens_id, belief_id, created_at) VALUES (?, ?, ?)"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, (lensId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 2, (beliefId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 3, (isoNow() as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        let ok = sqlite3_step(stmt) == SQLITE_DONE
+        sqlite3_finalize(stmt)
+        return ok
+    }
+
+    /// Detach a lens from a belief.
+    func unlinkLens(lensId: String, beliefId: String) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+
+        let sql = "DELETE FROM facet_link WHERE lens_id = ? AND belief_id = ?"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, (lensId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 2, (beliefId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        let ok = sqlite3_step(stmt) == SQLITE_DONE
+        sqlite3_finalize(stmt)
+        return ok
+    }
+
+    /// Move a lens from one belief to another (unlink + link).
+    func moveLens(lensId: String, fromBeliefId: String, toBeliefId: String) -> Bool {
+        let removed = unlinkLens(lensId: lensId, beliefId: fromBeliefId)
+        let added = linkLens(lensId: lensId, beliefId: toBeliefId)
+        return removed || added
+    }
+
+    /// Ids of lenses attached to a belief.
+    func getLensIds(forBelief beliefId: String) -> [String] {
+        return linkedIds(sql: "SELECT lens_id FROM facet_link WHERE belief_id = ? ORDER BY created_at", key: beliefId)
+    }
+
+    /// Ids of beliefs a lens is attached to.
+    func getBeliefIds(forLens lensId: String) -> [String] {
+        return linkedIds(sql: "SELECT belief_id FROM facet_link WHERE lens_id = ? ORDER BY created_at", key: lensId)
+    }
+
+    /// All links as (lens_id, belief_id) pairs — lets callers build both directions in one read.
+    func allLinks() -> [(lens: String, belief: String)] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return [] }
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT lens_id, belief_id FROM facet_link", -1, &stmt, nil) == SQLITE_OK else { return [] }
+        var out: [(lens: String, belief: String)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let l = columnText(stmt, 0) ?? ""
+            let b = columnText(stmt, 1) ?? ""
+            if !l.isEmpty && !b.isEmpty { out.append((lens: l, belief: b)) }
+        }
+        sqlite3_finalize(stmt)
+        return out
+    }
+
+    private func linkedIds(sql: String, key: String) -> [String] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return [] }
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        sqlite3_bind_text(stmt, 1, (key as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        var out: [String] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let v = columnText(stmt, 0), !v.isEmpty { out.append(v) }
+        }
+        sqlite3_finalize(stmt)
+        return out
+    }
+
+    /// Remove every link touching a facet (used when a facet is deleted).
+    func clearLinks(forFacet id: String) {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return }
+
+        let sql = "DELETE FROM facet_link WHERE lens_id = ? OR belief_id = ?"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 2, (id as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_step(stmt)
+        sqlite3_finalize(stmt)
     }
 
     /// Archive a facet (status = 'archived').

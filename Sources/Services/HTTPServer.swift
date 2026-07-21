@@ -1194,6 +1194,9 @@ class HTTPServer {
         case ("POST", "/api/self-model/verdict"):
             return handleSelfModelVerdict(request)
 
+        case ("POST", "/api/self-model/link"):
+            return handleSelfModelLink(request)
+
         case ("POST", "/api/self-model/resolve"):
             return handleSelfModelResolve(request)
 
@@ -11419,6 +11422,35 @@ extension HTTPServer {
         let verdict: String? = raw.isEmpty ? nil : raw
         let ok = SelfModelService.setVerdict(id: id, verdict: verdict)
         return HTTPResponse(statusCode: ok ? 200 : 404, body: ["ok": ok, "id": id, "verdict": raw])
+    }
+
+    /// Attach / detach / move a lens (pattern) against a belief. Many-to-many.
+    /// Params: lensId, beliefId, action = assign | unassign | move (move also needs toBeliefId).
+    private func handleSelfModelLink(_ request: HTTPRequest) -> HTTPResponse {
+        guard getConfig()?.features?.selfModel ?? false else {
+            return HTTPResponse(statusCode: 200, body: ["enabled": false])
+        }
+        guard let lensId = request.queryParams["lensId"], !lensId.isEmpty,
+              let beliefId = request.queryParams["beliefId"], !beliefId.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Missing 'lensId' or 'beliefId'"])
+        }
+        let action = request.queryParams["action"] ?? "assign"
+        let store = SelfModelStore.shared
+        var ok = false
+        switch action {
+        case "unassign":
+            ok = store.unlinkLens(lensId: lensId, beliefId: beliefId)
+        case "move":
+            guard let to = request.queryParams["toBeliefId"], !to.isEmpty else {
+                return HTTPResponse(statusCode: 400, body: ["error": "Missing 'toBeliefId' for move"])
+            }
+            ok = store.moveLens(lensId: lensId, fromBeliefId: beliefId, toBeliefId: to)
+        default:
+            ok = store.linkLens(lensId: lensId, beliefId: beliefId)
+        }
+        return HTTPResponse(statusCode: ok ? 200 : 500, body: [
+            "ok": ok, "action": action, "lensId": lensId, "beliefId": beliefId
+        ])
     }
 
     /// Resolve an open question into a durable belief. Params: id, resolution.

@@ -3031,6 +3031,26 @@
       .sm-reflect-land{width:100%;margin-top:6px;font-family:var(--font-body);font-size:12.5px;font-weight:600;padding:9px;border-radius:10px;cursor:pointer;border:1px solid var(--sm-accent-line);background:var(--sm-accent-soft);color:var(--sm-accent);transition:all .13s;}
       .sm-reflect-land:hover{background:var(--sm-accent);color:#fff;}
       [data-theme="dark"] .sm-reflect-land:hover{color:#1a1408;}
+      /* ---- lens↔belief affordances (hover edge icon strip) ---- */
+      .sm-card{position:relative;}
+      .sm-edge{position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:5px;opacity:0;transform:translateX(5px);transition:opacity .15s,transform .15s;pointer-events:none;}
+      .sm-card:hover .sm-edge,.sm-edge:focus-within{opacity:1;transform:none;pointer-events:auto;}
+      .sm-ebtn{width:26px;height:26px;border-radius:50%;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink-tertiary);cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow-sm);transition:all .12s;padding:0;}
+      .sm-ebtn:hover{border-color:var(--sm-accent);color:var(--sm-accent);transform:scale(1.08);}
+      .sm-links{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+      .sm-links-label{font-family:var(--font-mono);font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);width:100%;margin-bottom:-2px;}
+      .sm-linkchip{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;padding:3px 9px;border-radius:999px;background:var(--sm-accent-soft);border:1px solid var(--sm-accent-line);color:var(--sm-accent);max-width:100%;}
+      .sm-linkchip span.t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:230px;}
+      .sm-linkchip .x{cursor:pointer;opacity:.55;font-weight:700;}
+      .sm-linkchip .x:hover{opacity:1;}
+      /* picker */
+      .sm-picker-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:60;display:flex;align-items:center;justify-content:center;padding:22px;}
+      .sm-picker{background:var(--surface);border:1px solid var(--line);border-radius:12px;max-width:470px;width:100%;max-height:72vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,.28);}
+      .sm-picker h4{margin:0;padding:14px 16px;border-bottom:1px solid var(--line);font-family:var(--font-body);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-secondary);position:sticky;top:0;background:var(--surface);}
+      .sm-pick-item{padding:12px 16px;border-bottom:1px solid var(--line);cursor:pointer;font-family:var(--font-display);font-size:14px;line-height:1.4;color:var(--ink);}
+      .sm-pick-item:hover{background:var(--sm-accent-soft);}
+      .sm-picker .cancel{padding:12px 16px;text-align:center;color:var(--ink-tertiary);font-size:12px;cursor:pointer;}
+      .sm-picker .cancel:hover{color:var(--ink);}
     </style>
 
     <div id="appContainer" class="hidden" style="display:flex;flex-direction:column;height:100dvh;">
@@ -9826,22 +9846,26 @@
             const patterns = lenses.patterns || [];
             let inner = '';
             shifts.slice(0, 4).forEach(s => {
-                inner += `<div class="sm-card"><div class="sm-kind-row"><span class="sm-kdot belief"></span>`
+                inner += `<div class="sm-card">` + smBeliefEdge(s)
+                    + `<div class="sm-kind-row"><span class="sm-kdot belief"></span>`
                     + `<span class="sm-klabel">Belief${s.steps>1?` &middot; ${s.steps} shifts`:''}</span>` + (s.date ? `<span class="sm-kmeta">${escapeHtml((s.date||'').slice(0,10))}</span>` : '') + `</div>`
                     + `<div class="sm-traj"><div class="sm-traj-step"><span class="stamp">Was</span><div class="val">${escapeHtml(s.from||'—')}</div></div>`
                     + `<div class="sm-traj-arrow">&rarr;</div>`
                     + `<div class="sm-traj-step now"><span class="stamp">Now</span><div class="val">${escapeHtml(s.to||'')}</div></div></div>`
+                    + smLinkChips('Lenses', s.lenses, (lid) => `smUnlink('${lid}','${s.id}')`)
                     + smVerbRow(s.id, s.confirmed) + `</div>`;
             });
             patterns.forEach(p => {
                 const conf = Math.round((p.confidence||0) * 100);
                 const clabel = conf>=80?'Strong':(conf>=55?'Building':'Forming');
                 const reinf = p.reinforcements || 0;
-                inner += `<div class="sm-card"><div class="sm-kind-row"><span class="sm-kdot pattern"></span>`
+                inner += `<div class="sm-card">` + smLensEdge(p)
+                    + `<div class="sm-kind-row"><span class="sm-kdot pattern"></span>`
                     + `<span class="sm-klabel">${p.isDirect ? 'Instruction' : 'Pattern'}</span>`
                     + (reinf ? `<span class="sm-kmeta">${reinf}&times; reinforced</span>` : '') + `</div>`
                     + `<p class="sm-statement">${escapeHtml(p.description||'')}</p>`
                     + `<div class="sm-conf"><div class="sm-conf-track"><div class="sm-conf-fill" style="width:${conf}%"></div></div><span class="sm-conf-lbl">${clabel}</span></div>`
+                    + smLinkChips('Supports', p.beliefs, (bid) => `smUnlink('${p.id}','${bid}')`)
                     + smVerbRow(p.id, p.confirmed) + `</div>`;
             });
             if (!inner) inner = `<div class="sm-empty">Patterns and beliefs form as Alfred gathers signal. None yet.</div>`;
@@ -9915,6 +9939,74 @@
                 await loadSelfModel();      // re-render from server (hides dismissed, badges confirmed)
                 smLoadNowCard();            // surfaced belief may have changed
             } catch (e) { console.log('[self-model] verdict failed:', e); }
+        }
+
+        // ---- lens ↔ belief affordances ----
+        function smEdgeBtn(icon, title, call){
+            return `<button type="button" class="sm-ebtn" title="${title}" onclick="event.stopPropagation();${call}">${icon}</button>`;
+        }
+
+        function smLensEdge(p){
+            const attached = p.beliefs || [];
+            let h = smEdgeBtn('&plus;', 'Assign to a belief', `smPick('lens','${p.id}','assign')`);
+            if (attached.length) h += smEdgeBtn('&#8646;', 'Move to another belief', `smPick('lens','${p.id}','move')`);
+            return `<div class="sm-edge">${h}</div>`;
+        }
+
+        function smBeliefEdge(b){
+            return `<div class="sm-edge">` + smEdgeBtn('&plus;', 'Attach a lens', `smPick('belief','${b.id}','attach')`) + `</div>`;
+        }
+
+        function smLinkChips(label, items, removeCall){
+            if (!items || !items.length) return '';
+            return `<div class="sm-links"><span class="sm-links-label">${label}</span>`
+                + items.map(x => `<span class="sm-linkchip"><span class="t">${escapeHtml(x.statement || x.description || '')}</span>`
+                    + `<span class="x" title="Remove" onclick="event.stopPropagation();${removeCall(x.id)}">&times;</span></span>`).join('')
+                + `</div>`;
+        }
+
+        function smPick(side, id, mode){
+            const list = side === 'lens'
+                ? (_smData.all_beliefs || [])
+                : ((_smData.lenses && _smData.lenses.patterns) || []).map(p => ({ id: p.id, statement: p.description }));
+            const title = side === 'lens'
+                ? (mode === 'move' ? 'Move this lens to…' : 'Assign this lens to a belief')
+                : 'Attach a lens to this belief';
+            const items = list.map(x => `<div class="sm-pick-item" onclick="smPickChoose('${side}','${id}','${mode}','${x.id}')">${escapeHtml(x.statement || '')}</div>`).join('');
+            const ov = document.createElement('div');
+            ov.className = 'sm-picker-overlay'; ov.id = 'smPickerOverlay';
+            ov.onclick = (e) => { if (e.target === ov) smPickClose(); };
+            ov.innerHTML = `<div class="sm-picker"><h4>${title}</h4>${items || '<div class="cancel">Nothing available</div>'}<div class="cancel" onclick="smPickClose()">Cancel</div></div>`;
+            document.body.appendChild(ov);
+        }
+
+        function smPickClose(){ const o = document.getElementById('smPickerOverlay'); if (o) o.remove(); }
+
+        async function smPickChoose(side, id, mode, chosenId){
+            let lensId, beliefId, action = 'assign', extra = '';
+            if (side === 'lens') {
+                lensId = id;
+                if (mode === 'move') {
+                    const p = (_smData.lenses.patterns || []).find(x => x.id === id);
+                    const cur = (p && p.beliefs || [])[0];
+                    beliefId = cur ? cur.id : chosenId;
+                    action = 'move'; extra = '&toBeliefId=' + encodeURIComponent(chosenId);
+                } else { beliefId = chosenId; }
+            } else { beliefId = id; lensId = chosenId; }
+            try {
+                await authFetch('/api/self-model/link?lensId=' + encodeURIComponent(lensId)
+                    + '&beliefId=' + encodeURIComponent(beliefId) + '&action=' + action + extra, { method: 'POST' });
+            } catch (e) { console.log('[self-model] link failed:', e); }
+            smPickClose();
+            await loadSelfModel();
+        }
+
+        async function smUnlink(lensId, beliefId){
+            try {
+                await authFetch('/api/self-model/link?lensId=' + encodeURIComponent(lensId)
+                    + '&beliefId=' + encodeURIComponent(beliefId) + '&action=unassign', { method: 'POST' });
+            } catch (e) { console.log('[self-model] unlink failed:', e); }
+            await loadSelfModel();
         }
 
         function smResolve(id, btn){

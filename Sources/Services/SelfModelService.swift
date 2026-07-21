@@ -60,18 +60,35 @@ enum SelfModelService {
             ["id": f["id"] as? String ?? "", "text": f["statement"] as? String ?? "", "verdict": verdict(f)]
         }
 
+        // ---- Lens ↔ belief links (many-to-many, browsable from either side) ----
+        let links = store.allLinks()
+        var lensIdsByBelief: [String: [String]] = [:]
+        var beliefIdsByLens: [String: [String]] = [:]
+        for l in links {
+            lensIdsByBelief[l.belief, default: []].append(l.lens)
+            beliefIdsByLens[l.lens, default: []].append(l.belief)
+        }
+        let patternById = Dictionary(patternFacets.map { (($0["id"] as? String ?? ""), $0) }, uniquingKeysWith: { a, _ in a })
+        let beliefById = Dictionary(beliefFacets.map { (($0["id"] as? String ?? ""), $0) }, uniquingKeysWith: { a, _ in a })
+
         // ---- Beliefs (trajectory, most recently updated first) ----
         let beliefsSorted = beliefFacets.sorted { ($0["last_seen"] as? String ?? "") > ($1["last_seen"] as? String ?? "") }
         let beliefsOut: [[String: Any]] = beliefsSorted.prefix(6).map { f -> [String: Any] in
             let traj = f["trajectory"] as? [[String: String]] ?? []
+            let id = f["id"] as? String ?? ""
+            let attached: [[String: Any]] = (lensIdsByBelief[id] ?? []).compactMap { lid in
+                guard let p = patternById[lid] else { return nil }
+                return ["id": lid, "description": p["statement"] as? String ?? ""]
+            }
             return [
-                "id": f["id"] as? String ?? "",
+                "id": id,
                 "from": traj.first?["from"] ?? "",
                 "to": f["statement"] as? String ?? "",
                 "date": f["last_seen"] as? String ?? "",
                 "steps": traj.count,
                 "verdict": verdict(f),
-                "confirmed": verdict(f) == "confirmed"
+                "confirmed": verdict(f) == "confirmed",
+                "lenses": attached
             ]
         }
 
@@ -83,8 +100,13 @@ enum SelfModelService {
             return ($0["confidence"] as? Double ?? 0) > ($1["confidence"] as? Double ?? 0)
         }.prefix(8).map { f -> [String: Any] in
             let meta = f["metadata"] as? [String: String] ?? [:]
+            let id = f["id"] as? String ?? ""
+            let attachedTo: [[String: Any]] = (beliefIdsByLens[id] ?? []).compactMap { bid in
+                guard let b = beliefById[bid] else { return nil }
+                return ["id": bid, "statement": b["statement"] as? String ?? ""]
+            }
             return [
-                "id": f["id"] as? String ?? "",
+                "id": id,
                 "type": meta["type"] ?? "",
                 "description": f["statement"] as? String ?? "",
                 "confidence": f["confidence"] as? Double ?? 0,
@@ -92,7 +114,8 @@ enum SelfModelService {
                 "isStale": (f["status"] as? String) == "fading",
                 "reinforcements": Int(meta["reinforcements"] ?? "0") ?? 0,
                 "verdict": verdict(f),
-                "confirmed": verdict(f) == "confirmed"
+                "confirmed": verdict(f) == "confirmed",
+                "beliefs": attachedTo
             ]
         }
 
@@ -117,6 +140,11 @@ enum SelfModelService {
             "signals_this_week": week.count
         ]
 
+        // Every belief (not just the surfaced 6) so the assign/move picker can offer them all.
+        let allBeliefs: [[String: Any]] = beliefsSorted.map { f in
+            ["id": f["id"] as? String ?? "", "statement": f["statement"] as? String ?? ""]
+        }
+
         return [
             "enabled": true,
             "durable": true,
@@ -125,7 +153,8 @@ enum SelfModelService {
             "movement": movement,
             "workspaces": workspacesTop,
             "questions": questions,
-            "lenses": ["patterns": patternsOut, "belief_shifts": beliefsOut]
+            "lenses": ["patterns": patternsOut, "belief_shifts": beliefsOut],
+            "all_beliefs": allBeliefs
         ]
     }
 
