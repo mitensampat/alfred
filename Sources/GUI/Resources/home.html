@@ -3347,6 +3347,7 @@
         // ═══════════════════════════════════════════════
 
         let authToken = '';
+        let _ftuePasscode = '';
         let sessionId = generateSessionId();
         let chatSessionId = 'chat-' + generateSessionId();
         let chatAbortController = null;
@@ -4534,17 +4535,17 @@
             document.getElementById('authScreen').classList.add('hidden');
             document.getElementById('appContainer').classList.add('hidden');
             document.getElementById('ftueWizard').classList.remove('hidden');
-            // Phase 3: resume where the user left off (progress persisted server-side)
+            // Resume where the user left off — use currentStep from progress file,
+            // NOT completedSteps (which includes auto-detected steps like "messaging")
             let startIndex = 0;
             try {
                 const s = await checkSetupStatus();
-                if (s && Array.isArray(s.completedSteps) && s.completedSteps.length) {
-                    let last = -1;
-                    FTUE_STEPS.forEach((name, i) => { if (s.completedSteps.includes(name)) last = Math.max(last, i); });
-                    if (last >= 0) startIndex = Math.min(last + 1, FTUE_STEPS.length - 1);
-                    // restore verified flags so already-completed connection steps don't re-block
-                    if (s.completedSteps.includes('googleOauth')) ftueData.googleConnected = true;
-                    if (s.completedSteps.includes('apiKeys')) ftueData.claudeKeyVerified = true;
+                if (s) {
+                    if (s.currentStep > 0) {
+                        startIndex = Math.min(s.currentStep, FTUE_STEPS.length - 1);
+                    }
+                    if (s.completedSteps && s.completedSteps.includes('googleOauth')) ftueData.googleConnected = true;
+                    if (s.completedSteps && s.completedSteps.includes('apiKeys')) ftueData.claudeKeyVerified = true;
                 }
             } catch (e) { /* fall back to step 0 */ }
             renderFtueStep(startIndex);
@@ -4844,7 +4845,12 @@
         async function skipFtueEntirely() {
             try { await fetch('/api/setup/complete', { method: 'POST' }); } catch (e) {}
             document.getElementById('ftueWizard').classList.add('hidden');
-            showAuthScreen();
+            if (_ftuePasscode) {
+                document.getElementById('passcodeInput').value = _ftuePasscode;
+                authenticate();
+            } else {
+                showAuthScreen();
+            }
         }
 
         // ── Inline error helper (replaces alert()) ──
@@ -5188,7 +5194,12 @@
         async function completeFtue() {
             try { await fetch('/api/setup/complete', { method: 'POST' }); } catch (e) {}
             hideFtueWizard();
-            showAuthScreen();
+            if (_ftuePasscode) {
+                document.getElementById('passcodeInput').value = _ftuePasscode;
+                authenticate();
+            } else {
+                showAuthScreen();
+            }
         }
 
         // ═══════════════════════════════════════════════
@@ -8417,9 +8428,22 @@
             }
 
             if (urlPasscode) {
-                document.getElementById('passcodeInput').value = urlPasscode;
-                authenticate();
-                window.history.replaceState({}, '', window.location.pathname);
+                _ftuePasscode = urlPasscode;
+                // Check setup status FIRST — FTUE must run before auth on fresh installs
+                checkSetupStatus().then(status => {
+                    if (status && !status.isComplete) {
+                        showFtueWizard();
+                        window.history.replaceState({}, '', window.location.pathname);
+                    } else {
+                        document.getElementById('passcodeInput').value = urlPasscode;
+                        authenticate();
+                        window.history.replaceState({}, '', window.location.pathname);
+                    }
+                }).catch(() => {
+                    document.getElementById('passcodeInput').value = urlPasscode;
+                    authenticate();
+                    window.history.replaceState({}, '', window.location.pathname);
+                });
             } else {
                 checkSavedSession();
             }

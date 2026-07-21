@@ -14,7 +14,7 @@ Task {
 RunLoop.main.run()
 
 struct AlfredApp {
-    static let version = "2.3.2"
+    static let version = "2.3.4"
     static var menuBarController: MenuBarController?  // Keep reference to prevent deallocation
 
     static func main() async {
@@ -38,7 +38,8 @@ struct AlfredApp {
             }
         }
         if !portReady {
-            print("⚠️ Port \(port) still in use after \(maxRetries) retries — another Alfred instance is running. Exiting.")
+            print("ℹ️ Alfred is already running — opening web UI...")
+            openWebUI()
             Foundation.exit(0)
         }
 
@@ -2784,16 +2785,14 @@ struct AlfredApp {
         print("   Click it to control the server")
         print("")
 
-        // Start the NSApplication run loop on the main thread
-        // This is required for menu bar to work, but it blocks async
-        // So we need to ensure HTTP handlers don't rely on MainActor
-        DispatchQueue.main.async {
-            NSApplication.shared.run()
+        // Start NSApplication on the main thread — this blocks forever and drives the menu bar.
+        // The HTTP server runs on its own threads and doesn't need MainActor.
+        // We use withCheckedContinuation so the async context stays alive while NSApp.run() blocks.
+        await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in
+            DispatchQueue.main.async {
+                NSApplication.shared.run()
+            }
         }
-
-        // Keep the async context alive for HTTP server operations
-        // The HTTP server runs on its own threads and doesn't need MainActor
-        try? await Task.sleep(nanoseconds: UInt64.max)
     }
 
     // MARK: - Setup Mode (FTUE)
@@ -2822,14 +2821,49 @@ struct AlfredApp {
             print("Opening browser...")
             print("")
 
-            // Auto-open browser to the FTUE wizard
-            let url = URL(string: "http://localhost:\(port)/home.html?passcode=\(passcode)")!
-            NSWorkspace.shared.open(url)
+            // Wait for server to actually respond before opening browser
+            let serverURL = URL(string: "http://localhost:\(port)/api/health")!
+            var serverReady = false
+            for attempt in 1...10 {
+                try await Task.sleep(nanoseconds: 500_000_000)
+                var request = URLRequest(url: serverURL)
+                request.timeoutInterval = 2
+                if let (_, response) = try? await URLSession.shared.data(for: request),
+                   let http = response as? HTTPURLResponse, http.statusCode == 200 {
+                    serverReady = true
+                    break
+                }
+                print("⏳ Waiting for server... (attempt \(attempt)/10)")
+            }
 
-            // Keep alive
-            try await Task.sleep(nanoseconds: UInt64.max)
+            if serverReady {
+                let url = URL(string: "http://localhost:\(port)/home.html?passcode=\(passcode)")!
+                NSWorkspace.shared.open(url)
+                print("🌐 Browser opened to setup wizard")
+            } else {
+                print("⚠️ Server didn't respond after 5s — open manually: http://localhost:\(port)/home.html?passcode=\(passcode)")
+            }
+
+            // Keep alive — use continuation so async context never returns
+            await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in
+                // Never resumed — process stays alive until killed
+            }
         } catch {
             print("❌ Failed to start setup server: \(error)")
+        }
+    }
+
+    /// Open the web UI in the default browser (used when another instance is already running).
+    static func openWebUI() {
+        if let config = AppConfig.load(),
+           let apiConfig = config.api {
+            let port = apiConfig.port
+            let passcode = apiConfig.passcode
+            let url = URL(string: "http://localhost:\(port)/home.html?passcode=\(passcode)")!
+            NSWorkspace.shared.open(url)
+        } else {
+            let url = URL(string: "http://localhost:8080/home.html")!
+            NSWorkspace.shared.open(url)
         }
     }
 
@@ -2857,7 +2891,10 @@ struct AlfredApp {
             <key>RunAtLoad</key>
             <true/>
             <key>KeepAlive</key>
-            <true/>
+            <dict>
+                <key>SuccessfulExit</key>
+                <false/>
+            </dict>
             <key>StandardOutPath</key>
             <string>\(homeDir)/.alfred/alfred.log</string>
             <key>StandardErrorPath</key>
@@ -2881,6 +2918,7 @@ struct AlfredApp {
             )
             try plistContent.write(toFile: plistPath, atomically: true, encoding: .utf8)
             print("✅ LaunchAgent installed at \(plistPath)")
+            print("   Activates on next login (current process is already running)")
         } catch {
             print("⚠️ Could not install LaunchAgent: \(error)")
         }
@@ -3147,8 +3185,8 @@ struct AlfredApp {
 
             <key>KeepAlive</key>
             <dict>
-                <key>Crashed</key>
-                <true/>
+                <key>SuccessfulExit</key>
+                <false/>
             </dict>
 
             <key>StandardOutPath</key>

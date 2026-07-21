@@ -23,12 +23,30 @@ class HotReloadManager {
         self.webDir = configDir.appendingPathComponent("web")
         self.promptsDir = configDir.appendingPathComponent("prompts")
 
-        // Source directory - where bundled files live during development
-        // Resolves relative to the repo checkout; falls back to home dir convention
         #if DEBUG
         self.sourceWebDir = URL(fileURLWithPath: NSString(string: "~/Documents/Claude apps/Alfred/Sources/GUI/Resources").expandingTildeInPath)
         #else
-        self.sourceWebDir = Bundle.main.resourceURL ?? home.appendingPathComponent("Documents/Alfred/Sources/GUI/Resources")
+        // Resolve bundled resources: try app bundle, then SPM resource bundle, then dev fallback
+        let fm = FileManager.default
+        let appBundleResources = Bundle.main.resourceURL
+        let spmBundleResources = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Resources/Alfred_Alfred.bundle/GUI/Resources")
+        let devFallback = home.appendingPathComponent("Documents/Claude apps/Alfred/Sources/GUI/Resources")
+
+        if let appRes = appBundleResources, fm.fileExists(atPath: appRes.appendingPathComponent("home.html").path) {
+            self.sourceWebDir = appRes
+        } else if fm.fileExists(atPath: spmBundleResources.appendingPathComponent("home.html").path) {
+            self.sourceWebDir = spmBundleResources
+        } else if fm.fileExists(atPath: devFallback.appendingPathComponent("home.html").path) {
+            self.sourceWebDir = devFallback
+        } else {
+            self.sourceWebDir = appBundleResources ?? devFallback
+            print("⚠️ home.html not found in any known location:")
+            print("   Bundle.main.resourceURL: \(appBundleResources?.path ?? "nil")")
+            print("   SPM bundle: \(spmBundleResources.path)")
+            print("   Dev fallback: \(devFallback.path)")
+        }
+        print("📂 Web source dir: \(self.sourceWebDir.path)")
         #endif
 
         // Ensure directories exist
@@ -80,6 +98,19 @@ class HotReloadManager {
                     print("✓ Copied \(file) to ~/.config/alfred/web/")
                 } catch {
                     print("⚠️ Failed to copy \(file): \(error)")
+                }
+            } else {
+                print("⚠️ Source file not found: \(source.path)")
+                // Last resort: check if binary's sibling bundle has it (SPM resource bundle)
+                let execURL = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
+                let spmBundle = execURL.appendingPathComponent("Alfred_Alfred.bundle/GUI/Resources/\(file)")
+                if fm.fileExists(atPath: spmBundle.path) {
+                    do {
+                        try fm.copyItem(at: spmBundle, to: target)
+                        print("✓ Copied \(file) from SPM bundle to ~/.config/alfred/web/")
+                    } catch {
+                        print("⚠️ Failed to copy from SPM bundle: \(error)")
+                    }
                 }
             }
         }
