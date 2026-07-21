@@ -50,7 +50,9 @@ enum SelfModelSynthesizer {
         let now = ISO8601DateFormatter().string(from: Date())
 
         // ---- Themes ----
-        for t in store.getThemesWithState(days: 60, limit: 20) {
+        // Materialize broadly (the store is the substrate); the read path curates what's
+        // shown. A wide theme layer is also what gives belief lineage something to attach to.
+        for t in store.getThemesWithState(days: 180, limit: 250) {
             guard let name = t["theme"] as? String, !name.isEmpty else { continue }
             let state = t["state"] as? String ?? "researching"
             if state == "archived" { continue }
@@ -114,6 +116,43 @@ enum SelfModelSynthesizer {
                 trajectory: chain, evidence: [], metadata: ["shift_count": String(chain.count)])
         }
 
+        // ---- Belief lineage ----
+        backfillLineage()
+
         return facets.counts()
+    }
+
+    /// Link each belief back to the theme(s) it crystallized from.
+    ///
+    /// A reflection carries BOTH its themes and its mental-model shifts, so a belief
+    /// extracted from that reflection inherits its themes as ancestry. Idempotent
+    /// (INSERT OR IGNORE + deterministic ids), so this both backfills existing beliefs
+    /// and keeps lineage current for new ones.
+    @discardableResult
+    static func backfillLineage() -> Int {
+        let store = SelfModelStore.shared
+        let themeIds = Set(store.getFacets(kind: "theme", includeArchived: true).compactMap { $0["id"] as? String })
+        let beliefIds = Set(store.getFacets(kind: "belief", includeArchived: true).compactMap { $0["id"] as? String })
+        guard !themeIds.isEmpty, !beliefIds.isEmpty else { return 0 }
+
+        // Wide window — lineage is historical, not recent-only.
+        let reflections = ReflectionStore.shared.getRecentReflections(limit: 2000, days: 400)
+        for r in reflections {
+            guard let shifts = r["mental_model_shifts"] as? [[String: String]], !shifts.isEmpty,
+                  let themes = r["themes"] as? [String], !themes.isEmpty else { continue }
+            for shift in shifts {
+                let to = shift["to"] ?? ""
+                guard !to.isEmpty else { continue }
+                // Belief ids are derived from the shift that opened the chain.
+                let beliefId = stableId("belief", (shift["from"] ?? "") + "|" + to)
+                guard beliefIds.contains(beliefId) else { continue }
+                for theme in themes {
+                    let themeId = stableId("theme", theme)
+                    guard themeIds.contains(themeId) else { continue }
+                    _ = store.linkBeliefToTheme(beliefId: beliefId, themeId: themeId)
+                }
+            }
+        }
+        return store.allLineage().count
     }
 }
