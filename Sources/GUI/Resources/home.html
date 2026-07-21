@@ -1013,6 +1013,7 @@
             flex-shrink: 0;
         }
         .top-bar {
+            position: relative;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -2889,7 +2890,7 @@
         --sm-green:#4bb59a; --sm-green-bg:#0f2420;
       }
       /* segmented Now/You nav */
-      .sm-nav{display:flex;gap:4px;justify-content:center;padding:6px 0 8px;border-bottom:1px solid var(--line);background:var(--surface);}
+      .sm-nav{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;gap:4px;z-index:2;}
       .sm-tab{font-family:var(--font-body);font-size:12.5px;font-weight:600;color:var(--ink-tertiary);background:none;border:none;cursor:pointer;padding:6px 16px;border-radius:999px;transition:color .15s,background .15s;}
       .sm-tab:hover{color:var(--ink-secondary);}
       .sm-tab.active{background:var(--sm-accent);color:#fff;}
@@ -3020,6 +3021,11 @@
         <div class="top-bar-wrapper">
         <div class="top-bar">
             <div class="top-bar-title">Coach Alfred</div>
+            <!-- Now/You surface toggle (revealed by initSelfModel when features.self_model is on) -->
+            <div class="sm-nav" id="smSurfaceNav" style="display:none;">
+                <button type="button" class="sm-tab active" id="smTabNow" onclick="showSurface('now')">Now</button>
+                <button type="button" class="sm-tab" id="smTabYou" onclick="showSurface('you')">You</button>
+            </div>
             <div class="top-bar-actions">
                 <span id="syncIndicator" style="font-size:10px;color:var(--ink-faint);margin-right:6px;opacity:0.7;cursor:pointer;" onclick="forceFullRefresh()" title="Tap to refresh"></span>
                 <span id="greetingTime" style="font-size:11px;color:var(--ink-faint);margin-right:4px;">loading...</span>
@@ -3027,12 +3033,6 @@
                 <button class="top-bar-btn" onclick="openSettingsPanel()" title="Settings">&#9881;&#65039;</button>
             </div>
         </div>
-        </div>
-
-        <!-- Now/You surface nav (self-model; revealed by initSelfModel when features.self_model is on) -->
-        <div class="sm-nav" id="smSurfaceNav" style="display:none;">
-            <button type="button" class="sm-tab active" id="smTabNow" onclick="showSurface('now')">Now</button>
-            <button type="button" class="sm-tab" id="smTabYou" onclick="showSurface('you')">You</button>
         </div>
 
         <!-- CONVERSATION -->
