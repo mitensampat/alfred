@@ -3051,6 +3051,40 @@
       .sm-pick-item:hover{background:var(--sm-accent-soft);}
       .sm-picker .cancel{padding:12px 16px;text-align:center;color:var(--ink-tertiary);font-size:12px;cursor:pointer;}
       .sm-picker .cancel:hover{color:var(--ink);}
+      /* ---- immersive browser ---- */
+      .sm-brow-head{position:sticky;top:0;z-index:3;background:var(--surface);padding-bottom:10px;margin-bottom:4px;}
+      .sm-brow-counts{display:flex;gap:12px;flex-wrap:wrap;font-family:var(--font-mono);font-size:10.5px;color:var(--ink-tertiary);margin-bottom:10px;}
+      .sm-brow-counts b{font-family:var(--font-display);font-size:14px;color:var(--ink);font-weight:500;}
+      .sm-search{width:100%;font-family:var(--font-body);font-size:13.5px;padding:9px 13px;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface-sunken);color:var(--ink);}
+      .sm-search:focus{outline:none;border-color:var(--sm-accent);}
+      .sm-modes{display:flex;gap:4px;margin-top:10px;}
+      .sm-mode{font-family:var(--font-body);font-size:12px;font-weight:600;padding:5px 13px;border-radius:999px;border:1px solid var(--line-strong);background:none;color:var(--ink-tertiary);cursor:pointer;transition:all .13s;}
+      .sm-mode.active{background:var(--sm-accent);border-color:var(--sm-accent);color:#fff;}
+      [data-theme="dark"] .sm-mode.active{color:#1a1408;}
+      .sm-brow-list{display:flex;flex-direction:column;gap:8px;}
+      .sm-brow-item{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:11px 14px;cursor:pointer;transition:border-color .14s,transform .12s;}
+      .sm-brow-item:hover{border-color:var(--sm-accent-line);transform:translateX(2px);}
+      .sm-brow-top{display:flex;align-items:center;gap:9px;}
+      .sm-brow-name{flex:1;min-width:0;font-family:var(--font-display);font-size:14.5px;line-height:1.35;color:var(--ink);}
+      .sm-brow-meta{display:flex;align-items:center;gap:7px;margin-top:7px;flex-wrap:wrap;}
+      .sm-yield{font-family:var(--font-mono);font-size:10px;color:var(--sm-accent);white-space:nowrap;}
+      .sm-origin{font-family:var(--font-mono);font-size:9px;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:999px;white-space:nowrap;}
+      .sm-origin.emergent{background:var(--growth-tint,var(--surface-sunken));color:var(--sm-green);}
+      .sm-origin.declared{background:var(--sm-accent-soft);color:var(--sm-accent);}
+      .sm-origin.aspiration{background:var(--sm-hot-bg);color:var(--sm-hot);}
+      .sm-brow-traj{display:flex;gap:8px;align-items:baseline;margin-top:8px;font-size:12.5px;line-height:1.4;}
+      .sm-brow-traj .was{color:var(--ink-tertiary);flex:1;}
+      .sm-brow-traj .arr{color:var(--sm-accent);}
+      .sm-brow-traj .now{color:var(--ink);flex:1;font-weight:500;}
+      .sm-themechip{display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:3px 8px;border-radius:999px;background:var(--surface-sunken);border:1px solid var(--line);color:var(--ink-secondary);cursor:pointer;max-width:100%;transition:all .12s;}
+      .sm-themechip:hover{border-color:var(--sm-accent);color:var(--sm-accent);}
+      .sm-themechip span.t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:190px;}
+      .sm-brow-empty{padding:26px 10px;text-align:center;color:var(--ink-tertiary);font-size:13px;font-family:var(--font-display);font-style:italic;}
+      .sm-brow-more{width:100%;padding:10px;margin-top:8px;border:1px solid var(--line);border-radius:999px;background:none;color:var(--ink-secondary);font-family:var(--font-body);font-size:12px;font-weight:600;cursor:pointer;}
+      .sm-brow-more:hover{border-color:var(--sm-accent);color:var(--sm-accent);}
+      .sm-explore{width:100%;margin-top:14px;padding:11px;border-radius:10px;border:1px dashed var(--sm-accent-line);background:var(--sm-accent-soft);color:var(--sm-accent);font-family:var(--font-body);font-size:12.5px;font-weight:600;cursor:pointer;transition:all .13s;}
+      .sm-explore:hover{background:var(--sm-accent);color:#fff;}
+      [data-theme="dark"] .sm-explore:hover{color:#1a1408;}
     </style>
 
     <div id="appContainer" class="hidden" style="display:flex;flex-direction:column;height:100dvh;">
@@ -9873,29 +9907,20 @@
         }
 
         function smFoot(){
-            return `<div class="sm-section" style="margin-top:30px;border-top:1px solid var(--line);padding-top:14px;color:var(--ink-faint);font-size:11px;line-height:1.5;">`
-                + `Read-only self-model &middot; synthesized from your reflections, themes, and learned patterns. Tap a workspace to open it.</div>`;
+            return `<button class="sm-explore" onclick="smBrowse()">&#9673; Explore your whole model &rarr;</button>`
+                + `<div class="sm-section" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px;color:var(--ink-faint);font-size:11px;line-height:1.5;">`
+                + `This view is curated. Explore opens every theme and belief, with the links between them.</div>`;
         }
 
         // ---- theme drill-in (reuses /api/reflect/theme/detail) ----
-        async function smOpenTheme(index){
+        function smOpenTheme(index){
             const w = (_smData && _smData.workspaces || [])[index]; if (!w) return;
-            const el = document.getElementById('youInner');
-            el.innerHTML = `<button class="sm-back" onclick="renderSelfModel(_smData)">&lsaquo; You</button><div class="sm-loading">Opening ${escapeHtml(w.theme)}&hellip;</div>`;
-            document.getElementById('youScreen').scrollTop = 0;
-            try {
-                const res = await authFetch('/api/reflect/theme/detail?name=' + encodeURIComponent(w.theme));
-                const d = await res.json();
-                el.innerHTML = smThemeDetail(w, d);
-            } catch (e) {
-                el.innerHTML = `<button class="sm-back" onclick="renderSelfModel(_smData)">&lsaquo; You</button><div class="sm-empty">Couldn&rsquo;t load this theme.</div>`;
-            }
-            document.getElementById('youScreen').scrollTop = 0;
+            smOpenThemeNamed(w.theme, 'you', w);
         }
 
-        function smThemeDetail(w, d){
+        function smThemeDetail(w, d, backCall, backLabel){
             d = d || {};
-            const back = `<button class="sm-back" onclick="renderSelfModel(_smData)">&lsaquo; You</button>`;
+            const back = `<button class="sm-back" onclick="${backCall || 'renderSelfModel(_smData)'}">&lsaquo; ${backLabel || 'You'}</button>`;
             const head = `<div class="sm-detail-head"><h1>${escapeHtml(w.theme)}</h1><div class="sm-meta">`
                 + `<span class="sm-chip ${smTempClass(w.temperature)}"><span class="sm-cdot"></span>${smTempLabel(w.temperature)}</span>`
                 + `<span class="sm-chip state">${escapeHtml(d.state||w.state||'')}</span>`
@@ -9917,8 +9942,20 @@
             const tl = (d.timeline || []).slice(0, 12);
             const tlHtml = tl.length ? `<div class="sm-sub-label">Timeline <span class="ct">recent</span></div><div class="sm-feed">`
                 + tl.map(it => `<div class="sm-fitem"><span class="fsrc">${escapeHtml((it.type||'·').slice(0,4))}</span><span class="ftext">${escapeHtml(it.content||'')}</span>` + (it.date?`<span class="fwhen">${escapeHtml(it.date)}</span>`:'') + `</div>`).join('') + `</div>` : '';
-            const empty = (!shiftHtml && !decHtml && !tlHtml && !edge) ? `<div class="sm-empty" style="margin-top:16px">Not much captured under this theme yet.</div>` : '';
-            return back + head + stepper + edge + shiftHtml + decHtml + tlHtml + empty;
+            // Beliefs that crystallized out of this theme (the interplay, from the theme side).
+            let bornHtml = '';
+            const bd = _smBrowse.data;
+            if (bd) {
+                const t = (bd.themes || []).find(x => x.theme === (w.theme || ''));
+                const born = (t && t.beliefs) || [];
+                if (born.length) {
+                    bornHtml = `<div class="sm-sub-label">Beliefs that firmed up here <span class="ct">${born.length}</span></div>`
+                        + born.map(b => `<div class="sm-card" style="margin-bottom:8px"><div class="sm-kind-row"><span class="sm-kdot belief"></span><span class="sm-klabel">Belief</span></div>`
+                            + `<p class="sm-statement">${escapeHtml(b.statement)}</p></div>`).join('');
+                }
+            }
+            const empty = (!shiftHtml && !decHtml && !tlHtml && !edge && !bornHtml) ? `<div class="sm-empty" style="margin-top:16px">Not much captured under this theme yet.</div>` : '';
+            return back + head + stepper + edge + bornHtml + shiftHtml + decHtml + tlHtml + empty;
         }
 
         // ---- callable verbs (Stage 3) ----
@@ -10172,6 +10209,125 @@
         }
 
         function smReflectExit(){ _smReflect = null; renderSelfModel(_smData); }
+
+        // ═══════════ Immersive "You" browser ═══════════
+        // Themes are the navigation spine (they emerge organically); beliefs firm up
+        // around them. Both lists cross-link, so you can traverse in either direction.
+        let _smBrowse = { data: null, mode: 'themes', q: '', limit: 40 };
+
+        async function smBrowse(){
+            const el = document.getElementById('youInner');
+            if (!_smBrowse.data) {
+                el.innerHTML = `<button class="sm-back" onclick="renderSelfModel(_smData)">&lsaquo; You</button><div class="sm-loading">Opening your model&hellip;</div>`;
+                try {
+                    const res = await authFetch('/api/self-model/browse');
+                    const d = await res.json();
+                    if (!d || !d.enabled) { el.innerHTML = `<div class="sm-empty">Self-model is off.</div>`; return; }
+                    _smBrowse.data = d;
+                } catch (e) {
+                    el.innerHTML = `<button class="sm-back" onclick="renderSelfModel(_smData)">&lsaquo; You</button><div class="sm-empty">Couldn&rsquo;t load your model.</div>`;
+                    return;
+                }
+            }
+            smBrowseRender();
+        }
+
+        function smBrowseSetMode(m){ _smBrowse.mode = m; _smBrowse.limit = 40; smBrowseRender(); }
+        function smBrowseSearch(v){ _smBrowse.q = (v || '').toLowerCase(); _smBrowse.limit = 40; smBrowseRender(true); }
+        function smBrowseMore(){ _smBrowse.limit += 60; smBrowseRender(); }
+
+        function smBrowseRender(keepFocus){
+            const d = _smBrowse.data; if (!d) return;
+            const c = d.counts || {};
+            const q = _smBrowse.q;
+            const isThemes = _smBrowse.mode === 'themes';
+
+            let items = isThemes ? (d.themes || []) : (d.beliefs || []);
+            if (q) {
+                items = items.filter(x => ((isThemes ? x.theme : (x.statement + ' ' + (x.from || ''))) || '').toLowerCase().includes(q));
+            }
+            const total = items.length;
+            const shown = items.slice(0, _smBrowse.limit);
+
+            const head = `<button class="sm-back" onclick="renderSelfModel(_smData)">&lsaquo; You</button>`
+                + `<div class="sm-brow-head">`
+                + `<div class="sm-brow-counts"><span><b>${c.themes||0}</b> themes</span><span><b>${c.beliefs||0}</b> beliefs</span>`
+                + `<span><b>${c.lenses||0}</b> lenses</span><span><b>${c.lineage||0}</b> links</span></div>`
+                + `<input class="sm-search" id="smBrowseSearch" type="text" placeholder="Search your model&hellip;" value="${escapeHtml(_smBrowse.q)}" oninput="smBrowseSearch(this.value)">`
+                + `<div class="sm-modes">`
+                + `<button class="sm-mode ${isThemes?'active':''}" onclick="smBrowseSetMode('themes')">Themes</button>`
+                + `<button class="sm-mode ${!isThemes?'active':''}" onclick="smBrowseSetMode('beliefs')">Beliefs</button>`
+                + `</div></div>`;
+
+            let body = '';
+            if (!shown.length) {
+                body = `<div class="sm-brow-empty">${q ? 'Nothing matches &ldquo;' + escapeHtml(q) + '&rdquo;' : 'Nothing here yet.'}</div>`;
+            } else if (isThemes) {
+                body = `<div class="sm-brow-list">` + shown.map(t => {
+                    const inputs = t.inputs_this_week || 0;
+                    return `<div class="sm-brow-item" onclick="smOpenThemeNamed('${smEsc(t.theme)}','browser')">`
+                        + `<div class="sm-brow-top"><span class="sm-brow-name">${escapeHtml(t.theme)}</span><span class="sm-chev">&rsaquo;</span></div>`
+                        + `<div class="sm-brow-meta">`
+                        + (t.state ? `<span class="sm-chip state">${escapeHtml(t.state)}</span>` : '')
+                        + `<span class="sm-chip ${smTempClass(t.temperature)}"><span class="sm-cdot"></span>${smTempLabel(t.temperature)}</span>`
+                        + (inputs ? `<span class="sm-chip inflow"><span class="sm-cdot"></span>${inputs} this week</span>` : '')
+                        + (t.belief_count ? `<span class="sm-yield">&#10022; produced ${t.belief_count} belief${t.belief_count>1?'s':''}</span>` : '')
+                        + `</div></div>`;
+                }).join('') + `</div>`;
+            } else {
+                body = `<div class="sm-brow-list">` + shown.map(b => {
+                    const badge = b.aspiration ? 'aspiration' : (b.origin === 'declared' ? 'declared' : 'emergent');
+                    const badgeText = b.aspiration ? 'aspiration' : b.origin;
+                    const themeChips = (b.themes || []).slice(0, 4).map(t =>
+                        `<span class="sm-themechip" onclick="event.stopPropagation();smOpenThemeNamed('${smEsc(t.theme)}','browser')">&#9675; <span class="t">${escapeHtml(t.theme)}</span></span>`).join('');
+                    const lensChips = (b.lenses || []).map(l =>
+                        `<span class="sm-linkchip"><span class="t">${escapeHtml(l.description)}</span></span>`).join('');
+                    return `<div class="sm-brow-item">`
+                        + `<div class="sm-brow-top"><span class="sm-origin ${badge}">${escapeHtml(badgeText)}</span>`
+                        + (b.steps > 1 ? `<span class="sm-kmeta">${b.steps} shifts</span>` : '')
+                        + (b.confirmed ? `<span class="sm-confirmed">&#10003;</span>` : '') + `</div>`
+                        + (b.from
+                            ? `<div class="sm-brow-traj"><span class="was">${escapeHtml(b.from)}</span><span class="arr">&rarr;</span><span class="now">${escapeHtml(b.statement)}</span></div>`
+                            : `<div class="sm-brow-traj"><span class="now">${escapeHtml(b.statement)}</span></div>`)
+                        + (themeChips ? `<div class="sm-brow-meta"><span class="sm-links-label">From</span>${themeChips}</div>` : '')
+                        + (lensChips ? `<div class="sm-brow-meta"><span class="sm-links-label">Lenses</span>${lensChips}</div>` : '')
+                        + `</div>`;
+                }).join('') + `</div>`;
+            }
+
+            const more = shown.length < total
+                ? `<button class="sm-brow-more" onclick="smBrowseMore()">Show more &middot; ${shown.length} of ${total}</button>` : '';
+
+            document.getElementById('youInner').innerHTML = head + body + more;
+            if (keepFocus) {
+                const inp = document.getElementById('smBrowseSearch');
+                if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+            }
+        }
+
+        // Escape a string for safe embedding inside a single-quoted inline handler.
+        function smEsc(s){ return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+
+        /// Open a theme by name (from the browser or the You list).
+        async function smOpenThemeNamed(name, from, metaHint){
+            const el = document.getElementById('youInner');
+            const backCall = from === 'browser' ? 'smBrowse()' : 'renderSelfModel(_smData)';
+            const backLabel = from === 'browser' ? 'Browse' : 'You';
+            el.innerHTML = `<button class="sm-back" onclick="${backCall}">&lsaquo; ${backLabel}</button><div class="sm-loading">Opening ${escapeHtml(name)}&hellip;</div>`;
+            document.getElementById('youScreen').scrollTop = 0;
+            // prefer explicit meta, else browse data, else a safe default
+            let meta = metaHint || { theme: name, temperature: 'cooling', state: '' };
+            const bd = _smBrowse.data;
+            if (!metaHint && bd) { const t = (bd.themes || []).find(x => x.theme === name); if (t) meta = t; }
+            try {
+                const res = await authFetch('/api/reflect/theme/detail?name=' + encodeURIComponent(name));
+                const d = await res.json();
+                el.innerHTML = smThemeDetail(meta, d, backCall, backLabel);
+            } catch (e) {
+                el.innerHTML = `<button class="sm-back" onclick="${backCall}">&lsaquo; ${backLabel}</button><div class="sm-empty">Couldn&rsquo;t load this theme.</div>`;
+            }
+            document.getElementById('youScreen').scrollTop = 0;
+        }
 
     </script>
 </body>

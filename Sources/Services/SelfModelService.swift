@@ -183,6 +183,110 @@ enum SelfModelService {
         ]
     }
 
+    // ───────────── browse (the immersive "You" surface) ─────────────
+
+    /// The whole model, at scale, for exploration — not the curated read path.
+    ///
+    /// Themes are the navigation spine (they emerge organically); beliefs firm up around
+    /// them. Both directions are resolved so the UI can traverse either way: a theme
+    /// lists the beliefs that crystallized from it, and a belief lists its source themes
+    /// and the lenses that express it.
+    static func browse() -> [String: Any] {
+        let store = SelfModelStore.shared
+        ensureMaterialized(store)
+
+        let themeFacets = store.getFacets(kind: "theme").filter { verdict($0) != "dismissed" }
+        let beliefFacets = store.getFacets(kind: "belief").filter { verdict($0) != "dismissed" }
+        let patternFacets = store.getFacets(kind: "pattern").filter { verdict($0) != "dismissed" }
+
+        // Links + lineage, both directions.
+        var lensIdsByBelief: [String: [String]] = [:]
+        for l in store.allLinks() { lensIdsByBelief[l.belief, default: []].append(l.lens) }
+        var themeIdsByBelief: [String: [String]] = [:]
+        var beliefIdsByTheme: [String: [String]] = [:]
+        for l in store.allLineage() {
+            themeIdsByBelief[l.belief, default: []].append(l.theme)
+            beliefIdsByTheme[l.theme, default: []].append(l.belief)
+        }
+        let patternById = Dictionary(patternFacets.map { (($0["id"] as? String ?? ""), $0) }, uniquingKeysWith: { a, _ in a })
+        let beliefById = Dictionary(beliefFacets.map { (($0["id"] as? String ?? ""), $0) }, uniquingKeysWith: { a, _ in a })
+        let themeById = Dictionary(themeFacets.map { (($0["id"] as? String ?? ""), $0) }, uniquingKeysWith: { a, _ in a })
+
+        let tempRankLocal = tempRank
+        let themes: [[String: Any]] = themeFacets.map { f -> [String: Any] in
+            let meta = f["metadata"] as? [String: String] ?? [:]
+            let id = f["id"] as? String ?? ""
+            let born: [[String: Any]] = (beliefIdsByTheme[id] ?? []).compactMap { bid in
+                guard let b = beliefById[bid] else { return nil }
+                return ["id": bid, "statement": b["statement"] as? String ?? ""]
+            }
+            return [
+                "id": id,
+                "theme": f["statement"] as? String ?? "",
+                "state": meta["state"] ?? "",
+                "temperature": meta["temperature"] ?? "cooling",
+                "inputs_this_week": Int(meta["inputs_this_week"] ?? "0") ?? 0,
+                "edge": meta["edge"] ?? "",
+                "beliefs": born,
+                "belief_count": born.count
+            ]
+        }.sorted {
+            let a = tempRankLocal[$0["temperature"] as? String ?? ""] ?? 9
+            let b = tempRankLocal[$1["temperature"] as? String ?? ""] ?? 9
+            if a != b { return a < b }
+            // then by how much this theme has produced, then recent input
+            let ba = $0["belief_count"] as? Int ?? 0, bb = $1["belief_count"] as? Int ?? 0
+            if ba != bb { return ba > bb }
+            return ($0["inputs_this_week"] as? Int ?? 0) > ($1["inputs_this_week"] as? Int ?? 0)
+        }
+
+        let beliefs: [[String: Any]] = beliefFacets.sorted {
+            ($0["last_seen"] as? String ?? "") > ($1["last_seen"] as? String ?? "")
+        }.map { f -> [String: Any] in
+            let id = f["id"] as? String ?? ""
+            let traj = f["trajectory"] as? [[String: String]] ?? []
+            let lenses: [[String: Any]] = (lensIdsByBelief[id] ?? []).compactMap { lid in
+                guard let p = patternById[lid] else { return nil }
+                return ["id": lid, "description": p["statement"] as? String ?? ""]
+            }
+            let lineage: [[String: Any]] = (themeIdsByBelief[id] ?? []).compactMap { tid in
+                guard let t = themeById[tid] else { return nil }
+                return ["id": tid, "theme": t["statement"] as? String ?? ""]
+            }
+            let origin = f["origin"] as? String ?? "emergent"
+            return [
+                "id": id,
+                "statement": f["statement"] as? String ?? "",
+                "from": traj.first?["from"] ?? "",
+                "steps": traj.count,
+                "date": f["last_seen"] as? String ?? "",
+                "origin": origin,
+                "aspiration": origin == "declared" && lenses.isEmpty,
+                "confirmed": verdict(f) == "confirmed",
+                "lenses": lenses,
+                "themes": lineage
+            ]
+        }
+
+        let values: [[String: Any]] = store.getFacets(kind: "value")
+            .filter { verdict($0) != "dismissed" }
+            .map { ["id": $0["id"] as? String ?? "", "statement": $0["statement"] as? String ?? ""] }
+
+        return [
+            "enabled": true,
+            "counts": [
+                "themes": themes.count,
+                "beliefs": beliefs.count,
+                "lenses": patternFacets.count,
+                "values": values.count,
+                "lineage": store.allLineage().count
+            ],
+            "themes": themes,
+            "beliefs": beliefs,
+            "values": values
+        ]
+    }
+
     // ───────────── callable verbs ─────────────
 
     /// Confirm / dismiss a facet (the "you are the final editor" tenet).

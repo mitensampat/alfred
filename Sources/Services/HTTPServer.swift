@@ -1206,6 +1206,9 @@ class HTTPServer {
         case ("GET", "/api/self-model/now-card"):
             return handleSelfModelNowCard(request)
 
+        case ("GET", "/api/self-model/browse"):
+            return handleSelfModelBrowse(request)
+
         case ("GET", let p) where p.hasPrefix("/api/reflect/theme/detail"):
             return handleReflectThemeDetail(request)
 
@@ -11425,6 +11428,15 @@ extension HTTPServer {
         let verdict: String? = raw.isEmpty ? nil : raw
         let ok = SelfModelService.setVerdict(id: id, verdict: verdict)
         return HTTPResponse(statusCode: ok ? 200 : 404, body: ["ok": ok, "id": id, "verdict": raw])
+    }
+
+    /// The whole self-model for exploration — every theme and belief with both
+    /// directions of linkage resolved. Backs the immersive "You" browser.
+    private func handleSelfModelBrowse(_ request: HTTPRequest) -> HTTPResponse {
+        guard getConfig()?.features?.selfModel ?? false else {
+            return HTTPResponse(statusCode: 200, body: ["enabled": false])
+        }
+        return HTTPResponse(statusCode: 200, body: SelfModelService.browse())
     }
 
     /// Ingest a declared operating model. Either scans ~/.alfred/imports/ for an
