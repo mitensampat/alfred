@@ -393,6 +393,9 @@ class HTTPServer {
                 case ("GET", "/api/chat/stream"):
                     await handleChatStream(request, client: client)
                     return
+                case ("GET", "/api/self-model/reflect"):
+                    await handleReflectStream(request, client: client)
+                    return
                 case ("GET", "/api/coaching/cards/stream"):
                     await handleStreamingCoachingCards(request, client: client)
                     return
@@ -5545,6 +5548,107 @@ The Commitment Check feature requires a properly configured Notion database.
             client.sendSSEJSON(event: "error", json: ["error": "Failed to generate response: \(error.localizedDescription)"])
         }
 
+        client.endSSE()
+    }
+
+    // MARK: - Reflect Mode (anchored, generative reflection on a self-model facet)
+
+    /// Streams a reflective conversation anchored to one self-model facet. Grounded in
+    /// the user's self-model, but with a distinct *listening* posture — it asks, reflects
+    /// back, and helps the user reach their own conclusion (which they can then mint as a
+    /// belief). Reuses the general-chat streaming path minus intent/tool execution.
+    private func handleReflectStream(_ request: HTTPRequest, client: ClientSocket) async {
+        client.beginSSE()
+
+        guard getConfig()?.features?.selfModel ?? false else {
+            client.sendSSEJSON(event: "error", json: ["error": "Self-model is off"]); client.endSSE(); return
+        }
+        guard let config = getConfig() else {
+            client.sendSSEJSON(event: "error", json: ["error": "Configuration not loaded"]); client.endSSE(); return
+        }
+        guard let facetId = request.queryParams["facetId"],
+              let facet = SelfModelStore.shared.getFacet(id: facetId) else {
+            client.sendSSEJSON(event: "error", json: ["error": "Facet not found"]); client.endSSE(); return
+        }
+
+        let kind = (facet["kind"] as? String) ?? "thing"
+        let statement = (facet["statement"] as? String) ?? ""
+        let kindWord = kind == "question" ? "open question" : kind
+        var anchorDetail = ""
+        if kind == "belief", let traj = facet["trajectory"] as? [[String: String]], let first = traj.first,
+           let from = first["from"], !from.isEmpty {
+            anchorDetail = " (it evolved from an earlier view: \"\(from)\")"
+        }
+
+        // Lighter, reflection-focused grounding — skip the operational live/relationship/
+        // commitment gathering (not needed to think, and expensive). Use the richer
+        // reflection context built specifically for this posture.
+        let userName = config.user.name.isEmpty ? "User" : config.user.name
+        let df = DateFormatter(); df.dateFormat = "EEEE, MMMM d, yyyy 'at' h:mm a"
+        let now = df.string(from: Date())
+        let coachingContext = CoachingMemoryService.shared.getCoachingContext()
+        let agentMemoryRules = gatherAgentMemoryRules()
+        let reflectionContext = ReflectionStore.shared.getExtendedContextForReflection(maxChars: 2400)
+
+        let base = CoachingPromptBuilder.build(
+            userName: userName,
+            dateTime: now,
+            coachingContext: coachingContext,
+            agentMemoryRules: agentMemoryRules,
+            liveContext: "",
+            relationshipData: "",
+            trustLevel: TrustStateService.shared.getCurrentLevel(),
+            reflectionContext: reflectionContext
+        )
+
+        let reflectDirective = """
+
+
+        ## Reflection mode — you are thinking WITH \(userName), not advising them
+        \(userName) has opened a reflection on this \(kindWord): "\(statement)"\(anchorDetail)
+
+        This is not a task or a Q&A. It is thinking out loud. Your job:
+        - LISTEN more than you talk. Ask ONE good, specific question at a time, then stop and let them think.
+        - Reflect back what you actually hear — name the tension, the pattern, or the thing they keep circling.
+        - Do NOT lecture, give advice, or list options unless they explicitly ask. No bullet points, no headers.
+        - Draw on what you already know about them (above), but reference it lightly — don't recite it.
+        - Keep every reply short: 2–4 sentences. Leave room for them to think.
+        - When they arrive at something that sounds like a conclusion, reflect it back as ONE clean sentence they could keep as a belief.
+
+        To open: name in one line what you notice about this \(kindWord), then ask one inviting question. Nothing more.
+        """
+        let systemPrompt = base + reflectDirective
+
+        // Messages: synthetic anchor turn → prior visible history → current user turn.
+        var messages: [[String: String]] = [["role": "user", "content": "Let's reflect on this \(kindWord): \"\(statement)\"."]]
+        if let historyRaw = request.queryParams["history"]?.removingPercentEncoding,
+           let data = historyRaw.data(using: .utf8),
+           let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: String]] {
+            messages.append(contentsOf: arr.suffix(12))
+        }
+        if let q = request.queryParams["q"]?.removingPercentEncoding, !q.isEmpty {
+            // avoid two consecutive user turns if history already ends with one
+            if messages.last?["role"] == "user" && messages.count > 1 {
+                messages.append(["role": "assistant", "content": "…"])
+            }
+            messages.append(["role": "user", "content": q])
+        }
+
+        let claude = ClaudeAIService(config: config.ai)
+        do {
+            // Use the validated primary model — the configured coachingModel may be a
+            // retired id (effectiveCoachingModel can 404). Primary model is known-good.
+            try await claude.streamChat(
+                messages: messages,
+                system: systemPrompt,
+                maxTokens: 700,
+                useModel: config.ai.model,
+                onChunk: { text in client.sendSSEJSON(event: "chunk", json: ["text": text]) }
+            )
+            client.sendSSEJSON(event: "done", json: ["facetId": facetId])
+        } catch {
+            client.sendSSEJSON(event: "error", json: ["error": "Reflection failed: \(error.localizedDescription)"])
+        }
         client.endSSE()
     }
 

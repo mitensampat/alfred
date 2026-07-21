@@ -3013,6 +3013,24 @@
       .now-op-strip .op-body{padding:2px 12px 10px;border-top:1px solid var(--line);}
       .now-op-strip .op-body>*{margin-top:12px;}
       .now-op-strip .op-body .focus-card,.now-op-strip .op-body .meeting-brief-card,.now-op-strip .op-body .card{box-shadow:none;}
+      /* ---- Reflect mode ---- */
+      .sm-reflect-anchor{margin:2px 0 4px;padding:12px 14px;border:1px dashed var(--sm-accent-line);border-radius:10px;background:var(--sm-accent-soft);}
+      .sm-reflect-anchor .ra-label{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--sm-accent);margin-bottom:5px;}
+      .sm-reflect-anchor .ra-text{font-family:var(--font-display);font-size:15px;line-height:1.35;color:var(--ink);}
+      .sm-reflect-thread{display:flex;flex-direction:column;gap:11px;margin:16px 0 12px;}
+      .sm-rmsg{max-width:86%;font-size:14px;line-height:1.5;padding:11px 14px;}
+      .sm-rmsg.alfred{align-self:flex-start;background:var(--surface);border:1px solid var(--line);border-radius:12px 12px 12px 3px;font-family:var(--font-display);color:var(--ink);}
+      .sm-rmsg.user{align-self:flex-end;background:var(--sm-accent-soft);border:1px solid var(--sm-accent-line);border-radius:12px 12px 3px 12px;color:var(--ink);}
+      .sm-rmsg .cursor{display:inline-block;width:6px;height:14px;background:var(--sm-accent);vertical-align:text-bottom;animation:smblink 1s steps(2) infinite;}
+      @keyframes smblink{50%{opacity:0;}}
+      .sm-reflect-composer{position:sticky;bottom:0;display:flex;gap:8px;padding:10px 0;background:linear-gradient(180deg,transparent,var(--surface) 30%);}
+      .sm-reflect-composer input{flex:1;font-family:var(--font-body);font-size:14px;padding:10px 14px;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface-sunken);color:var(--ink);}
+      .sm-reflect-composer input:focus{outline:none;border-color:var(--sm-accent);}
+      .sm-reflect-composer .rsend{flex-shrink:0;width:38px;height:38px;border:none;border-radius:50%;background:var(--sm-accent);color:#fff;cursor:pointer;font-size:15px;}
+      [data-theme="dark"] .sm-reflect-composer .rsend{color:#1a1408;}
+      .sm-reflect-land{width:100%;margin-top:6px;font-family:var(--font-body);font-size:12.5px;font-weight:600;padding:9px;border-radius:10px;cursor:pointer;border:1px solid var(--sm-accent-line);background:var(--sm-accent-soft);color:var(--sm-accent);transition:all .13s;}
+      .sm-reflect-land:hover{background:var(--sm-accent);color:#fff;}
+      [data-theme="dark"] .sm-reflect-land:hover{color:#1a1408;}
     </style>
 
     <div id="appContainer" class="hidden" style="display:flex;flex-direction:column;height:100dvh;">
@@ -9797,7 +9815,7 @@
             const items = d.questions || [];
             const inner = items.length ? items.map(q =>
                 `<div class="sm-qrow"><span class="sm-qmark">?</span><span class="sm-qtext">${escapeHtml(q.text||'')}</span>`
-                + `<button type="button" class="sm-resolve" onclick="smResolve('${q.id}', this)">Resolve &rarr;</button></div>`
+                + `<button type="button" class="sm-resolve" onclick="smReflect('${q.id}')">Reflect &rarr;</button></div>`
             ).join('') : `<div class="sm-empty">No open questions surfaced yet.</div>`;
             return smSection('Open questions', 'what you&rsquo;re sitting with', inner);
         }
@@ -9967,6 +9985,101 @@
                 + '<svg class="op-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>'
                 + '</summary><div class="op-body">' + opHtml + '</div></details>';
         }
+
+        // ---- Reflect mode: anchored, generative reflection on a facet ----
+        let _smReflect = null;   // { facetId, kind, statement, history:[{role,content}], streaming }
+
+        function smReflect(facetId){
+            const q = (_smData && _smData.questions || []).find(x => x.id === facetId);
+            if (!q) return;
+            _smReflect = { facetId, kind: 'question', statement: q.text, history: [], streaming: false };
+            document.getElementById('youInner').innerHTML = smRenderReflect();
+            document.getElementById('youScreen').scrollTop = 0;
+            smReflectStream('');   // opener (no user turn)
+        }
+
+        function smRenderReflect(){
+            const r = _smReflect;
+            return `<button class="sm-back" onclick="smReflectExit()">&lsaquo; You</button>`
+                + `<div class="sm-reflect-anchor"><div class="ra-label">Reflecting on &middot; open question</div>`
+                + `<div class="ra-text">${escapeHtml(r.statement)}</div></div>`
+                + `<div class="sm-reflect-thread" id="smReflectThread"></div>`
+                + `<button class="sm-reflect-land" onclick="smReflectLand(this)">Where I land &rarr; mint a belief</button>`
+                + `<div class="sm-reflect-composer"><input type="text" id="smReflectInput" placeholder="Think out loud&hellip;" `
+                + `onkeydown="if(event.key==='Enter')smReflectSend()"><button class="rsend" onclick="smReflectSend()">&#8593;</button></div>`;
+        }
+
+        function smReflectBubble(role, text){
+            const thread = document.getElementById('smReflectThread');
+            if (!thread) return null;
+            const el = document.createElement('div');
+            el.className = 'sm-rmsg ' + (role === 'user' ? 'user' : 'alfred');
+            el.innerHTML = escapeHtml(text);
+            thread.appendChild(el);
+            document.getElementById('youScreen').scrollTop = document.getElementById('youScreen').scrollHeight;
+            return el;
+        }
+
+        function smReflectStream(q){
+            if (!_smReflect || _smReflect.streaming) return;
+            _smReflect.streaming = true;
+            const bubble = smReflectBubble('alfred', '');
+            bubble.innerHTML = '<span class="cursor"></span>';
+            let full = '';
+            const url = '/api/self-model/reflect?passcode=' + encodeURIComponent(getPasscode())
+                + '&facetId=' + encodeURIComponent(_smReflect.facetId)
+                + (_smReflect.history.length ? '&history=' + encodeURIComponent(JSON.stringify(_smReflect.history.slice(-12))) : '')
+                + (q ? '&q=' + encodeURIComponent(q) : '');
+            const es = new EventSource(url);
+            es.addEventListener('chunk', e => {
+                try { full += JSON.parse(e.data).text; bubble.textContent = full; } catch(x){}
+                document.getElementById('youScreen').scrollTop = document.getElementById('youScreen').scrollHeight;
+            });
+            es.addEventListener('done', () => {
+                es.close();
+                _smReflect.streaming = false;
+                if (full.trim()) _smReflect.history.push({ role: 'assistant', content: full.trim() });
+                else bubble.textContent = 'I lost my thread there — say more?';
+                const inp = document.getElementById('smReflectInput'); if (inp) inp.focus();
+            });
+            es.addEventListener('error', () => {
+                es.close(); _smReflect.streaming = false;
+                if (!full) bubble.textContent = 'Couldn’t reach the coach just now. Try again?';
+            });
+        }
+
+        function smReflectSend(){
+            const inp = document.getElementById('smReflectInput');
+            const text = (inp && inp.value || '').trim();
+            if (!text || !_smReflect || _smReflect.streaming) return;
+            inp.value = '';
+            smReflectBubble('user', text);
+            _smReflect.history.push({ role: 'user', content: text });
+            smReflectStream(text);
+        }
+
+        function smReflectLand(btn){
+            // Pre-fill with Alfred's last reflected line as a starting point for the belief.
+            const last = [..._smReflect.history].reverse().find(m => m.role === 'assistant');
+            const seed = last ? last.content.split(/[.!?]/)[0] : '';
+            btn.outerHTML = `<div style="display:flex;gap:8px;margin-top:6px"><input type="text" id="smLandInput" value="${escapeHtml(seed)}" `
+                + `placeholder="The belief you're keeping…" style="flex:1;font-family:var(--font-body);font-size:13px;padding:9px 12px;border:1px solid var(--sm-accent-line);border-radius:8px;background:var(--surface-sunken);color:var(--ink)" `
+                + `onkeydown="if(event.key==='Enter')smReflectLandSubmit(this)"><button class="sm-vbtn" onclick="smReflectLandSubmit(this)">Mint belief</button></div>`;
+            const i = document.getElementById('smLandInput'); if (i){ i.focus(); i.select(); }
+        }
+
+        async function smReflectLandSubmit(el){
+            const input = el.closest('div').querySelector('input');
+            const resolution = (input && input.value || '').trim();
+            if (!resolution) { if (input) input.focus(); return; }
+            try {
+                const res = await authFetch('/api/self-model/resolve?id=' + encodeURIComponent(_smReflect.facetId) + '&resolution=' + encodeURIComponent(resolution), { method: 'POST' });
+                const d = await res.json();
+                if (d && d.ok) { _smReflect = null; await loadSelfModel(); smLoadNowCard(); }
+            } catch (e) { console.log('[reflect] land failed:', e); }
+        }
+
+        function smReflectExit(){ _smReflect = null; renderSelfModel(_smData); }
 
     </script>
 </body>
