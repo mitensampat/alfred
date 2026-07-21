@@ -16,6 +16,7 @@ struct AppConfig: Codable {
     let cadence: CadenceConfig?
     let reflection: ReflectionConfig?
     let home: HomeConfig?
+    let features: FeaturesConfig?
 
     static func load(from path: String? = nil) -> AppConfig? {
         // Try multiple config locations in order of preference
@@ -146,6 +147,14 @@ struct HomeConfig: Codable {
 
     enum CodingKeys: String, CodingKey {
         case meetingBriefPrompt = "meeting_brief_prompt"
+    }
+}
+
+struct FeaturesConfig: Codable {
+    let selfModel: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case selfModel = "self_model"
     }
 }
 

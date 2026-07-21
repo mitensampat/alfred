@@ -1182,6 +1182,9 @@ class HTTPServer {
         case ("GET", "/api/reflect/themes"):
             return handleReflectThemes(request)
 
+        case ("GET", "/api/self-model"):
+            return handleSelfModel(request)
+
         case ("GET", let p) where p.hasPrefix("/api/reflect/theme/detail"):
             return handleReflectThemeDetail(request)
 
@@ -11264,6 +11267,16 @@ extension HTTPServer {
             "week_input_count": week.count,
             "week_sources": week.sources
         ])
+    }
+
+    /// The "You" surface — Alfred's durable self-model. Read-only synthesis over
+    /// existing stores, gated by the `features.self_model` config flag so the whole
+    /// surface can be toggled on/off in the running app without a rebuild.
+    private func handleSelfModel(_ request: HTTPRequest) -> HTTPResponse {
+        guard getConfig()?.features?.selfModel ?? false else {
+            return HTTPResponse(statusCode: 200, body: ["enabled": false])
+        }
+        return HTTPResponse(statusCode: 200, body: SelfModelService.synthesize())
     }
 
     private func handleReflectThemeDetail(_ request: HTTPRequest) -> HTTPResponse {

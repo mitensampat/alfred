@@ -2874,6 +2874,118 @@
     </div>
 
     <!-- ═══ APP CONTAINER ═══ -->
+    <!-- ═══ SELF-MODEL (You surface) styles — namespaced sm-*, self-contained for clean rollback ═══ -->
+    <style id="selfModelStyles">
+      :root{
+        --sm-accent:#8a6a34; --sm-accent-soft:#f3ecdf; --sm-accent-line:#e4d6bd;
+        --sm-hot:#8b2332; --sm-hot-bg:#f6e7e9;
+        --sm-warm:#8a6a34; --sm-warm-bg:#f3ecdf;
+        --sm-green:#2d5a3d; --sm-green-bg:#e7f0ea;
+      }
+      [data-theme="dark"]{
+        --sm-accent:#c4a76e; --sm-accent-soft:#221d13; --sm-accent-line:#3a3120;
+        --sm-hot:#d9707a; --sm-hot-bg:#2a1518;
+        --sm-warm:#c4a76e; --sm-warm-bg:#201a10;
+        --sm-green:#4bb59a; --sm-green-bg:#0f2420;
+      }
+      /* segmented Now/You nav */
+      .sm-nav{display:flex;gap:4px;justify-content:center;padding:6px 0 8px;border-bottom:1px solid var(--line);background:var(--surface);}
+      .sm-tab{font-family:var(--font-body);font-size:12.5px;font-weight:600;color:var(--ink-tertiary);background:none;border:none;cursor:pointer;padding:6px 16px;border-radius:999px;transition:color .15s,background .15s;}
+      .sm-tab:hover{color:var(--ink-secondary);}
+      .sm-tab.active{background:var(--sm-accent);color:#fff;}
+      [data-theme="dark"] .sm-tab.active{color:#1a1408;}
+      /* You screen */
+      .sm-screen{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:20px 18px 40px;}
+      .sm-screen .sm-inner{max-width:640px;margin:0 auto;}
+      .sm-head h1{font-family:var(--font-display);font-weight:420;font-size:28px;margin:0 0 4px;letter-spacing:-.01em;color:var(--ink);}
+      .sm-sub{margin:0;font-size:12.5px;color:var(--ink-tertiary);}
+      .sm-maturity{margin-top:15px;display:flex;align-items:center;gap:12px;padding:11px 14px;background:var(--surface-sunken);border:1px solid var(--line);border-radius:10px;font-size:11.5px;flex-wrap:wrap;}
+      .sm-stat{display:flex;align-items:baseline;gap:5px;white-space:nowrap;}
+      .sm-num{font-family:var(--font-display);font-size:17px;color:var(--ink);font-weight:500;}
+      .sm-lbl{color:var(--ink-tertiary);}
+      .sm-msep{width:1px;height:18px;background:var(--line-strong);}
+      .sm-section{margin-top:26px;}
+      .sm-reg-head{display:flex;align-items:baseline;gap:9px;margin-bottom:12px;}
+      .sm-reg-head h2{font-family:var(--font-body);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-secondary);margin:0;}
+      .sm-hint{font-size:12.5px;color:var(--ink-faint);font-style:italic;font-family:var(--font-display);}
+      .sm-stack{display:flex;flex-direction:column;gap:10px;}
+      .sm-statement{font-family:var(--font-display);font-size:16px;line-height:1.42;color:var(--ink);margin:0;}
+      /* movement */
+      .sm-move{border:1px solid var(--sm-accent-line);background:linear-gradient(180deg,var(--sm-accent-soft),var(--surface) 62%);border-radius:10px;padding:13px 15px;}
+      .sm-eyebrow{display:flex;align-items:center;gap:7px;margin-bottom:8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--sm-accent);}
+      .sm-move-when{font-family:var(--font-mono);font-size:10.5px;color:var(--ink-faint);margin-top:8px;}
+      .sm-move .sm-from{color:var(--ink-tertiary);font-style:italic;}
+      /* clickable object cards */
+      .sm-obj{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:13px 15px;cursor:pointer;transition:border-color .15s,box-shadow .15s,transform .12s;}
+      .sm-obj:hover{border-color:var(--sm-accent-line);box-shadow:var(--shadow-md);transform:translateY(-1px);}
+      .sm-obj-top{display:flex;align-items:center;gap:9px;}
+      .sm-name{font-family:var(--font-display);font-size:16px;color:var(--ink);flex:1;min-width:0;}
+      .sm-chev{color:var(--ink-faint);font-size:15px;transition:transform .15s,color .15s;}
+      .sm-obj:hover .sm-chev{color:var(--sm-accent);transform:translateX(2px);}
+      .sm-meta{display:flex;align-items:center;gap:8px;margin-top:9px;flex-wrap:wrap;}
+      .sm-chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap;}
+      .sm-chip .sm-cdot{width:6px;height:6px;border-radius:50%;}
+      .sm-chip.state{background:var(--surface-sunken);color:var(--ink-secondary);font-family:var(--font-mono);text-transform:uppercase;letter-spacing:.03em;font-size:10px;}
+      .sm-chip.hot{background:var(--sm-hot-bg);color:var(--sm-hot);} .sm-chip.hot .sm-cdot{background:var(--sm-hot);}
+      .sm-chip.warm{background:var(--sm-warm-bg);color:var(--sm-warm);} .sm-chip.warm .sm-cdot{background:var(--sm-warm);}
+      .sm-chip.cool{background:var(--surface-sunken);color:var(--ink-tertiary);} .sm-chip.cool .sm-cdot{background:var(--ink-faint);}
+      .sm-chip.inflow{background:var(--sm-green-bg);color:var(--sm-green);} .sm-chip.inflow .sm-cdot{background:var(--sm-green);}
+      /* questions */
+      .sm-qrow{display:flex;gap:11px;align-items:flex-start;padding:12px 14px;border-left:2px solid var(--sm-accent-line);background:var(--surface);border:1px solid var(--line);border-left-width:2px;border-radius:0 10px 10px 0;}
+      .sm-qmark{font-family:var(--font-display);font-size:17px;color:var(--sm-accent);line-height:1;}
+      .sm-qtext{flex:1;font-family:var(--font-display);font-size:15px;line-height:1.4;color:var(--ink);}
+      /* lenses: beliefs + patterns */
+      .sm-kind-row{display:flex;align-items:center;gap:7px;margin-bottom:9px;}
+      .sm-kdot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+      .sm-kdot.belief{background:var(--sm-accent);} .sm-kdot.pattern{background:var(--sm-warm);}
+      .sm-klabel{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-tertiary);}
+      .sm-kmeta{margin-left:auto;font-family:var(--font-mono);font-size:10.5px;color:var(--ink-faint);}
+      .sm-card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:13px 15px;}
+      .sm-conf{display:flex;align-items:center;gap:8px;margin-top:10px;}
+      .sm-conf-track{flex:1;height:4px;border-radius:3px;background:var(--surface-sunken);overflow:hidden;box-shadow:inset 0 0 0 1px var(--line);}
+      .sm-conf-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--sm-accent-line),var(--sm-accent));}
+      .sm-conf-lbl{font-family:var(--font-mono);font-size:10px;letter-spacing:.04em;color:var(--ink-tertiary);text-transform:uppercase;white-space:nowrap;}
+      /* belief trajectory (drill-in-lite, inline) */
+      .sm-traj{display:flex;align-items:stretch;gap:0;margin-top:4px;}
+      .sm-traj-step{flex:1;min-width:0;}
+      .sm-traj-step .val{font-size:12.5px;line-height:1.35;color:var(--ink-secondary);padding-right:10px;}
+      .sm-traj-step.now .val{color:var(--ink);font-weight:600;}
+      .sm-traj-step .stamp{display:block;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);margin-bottom:4px;}
+      .sm-traj-step.now .stamp{color:var(--sm-accent);}
+      .sm-traj-arrow{flex-shrink:0;width:20px;display:flex;align-items:center;justify-content:center;color:var(--sm-accent);font-size:13px;}
+      .sm-date{font-family:var(--font-mono);font-size:9.5px;color:var(--ink-faint);margin-top:5px;text-transform:uppercase;}
+      /* empty / loading / maturation */
+      .sm-empty{padding:18px 15px;border:1px dashed var(--line-strong);border-radius:10px;color:var(--ink-tertiary);font-size:13px;font-family:var(--font-display);font-style:italic;line-height:1.5;}
+      .sm-loading{padding:40px 0;text-align:center;color:var(--ink-tertiary);font-size:13px;}
+      @media (prefers-reduced-motion:reduce){.sm-obj{transition:none;}}
+      /* ---- theme drill-in detail ---- */
+      .sm-back{display:inline-flex;align-items:center;gap:6px;background:none;border:none;cursor:pointer;font-family:var(--font-body);font-size:12px;font-weight:600;color:var(--ink-tertiary);padding:0 0 14px;transition:color .15s;}
+      .sm-back:hover{color:var(--sm-accent);}
+      .sm-detail-head h1{font-family:var(--font-display);font-weight:440;font-size:22px;line-height:1.24;margin:0 0 10px;letter-spacing:-.008em;color:var(--ink);}
+      .sm-stepper{display:flex;align-items:center;margin:18px 0 6px;}
+      .sm-step{display:flex;flex-direction:column;align-items:center;gap:6px;flex:0 0 auto;}
+      .sm-step .sd{width:11px;height:11px;border-radius:50%;background:var(--surface-sunken);box-shadow:inset 0 0 0 1.5px var(--line-strong);}
+      .sm-step.done .sd{background:var(--sm-accent-line);box-shadow:none;}
+      .sm-step.cur .sd{background:var(--sm-accent);box-shadow:0 0 0 4px var(--sm-accent-soft);}
+      .sm-step .sl{font-family:var(--font-mono);font-size:9px;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-tertiary);}
+      .sm-step.cur .sl{color:var(--sm-accent);font-weight:700;}
+      .sm-step-line{flex:1;height:1.5px;background:var(--line);margin:0 -2px 16px;}
+      .sm-step-line.done{background:var(--sm-accent-line);}
+      .sm-sub-label{font-family:var(--font-body);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-secondary);margin:24px 0 11px;display:flex;align-items:center;gap:8px;}
+      .sm-sub-label .ct{font-family:var(--font-mono);font-weight:400;font-size:10.5px;color:var(--ink-faint);letter-spacing:0;text-transform:none;}
+      .sm-dec{display:flex;gap:10px;padding:11px 13px;background:var(--surface-sunken);border-radius:8px;margin-bottom:8px;}
+      .sm-dec .tick{color:var(--sm-green);font-size:13px;line-height:1.4;}
+      .sm-dec .dtext{flex:1;font-size:13.5px;line-height:1.4;color:var(--ink);}
+      .sm-dec .dwhen{font-family:var(--font-mono);font-size:10px;color:var(--ink-faint);}
+      .sm-feed{display:flex;flex-direction:column;}
+      .sm-fitem{display:flex;gap:11px;padding:10px 2px;border-bottom:1px solid var(--line);}
+      .sm-fitem:last-child{border-bottom:none;}
+      .sm-fitem .fsrc{font-family:var(--font-mono);font-size:9px;text-transform:uppercase;letter-spacing:.03em;color:#fff;background:var(--ink-tertiary);padding:2px 6px;border-radius:4px;height:fit-content;white-space:nowrap;margin-top:1px;}
+      [data-theme="dark"] .sm-fitem .fsrc{color:#1a1408;}
+      .sm-fitem .ftext{flex:1;font-size:13px;line-height:1.42;color:var(--ink);}
+      .sm-fitem .fwhen{font-family:var(--font-mono);font-size:10px;color:var(--ink-faint);white-space:nowrap;margin-top:1px;}
+    </style>
+
     <div id="appContainer" class="hidden" style="display:flex;flex-direction:column;height:100dvh;">
 
         <!-- TOP BAR -->
@@ -2887,6 +2999,12 @@
                 <button class="top-bar-btn" onclick="openSettingsPanel()" title="Settings">&#9881;&#65039;</button>
             </div>
         </div>
+        </div>
+
+        <!-- Now/You surface nav (self-model; revealed by initSelfModel when features.self_model is on) -->
+        <div class="sm-nav" id="smSurfaceNav" style="display:none;">
+            <button type="button" class="sm-tab active" id="smTabNow" onclick="showSurface('now')">Now</button>
+            <button type="button" class="sm-tab" id="smTabYou" onclick="showSurface('you')">You</button>
         </div>
 
         <!-- CONVERSATION -->
@@ -2926,6 +3044,13 @@
                     </button>
                 </div>
                 <div class="input-hint">Type / for tools</div>
+            </div>
+        </div>
+
+        <!-- ═══ YOU (self-model surface) — toggled against conversation+input by showSurface() ═══ -->
+        <div class="sm-screen" id="youScreen" style="display:none;">
+            <div class="sm-inner" id="youInner">
+                <div class="sm-loading">Loading your self-model…</div>
             </div>
         </div>
     </div>
@@ -4007,6 +4132,7 @@
             initTheme();
             startGreetingClock();
             loadMorningWalk();
+            initSelfModel();
             if (isSunday()) loadWeeklyReflection();
             registerPushNotifications();
             checkPostFtuePermissions();
@@ -9531,6 +9657,178 @@
                 status.textContent = 'Failed to ingest';
                 status.style.color = 'var(--danger)';
             }
+        }
+
+        // ═══════════════ SELF-MODEL (You surface) ═══════════════
+        let _smData = null, _smLoaded = false, _smInitDone = false;
+
+        async function initSelfModel(){
+            if (_smInitDone) return;
+            _smInitDone = true;
+            try {
+                const res = await authFetch('/api/self-model');
+                if (!res || !res.ok) return;
+                const data = await res.json();
+                if (!data || !data.enabled) return;   // flag off → Now-only, nav stays hidden
+                _smData = data;
+                document.getElementById('smSurfaceNav').style.display = 'flex';
+                renderSelfModel(data);
+                _smLoaded = true;
+            } catch (e) { console.log('[self-model] init skipped:', e); }
+        }
+
+        function showSurface(which){
+            const now = which !== 'you';
+            document.getElementById('conversationScroll').style.display = now ? '' : 'none';
+            document.getElementById('inputArea').style.display = now ? '' : 'none';
+            document.getElementById('youScreen').style.display = now ? 'none' : 'flex';
+            document.getElementById('smTabNow').classList.toggle('active', now);
+            document.getElementById('smTabYou').classList.toggle('active', !now);
+            if (!now && !_smLoaded) loadSelfModel();
+        }
+
+        async function loadSelfModel(){
+            try {
+                const res = await authFetch('/api/self-model');
+                const data = await res.json();
+                if (data && data.enabled){ _smData = data; renderSelfModel(data); _smLoaded = true; }
+            } catch (e) { console.log('[self-model] load failed:', e); }
+        }
+
+        function renderSelfModel(d){
+            document.getElementById('youInner').innerHTML =
+                smHeader(d) + smMovement(d) + smWorkspaces(d) + smQuestions(d) + smLenses(d) + smFoot();
+            const ys = document.getElementById('youScreen'); if (ys) ys.scrollTop = 0;
+        }
+
+        function smSection(title, hint, inner){
+            return `<div class="sm-section"><div class="sm-reg-head"><h2>${title}</h2>`
+                + (hint ? `<span class="sm-hint">${hint}</span>` : '') + `</div><div class="sm-stack">${inner}</div></div>`;
+        }
+        function smStat(n, l){ return `<div class="sm-stat"><span class="sm-num">${n||0}</span><span class="sm-lbl">${l}</span></div>`; }
+
+        function smHeader(d){
+            const s = d.summary || {};
+            return `<div class="sm-head"><h1>You</h1>`
+                + `<p class="sm-sub">How you operate, as Alfred understands it &middot; ${s.signals_this_week||0} signals this week</p></div>`
+                + `<div class="sm-maturity">${smStat(s.patterns,'patterns')}<div class="sm-msep"></div>`
+                + `${smStat(s.themes,'themes')}<div class="sm-msep"></div>`
+                + `${smStat(s.beliefs,'beliefs')}<div class="sm-msep"></div>`
+                + `${smStat(s.questions,'questions')}</div>`;
+        }
+
+        function smMovement(d){
+            const items = d.movement || [];
+            if (!items.length) return '';
+            const cards = items.map(m => {
+                const eyebrow = m.kind === 'belief_updated' ? '&#10022; Belief updated' : '&#9687; Theme moved';
+                const body = (m.kind === 'belief_updated' && m.from)
+                    ? `<p class="sm-statement"><span class="sm-from">${escapeHtml(m.from)}</span> &rarr; ${escapeHtml(m.to)}</p>`
+                    : `<p class="sm-statement">${escapeHtml(m.statement)}</p>`;
+                return `<div class="sm-move"><div class="sm-eyebrow">${eyebrow}</div>${body}`
+                    + (m.when ? `<div class="sm-move-when">${escapeHtml(m.when)}</div>` : '') + `</div>`;
+            }).join('');
+            return smSection('What moved this week', 'worth noticing', cards);
+        }
+
+        function smTempLabel(t){ return t==='hot'?'Hot':(t==='warming'?'Warming':(t==='resolved'?'Settled':'Cooling')); }
+        function smTempClass(t){ return t==='hot'?'hot':(t==='warming'?'warm':'cool'); }
+
+        function smWorkspaces(d){
+            const items = d.workspaces || [];
+            const inner = items.length ? items.map((w, i) => {
+                const inputs = w.inputs_this_week || 0;
+                return `<div class="sm-obj" onclick="smOpenTheme(${i})">`
+                    + `<div class="sm-obj-top"><span class="sm-name">${escapeHtml(w.theme)}</span><span class="sm-chev">&rsaquo;</span></div>`
+                    + `<div class="sm-meta"><span class="sm-chip state">${escapeHtml(w.state||'')}</span>`
+                    + `<span class="sm-chip ${smTempClass(w.temperature)}"><span class="sm-cdot"></span>${smTempLabel(w.temperature)}</span>`
+                    + (inputs ? `<span class="sm-chip inflow"><span class="sm-cdot"></span>${inputs} input${inputs>1?'s':''} this week</span>` : '')
+                    + `</div></div>`;
+            }).join('') : `<div class="sm-empty">No active themes yet. As Alfred ingests what you read and discuss, the topics you&rsquo;re working on appear here.</div>`;
+            return smSection('Workspaces', 'what you&rsquo;re working on &mdash; open one', inner);
+        }
+
+        function smQuestions(d){
+            const items = d.questions || [];
+            const inner = items.length ? items.map(q =>
+                `<div class="sm-qrow"><span class="sm-qmark">?</span><span class="sm-qtext">${escapeHtml(q)}</span></div>`
+            ).join('') : `<div class="sm-empty">No open questions surfaced yet.</div>`;
+            return smSection('Open questions', 'what you&rsquo;re sitting with', inner);
+        }
+
+        function smLenses(d){
+            const lenses = d.lenses || {};
+            const shifts = lenses.belief_shifts || [];
+            const patterns = lenses.patterns || [];
+            let inner = '';
+            shifts.slice(0, 4).forEach(s => {
+                inner += `<div class="sm-card"><div class="sm-kind-row"><span class="sm-kdot belief"></span>`
+                    + `<span class="sm-klabel">Belief</span>` + (s.date ? `<span class="sm-kmeta">${escapeHtml(s.date)}</span>` : '') + `</div>`
+                    + `<div class="sm-traj"><div class="sm-traj-step"><span class="stamp">Was</span><div class="val">${escapeHtml(s.from||'—')}</div></div>`
+                    + `<div class="sm-traj-arrow">&rarr;</div>`
+                    + `<div class="sm-traj-step now"><span class="stamp">Now</span><div class="val">${escapeHtml(s.to||'')}</div></div></div></div>`;
+            });
+            patterns.forEach(p => {
+                const conf = Math.round((p.confidence||0) * 100);
+                const clabel = conf>=80?'Strong':(conf>=55?'Building':'Forming');
+                const reinf = p.reinforcements || 0;
+                inner += `<div class="sm-card"><div class="sm-kind-row"><span class="sm-kdot pattern"></span>`
+                    + `<span class="sm-klabel">${p.isDirect ? 'Instruction' : 'Pattern'}</span>`
+                    + (reinf ? `<span class="sm-kmeta">${reinf}&times; reinforced</span>` : '') + `</div>`
+                    + `<p class="sm-statement">${escapeHtml(p.description||'')}</p>`
+                    + `<div class="sm-conf"><div class="sm-conf-track"><div class="sm-conf-fill" style="width:${conf}%"></div></div><span class="sm-conf-lbl">${clabel}</span></div></div>`;
+            });
+            if (!inner) inner = `<div class="sm-empty">Patterns and beliefs form as Alfred gathers signal. None yet.</div>`;
+            return smSection('Lenses', 'how you operate', inner);
+        }
+
+        function smFoot(){
+            return `<div class="sm-section" style="margin-top:30px;border-top:1px solid var(--line);padding-top:14px;color:var(--ink-faint);font-size:11px;line-height:1.5;">`
+                + `Read-only self-model &middot; synthesized from your reflections, themes, and learned patterns. Tap a workspace to open it.</div>`;
+        }
+
+        // ---- theme drill-in (reuses /api/reflect/theme/detail) ----
+        async function smOpenTheme(index){
+            const w = (_smData && _smData.workspaces || [])[index]; if (!w) return;
+            const el = document.getElementById('youInner');
+            el.innerHTML = `<button class="sm-back" onclick="renderSelfModel(_smData)">&lsaquo; You</button><div class="sm-loading">Opening ${escapeHtml(w.theme)}&hellip;</div>`;
+            document.getElementById('youScreen').scrollTop = 0;
+            try {
+                const res = await authFetch('/api/reflect/theme/detail?name=' + encodeURIComponent(w.theme));
+                const d = await res.json();
+                el.innerHTML = smThemeDetail(w, d);
+            } catch (e) {
+                el.innerHTML = `<button class="sm-back" onclick="renderSelfModel(_smData)">&lsaquo; You</button><div class="sm-empty">Couldn&rsquo;t load this theme.</div>`;
+            }
+            document.getElementById('youScreen').scrollTop = 0;
+        }
+
+        function smThemeDetail(w, d){
+            d = d || {};
+            const back = `<button class="sm-back" onclick="renderSelfModel(_smData)">&lsaquo; You</button>`;
+            const head = `<div class="sm-detail-head"><h1>${escapeHtml(w.theme)}</h1><div class="sm-meta">`
+                + `<span class="sm-chip ${smTempClass(w.temperature)}"><span class="sm-cdot"></span>${smTempLabel(w.temperature)}</span>`
+                + `<span class="sm-chip state">${escapeHtml(d.state||w.state||'')}</span>`
+                + (d.first_seen ? `<span class="sm-chip state">since ${escapeHtml(d.first_seen)}</span>` : '') + `</div></div>`;
+            const states = ['researching','deciding','creating','monitoring'];
+            const curIdx = states.indexOf((d.state||w.state||'').toLowerCase());
+            const stepper = `<div class="sm-stepper">` + states.map((s, i) => {
+                const cls = curIdx>=0 ? (i<curIdx?'done':(i===curIdx?'cur':'')) : '';
+                const line = i<states.length-1 ? `<div class="sm-step-line ${i<curIdx?'done':''}"></div>` : '';
+                return `<div class="sm-step ${cls}"><span class="sd"></span><span class="sl">${s.charAt(0).toUpperCase()+s.slice(1)}</span></div>${line}`;
+            }).join('') + `</div>`;
+            const edge = d.edge ? `<div class="sm-qrow" style="margin-top:14px"><span class="sm-qmark">?</span><span class="sm-qtext">${escapeHtml(d.edge)}</span></div>` : '';
+            const shifts = d.belief_shifts || [];
+            const shiftHtml = shifts.length ? `<div class="sm-sub-label">Belief shifts <span class="ct">${shifts.length}</span></div>`
+                + shifts.slice(0,6).map(s => `<div class="sm-card"><div class="sm-traj"><div class="sm-traj-step"><span class="stamp">Was</span><div class="val">${escapeHtml(s.from||'—')}</div></div><div class="sm-traj-arrow">&rarr;</div><div class="sm-traj-step now"><span class="stamp">Now</span><div class="val">${escapeHtml(s.to||'')}</div></div></div></div>`).join('') : '';
+            const decs = d.decisions_typed || [];
+            const decHtml = decs.length ? `<div class="sm-sub-label">Decisions captured <span class="ct">${decs.length}</span></div>`
+                + decs.slice(0,8).map(x => `<div class="sm-dec"><span class="tick">&#10003;</span><span class="dtext">${escapeHtml(x.content||'')}</span>` + (x.date?`<span class="dwhen">${escapeHtml(x.date)}</span>`:'') + `</div>`).join('') : '';
+            const tl = (d.timeline || []).slice(0, 12);
+            const tlHtml = tl.length ? `<div class="sm-sub-label">Timeline <span class="ct">recent</span></div><div class="sm-feed">`
+                + tl.map(it => `<div class="sm-fitem"><span class="fsrc">${escapeHtml((it.type||'·').slice(0,4))}</span><span class="ftext">${escapeHtml(it.content||'')}</span>` + (it.date?`<span class="fwhen">${escapeHtml(it.date)}</span>`:'') + `</div>`).join('') + `</div>` : '';
+            const empty = (!shiftHtml && !decHtml && !tlHtml && !edge) ? `<div class="sm-empty" style="margin-top:16px">Not much captured under this theme yet.</div>` : '';
+            return back + head + stepper + edge + shiftHtml + decHtml + tlHtml + empty;
         }
 
     </script>
