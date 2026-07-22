@@ -1200,6 +1200,15 @@ class HTTPServer {
         case ("POST", "/api/self-model/seed"):
             return handleSelfModelSeed(request)
 
+        case ("POST", "/api/self-model/graduate"):
+            return handleGraduate(request)
+
+        case ("GET", "/api/self-model/proposals"):
+            return handleGraduationProposals(request)
+
+        case ("POST", "/api/self-model/proposals/resolve"):
+            return handleResolveProposal(request)
+
         case ("POST", "/api/self-model/resolve"):
             return handleSelfModelResolve(request)
 
@@ -11443,6 +11452,56 @@ extension HTTPServer {
             return HTTPResponse(statusCode: 200, body: ["enabled": false])
         }
         return HTTPResponse(statusCode: 200, body: SelfModelService.browse())
+    }
+
+    /// Look for decisions that evidence each unbacked declared belief. Produces
+    /// proposals only — never applies anything.
+    private func handleGraduate(_ request: HTTPRequest) -> HTTPResponse {
+        guard getConfig()?.features?.selfModel ?? false else {
+            return HTTPResponse(statusCode: 200, body: ["enabled": false])
+        }
+        let sem = DispatchSemaphore(value: 0)
+        var out: GraduationService.Result = .init()
+        Task {
+            out = await GraduationService.groundDeclaredBeliefs()
+            sem.signal()
+        }
+        _ = sem.wait(timeout: .now() + 180)
+        return HTTPResponse(statusCode: 200, body: [
+            "ok": true,
+            "beliefs_examined": out.beliefsExamined,
+            "candidates_read": out.candidatesRead,
+            "proposed": out.proposed,
+            "notes": out.notes
+        ])
+    }
+
+    /// Pending proposals, resolved against statements so they're readable.
+    private func handleGraduationProposals(_ request: HTTPRequest) -> HTTPResponse {
+        let store = SelfModelStore.shared
+        let byId = Dictionary(
+            (store.getFacets(kind: "belief") + store.getFacets(kind: "decision"))
+                .map { (($0["id"] as? String ?? ""), ($0["statement"] as? String ?? "")) },
+            uniquingKeysWith: { a, _ in a })
+        let rows: [[String: Any]] = store.getProposals(status: "pending").map { p in
+            [
+                "id": p["id"] as? String ?? "",
+                "belief": byId[p["belief_id"] as? String ?? ""] ?? "",
+                "decision": byId[p["decision_id"] as? String ?? ""] ?? "",
+                "rationale": p["rationale"] as? String ?? ""
+            ]
+        }
+        return HTTPResponse(statusCode: 200, body: ["count": rows.count, "proposals": rows])
+    }
+
+    private func handleResolveProposal(_ request: HTTPRequest) -> HTTPResponse {
+        guard let id = request.queryParams["id"], !id.isEmpty,
+              let action = request.queryParams["action"] else {
+            return HTTPResponse(statusCode: 400, body: ["error": "id and action required"])
+        }
+        let ok = action == "confirm" ? GraduationService.confirm(proposalId: id)
+                                     : GraduationService.reject(proposalId: id)
+        return HTTPResponse(statusCode: 200, body: ["ok": ok, "action": action])
     }
 
     /// Which threads would feed reflection extraction, and why. Makes the ingestion

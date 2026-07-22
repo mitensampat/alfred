@@ -60,13 +60,17 @@ enum SelfModelService {
             ["id": f["id"] as? String ?? "", "text": f["statement"] as? String ?? "", "verdict": verdict(f)]
         }
 
-        // ---- Lens ↔ belief links (many-to-many, browsable from either side) ----
-        let links = store.allLinks()
+        // ---- Support: what holds a belief up (lenses and decisions, both directions) ----
         var lensIdsByBelief: [String: [String]] = [:]
         var beliefIdsByLens: [String: [String]] = [:]
-        for l in links {
-            lensIdsByBelief[l.belief, default: []].append(l.lens)
-            beliefIdsByLens[l.lens, default: []].append(l.belief)
+        var decisionIdsByBelief: [String: [String]] = [:]
+        for s in store.allSupport() {
+            if s.kind == "decision" {
+                decisionIdsByBelief[s.belief, default: []].append(s.support)
+            } else {
+                lensIdsByBelief[s.belief, default: []].append(s.support)
+                beliefIdsByLens[s.support, default: []].append(s.belief)
+            }
         }
         let patternById = Dictionary(patternFacets.map { (($0["id"] as? String ?? ""), $0) }, uniquingKeysWith: { a, _ in a })
         let beliefById = Dictionary(beliefFacets.map { (($0["id"] as? String ?? ""), $0) }, uniquingKeysWith: { a, _ in a })
@@ -104,9 +108,12 @@ enum SelfModelService {
             // Only OBSERVED behaviour can retire an aspiration. Attaching a declared
             // instruction to a declared belief proves nothing — declarations must not
             // be able to validate each other.
+            // A decision IS observed behaviour — it happened, at cost — so any decision
+            // support retires an aspiration. Declared lenses still can't: a stated
+            // instruction cannot validate a stated belief.
             let emergentLensCount = (lensIdsByBelief[id] ?? []).filter {
                 ((patternById[$0]?["origin"] as? String) ?? "emergent") != "declared"
-            }.count
+            }.count + (decisionIdsByBelief[id] ?? []).count
             return [
                 "id": id,
                 "from": traj.first?["from"] ?? "",
@@ -220,7 +227,11 @@ enum SelfModelService {
 
         // Links + lineage, both directions.
         var lensIdsByBelief: [String: [String]] = [:]
-        for l in store.allLinks() { lensIdsByBelief[l.belief, default: []].append(l.lens) }
+        var decisionIdsByBelief: [String: [String]] = [:]
+        for s in store.allSupport() {
+            if s.kind == "decision" { decisionIdsByBelief[s.belief, default: []].append(s.support) }
+            else { lensIdsByBelief[s.belief, default: []].append(s.support) }
+        }
         var themeIdsByBelief: [String: [String]] = [:]
         var beliefIdsByTheme: [String: [String]] = [:]
         for l in store.allLineage() {
@@ -276,9 +287,12 @@ enum SelfModelService {
             }
             let origin = f["origin"] as? String ?? "emergent"
             // Only observed behaviour retires an aspiration (see synthesize()).
+            // A decision IS observed behaviour — it happened, at cost — so any decision
+            // support retires an aspiration. Declared lenses still can't: a stated
+            // instruction cannot validate a stated belief.
             let emergentLensCount = (lensIdsByBelief[id] ?? []).filter {
                 ((patternById[$0]?["origin"] as? String) ?? "emergent") != "declared"
-            }.count
+            }.count + (decisionIdsByBelief[id] ?? []).count
             return [
                 "id": id,
                 "statement": f["statement"] as? String ?? "",

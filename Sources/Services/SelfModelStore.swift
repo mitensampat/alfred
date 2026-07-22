@@ -91,6 +91,36 @@ class SelfModelStore {
         -- Carry the belief edges over; belief_lineage is left in place, unused.
         INSERT OR IGNORE INTO facet_lineage (facet_id, theme_id, created_at)
             SELECT belief_id, theme_id, created_at FROM belief_lineage;
+
+        -- Generalised support: what holds a belief up. Was lens-only (facet_link);
+        -- decisions are stronger evidence than anything said to an assistant, so the
+        -- edge has to accept both. `kind` records which, since only OBSERVED support
+        -- can retire an aspiration.
+        CREATE TABLE IF NOT EXISTS facet_support (
+            support_id TEXT NOT NULL,
+            belief_id TEXT NOT NULL,
+            kind TEXT NOT NULL DEFAULT 'lens',
+            rationale TEXT,
+            created_at TEXT,
+            PRIMARY KEY (support_id, belief_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_support_belief ON facet_support(belief_id);
+        CREATE INDEX IF NOT EXISTS idx_support_src ON facet_support(support_id);
+
+        INSERT OR IGNORE INTO facet_support (support_id, belief_id, kind, created_at)
+            SELECT lens_id, belief_id, 'lens', created_at FROM facet_link;
+
+        -- Graduation proposals: a model's guess that a decision evidences a belief.
+        -- Never applied automatically — judgement can be wrong in ways counting can't.
+        CREATE TABLE IF NOT EXISTS graduation_proposal (
+            id TEXT PRIMARY KEY,
+            belief_id TEXT NOT NULL,
+            decision_id TEXT NOT NULL,
+            rationale TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_gprop_status ON graduation_proposal(status);
         """
 
         var errMsg: UnsafeMutablePointer<CChar>?
@@ -548,6 +578,91 @@ class SelfModelStore {
         }
         sqlite3_finalize(stmt)
         return out
+    }
+
+    // MARK: - Support (what holds a belief up)
+
+    /// Attach a lens or a decision to a belief as supporting evidence.
+    @discardableResult
+    func addSupport(supportId: String, beliefId: String, kind: String, rationale: String? = nil) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO facet_support (support_id, belief_id, kind, rationale, created_at) VALUES (?, ?, ?, ?, ?)", -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, (supportId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 2, (beliefId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 3, (kind as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        if let r = rationale {
+            sqlite3_bind_text(stmt, 4, (r as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        } else { sqlite3_bind_null(stmt, 4) }
+        sqlite3_bind_text(stmt, 5, (isoNow() as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        let ok = sqlite3_step(stmt) == SQLITE_DONE
+        sqlite3_finalize(stmt)
+        return ok
+    }
+
+    /// All support edges: (support_id, belief_id, kind, rationale).
+    func allSupport() -> [(support: String, belief: String, kind: String, rationale: String?)] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return [] }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT support_id, belief_id, kind, rationale FROM facet_support", -1, &stmt, nil) == SQLITE_OK else { return [] }
+        var out: [(support: String, belief: String, kind: String, rationale: String?)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            out.append((support: columnText(stmt, 0) ?? "", belief: columnText(stmt, 1) ?? "",
+                        kind: columnText(stmt, 2) ?? "lens", rationale: columnText(stmt, 3)))
+        }
+        sqlite3_finalize(stmt)
+        return out
+    }
+
+    // MARK: - Graduation proposals
+
+    @discardableResult
+    func addProposal(id: String, beliefId: String, decisionId: String, rationale: String) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "INSERT OR IGNORE INTO graduation_proposal (id, belief_id, decision_id, rationale, status, created_at) VALUES (?, ?, ?, ?, 'pending', ?)", -1, &stmt, nil) == SQLITE_OK else { return false }
+        for (i, v) in [id, beliefId, decisionId, rationale, isoNow()].enumerated() {
+            sqlite3_bind_text(stmt, Int32(i + 1), (v as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        }
+        let ok = sqlite3_step(stmt) == SQLITE_DONE
+        sqlite3_finalize(stmt)
+        return ok
+    }
+
+    func getProposals(status: String = "pending") -> [[String: Any]] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return [] }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT id, belief_id, decision_id, rationale FROM graduation_proposal WHERE status = ? ORDER BY created_at DESC", -1, &stmt, nil) == SQLITE_OK else { return [] }
+        sqlite3_bind_text(stmt, 1, (status as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        var out: [[String: Any]] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            out.append(["id": columnText(stmt, 0) ?? "", "belief_id": columnText(stmt, 1) ?? "",
+                        "decision_id": columnText(stmt, 2) ?? "", "rationale": columnText(stmt, 3) ?? ""])
+        }
+        sqlite3_finalize(stmt)
+        return out
+    }
+
+    @discardableResult
+    func setProposalStatus(id: String, status: String) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "UPDATE graduation_proposal SET status = ? WHERE id = ?", -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, (status as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 2, (id as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        let ok = sqlite3_step(stmt) == SQLITE_DONE
+        sqlite3_finalize(stmt)
+        return ok
     }
 
     /// Wrap a bulk write in a transaction — materializing 1,000+ decisions one statement
