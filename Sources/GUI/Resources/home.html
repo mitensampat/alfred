@@ -3179,6 +3179,9 @@
       .sm-brow-empty{padding:26px 10px;text-align:center;color:var(--ink-tertiary);font-size:13px;font-family:var(--font-display);font-style:italic;}
       .sm-brow-more{width:100%;padding:10px;margin-top:8px;border:1px solid var(--line);border-radius:999px;background:none;color:var(--ink-secondary);font-family:var(--font-body);font-size:12px;font-weight:600;cursor:pointer;}
       .sm-brow-more:hover{border-color:var(--sm-accent);color:var(--sm-accent);}
+      .sm-need{background:none;border:none;padding:0;cursor:pointer;text-align:left;font-family:inherit;transition:opacity .12s;}
+      .sm-need:hover{opacity:.6;}
+      .sm-need .sm-lbl{text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:2px;}
       .sm-explore{width:100%;margin:18px 0 2px;padding:11px;border-radius:10px;border:1px dashed var(--sm-accent-line);background:var(--sm-accent-soft);color:var(--sm-accent);font-family:var(--font-body);font-size:12.5px;font-weight:600;cursor:pointer;transition:all .13s;}
       .sm-explore:hover{background:var(--sm-accent);color:#fff;}
       [data-theme="dark"] .sm-explore:hover{color:#1a1408;}
@@ -10074,14 +10077,30 @@
         }
         function smStat(n, l){ return `<div class="sm-stat"><span class="sm-num">${n||0}</span><span class="sm-lbl">${l}</span></div>`; }
 
+        /// The strip says what is waiting on you, not what exists — counting your own
+        /// themes back at you isn't information, and the old counts were the rendered
+        /// rows rather than the model. Zero-count items are omitted entirely, so the
+        /// strip disappears when nothing needs you.
         function smHeader(d){
             const s = d.summary || {};
+            const parts = [];
+            if (s.to_review) parts.push(smNeed(s.to_review, 'to review', "smBrowse().then(()=>smBrowseSetMode('review'))"));
+            if (s.unbacked) parts.push(smNeed(s.unbacked, s.unbacked === 1 ? 'belief unbacked' : 'beliefs unbacked', "smBrowse().then(()=>smBrowseSetMode('beliefs'))"));
+            if (s.open_questions) parts.push(smNeed(s.open_questions, s.open_questions === 1 ? 'open question' : 'open questions', "smScrollToRegister('Open questions')"));
+            const strip = parts.length
+                ? `<div class="sm-maturity">${parts.join('<div class="sm-msep"></div>')}</div>` : '';
             return `<div class="sm-head"><h1>You</h1>`
                 + `<p class="sm-sub">How you operate, as Alfred understands it &middot; ${s.signals_this_week||0} signals this week</p></div>`
-                + `<div class="sm-maturity">${smStat(s.patterns,'patterns')}<div class="sm-msep"></div>`
-                + `${smStat(s.themes,'themes')}<div class="sm-msep"></div>`
-                + `${smStat(s.beliefs,'beliefs')}<div class="sm-msep"></div>`
-                + `${smStat(s.questions,'questions')}</div>`;
+                + strip;
+        }
+        function smNeed(n, label, action){
+            return `<button type="button" class="sm-stat sm-need" onclick="${action}">`
+                + `<span class="sm-num">${n}</span><span class="sm-lbl">${label}</span></button>`;
+        }
+        function smScrollToRegister(title){
+            const h = [...document.querySelectorAll('#youInner .sm-reg-head')]
+                .find(x => x.querySelector('h2') && x.querySelector('h2').textContent === title);
+            if (h) h.scrollIntoView({ block: 'start', behavior: 'smooth' });
         }
 
         function smMovement(d){

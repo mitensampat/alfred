@@ -173,12 +173,29 @@ enum SelfModelService {
         }
 
         let week = ReflectionStore.shared.getWeekInputSummary(days: 7)
+        // The header used to count what happened to be rendered — "6 themes" meant six
+        // rows below, not 256 in the model. Inventory belongs in Explore; this space
+        // should say what is waiting on the user's judgement.
+        let pendingProposals = store.getProposals(status: "pending").count
+        let unbackedDeclared = beliefFacets.filter { f in
+            guard (f["origin"] as? String) == "declared" else { return false }
+            let id = f["id"] as? String ?? ""
+            let observedLenses = (lensIdsByBelief[id] ?? []).filter {
+                ((patternById[$0]?["origin"] as? String) ?? "emergent") != "declared"
+            }.count
+            return observedLenses + (decisionIdsByBelief[id] ?? []).count == 0
+        }.count
+
         let summary: [String: Any] = [
+            "to_review": pendingProposals,
+            "unbacked": unbackedDeclared,
+            "open_questions": questionFacets.count,
+            "signals_this_week": week.count,
+            // Retained for any older reader; these are display counts, not model size.
             "patterns": patternsOut.count,
             "themes": workspacesTop.count,
             "beliefs": beliefsOut.count,
-            "questions": questions.count,
-            "signals_this_week": week.count
+            "questions": questions.count
         ]
 
         // Every belief (not just the surfaced 6) so the assign/move picker can offer them all.
