@@ -2912,6 +2912,7 @@
         /* Title + italic hint + pager won't fit one line on a phone, and a wrapped
            header per register is a lot of vertical noise. The hint is decorative. */
         .sm-reg-head .sm-hint{display:none;}
+
       }
       @media (max-width: 380px){
         .top-bar-title{font-size:14px;}
@@ -3095,7 +3096,11 @@
       .sm-brow-counts b{font-family:var(--font-display);font-size:14px;color:var(--ink);font-weight:500;}
       .sm-search{width:100%;font-family:var(--font-body);font-size:13.5px;padding:9px 13px;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface-sunken);color:var(--ink);}
       .sm-search:focus{outline:none;border-color:var(--sm-accent);}
-      .sm-modes{display:flex;gap:4px;margin-top:10px;}
+      /* Five modes can't fit a phone. Scroll them rather than let a non-wrapping flex
+         row force the whole browser wider than the viewport. */
+      .sm-modes{display:flex;gap:4px;margin-top:10px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;}
+      .sm-modes::-webkit-scrollbar{display:none;}
+      .sm-mode{flex:0 0 auto;}
       .sm-mode{font-family:var(--font-body);font-size:12px;font-weight:600;padding:5px 13px;border-radius:999px;border:1px solid var(--line-strong);background:none;color:var(--ink-tertiary);cursor:pointer;transition:all .13s;}
       .sm-mode.active{background:var(--sm-accent);border-color:var(--sm-accent);color:#fff;}
       [data-theme="dark"] .sm-mode.active{color:#1a1408;}
@@ -3125,6 +3130,13 @@
       .sm-rev-done{font-family:var(--font-mono);font-size:11px;padding:9px 13px;color:var(--ink-tertiary);}
       .sm-rev-done.kept{color:var(--sm-green);}
       .sm-grounded{font-family:var(--font-mono);font-size:10px;color:var(--sm-green);}
+
+      /* .sm-screen is a flex item, and flex items default to min-width:auto — so
+         non-wrapping content (the mode row) GREW the container instead of overflowing
+         inside it, dragging every descendant past the viewport. min-width:0 is what
+         makes overflow-x:auto on .sm-modes actually engage. */
+      .sm-screen{min-width:0;}
+      .sm-screen .sm-inner{min-width:0;}
       .sm-origin{font-family:var(--font-mono);font-size:9px;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:999px;white-space:nowrap;}
       .sm-origin.emergent{background:var(--growth-tint,var(--surface-sunken));color:var(--sm-green);}
       .sm-origin.declared{background:var(--sm-accent-soft);color:var(--sm-accent);}
@@ -3142,6 +3154,31 @@
       .sm-explore{width:100%;margin-top:14px;padding:11px;border-radius:10px;border:1px dashed var(--sm-accent-line);background:var(--sm-accent-soft);color:var(--sm-accent);font-family:var(--font-body);font-size:12.5px;font-weight:600;cursor:pointer;transition:all .13s;}
       .sm-explore:hover{background:var(--sm-accent);color:#fff;}
       [data-theme="dark"] .sm-explore:hover{color:#1a1408;}
+
+      /* ── Touch targets — KEEP LAST IN THIS STYLESHEET ──
+         These are single-class selectors with the same specificity as the base rules
+         above, so they win only by source order. Placed anywhere earlier they are
+         silently overridden by whatever is defined below — which is exactly what
+         happened twice while building this. Add new component styles ABOVE this block.
+         Fires on EITHER a narrow window OR a touch device. Width alone was wrong: an
+         iPad is 1024px and still has no cursor, so it kept 23px pagers and a 6×13
+         link-remove ×. (hover:none) alone was also wrong — it never matches in a
+         desktop browser, so nothing here could be verified while building. */
+      @media (max-width: 600px), (hover: none){
+        .sm-inner{max-width:100%;}
+        .sm-vbtn{padding:9px 15px;font-size:12px;}
+        .sm-vbtn.dim{padding:9px 10px;}
+        .sm-qrow .sm-resolve{padding:9px 14px;font-size:12px;}
+        .sm-pbtn{width:34px;height:34px;font-size:15px;}
+        .sm-ebtn{width:34px;height:34px;font-size:15px;}
+        .sm-rev-btn{padding:10px 16px;font-size:12.5px;}
+        .sm-linkchip{padding:7px 11px;font-size:11.5px;}
+        .sm-linkchip .x{padding:6px 8px;margin:-6px -6px -6px 0;opacity:.8;}
+        .sm-themechip{padding:8px 12px;font-size:11px;}
+        .sm-mode{padding:9px 15px;font-size:12.5px;}
+        .sm-back{padding:10px 4px 12px;}
+        .sm-brow-more{padding:13px;}
+      }
     </style>
 
     <div id="appContainer" class="hidden" style="display:flex;flex-direction:column;height:100dvh;">
