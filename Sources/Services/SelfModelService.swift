@@ -339,7 +339,8 @@ enum SelfModelService {
                 "beliefs": beliefs.count,
                 "lenses": patternFacets.count,
                 "values": values.count,
-                "lineage": store.allLineage().count
+                "lineage": store.allLineage().count,
+                "proposals": store.getProposals(status: "pending").count
             ],
             "themes": themes,
             "decisions": decisions,

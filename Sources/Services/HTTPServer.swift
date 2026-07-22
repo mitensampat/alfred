@@ -11483,11 +11483,19 @@ extension HTTPServer {
             (store.getFacets(kind: "belief") + store.getFacets(kind: "decision"))
                 .map { (($0["id"] as? String ?? ""), ($0["statement"] as? String ?? "")) },
             uniquingKeysWith: { a, _ in a })
+        let dateById = Dictionary(
+            store.getFacets(kind: "decision").map {
+                (($0["id"] as? String ?? ""), ($0["metadata"] as? [String: String])?["decided_on"] ?? "")
+            }, uniquingKeysWith: { a, _ in a })
         let rows: [[String: Any]] = store.getProposals(status: "pending").map { p in
-            [
+            let bid = p["belief_id"] as? String ?? ""
+            let did = p["decision_id"] as? String ?? ""
+            return [
                 "id": p["id"] as? String ?? "",
-                "belief": byId[p["belief_id"] as? String ?? ""] ?? "",
-                "decision": byId[p["decision_id"] as? String ?? ""] ?? "",
+                "belief_id": bid,
+                "belief": byId[bid] ?? "",
+                "decision": byId[did] ?? "",
+                "date": dateById[did] ?? "",
                 "rationale": p["rationale"] as? String ?? ""
             ]
         }

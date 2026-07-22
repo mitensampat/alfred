@@ -3107,6 +3107,24 @@
       .sm-brow-meta{display:flex;align-items:center;gap:7px;margin-top:7px;flex-wrap:wrap;}
       .sm-yield{font-family:var(--font-mono);font-size:10px;color:var(--sm-accent);white-space:nowrap;}
       .sm-decdate{font-family:var(--font-mono);font-size:10px;color:var(--sm-green);letter-spacing:.03em;}
+      /* ---- graduation review ---- */
+      .sm-rev-belief{margin:22px 0 10px;padding-bottom:9px;border-bottom:1px solid var(--line);}
+      .sm-rev-belief:first-child{margin-top:4px;}
+      .sm-rev-belief .st{font-family:var(--font-display);font-size:16px;line-height:1.4;color:var(--ink);}
+      .sm-rev-belief .meta{display:flex;gap:8px;align-items:center;margin-top:7px;flex-wrap:wrap;}
+      .sm-rev-prop{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:11px 13px;margin-bottom:7px;}
+      .sm-rev-prop .dec{font-size:13.5px;line-height:1.45;color:var(--ink);}
+      .sm-rev-prop .why{font-family:var(--font-mono);font-size:10.5px;color:var(--ink-tertiary);margin-top:6px;line-height:1.5;}
+      .sm-rev-prop .when{font-family:var(--font-mono);font-size:9.5px;color:var(--sm-green);}
+      .sm-rev-acts{display:flex;gap:7px;margin-top:10px;align-items:center;}
+      .sm-rev-btn{font-family:var(--font-body);font-size:11.5px;font-weight:600;padding:5px 13px;border-radius:999px;
+                  border:1px solid var(--line-strong);background:none;color:var(--ink-secondary);cursor:pointer;transition:all .13s;}
+      .sm-rev-btn.yes{border-color:var(--sm-green);color:var(--sm-green);}
+      .sm-rev-btn.yes:hover{background:var(--sm-green);color:#fff;}
+      .sm-rev-btn:hover{border-color:var(--ink-secondary);color:var(--ink);}
+      .sm-rev-done{font-family:var(--font-mono);font-size:11px;padding:9px 13px;color:var(--ink-tertiary);}
+      .sm-rev-done.kept{color:var(--sm-green);}
+      .sm-grounded{font-family:var(--font-mono);font-size:10px;color:var(--sm-green);}
       .sm-origin{font-family:var(--font-mono);font-size:9px;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:999px;white-space:nowrap;}
       .sm-origin.emergent{background:var(--growth-tint,var(--surface-sunken));color:var(--sm-green);}
       .sm-origin.declared{background:var(--sm-accent-soft);color:var(--sm-accent);}
@@ -10327,6 +10345,14 @@
 
         async function smBrowseSetMode(m){
             _smBrowse.mode = m; _smBrowse.limit = 40;
+            if (m === 'review' && !_smBrowse.proposals) {
+                document.getElementById('youInner').innerHTML = `<button class="sm-back" onclick="renderSelfModel(_smData)">&lsaquo; You</button><div class="sm-loading">Loading proposals&hellip;</div>`;
+                try {
+                    const res = await authFetch('/api/self-model/proposals');
+                    const d = await res.json();
+                    _smBrowse.proposals = d.proposals || [];
+                } catch (e) { _smBrowse.proposals = []; }
+            }
             if (m === 'reflections' && !_smBrowse.reflections) {
                 document.getElementById('youInner').innerHTML = `<button class="sm-back" onclick="renderSelfModel(_smData)">&lsaquo; You</button><div class="sm-loading">Loading reflections&hellip;</div>`;
                 try {
@@ -10378,7 +10404,17 @@
                 + `<button class="sm-mode ${isDec?'active':''}" onclick="smBrowseSetMode('decisions')">Decisions</button>`
                 + `<button class="sm-mode ${mode==='beliefs'?'active':''}" onclick="smBrowseSetMode('beliefs')">Beliefs</button>`
                 + `<button class="sm-mode ${isRefl?'active':''}" onclick="smBrowseSetMode('reflections')">Sources</button>`
+                + ((c.proposals || (_smBrowse.proposals||[]).length)
+                    ? `<button class="sm-mode ${mode==='review'?'active':''}" onclick="smBrowseSetMode('review')">Review ${_smBrowse.proposals ? _smBrowse.proposals.length : c.proposals}</button>` : '')
                 + `</div></div>`;
+
+            // Review is grouped by belief, not a flat list — a proposal only means
+            // something next to the claim it's offered as evidence for.
+            if (mode === 'review') {
+                document.getElementById('youInner').innerHTML = head + smReviewBody();
+                if (keepFocus) { const i = document.getElementById('smBrowseSearch'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }
+                return;
+            }
 
             let body = '';
             if (!shown.length) {
@@ -10449,6 +10485,63 @@
                 const inp = document.getElementById('smBrowseSearch');
                 if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
             }
+        }
+
+        /// Proposals grouped under the belief they're offered as evidence for.
+        function smReviewBody(){
+            const props = (_smBrowse.proposals || []).filter(p => !p._done);
+            if (!props.length) {
+                return `<div class="sm-brow-empty">Nothing waiting. Alfred proposes evidence when it finds decisions that might back a belief you declared.</div>`;
+            }
+            const beliefs = (_smBrowse.data && _smBrowse.data.beliefs) || [];
+            const byBelief = {};
+            props.forEach(p => { (byBelief[p.belief_id] = byBelief[p.belief_id] || []).push(p); });
+
+            return `<div class="sm-rev-intro sm-brow-empty" style="text-align:left;padding:6px 0 2px;font-style:normal;font-size:12.5px;">`
+                + `Decisions Alfred thinks might back what you declared. Confirming makes it real evidence &mdash; rejecting teaches it nothing was there.</div>`
+                + Object.keys(byBelief).map(bid => {
+                const list = byBelief[bid];
+                const b = beliefs.find(x => x.id === bid);
+                const isAsp = b ? b.aspiration : false;
+                return `<div class="sm-rev-belief" id="rb-${bid}">`
+                    + `<div class="st">${escapeHtml(list[0].belief)}</div>`
+                    + `<div class="meta"><span class="sm-origin declared">declared</span>`
+                    + (isAsp ? `<span class="sm-origin aspiration">aspiration</span>`
+                             : `<span class="sm-grounded">&#10003; grounded</span>`)
+                    + `<span class="sm-kmeta">${list.length} proposed</span></div></div>`
+                    + list.map(p => `<div class="sm-rev-prop" id="p-${escapeHtml(p.id)}">`
+                        + `<div class="dec">${escapeHtml(p.decision)}</div>`
+                        + (p.date ? `<div class="when">${escapeHtml(p.date)}</div>` : '')
+                        + (p.rationale ? `<div class="why">&rarr; ${escapeHtml(p.rationale)}</div>` : '')
+                        + `<div class="sm-rev-acts">`
+                        + `<button class="sm-rev-btn yes" onclick="smResolveProposal('${smEsc(p.id)}','confirm')">This is evidence</button>`
+                        + `<button class="sm-rev-btn" onclick="smResolveProposal('${smEsc(p.id)}','reject')">Not evidence</button>`
+                        + `</div></div>`).join('');
+            }).join('');
+        }
+
+        async function smResolveProposal(id, action){
+            const el = document.getElementById('p-' + id);
+            if (el) el.innerHTML = `<div class="sm-rev-done">Saving&hellip;</div>`;
+            try {
+                await authFetch(`/api/self-model/proposals/resolve?id=${encodeURIComponent(id)}&action=${action}`, { method: 'POST' });
+            } catch (e) {
+                if (el) el.innerHTML = `<div class="sm-rev-done">Couldn&rsquo;t save that.</div>`;
+                return;
+            }
+            const p = (_smBrowse.proposals || []).find(x => x.id === id);
+            if (p) p._done = true;
+            if (el) {
+                el.innerHTML = action === 'confirm'
+                    ? `<div class="sm-rev-done kept">&#10003; Kept as evidence &mdash; this belief is no longer an aspiration.</div>`
+                    : `<div class="sm-rev-done">Rejected.</div>`;
+            }
+            // Refresh the model so aspiration badges and counts reflect the change.
+            try {
+                const res = await authFetch('/api/self-model/browse');
+                _smBrowse.data = await res.json();
+                _smData = await (await authFetch('/api/self-model')).json();
+            } catch (e) { /* the row already shows the outcome */ }
         }
 
         // Escape a string for safe embedding inside a single-quoted inline handler.
