@@ -2891,6 +2891,14 @@
       }
       /* segmented Now/You nav */
       .sm-nav{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;gap:4px;z-index:2;}
+      /* An absolutely-centred toggle overlaps the bar's side content at whatever width
+         the sides happen to grow into the middle — a breakpoint can only chase that.
+         A 3-column grid (title | toggle | actions) makes the collision impossible at
+         every width, so the toggle is centred by layout rather than by offset. */
+      .top-bar-main{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;}
+      .top-bar-main .top-bar-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+      .top-bar-main .sm-nav{position:static;transform:none;justify-self:center;}
+      .top-bar-main .top-bar-actions{justify-self:end;min-width:0;}
       .sm-tab{font-family:var(--font-body);font-size:12.5px;font-weight:600;color:var(--ink-tertiary);background:none;border:none;cursor:pointer;padding:7px 16px;border-radius:999px;transition:color .15s,background .15s;-webkit-tap-highlight-color:transparent;}
       /* Mobile: the toggle is absolutely centred, so the bar's secondary meta
          (sync state, long date) collides with it and the wordmark wraps.
@@ -3111,7 +3119,7 @@
 
         <!-- TOP BAR -->
         <div class="top-bar-wrapper">
-        <div class="top-bar">
+        <div class="top-bar top-bar-main">
             <div class="top-bar-title">Coach Alfred</div>
             <!-- Now/You surface toggle (revealed by initSelfModel when features.self_model is on) -->
             <div class="sm-nav" id="smSurfaceNav" style="display:none;">

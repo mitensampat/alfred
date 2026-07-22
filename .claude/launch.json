@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "_comment": "Alfred runs as a LaunchAgent (com.msfoundry.alfred) and owns port 8080 — one binary, one process, one port. No command here: a url-only entry ATTACHES to the already-running server instead of starting a competing one. Never add a runtimeExecutable, and never free 8080 to start a dev server; that would kill the production app. To restart, use launchctl unload/load per CLAUDE.md.",
       "name": "alfred",
-      "runtimeExecutable": "sleep",
-      "runtimeArgs": ["3600"],
+      "url": "http://localhost:8080",
       "port": 8080
     }
   ]
