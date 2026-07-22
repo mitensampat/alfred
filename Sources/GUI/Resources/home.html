@@ -3104,6 +3104,15 @@
       .sm-mode{font-family:var(--font-body);font-size:12px;font-weight:600;padding:5px 13px;border-radius:999px;border:1px solid var(--line-strong);background:none;color:var(--ink-tertiary);cursor:pointer;transition:all .13s;}
       .sm-mode.active{background:var(--sm-accent);border-color:var(--sm-accent);color:#fff;}
       [data-theme="dark"] .sm-mode.active{color:#1a1408;}
+      /* Workspace filters — lighter than the mode row, since they narrow a mode
+         rather than switch between them. */
+      .sm-filters{display:flex;gap:5px;margin-top:8px;overflow-x:auto;scrollbar-width:none;}
+      .sm-filters::-webkit-scrollbar{display:none;}
+      .sm-filter{flex:0 0 auto;font-family:var(--font-body);font-size:11px;padding:4px 10px;border-radius:5px;
+                 border:1px solid transparent;background:var(--surface-sunken);color:var(--ink-tertiary);cursor:pointer;transition:all .12s;}
+      .sm-filter:hover{color:var(--ink);}
+      .sm-filter.on{background:var(--sm-accent-soft);border-color:var(--sm-accent-line);color:var(--sm-accent);font-weight:600;}
+      .sm-filter .n{font-family:var(--font-mono);font-size:9.5px;opacity:.75;margin-left:4px;}
       .sm-brow-list{display:flex;flex-direction:column;gap:8px;}
       .sm-brow-item{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:11px 14px;cursor:pointer;transition:border-color .14s,transform .12s;}
       .sm-brow-item:hover{border-color:var(--sm-accent-line);transform:translateX(2px);}
@@ -3176,6 +3185,7 @@
         .sm-linkchip .x{padding:6px 8px;margin:-6px -6px -6px 0;opacity:.8;}
         .sm-themechip{padding:8px 12px;font-size:11px;}
         .sm-mode{padding:9px 15px;font-size:12.5px;}
+        .sm-filter{padding:8px 12px;font-size:11.5px;}
         .sm-back{padding:10px 4px 12px;}
         .sm-brow-more{padding:13px;}
       }
@@ -10383,7 +10393,22 @@
         // ═══════════ Immersive "You" browser ═══════════
         // Themes are the navigation spine (they emerge organically); beliefs firm up
         // around them. Both lists cross-link, so you can traverse in either direction.
-        let _smBrowse = { data: null, mode: 'themes', q: '', limit: 40 };
+        let _smBrowse = { data: null, mode: 'themes', q: '', limit: 40, filter: 'all' };
+
+        function smBrowseSetFilter(f){ _smBrowse.filter = f; _smBrowse.limit = 40; smBrowseRender(); }
+
+        /// Narrow the workspace list. "Settled" restores the one thing the old
+        /// standalone page could do that the browser couldn't.
+        function smThemeFilters(total, settled){
+            const f = _smBrowse.filter;
+            const chip = (key, label, n) =>
+                `<button class="sm-filter ${f===key?'on':''}" onclick="smBrowseSetFilter('${key}')">${label}<span class="n">${n}</span></button>`;
+            return `<div class="sm-filters">`
+                + chip('all', 'All', total)
+                + chip('active', 'Active', total - settled)
+                + chip('settled', 'Settled', settled)
+                + `</div>`;
+        }
 
         async function smBrowse(){
             const el = document.getElementById('youInner');
@@ -10438,6 +10463,15 @@
                       : isDec ? (d.decisions || [])
                       : isRefl ? (_smBrowse.reflections || [])
                       : (d.beliefs || []);
+            // Settled workspaces are 81 of 256 — without a filter they're only
+            // reachable by scrolling past everything still live.
+            const allThemes = d.themes || [];
+            const settledCount = allThemes.filter(t => t.temperature === 'resolved').length;
+            if (isThemes && _smBrowse.filter !== 'all') {
+                items = items.filter(t => _smBrowse.filter === 'settled'
+                    ? t.temperature === 'resolved'
+                    : t.temperature !== 'resolved');
+            }
             if (q) {
                 items = items.filter(x => {
                     const hay = isThemes ? x.theme
@@ -10465,7 +10499,9 @@
                 + `<button class="sm-mode ${isRefl?'active':''}" onclick="smBrowseSetMode('reflections')">Sources</button>`
                 + ((c.proposals || (_smBrowse.proposals||[]).length)
                     ? `<button class="sm-mode ${mode==='review'?'active':''}" onclick="smBrowseSetMode('review')">Review ${_smBrowse.proposals ? _smBrowse.proposals.length : c.proposals}</button>` : '')
-                + `</div></div>`;
+                + `</div>`
+                + (isThemes ? smThemeFilters(allThemes.length, settledCount) : '')
+                + `</div>`;
 
             // Review is grouped by belief, not a flat list — a proposal only means
             // something next to the claim it's offered as evidence for.
