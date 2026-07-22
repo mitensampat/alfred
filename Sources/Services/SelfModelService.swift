@@ -78,7 +78,18 @@ enum SelfModelService {
 
         // ---- Beliefs (trajectory, most recently updated first) ----
         let beliefsSorted = beliefFacets.sorted { ($0["last_seen"] as? String ?? "") > ($1["last_seen"] as? String ?? "") }
-        let beliefsOut: [[String: Any]] = beliefsSorted.prefix(6).map { f -> [String: Any] in
+
+        // Preserve the contrast. Declared beliefs all land with last_seen = import time,
+        // so pure recency would let them crowd out every emergent belief — turning the
+        // mirror into a reflection of what you *said* rather than what you *do*. Show a
+        // deliberate blend of both.
+        let declaredBeliefs = beliefsSorted.filter { ($0["origin"] as? String) == "declared" }
+        let emergentBeliefs = beliefsSorted.filter { ($0["origin"] as? String) != "declared" }
+        let declaredSlice = declaredBeliefs.prefix(3)
+        let emergentSlice = emergentBeliefs.prefix(max(3, 7 - declaredSlice.count))
+        let beliefsShown = Array(declaredSlice) + Array(emergentSlice)
+
+        let beliefsOut: [[String: Any]] = beliefsShown.map { f -> [String: Any] in
             let traj = f["trajectory"] as? [[String: String]] ?? []
             let id = f["id"] as? String ?? ""
             let attached: [[String: Any]] = (lensIdsByBelief[id] ?? []).compactMap { lid in
@@ -135,7 +146,8 @@ enum SelfModelService {
         }
 
         // ---- Movement: most recently updated beliefs ----
-        let movement: [[String: Any]] = beliefsSorted.prefix(3).map { f -> [String: Any] in
+        // Emergent only — declaring a belief is an import event, not a shift in thinking.
+        let movement: [[String: Any]] = emergentBeliefs.prefix(3).map { f -> [String: Any] in
             let traj = f["trajectory"] as? [[String: String]] ?? []
             return [
                 "kind": "belief_updated",
