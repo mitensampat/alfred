@@ -2909,6 +2909,9 @@
         .top-bar-actions{flex:1;justify-content:flex-end;gap:4px;}
         .sm-nav{gap:3px;}
         .sm-tab{padding:9px 17px;font-size:13px;}
+        /* Title + italic hint + pager won't fit one line on a phone, and a wrapped
+           header per register is a lot of vertical noise. The hint is decorative. */
+        .sm-reg-head .sm-hint{display:none;}
       }
       @media (max-width: 380px){
         .top-bar-title{font-size:14px;}
@@ -2931,6 +2934,13 @@
       .sm-reg-head{display:flex;align-items:baseline;gap:9px;margin-bottom:12px;}
       .sm-reg-head h2{font-family:var(--font-body);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-secondary);margin:0;}
       .sm-hint{font-size:12.5px;color:var(--ink-faint);font-style:italic;font-family:var(--font-display);}
+      /* Register pager — keeps each section a fixed 3 items so the page stays scannable. */
+      .sm-pager{margin-left:auto;display:flex;align-items:center;gap:7px;flex:0 0 auto;}
+      .sm-pcount{font-family:var(--font-mono);font-size:9.5px;color:var(--ink-tertiary);white-space:nowrap;letter-spacing:.02em;}
+      .sm-pbtn{width:23px;height:23px;border-radius:50%;border:1px solid var(--line-strong);background:none;color:var(--ink-secondary);font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:border-color .12s,color .12s;-webkit-tap-highlight-color:transparent;}
+      .sm-pbtn:hover:not(:disabled){border-color:var(--sm-accent);color:var(--sm-accent);}
+      .sm-pbtn:disabled{opacity:.28;cursor:default;}
+      @media (hover: none){ .sm-pbtn{width:30px;height:30px;} }
       .sm-stack{display:flex;flex-direction:column;gap:10px;}
       .sm-statement{font-family:var(--font-display);font-size:16px;line-height:1.42;color:var(--ink);margin:0;}
       /* movement */
@@ -9840,15 +9850,52 @@
             } catch (e) { console.log('[self-model] load failed:', e); }
         }
 
-        function renderSelfModel(d){
+        // Workspaces lead: what you're working on is the way into everything else.
+        function renderSelfModel(d, keepScroll){
             document.getElementById('youInner').innerHTML =
-                smHeader(d) + smMovement(d) + smValues(d) + smWorkspaces(d) + smQuestions(d) + smLenses(d) + smFoot();
-            const ys = document.getElementById('youScreen'); if (ys) ys.scrollTop = 0;
+                smHeader(d) + smWorkspaces(d) + smMovement(d) + smBeliefs(d)
+                + smValues(d) + smQuestions(d) + smPatterns(d) + smFoot();
+            if (!keepScroll) { const ys = document.getElementById('youScreen'); if (ys) ys.scrollTop = 0; }
         }
 
-        function smSection(title, hint, inner){
+        function smSection(title, hint, inner, pager){
             return `<div class="sm-section"><div class="sm-reg-head"><h2>${title}</h2>`
-                + (hint ? `<span class="sm-hint">${hint}</span>` : '') + `</div><div class="sm-stack">${inner}</div></div>`;
+                + (hint ? `<span class="sm-hint">${hint}</span>` : '') + (pager || '') + `</div><div class="sm-stack">${inner}</div></div>`;
+        }
+
+        // ── Register pagination ──
+        // Each register shows 3 at a time. The page stays a fixed, scannable height
+        // however much the model accumulates.
+        const SM_PER_PAGE = 3;
+        let _smPage = {};
+
+        function smPageSet(key, dir, total){
+            const pages = Math.max(1, Math.ceil(total / SM_PER_PAGE));
+            _smPage[key] = Math.min(pages - 1, Math.max(0, (_smPage[key] || 0) + dir));
+            const ys = document.getElementById('youScreen');
+            const keep = ys ? ys.scrollTop : 0;
+            renderSelfModel(_smData, true);          // re-render without jumping to top
+            if (ys) ys.scrollTop = keep;
+        }
+
+        /// Build a register that shows SM_PER_PAGE items with a compact pager.
+        /// renderItem receives (item, absoluteIndex) so handlers can address the full list.
+        function smPaged(key, title, hint, items, renderItem, emptyHtml){
+            const total = items.length;
+            if (!total) return emptyHtml ? smSection(title, hint, emptyHtml) : '';
+            const pages = Math.ceil(total / SM_PER_PAGE);
+            const p = Math.min(_smPage[key] || 0, pages - 1);
+            const start = p * SM_PER_PAGE;
+            const inner = items.slice(start, start + SM_PER_PAGE)
+                .map((it, i) => renderItem(it, start + i)).join('');
+            const pager = pages > 1
+                ? `<div class="sm-pager">`
+                  + `<span class="sm-pcount">${start + 1}&ndash;${Math.min(start + SM_PER_PAGE, total)} of ${total}</span>`
+                  + `<button type="button" class="sm-pbtn" ${p === 0 ? 'disabled' : ''} onclick="smPageSet('${key}',-1,${total})" aria-label="Previous">&lsaquo;</button>`
+                  + `<button type="button" class="sm-pbtn" ${p >= pages - 1 ? 'disabled' : ''} onclick="smPageSet('${key}',1,${total})" aria-label="Next">&rsaquo;</button>`
+                  + `</div>`
+                : '';
+            return smSection(title, hint, inner, pager);
         }
         function smStat(n, l){ return `<div class="sm-stat"><span class="sm-num">${n||0}</span><span class="sm-lbl">${l}</span></div>`; }
 
@@ -9863,87 +9910,92 @@
         }
 
         function smMovement(d){
-            const items = d.movement || [];
-            if (!items.length) return '';
-            const cards = items.map(m => {
-                const eyebrow = m.kind === 'belief_updated' ? '&#10022; Belief updated' : '&#9687; Theme moved';
-                const body = (m.kind === 'belief_updated' && m.from)
-                    ? `<p class="sm-statement"><span class="sm-from">${escapeHtml(m.from)}</span> &rarr; ${escapeHtml(m.to)}</p>`
-                    : `<p class="sm-statement">${escapeHtml(m.statement)}</p>`;
-                return `<div class="sm-move"><div class="sm-eyebrow">${eyebrow}</div>${body}`
-                    + (m.when ? `<div class="sm-move-when">${escapeHtml(m.when)}</div>` : '') + `</div>`;
-            }).join('');
-            return smSection('What moved this week', 'worth noticing', cards);
+            return smPaged('movement', 'What moved this week', 'worth noticing',
+                d.movement || [],
+                m => {
+                    const eyebrow = m.kind === 'belief_updated' ? '&#10022; Belief updated' : '&#9687; Theme moved';
+                    const body = (m.kind === 'belief_updated' && m.from)
+                        ? `<p class="sm-statement"><span class="sm-from">${escapeHtml(m.from)}</span> &rarr; ${escapeHtml(m.to)}</p>`
+                        : `<p class="sm-statement">${escapeHtml(m.statement)}</p>`;
+                    return `<div class="sm-move"><div class="sm-eyebrow">${eyebrow}</div>${body}`
+                        + (m.when ? `<div class="sm-move-when">${escapeHtml(m.when)}</div>` : '') + `</div>`;
+                });
         }
 
         function smTempLabel(t){ return t==='hot'?'Hot':(t==='warming'?'Warming':(t==='resolved'?'Settled':'Cooling')); }
         function smTempClass(t){ return t==='hot'?'hot':(t==='warming'?'warm':'cool'); }
 
         function smWorkspaces(d){
-            const items = d.workspaces || [];
-            const inner = items.length ? items.map((w, i) => {
-                const inputs = w.inputs_this_week || 0;
-                return `<div class="sm-obj" onclick="smOpenTheme(${i})">`
-                    + `<div class="sm-obj-top"><span class="sm-name">${escapeHtml(w.theme)}</span><span class="sm-chev">&rsaquo;</span></div>`
-                    + `<div class="sm-meta"><span class="sm-chip state">${escapeHtml(w.state||'')}</span>`
-                    + `<span class="sm-chip ${smTempClass(w.temperature)}"><span class="sm-cdot"></span>${smTempLabel(w.temperature)}</span>`
-                    + (inputs ? `<span class="sm-chip inflow"><span class="sm-cdot"></span>${inputs} input${inputs>1?'s':''} this week</span>` : '')
-                    + `</div></div>`;
-            }).join('') : `<div class="sm-empty">No active themes yet. As Alfred ingests what you read and discuss, the topics you&rsquo;re working on appear here.</div>`;
-            return smSection('Workspaces', 'what you&rsquo;re working on &mdash; open one', inner);
+            return smPaged('workspaces', 'Workspaces', 'what you&rsquo;re working on &mdash; open one',
+                d.workspaces || [],
+                (w, i) => {
+                    const inputs = w.inputs_this_week || 0;
+                    return `<div class="sm-obj" onclick="smOpenTheme(${i})">`
+                        + `<div class="sm-obj-top"><span class="sm-name">${escapeHtml(w.theme)}</span><span class="sm-chev">&rsaquo;</span></div>`
+                        + `<div class="sm-meta"><span class="sm-chip state">${escapeHtml(w.state||'')}</span>`
+                        + `<span class="sm-chip ${smTempClass(w.temperature)}"><span class="sm-cdot"></span>${smTempLabel(w.temperature)}</span>`
+                        + (inputs ? `<span class="sm-chip inflow"><span class="sm-cdot"></span>${inputs} input${inputs>1?'s':''} this week</span>` : '')
+                        + `</div></div>`;
+                },
+                `<div class="sm-empty">No active themes yet. As Alfred ingests what you read and discuss, the topics you&rsquo;re working on appear here.</div>`);
         }
 
         // Declared values — only rendered once the user has seeded them. Never inferred.
         function smValues(d){
-            const items = d.values || [];
-            if (!items.length) return '';
-            const inner = items.map(v =>
-                `<div class="sm-card"><div class="sm-kind-row"><span class="sm-kdot belief"></span>`
-                + `<span class="sm-klabel">Value</span><span class="sm-origin declared" style="margin-left:auto">declared</span></div>`
-                + `<p class="sm-statement">${escapeHtml(v.statement || '')}</p>`
-                + smVerbRow(v.id, v.confirmed) + `</div>`).join('');
-            return smSection('Values', 'what you hold as non-negotiable', inner);
+            return smPaged('values', 'Values', 'what you hold as non-negotiable',
+                d.values || [],
+                v => `<div class="sm-card"><div class="sm-kind-row"><span class="sm-kdot belief"></span>`
+                    + `<span class="sm-klabel">Value</span><span class="sm-origin declared" style="margin-left:auto">declared</span></div>`
+                    + `<p class="sm-statement">${escapeHtml(v.statement || '')}</p>`
+                    + smVerbRow(v.id, v.confirmed) + `</div>`);
         }
 
         function smQuestions(d){
-            const items = d.questions || [];
-            const inner = items.length ? items.map(q =>
-                `<div class="sm-qrow"><span class="sm-qmark">?</span><span class="sm-qtext">${escapeHtml(q.text||'')}</span>`
-                + `<button type="button" class="sm-resolve" onclick="smReflect('${q.id}')">Reflect &rarr;</button></div>`
-            ).join('') : `<div class="sm-empty">No open questions surfaced yet.</div>`;
-            return smSection('Open questions', 'what you&rsquo;re sitting with', inner);
+            return smPaged('questions', 'Open questions', 'what you&rsquo;re sitting with',
+                d.questions || [],
+                q => `<div class="sm-qrow"><span class="sm-qmark">?</span><span class="sm-qtext">${escapeHtml(q.text||'')}</span>`
+                    + `<button type="button" class="sm-resolve" onclick="smReflect('${q.id}')">Reflect &rarr;</button></div>`,
+                `<div class="sm-empty">No open questions surfaced yet.</div>`);
         }
 
-        function smLenses(d){
-            const lenses = d.lenses || {};
-            const shifts = lenses.belief_shifts || [];
-            const patterns = lenses.patterns || [];
-            let inner = '';
-            shifts.slice(0, 4).forEach(s => {
-                inner += `<div class="sm-card">` + smBeliefEdge(s)
+        // Beliefs and patterns were one "Lenses" register; they're distinct enough to
+        // browse separately — a belief is what you hold, a pattern is how you act.
+        function smBeliefs(d){
+            return smPaged('beliefs', 'Beliefs', 'what you hold &mdash; and how it shifted',
+                (d.lenses || {}).belief_shifts || [],
+                s => `<div class="sm-card">` + smBeliefEdge(s)
                     + `<div class="sm-kind-row"><span class="sm-kdot belief"></span>`
-                    + `<span class="sm-klabel">Belief${s.steps>1?` &middot; ${s.steps} shifts`:''}</span>` + (s.date ? `<span class="sm-kmeta">${escapeHtml((s.date||'').slice(0,10))}</span>` : '') + `</div>`
-                    + `<div class="sm-traj"><div class="sm-traj-step"><span class="stamp">Was</span><div class="val">${escapeHtml(s.from||'—')}</div></div>`
-                    + `<div class="sm-traj-arrow">&rarr;</div>`
-                    + `<div class="sm-traj-step now"><span class="stamp">Now</span><div class="val">${escapeHtml(s.to||'')}</div></div></div>`
+                    + `<span class="sm-klabel">Belief${s.steps>1?` &middot; ${s.steps} shifts`:''}</span>`
+                    + (s.aspiration ? `<span class="sm-origin aspiration" style="margin-left:6px">aspiration</span>`
+                        : (s.origin === 'declared' ? `<span class="sm-origin declared" style="margin-left:6px">declared</span>` : ''))
+                    + (s.date ? `<span class="sm-kmeta">${escapeHtml((s.date||'').slice(0,10))}</span>` : '') + `</div>`
+                    + (s.from
+                        ? `<div class="sm-traj"><div class="sm-traj-step"><span class="stamp">Was</span><div class="val">${escapeHtml(s.from)}</div></div>`
+                          + `<div class="sm-traj-arrow">&rarr;</div>`
+                          + `<div class="sm-traj-step now"><span class="stamp">Now</span><div class="val">${escapeHtml(s.to||'')}</div></div></div>`
+                        : `<p class="sm-statement">${escapeHtml(s.to||'')}</p>`)
                     + smLinkChips('Lenses', s.lenses, (lid) => `smUnlink('${lid}','${s.id}')`)
-                    + smVerbRow(s.id, s.confirmed) + `</div>`;
-            });
-            patterns.forEach(p => {
-                const conf = Math.round((p.confidence||0) * 100);
-                const clabel = conf>=80?'Strong':(conf>=55?'Building':'Forming');
-                const reinf = p.reinforcements || 0;
-                inner += `<div class="sm-card">` + smLensEdge(p)
-                    + `<div class="sm-kind-row"><span class="sm-kdot pattern"></span>`
-                    + `<span class="sm-klabel">${p.isDirect ? 'Instruction' : 'Pattern'}</span>`
-                    + (reinf ? `<span class="sm-kmeta">${reinf}&times; reinforced</span>` : '') + `</div>`
-                    + `<p class="sm-statement">${escapeHtml(p.description||'')}</p>`
-                    + `<div class="sm-conf"><div class="sm-conf-track"><div class="sm-conf-fill" style="width:${conf}%"></div></div><span class="sm-conf-lbl">${clabel}</span></div>`
-                    + smLinkChips('Supports', p.beliefs, (bid) => `smUnlink('${p.id}','${bid}')`)
-                    + smVerbRow(p.id, p.confirmed) + `</div>`;
-            });
-            if (!inner) inner = `<div class="sm-empty">Patterns and beliefs form as Alfred gathers signal. None yet.</div>`;
-            return smSection('Lenses', 'how you operate', inner);
+                    + smVerbRow(s.id, s.confirmed) + `</div>`,
+                `<div class="sm-empty">Beliefs form as Alfred gathers signal. None yet.</div>`);
+        }
+
+        function smPatterns(d){
+            return smPaged('patterns', 'Lenses', 'how you operate',
+                (d.lenses || {}).patterns || [],
+                p => {
+                    const conf = Math.round((p.confidence||0) * 100);
+                    const clabel = conf>=80?'Strong':(conf>=55?'Building':'Forming');
+                    const reinf = p.reinforcements || 0;
+                    return `<div class="sm-card">` + smLensEdge(p)
+                        + `<div class="sm-kind-row"><span class="sm-kdot pattern"></span>`
+                        + `<span class="sm-klabel">${p.isDirect ? 'Instruction' : 'Pattern'}</span>`
+                        + (reinf ? `<span class="sm-kmeta">${reinf}&times; reinforced</span>` : '') + `</div>`
+                        + `<p class="sm-statement">${escapeHtml(p.description||'')}</p>`
+                        + `<div class="sm-conf"><div class="sm-conf-track"><div class="sm-conf-fill" style="width:${conf}%"></div></div><span class="sm-conf-lbl">${clabel}</span></div>`
+                        + smLinkChips('Supports', p.beliefs, (bid) => `smUnlink('${p.id}','${bid}')`)
+                        + smVerbRow(p.id, p.confirmed) + `</div>`;
+                },
+                `<div class="sm-empty">Patterns form as Alfred gathers signal. None yet.</div>`);
         }
 
         function smFoot(){
