@@ -1209,6 +1209,9 @@ class HTTPServer {
         case ("GET", "/api/self-model/browse"):
             return handleSelfModelBrowse(request)
 
+        case ("GET", "/api/self-model/reflections"):
+            return handleSelfModelReflections(request)
+
         case ("GET", let p) where p.hasPrefix("/api/reflect/theme/detail"):
             return handleReflectThemeDetail(request)
 
@@ -11437,6 +11440,33 @@ extension HTTPServer {
             return HTTPResponse(statusCode: 200, body: ["enabled": false])
         }
         return HTTPResponse(statusCode: 200, body: SelfModelService.browse())
+    }
+
+    /// Individual reflections — the raw material the whole model condenses from.
+    /// They're normally digested into themes and disappear; this makes them addressable.
+    private func handleSelfModelReflections(_ request: HTTPRequest) -> HTTPResponse {
+        guard getConfig()?.features?.selfModel ?? false else {
+            return HTTPResponse(statusCode: 200, body: ["enabled": false])
+        }
+        let limit = Int(request.queryParams["limit"] ?? "400") ?? 400
+        let days = Int(request.queryParams["days"] ?? "400") ?? 400
+        let rows = ReflectionStore.shared.getRecentReflections(limit: limit, days: days)
+
+        let out: [[String: Any]] = rows.map { r in
+            let created = (r["created_at"] as? String) ?? ""
+            return [
+                "id": r["id"] as? Int ?? 0,
+                "source": (r["source"] as? String) ?? "",
+                "date": created.count >= 10 ? String(created.prefix(10)) : created,
+                "summary": (r["content_summary"] as? String) ?? "",
+                "themes": (r["themes"] as? [String]) ?? [],
+                "questions": (r["open_questions"] as? [String]) ?? [],
+                "shifts": (r["mental_model_shifts"] as? [[String: String]]) ?? []
+            ]
+        }
+        return HTTPResponse(statusCode: 200, body: [
+            "enabled": true, "count": out.count, "reflections": out
+        ])
     }
 
     /// Ingest a declared operating model. Either scans ~/.alfred/imports/ for an
