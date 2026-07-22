@@ -188,6 +188,21 @@ class ReflectionStore {
     // MARK: - Queries
 
     /// Get recent reflections, optionally filtered by source
+    /// Has this exact source already been ingested? Used to skip threads already done
+    /// today so a per-run cap throttles work without starving the tail of the list.
+    func hasReflection(source: String, sourceId: String) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT 1 FROM reflections WHERE source = ? AND source_id = ? LIMIT 1", -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, (source as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 2, (sourceId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        let found = sqlite3_step(stmt) == SQLITE_ROW
+        sqlite3_finalize(stmt)
+        return found
+    }
+
     func getRecentReflections(limit: Int = 20, days: Int = 14, source: String? = nil) -> [[String: Any]] {
         dbLock.lock()
         defer { dbLock.unlock() }

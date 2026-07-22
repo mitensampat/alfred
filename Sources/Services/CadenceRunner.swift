@@ -960,12 +960,23 @@ class CadenceRunner {
                     let threads = try reader.fetchThreads(since: msgSince)
                     reader.disconnect()
 
-                    let favoriteThreads = threads.filter { thread in
-                        let name = thread.contactName ?? thread.contactIdentifier
-                        return favorites.isFavorite(name)
-                    }
+                    // Behavioural eligibility, not a hand-kept list: a thread earns
+                    // ingestion by how much you write in it. Favourites stay grandfathered.
+                    let rule = ThreadEligibility.fromConfig()
+                    let today = Self.todayDateString()
+                    // Drop threads already ingested today BEFORE the cap is applied —
+                    // otherwise select() returns the same highest-volume threads every
+                    // run and the tail of the eligible list is never reached.
+                    let verdicts = threads
+                        .filter { !ReflectionStore.shared.hasReflection(source: "conversation", sourceId: "wa_\($0.contactIdentifier)_\(today)") }
+                        .map { t in
+                            rule.evaluate(t, isFavorite: favorites.isFavorite(t.contactName ?? t.contactIdentifier))
+                        }
+                    let chosen = Set(rule.select(verdicts).map { $0.identifier })
+                    let eligibleThreads = threads.filter { chosen.contains($0.contactIdentifier) }
+                    print("📥 Reflection: \(eligibleThreads.count) threads this run (\(verdicts.filter { $0.eligible }.count) eligible, \(threads.count) seen)")
 
-                    for thread in favoriteThreads {
+                    for thread in eligibleThreads {
                         let formatted = Self.formatThreadForReflection(thread, minLength: minLength)
                         guard !formatted.isEmpty else { continue }
 

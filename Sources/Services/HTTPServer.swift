@@ -1212,6 +1212,9 @@ class HTTPServer {
         case ("GET", "/api/self-model/reflections"):
             return handleSelfModelReflections(request)
 
+        case ("GET", "/api/reflection/thread-candidates"):
+            return handleThreadCandidates(request)
+
         case ("GET", let p) where p.hasPrefix("/api/reflect/theme/detail"):
             return handleReflectThemeDetail(request)
 
@@ -11440,6 +11443,59 @@ extension HTTPServer {
             return HTTPResponse(statusCode: 200, body: ["enabled": false])
         }
         return HTTPResponse(statusCode: 200, body: SelfModelService.browse())
+    }
+
+    /// Which threads would feed reflection extraction, and why. Makes the ingestion
+    /// rule inspectable instead of implicit — you can see what Alfred is reading
+    /// before it reads it, and what it's leaving out.
+    private func handleThreadCandidates(_ request: HTTPRequest) -> HTTPResponse {
+        guard let config = getConfig(), config.messaging.whatsapp.enabled else {
+            return HTTPResponse(statusCode: 200, body: ["error": "WhatsApp not enabled"])
+        }
+        let days = Int(request.queryParams["days"] ?? "14") ?? 14
+        let since = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
+
+        do {
+            let reader = WhatsAppReader.shared(dbPath: config.messaging.whatsapp.dbPath)
+            try reader.connect()
+            let threads = try reader.fetchThreads(since: since)
+            reader.disconnect()
+
+            let rule = ThreadEligibility.fromConfig()
+            let favorites = FavoritesService.shared
+            let verdicts = threads.map { t in
+                rule.evaluate(t, isFavorite: favorites.isFavorite(t.contactName ?? t.contactIdentifier))
+            }
+            let selected = Set(rule.select(verdicts).map { $0.identifier })
+
+            let rows: [[String: Any]] = verdicts
+                .sorted { $0.outboundChars > $1.outboundChars }
+                .map { v in [
+                    "name": v.name,
+                    "group": v.isGroup,
+                    "favorite": v.isFavorite,
+                    "outbound": v.outbound,
+                    "inbound": v.inbound,
+                    "outbound_chars": v.outboundChars,
+                    "your_share": Int(v.yourShare * 100),
+                    "eligible": v.eligible,
+                    "ingested": selected.contains(v.identifier),
+                    "reason": v.reason
+                ] }
+
+            return HTTPResponse(statusCode: 200, body: [
+                "days": days,
+                "threads_seen": threads.count,
+                "eligible": verdicts.filter { $0.eligible }.count,
+                "ingested_this_run": selected.count,
+                "thresholds": ["min_outbound": rule.minOutbound,
+                               "min_outbound_chars": rule.minOutboundChars,
+                               "max_per_run": rule.maxPerRun],
+                "threads": rows
+            ])
+        } catch {
+            return HTTPResponse(statusCode: 200, body: ["error": "\(error)"])
+        }
     }
 
     /// Individual reflections — the raw material the whole model condenses from.
