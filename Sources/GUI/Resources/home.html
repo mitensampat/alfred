@@ -3151,7 +3151,7 @@
       .sm-brow-empty{padding:26px 10px;text-align:center;color:var(--ink-tertiary);font-size:13px;font-family:var(--font-display);font-style:italic;}
       .sm-brow-more{width:100%;padding:10px;margin-top:8px;border:1px solid var(--line);border-radius:999px;background:none;color:var(--ink-secondary);font-family:var(--font-body);font-size:12px;font-weight:600;cursor:pointer;}
       .sm-brow-more:hover{border-color:var(--sm-accent);color:var(--sm-accent);}
-      .sm-explore{width:100%;margin-top:14px;padding:11px;border-radius:10px;border:1px dashed var(--sm-accent-line);background:var(--sm-accent-soft);color:var(--sm-accent);font-family:var(--font-body);font-size:12.5px;font-weight:600;cursor:pointer;transition:all .13s;}
+      .sm-explore{width:100%;margin:18px 0 2px;padding:11px;border-radius:10px;border:1px dashed var(--sm-accent-line);background:var(--sm-accent-soft);color:var(--sm-accent);font-family:var(--font-body);font-size:12.5px;font-weight:600;cursor:pointer;transition:all .13s;}
       .sm-explore:hover{background:var(--sm-accent);color:#fff;}
       [data-theme="dark"] .sm-explore:hover{color:#1a1408;}
 
@@ -9909,7 +9909,7 @@
         // Workspaces lead: what you're working on is the way into everything else.
         function renderSelfModel(d, keepScroll){
             document.getElementById('youInner').innerHTML =
-                smHeader(d) + smWorkspaces(d) + smMovement(d) + smBeliefs(d)
+                smHeader(d) + smExplore() + smWorkspaces(d) + smMovement(d) + smBeliefs(d)
                 + smValues(d) + smQuestions(d) + smPatterns(d) + smFoot();
             if (!keepScroll) { const ys = document.getElementById('youScreen'); if (ys) ys.scrollTop = 0; }
         }
@@ -10054,10 +10054,15 @@
                 `<div class="sm-empty">Patterns form as Alfred gathers signal. None yet.</div>`);
         }
 
+        // Sits directly under the header: the way into everything is offered before
+        // the curated registers, not after you've scrolled past them.
+        function smExplore(){
+            return `<button class="sm-explore" onclick="smBrowse()">&#9673; Explore your whole model &rarr;</button>`;
+        }
+
         function smFoot(){
-            return `<button class="sm-explore" onclick="smBrowse()">&#9673; Explore your whole model &rarr;</button>`
-                + `<div class="sm-section" style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px;color:var(--ink-faint);font-size:11px;line-height:1.5;">`
-                + `This view is curated. Explore opens every theme and belief, with the links between them.</div>`;
+            return `<div class="sm-section" style="margin-top:22px;border-top:1px solid var(--line);padding-top:14px;color:var(--ink-faint);font-size:11px;line-height:1.5;">`
+                + `This view is curated &mdash; three at a time from each register. Explore opens every theme, decision and belief, with the links between them.</div>`;
         }
 
         // ---- theme drill-in (reuses /api/reflect/theme/detail) ----
