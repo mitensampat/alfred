@@ -2330,7 +2330,7 @@
         }
 
         /* ══════════════════════════════════════
-           REFLECTIONS — Theme Deep-Dive
+           WORKSPACES — Theme Deep-Dive
            ══════════════════════════════════════ */
         .rf-section-title {
             font-size: 11px; font-weight: 600; color: var(--ink-tertiary);
@@ -3529,10 +3529,10 @@
                     <div class="zen-lede">Your memory</div>
                     <div class="zen-lede-sub" id="dataLede">What you're thinking about, what Alfred has come to understand, and the durable picture of you.</div>
 
-                    <!-- REFLECTIONS -->
+                    <!-- WORKSPACES (themes) — reflections are the raw input beneath these -->
                     <div class="panel-section zen-section">
                         <div class="panel-section-label zen-header">
-                            <span>REFLECTIONS</span>
+                            <span>WORKSPACES</span>
                             <button class="zen-link" onclick="showReflectionsPage(); closeSettingsPanel();">Open →</button>
                         </div>
                         <div class="zen-card">
@@ -6113,7 +6113,7 @@
             if (metrics.meetingsToday > 0) chipItems.push({label: 'Calendar', query: "What's on my calendar today?"});
             if (metrics.overdueCount > 0) chipItems.push({label: 'Overdue', query: 'Show me overdue commitments'});
             else chipItems.push({label: 'Commitments', query: 'How are my commitments looking?'});
-            chipItems.push({label: 'Reflections', action: function() { showReflectionsPage(); }});
+            chipItems.push({label: 'Workspaces', action: function() { showReflectionsPage(); }});
             chipItems.push({label: 'Focus', query: 'What should I focus on?'});
             if (!metrics.meetingsToday) chipItems.unshift({label: 'Calendar', query: "What's on my calendar today?"});
 
@@ -8835,7 +8835,7 @@
                 if (summaryEl) {
                     const themeCount = (data.themes || []).length;
                     const questionCount = (data.open_questions || []).length;
-                    summaryEl.innerHTML = `<strong>${themeCount}</strong> active themes &middot; <strong>${questionCount}</strong> open questions`;
+                    summaryEl.innerHTML = `<strong>${themeCount}</strong> active workspaces &middot; <strong>${questionCount}</strong> open questions`;
                 }
             } catch (e) {
                 themesEl.innerHTML = '<div style="font-size:12px;color:var(--danger);padding:8px;">Failed to load themes</div>';
@@ -8854,7 +8854,7 @@
                 if (summaryEl) {
                     const existing = summaryEl.innerHTML;
                     if (existing.includes('Loading')) {
-                        summaryEl.innerHTML = `<strong>${themes}</strong> active themes &middot; <strong>${total}</strong> reflections`;
+                        summaryEl.innerHTML = `<strong>${themes}</strong> active workspaces &middot; <strong>${total}</strong> inputs`;
                     }
                 }
             } catch (e) {
@@ -8872,7 +8872,7 @@
 
         async function showReflectionsPage() {
             const loadingHtml = '<div id="reflections-page" style="padding:20px;color:var(--ink-secondary);">Loading reflections...</div>';
-            showFormPage('Reflections', loadingHtml, null, true);
+            showFormPage('Workspaces', loadingHtml, null, true);
             try {
                 const [themesResp, statsResp] = await Promise.all([
                     authFetch('/api/reflect/themes?days=30&limit=20'),
@@ -8931,7 +8931,7 @@
             const weekOf = new Date(now.getTime() - now.getDay() * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
             let html = `<div class="rfh-hd">
-                <div class="rfh-title">Reflections</div>
+                <div class="rfh-title">Workspaces</div>
                 <div class="rfh-sub">Week of ${weekOf} · ${weekCount} input${weekCount === 1 ? '' : 's'}${srcPhrase}</div>
             </div>`;
 
@@ -8939,7 +8939,7 @@
                 ${rfhTab('now', 'Now')}
                 ${rfhTab('questions', 'Questions', questions.length)}
                 ${rfhTab('resolved', 'Resolved', resolved.length)}
-                ${rfhTab('all', 'All threads', allCount)}
+                ${rfhTab('all', 'All workspaces', allCount)}
             </div><div id="rfh-tabbody"></div>`;
 
             container.innerHTML = html;
@@ -9357,7 +9357,7 @@
                 const currentIdx = Math.max(0, L2_STATES.indexOf(state));
                 const nextState = currentIdx < L2_STATES.length - 1 ? L2_STATES[currentIdx + 1] : null;
 
-                let h = `<div class="l2-back" onclick="showReflectionsPage()">← Reflections</div>`;
+                let h = `<div class="l2-back" onclick="showReflectionsPage()">← Workspaces</div>`;
 
                 // Hero
                 h += `<div class="l2-hero">
