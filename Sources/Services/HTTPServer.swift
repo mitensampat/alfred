@@ -1200,6 +1200,15 @@ class HTTPServer {
         case ("POST", "/api/self-model/seed"):
             return handleSelfModelSeed(request)
 
+        case ("POST", "/api/self-model/facet/create"):
+            return handleFacetCreate(request)
+
+        case ("POST", "/api/self-model/facet/rename"):
+            return handleFacetRename(request)
+
+        case ("POST", "/api/self-model/facet/delete"):
+            return handleFacetDelete(request)
+
         case ("POST", "/api/self-model/graduate"):
             return handleGraduate(request)
 
@@ -11452,6 +11461,64 @@ extension HTTPServer {
             return HTTPResponse(statusCode: 200, body: ["enabled": false])
         }
         return HTTPResponse(statusCode: 200, body: SelfModelService.browse())
+    }
+
+    /// Create a workspace, belief or value by hand.
+    ///
+    /// Marked origin='manual' and given a `manual_` id, which keeps two promises:
+    /// it can never be mistaken for something Alfred observed, and materialize()
+    /// will never generate that id, so the facet survives every recomputation.
+    private func handleFacetCreate(_ request: HTTPRequest) -> HTTPResponse {
+        guard getConfig()?.features?.selfModel ?? false else {
+            return HTTPResponse(statusCode: 200, body: ["enabled": false])
+        }
+        let kind = request.queryParams["kind"] ?? ""
+        let statement = (request.queryParams["statement"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ["theme", "belief", "value"].contains(kind) else {
+            return HTTPResponse(statusCode: 400, body: ["error": "kind must be theme, belief or value"])
+        }
+        guard statement.count >= 3 else {
+            return HTTPResponse(statusCode: 400, body: ["error": "statement too short"])
+        }
+        let now = ISO8601DateFormatter().string(from: Date())
+        let id = "manual_" + SelfModelSynthesizer.stableId(kind, statement)
+        var meta = ["created_by": "user", "created_at": now]
+        if kind == "theme" {
+            meta["state"] = request.queryParams["state"] ?? "researching"
+            meta["temperature"] = "warming"
+            meta["inputs_this_week"] = "0"
+        }
+        let ok = SelfModelStore.shared.upsertFacet(
+            id: id, kind: kind, statement: statement,
+            confidence: 1.0, status: "active", firstSeen: now, lastSeen: now,
+            trajectory: [], evidence: [], metadata: meta, origin: "manual")
+        return HTTPResponse(statusCode: 200, body: ["ok": ok, "id": id, "kind": kind])
+    }
+
+    /// Rename any facet. Emergent ones keep their synthesized text underneath.
+    private func handleFacetRename(_ request: HTTPRequest) -> HTTPResponse {
+        guard let id = request.queryParams["id"], !id.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "id required"])
+        }
+        let statement = (request.queryParams["statement"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let ok = SelfModelStore.shared.setUserStatement(id: id, statement: statement.isEmpty ? nil : statement)
+        return HTTPResponse(statusCode: 200, body: ["ok": ok, "cleared": statement.isEmpty])
+    }
+
+    /// Remove a facet. Manual ones are deleted outright; emergent ones are dismissed,
+    /// because deleting one would only invite materialize() to recreate it.
+    private func handleFacetDelete(_ request: HTTPRequest) -> HTTPResponse {
+        guard let id = request.queryParams["id"], !id.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "id required"])
+        }
+        let store = SelfModelStore.shared
+        let facet = store.getFacet(id: id)
+        let origin = (facet?["origin"] as? String) ?? "emergent"
+        if origin == "manual" {
+            return HTTPResponse(statusCode: 200, body: ["ok": store.deleteFacet(id: id), "mode": "deleted"])
+        }
+        let ok = store.setVerdict(id: id, verdict: "dismissed")
+        return HTTPResponse(statusCode: 200, body: ["ok": ok, "mode": "dismissed"])
     }
 
     /// Look for decisions that evidence each unbacked declared belief. Produces

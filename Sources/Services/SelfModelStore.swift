@@ -139,6 +139,15 @@ class SelfModelStore {
                 print("✅ SelfModelStore: added `origin` column")
             }
         }
+        // A user-supplied rename. Kept separate from `statement` because materialize()
+        // rebuilds emergent facets from source on every run — an edit written into
+        // `statement` would be silently reverted the next time it ran. Same reason
+        // user_verdict is preserved rather than recomputed.
+        if !columnExists(table: "self_facet", column: "user_statement") {
+            if sqlite3_exec(db, "ALTER TABLE self_facet ADD COLUMN user_statement TEXT", nil, nil, nil) == SQLITE_OK {
+                print("✅ SelfModelStore: added `user_statement` column")
+            }
+        }
 
         print("✅ SelfModelStore database initialized")
     }
@@ -153,6 +162,27 @@ class SelfModelStore {
         }
         sqlite3_finalize(stmt)
         return found
+    }
+
+    // MARK: - User edits
+
+    /// Rename a facet. Stored separately from `statement` so materialize() can keep
+    /// rebuilding the synthesized text underneath without clobbering the edit.
+    /// Passing nil clears the rename and the synthesized text shows through again.
+    @discardableResult
+    func setUserStatement(id: String, statement: String?) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "UPDATE self_facet SET user_statement = ? WHERE id = ?", -1, &stmt, nil) == SQLITE_OK else { return false }
+        if let s = statement, !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            sqlite3_bind_text(stmt, 1, (s as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        } else { sqlite3_bind_null(stmt, 1) }
+        sqlite3_bind_text(stmt, 2, (id as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        let ok = sqlite3_step(stmt) == SQLITE_DONE
+        sqlite3_finalize(stmt)
+        return ok
     }
 
     // MARK: - Clear / Reset
@@ -189,14 +219,17 @@ class SelfModelStore {
         defer { dbLock.unlock() }
         guard let db = db else { return false }
 
-        // Preserve any existing verdict — REPLACE would otherwise erase it.
+        // Preserve verdict AND any user rename — REPLACE would otherwise erase both,
+        // so every materialize() would silently undo the user's edits.
         var existingVerdict: String? = nil
-        let verdictSql = "SELECT user_verdict FROM self_facet WHERE id = ?"
+        var existingUserStatement: String? = nil
+        let verdictSql = "SELECT user_verdict, user_statement FROM self_facet WHERE id = ?"
         var vStmt: OpaquePointer?
         if sqlite3_prepare_v2(db, verdictSql, -1, &vStmt, nil) == SQLITE_OK {
             sqlite3_bind_text(vStmt, 1, (id as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
             if sqlite3_step(vStmt) == SQLITE_ROW {
                 existingVerdict = columnText(vStmt, 0)
+                existingUserStatement = columnText(vStmt, 1)
             }
         }
         sqlite3_finalize(vStmt)
@@ -207,8 +240,8 @@ class SelfModelStore {
 
         let sql = """
         INSERT OR REPLACE INTO self_facet
-            (id, kind, statement, confidence, status, first_seen, last_seen, trajectory_json, evidence_json, user_verdict, metadata_json, origin)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (id, kind, statement, confidence, status, first_seen, last_seen, trajectory_json, evidence_json, user_verdict, metadata_json, origin, user_statement)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
 
         var stmt: OpaquePointer?
@@ -240,6 +273,9 @@ class SelfModelStore {
         }
         sqlite3_bind_text(stmt, 11, (metadataJson as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         sqlite3_bind_text(stmt, 12, (origin as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        if let us = existingUserStatement {
+            sqlite3_bind_text(stmt, 13, (us as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        } else { sqlite3_bind_null(stmt, 13) }
 
         let ok = sqlite3_step(stmt) == SQLITE_DONE
         sqlite3_finalize(stmt)
@@ -260,7 +296,7 @@ class SelfModelStore {
 
         var sql = """
         SELECT id, kind, statement, confidence, status, first_seen, last_seen,
-               trajectory_json, evidence_json, user_verdict, metadata_json, origin
+               trajectory_json, evidence_json, user_verdict, metadata_json, origin, user_statement
         FROM self_facet
         WHERE 1 = 1
         """
@@ -295,7 +331,7 @@ class SelfModelStore {
 
         let sql = """
         SELECT id, kind, statement, confidence, status, first_seen, last_seen,
-               trajectory_json, evidence_json, user_verdict, metadata_json, origin
+               trajectory_json, evidence_json, user_verdict, metadata_json, origin, user_statement
         FROM self_facet
         WHERE id = ?
         """
@@ -702,18 +738,35 @@ class SelfModelStore {
         return ok
     }
 
-    /// Permanently delete a facet.
+    /// Permanently delete a facet and every edge touching it.
+    ///
+    /// Only meaningful for manual facets — an emergent one would be recreated by the
+    /// next materialize(), so those are dismissed via user_verdict instead. Edges are
+    /// cleared here too; deleting only the row left lineage and support pointing at
+    /// something that no longer exists.
     func deleteFacet(id: String) -> Bool {
         dbLock.lock()
         defer { dbLock.unlock() }
         guard let db = db else { return false }
 
-        let sql = "DELETE FROM self_facet WHERE id = ?"
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
-        sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-        let ok = sqlite3_step(stmt) == SQLITE_DONE
-        sqlite3_finalize(stmt)
+        // (sql, number of ? placeholders)
+        let statements: [(String, Int)] = [
+            ("DELETE FROM self_facet WHERE id = ?", 1),
+            ("DELETE FROM facet_lineage WHERE facet_id = ? OR theme_id = ?", 2),
+            ("DELETE FROM facet_support WHERE support_id = ? OR belief_id = ?", 2),
+            ("DELETE FROM facet_link WHERE lens_id = ? OR belief_id = ?", 2)
+        ]
+        var ok = false
+        for (sql, binds) in statements {
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { continue }
+            for i in 1...binds {
+                sqlite3_bind_text(stmt, Int32(i), (id as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            }
+            let done = sqlite3_step(stmt) == SQLITE_DONE
+            if sql.contains("self_facet") { ok = done }
+            sqlite3_finalize(stmt)
+        }
         return ok
     }
 
@@ -761,6 +814,11 @@ class SelfModelStore {
         }
         row["metadata"] = (jsonDecode(columnText(stmt, 10)) as? [String: String]) ?? [:]
         row["origin"] = columnText(stmt, 11) ?? "emergent"
+        // A user rename wins over the synthesized text everywhere it's read.
+        if let us = columnText(stmt, 12), !us.isEmpty {
+            row["statement"] = us
+            row["renamed"] = true
+        }
         return row
     }
 

@@ -45,7 +45,9 @@ enum SelfModelService {
                 "temperature": meta["temperature"] ?? "cooling",
                 "inputs_this_week": Int(meta["inputs_this_week"] ?? "0") ?? 0,
                 "edge": meta["edge"] ?? "",
-                "verdict": verdict(f)
+                "verdict": verdict(f),
+                "origin": f["origin"] as? String ?? "emergent",
+                "renamed": (f["renamed"] as? Bool) ?? false
             ]
         }.sorted {
             let a = tempRank[$0["temperature"] as? String ?? ""] ?? 9
@@ -190,7 +192,8 @@ enum SelfModelService {
             .map { f in
                 ["id": f["id"] as? String ?? "",
                  "statement": f["statement"] as? String ?? "",
-                 "origin": f["origin"] as? String ?? "declared"]
+                 "origin": f["origin"] as? String ?? "declared",
+                 "renamed": (f["renamed"] as? Bool) ?? false]
             }
 
         return [

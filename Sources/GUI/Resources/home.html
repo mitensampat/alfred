@@ -3139,6 +3139,24 @@
       .sm-rev-done{font-family:var(--font-mono);font-size:11px;padding:9px 13px;color:var(--ink-tertiary);}
       .sm-rev-done.kept{color:var(--sm-green);}
       .sm-grounded{font-family:var(--font-mono);font-size:10px;color:var(--sm-green);}
+      /* ---- user CRUD ---- */
+      .sm-add{margin-left:auto;font-family:var(--font-body);font-size:11px;font-weight:600;padding:4px 11px;
+              border-radius:999px;border:1px dashed var(--line-strong);background:none;color:var(--ink-tertiary);cursor:pointer;transition:all .13s;}
+      .sm-add:hover{border-color:var(--sm-accent);color:var(--sm-accent);border-style:solid;}
+      .sm-addbox{display:flex;gap:7px;margin-bottom:9px;align-items:center;flex-wrap:wrap;}
+      .sm-addbox input{flex:1;min-width:180px;font-family:var(--font-display);font-size:14.5px;padding:9px 13px;
+                       border:1px solid var(--sm-accent-line);border-radius:8px;background:var(--surface);color:var(--ink);}
+      .sm-addbox input:focus{outline:none;border-color:var(--sm-accent);}
+      .sm-addbox button{font-family:var(--font-body);font-size:12px;font-weight:600;padding:8px 15px;border-radius:999px;cursor:pointer;border:1px solid var(--line-strong);background:none;color:var(--ink-secondary);}
+      .sm-addbox button.go{background:var(--sm-accent);border-color:var(--sm-accent);color:#fff;}
+      [data-theme="dark"] .sm-addbox button.go{color:#1a1408;}
+      .sm-manual{font-family:var(--font-mono);font-size:8.5px;text-transform:uppercase;letter-spacing:.06em;
+                 padding:2px 6px;border-radius:3px;background:var(--surface-sunken);color:var(--ink-tertiary);}
+      .sm-renamed{font-family:var(--font-mono);font-size:9px;color:var(--ink-faint);}
+      .sm-rowacts{display:flex;gap:6px;margin-left:auto;}
+      .sm-rowact{background:none;border:none;padding:2px 5px;font-size:11px;color:var(--ink-faint);cursor:pointer;font-family:var(--font-body);}
+      .sm-rowact:hover{color:var(--sm-accent);}
+      .sm-rowact.del:hover{color:var(--sm-hot);}
 
       /* .sm-screen is a flex item, and flex items default to min-width:auto — so
          non-wrapping content (the mode row) GREW the container instead of overflowing
@@ -9963,9 +9981,12 @@
 
         /// Build a register that shows SM_PER_PAGE items with a compact pager.
         /// renderItem receives (item, absoluteIndex) so handlers can address the full list.
-        function smPaged(key, title, hint, items, renderItem, emptyHtml){
+        function smPaged(key, title, hint, items, renderItem, emptyHtml, addKind){
             const total = items.length;
-            if (!total) return emptyHtml ? smSection(title, hint, emptyHtml) : '';
+            const addBtn = addKind ? `<button class="sm-add" onclick="smShowAdd('${key}')">+ Add</button>` : '';
+            const addBox = (addKind && _smAdd === key) ? smAddBox(key, addKind) : '';
+            if (!total) return (emptyHtml || addBox)
+                ? smSection(title, hint, addBox + (emptyHtml || ''), addBtn) : '';
             const pages = Math.ceil(total / SM_PER_PAGE);
             const p = Math.min(_smPage[key] || 0, pages - 1);
             const start = p * SM_PER_PAGE;
@@ -9978,7 +9999,77 @@
                   + `<button type="button" class="sm-pbtn" ${p >= pages - 1 ? 'disabled' : ''} onclick="smPageSet('${key}',1,${total})" aria-label="Next">&rsaquo;</button>`
                   + `</div>`
                 : '';
-            return smSection(title, hint, inner, pager);
+            return smSection(title, hint, addBox + inner, pager + addBtn);
+        }
+
+        // ── User-entered facets ──
+        // Anything typed here is origin='manual' and shows a MANUAL tag: it must never
+        // read as something Alfred observed. That distinction is the whole point of the
+        // provenance work, so CRUD is not allowed to blur it.
+        let _smAdd = null;
+        const SM_ADD_PLACEHOLDER = {
+            workspaces: 'Name a workspace you\u2019re working in\u2026',
+            beliefs: 'State a belief you hold\u2026',
+            values: 'State something non-negotiable\u2026'
+        };
+        function smShowAdd(key){
+            _smAdd = (_smAdd === key) ? null : key;
+            renderSelfModel(_smData, true);
+            const el = document.getElementById('smAddInput');
+            if (el) el.focus();
+        }
+        function smCancelAdd(){ _smAdd = null; renderSelfModel(_smData, true); }
+        function smAddBox(key, kind){
+            return `<div class="sm-addbox">`
+                + `<input id="smAddInput" type="text" placeholder="${SM_ADD_PLACEHOLDER[key] || 'Add\u2026'}" `
+                + `onkeydown="if(event.key==='Enter'){smCreateFacet('${kind}')}else if(event.key==='Escape'){smCancelAdd()}">`
+                + `<button class="go" onclick="smCreateFacet('${kind}')">Add</button>`
+                + `<button onclick="smCancelAdd()">Cancel</button></div>`;
+        }
+        async function smCreateFacet(kind){
+            const el = document.getElementById('smAddInput');
+            const text = (el && el.value || '').trim();
+            if (text.length < 3) { if (el) el.focus(); return; }
+            if (el) { el.disabled = true; el.value = 'Adding\u2026'; }
+            try {
+                await authFetch(`/api/self-model/facet/create?kind=${kind}&statement=${encodeURIComponent(text)}`, { method: 'POST' });
+                _smAdd = null;
+                await smRefreshModel();
+            } catch (e) { if (el) { el.disabled = false; el.value = text; } }
+        }
+        async function smRenameFacet(id, current){
+            const next = prompt('Rename \u2014 leave blank to restore what Alfred wrote:', current || '');
+            if (next === null) return;
+            await authFetch(`/api/self-model/facet/rename?id=${encodeURIComponent(id)}&statement=${encodeURIComponent(next.trim())}`, { method: 'POST' });
+            await smRefreshModel();
+        }
+        async function smDeleteFacet(id, isManual, label){
+            const msg = isManual
+                ? `Delete \u201c${(label||'').slice(0,60)}\u201d?`
+                : `Alfred found this, so deleting it would only bring it back next time it syncs. Dismiss it instead?`;
+            if (!confirm(msg)) return;
+            await authFetch(`/api/self-model/facet/delete?id=${encodeURIComponent(id)}`, { method: 'POST' });
+            await smRefreshModel();
+        }
+        /// Re-pull the model and re-render without losing scroll position.
+        async function smRefreshModel(){
+            const ys = document.getElementById('youScreen');
+            const keep = ys ? ys.scrollTop : 0;
+            try {
+                const res = await authFetch('/api/self-model');
+                _smData = await res.json();
+                _smBrowse.data = null;   // browser payload is now stale
+            } catch (e) { /* keep showing what we have */ }
+            renderSelfModel(_smData, true);
+            if (ys) ys.scrollTop = keep;
+        }
+        /// Rename / remove pair shown on a facet row.
+        function smRowActs(id, origin, label){
+            const manual = origin === 'manual';
+            return `<span class="sm-rowacts">`
+                + `<button class="sm-rowact" onclick="event.stopPropagation();smRenameFacet('${id}', this.closest('[data-stmt]')?.dataset.stmt || '')">Rename</button>`
+                + `<button class="sm-rowact del" onclick="event.stopPropagation();smDeleteFacet('${id}', ${manual}, '${(label||'').replace(/'/g,"\\'").slice(0,50)}')">${manual ? 'Delete' : 'Dismiss'}</button>`
+                + `</span>`;
         }
         function smStat(n, l){ return `<div class="sm-stat"><span class="sm-num">${n||0}</span><span class="sm-lbl">${l}</span></div>`; }
 
@@ -10013,24 +10104,31 @@
                 d.workspaces || [],
                 (w, i) => {
                     const inputs = w.inputs_this_week || 0;
-                    return `<div class="sm-obj" onclick="smOpenTheme(${i})">`
+                    return `<div class="sm-obj" data-stmt="${escapeHtml(w.theme)}" onclick="smOpenTheme(${i})">`
                         + `<div class="sm-obj-top"><span class="sm-name">${escapeHtml(w.theme)}</span><span class="sm-chev">&rsaquo;</span></div>`
                         + `<div class="sm-meta"><span class="sm-chip state">${escapeHtml(w.state||'')}</span>`
                         + `<span class="sm-chip ${smTempClass(w.temperature)}"><span class="sm-cdot"></span>${smTempLabel(w.temperature)}</span>`
                         + (inputs ? `<span class="sm-chip inflow"><span class="sm-cdot"></span>${inputs} input${inputs>1?'s':''} this week</span>` : '')
+                        + (w.origin === 'manual' ? `<span class="sm-manual">manual</span>` : '')
+                        + smRowActs(w.id, w.origin, w.theme)
                         + `</div></div>`;
                 },
-                `<div class="sm-empty">No active themes yet. As Alfred ingests what you read and discuss, the topics you&rsquo;re working on appear here.</div>`);
+                `<div class="sm-empty">Nothing here yet. Workspaces appear as Alfred reads what you discuss &mdash; or add one.</div>`,
+                'theme');
         }
 
         // Declared values — only rendered once the user has seeded them. Never inferred.
         function smValues(d){
             return smPaged('values', 'Values', 'what you hold as non-negotiable',
                 d.values || [],
-                v => `<div class="sm-card"><div class="sm-kind-row"><span class="sm-kdot belief"></span>`
-                    + `<span class="sm-klabel">Value</span><span class="sm-origin declared" style="margin-left:auto">declared</span></div>`
+                v => `<div class="sm-card" data-stmt="${escapeHtml(v.statement||'')}"><div class="sm-kind-row"><span class="sm-kdot belief"></span>`
+                    + `<span class="sm-klabel">Value</span>`
+                    + `<span class="sm-origin ${v.origin === 'manual' ? 'emergent' : 'declared'}" style="margin-left:auto">${v.origin === 'manual' ? 'manual' : 'declared'}</span></div>`
                     + `<p class="sm-statement">${escapeHtml(v.statement || '')}</p>`
-                    + smVerbRow(v.id, v.confirmed) + `</div>`);
+                    + `<div class="sm-verb-row">${smRowActs(v.id, v.origin, v.statement)}</div>`
+                    + smVerbRow(v.id, v.confirmed) + `</div>`,
+                `<div class="sm-empty">No values yet. Seed them with your operating model, or add one.</div>`,
+                'value');
         }
 
         function smQuestions(d){
@@ -10046,7 +10144,7 @@
         function smBeliefs(d){
             return smPaged('beliefs', 'Beliefs', 'what you hold &mdash; and how it shifted',
                 (d.lenses || {}).belief_shifts || [],
-                s => `<div class="sm-card">` + smBeliefEdge(s)
+                s => `<div class="sm-card" data-stmt="${escapeHtml(s.to||'')}">` + smBeliefEdge(s)
                     + `<div class="sm-kind-row"><span class="sm-kdot belief"></span>`
                     + `<span class="sm-klabel">Belief${s.steps>1?` &middot; ${s.steps} shifts`:''}</span>`
                     + (s.aspiration ? `<span class="sm-origin aspiration" style="margin-left:6px">aspiration</span>`
@@ -10058,8 +10156,10 @@
                           + `<div class="sm-traj-step now"><span class="stamp">Now</span><div class="val">${escapeHtml(s.to||'')}</div></div></div>`
                         : `<p class="sm-statement">${escapeHtml(s.to||'')}</p>`)
                     + smLinkChips('Lenses', s.lenses, (lid) => `smUnlink('${lid}','${s.id}')`)
+                    + `<div class="sm-verb-row">${smRowActs(s.id, s.origin, s.to)}</div>`
                     + smVerbRow(s.id, s.confirmed) + `</div>`,
-                `<div class="sm-empty">Beliefs form as Alfred gathers signal. None yet.</div>`);
+                `<div class="sm-empty">Beliefs form as Alfred gathers signal. None yet &mdash; or add one.</div>`,
+                'belief');
         }
 
         function smPatterns(d){
