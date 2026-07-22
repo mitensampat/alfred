@@ -360,7 +360,8 @@ enum SelfModelService {
                 "lenses": patternFacets.count,
                 "values": values.count,
                 "lineage": store.allLineage().count,
-                "proposals": store.getProposals(status: "pending").count
+                "proposals": store.getProposals(status: "pending").count,
+                "reflections": (ReflectionStore.shared.getStats()["total_reflections"] as? Int) ?? 0
             ],
             "themes": themes,
             "decisions": decisions,
