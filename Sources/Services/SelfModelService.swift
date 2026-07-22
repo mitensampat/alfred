@@ -101,6 +101,12 @@ enum SelfModelService {
                 return ["id": tid, "theme": t["statement"] as? String ?? ""]
             }
             let origin = f["origin"] as? String ?? "emergent"
+            // Only OBSERVED behaviour can retire an aspiration. Attaching a declared
+            // instruction to a declared belief proves nothing — declarations must not
+            // be able to validate each other.
+            let emergentLensCount = (lensIdsByBelief[id] ?? []).filter {
+                ((patternById[$0]?["origin"] as? String) ?? "emergent") != "declared"
+            }.count
             return [
                 "id": id,
                 "from": traj.first?["from"] ?? "",
@@ -111,8 +117,7 @@ enum SelfModelService {
                 "confirmed": verdict(f) == "confirmed",
                 "lenses": attached,
                 "origin": origin,
-                // A declared belief with no supporting lens is an aspiration, not a belief.
-                "aspiration": origin == "declared" && attached.isEmpty,
+                "aspiration": origin == "declared" && emergentLensCount == 0,
                 "themes": lineage
             ]
         }
@@ -266,6 +271,10 @@ enum SelfModelService {
                 return ["id": tid, "theme": t["statement"] as? String ?? ""]
             }
             let origin = f["origin"] as? String ?? "emergent"
+            // Only observed behaviour retires an aspiration (see synthesize()).
+            let emergentLensCount = (lensIdsByBelief[id] ?? []).filter {
+                ((patternById[$0]?["origin"] as? String) ?? "emergent") != "declared"
+            }.count
             return [
                 "id": id,
                 "statement": f["statement"] as? String ?? "",
@@ -273,7 +282,7 @@ enum SelfModelService {
                 "steps": traj.count,
                 "date": f["last_seen"] as? String ?? "",
                 "origin": origin,
-                "aspiration": origin == "declared" && lenses.isEmpty,
+                "aspiration": origin == "declared" && emergentLensCount == 0,
                 "confirmed": verdict(f) == "confirmed",
                 "lenses": lenses,
                 "themes": lineage
