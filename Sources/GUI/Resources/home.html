@@ -3533,7 +3533,7 @@
                     <div class="panel-section zen-section">
                         <div class="panel-section-label zen-header">
                             <span>WORKSPACES</span>
-                            <button class="zen-link" onclick="showReflectionsPage(); closeSettingsPanel();">Open →</button>
+                            <button class="zen-link" onclick="closeSettingsPanel(); openWorkspaces();">Open →</button>
                         </div>
                         <div class="zen-card">
                             <div id="reflectionSummaryStats" class="zen-summary">Loading…</div>
@@ -4123,8 +4123,8 @@
 
             if (cmd.name === '/settings') { openSettingsPanel(); return; }
             if (cmd.name === '/skills') { openSettingsPanel(); showSettingsTab('library'); return; }
-            if (cmd.name === '/reflect') { showReflectionsPage(); return; }
-            if (cmd.name === '/reflections') { showReflectionsPage(); return; }
+            if (cmd.name === '/reflect') { openWorkspaces(); return; }
+            if (cmd.name === '/reflections') { openWorkspaces(); return; }
             if (cmd.hasParams) {
                 showParamForm(cmd.name);
             } else {
@@ -6113,7 +6113,7 @@
             if (metrics.meetingsToday > 0) chipItems.push({label: 'Calendar', query: "What's on my calendar today?"});
             if (metrics.overdueCount > 0) chipItems.push({label: 'Overdue', query: 'Show me overdue commitments'});
             else chipItems.push({label: 'Commitments', query: 'How are my commitments looking?'});
-            chipItems.push({label: 'Workspaces', action: function() { showReflectionsPage(); }});
+            chipItems.push({label: 'Workspaces', action: function() { openWorkspaces(); }});
             chipItems.push({label: 'Focus', query: 'What should I focus on?'});
             if (!metrics.meetingsToday) chipItems.unshift({label: 'Calendar', query: "What's on my calendar today?"});
 
@@ -8820,7 +8820,7 @@
                     themesEl.innerHTML = data.themes.slice(0, 5).map(t => {
                         const state = t.state || t.classification || 'researching';
                         const name = t.theme || t.name;
-                        return `<div class="zen-theme-row" onclick="showThemeDeepDive('${escapeHtml(name).replace(/'/g, "\\'")}'); closeSettingsPanel();">
+                        return `<div class="zen-theme-row" onclick="closeSettingsPanel(); openWorkspace('${escapeHtml(name).replace(/'/g, "\\'")}');">
                             <span class="zen-theme-dot rf-theme-dot ${state}"></span>
                             <span class="zen-theme-name">${escapeHtml(name)}</span>
                             <span class="zen-theme-state">${state}</span>
@@ -9904,6 +9904,23 @@
                 const data = await res.json();
                 if (data && data.enabled){ _smData = data; renderSelfModel(data); _smLoaded = true; }
             } catch (e) { console.log('[self-model] load failed:', e); }
+        }
+
+        /// The single door to a workspace. Everything that used to open the old
+        /// standalone page — the Now chip, /reflect, the settings panel — lands here
+        /// instead, so there is one place a theme lives.
+        function openWorkspaces(){
+            showSurface('you');
+            const ys = document.getElementById('youScreen');
+            if (ys) ys.scrollTop = 0;
+        }
+
+        /// Open one workspace. Also single-doored: the settings list used to open a
+        /// second, separate theme detail (showThemeDeepDive); it now lands on the same
+        /// detail the You surface uses.
+        function openWorkspace(name){
+            showSurface('you');
+            smOpenThemeNamed(name, 'you');
         }
 
         // Workspaces lead: what you're working on is the way into everything else.
