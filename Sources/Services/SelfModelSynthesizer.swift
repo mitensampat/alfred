@@ -116,10 +116,66 @@ enum SelfModelSynthesizer {
                 trajectory: chain, evidence: [], metadata: ["shift_count": String(chain.count)])
         }
 
-        // ---- Belief lineage ----
+        // ---- Decisions ----
+        materializeDecisions()
+
+        // ---- Lineage ----
         backfillLineage()
 
         return facets.counts()
+    }
+
+    /// Promote extracted decisions into first-class facets.
+    ///
+    /// A decision is a conclusion reached inside a workspace — dated, final, and the
+    /// closest thing in the model to a record of judgement. They already exist in
+    /// `decisions_json`; this only promotes them, no new extraction.
+    @discardableResult
+    static func materializeDecisions() -> Int {
+        let store = SelfModelStore.shared
+        let reflections = ReflectionStore.shared.getRecentReflections(limit: 2000, days: 400)
+        let themeIds = Set(store.getFacets(kind: "theme", includeArchived: true).compactMap { $0["id"] as? String })
+
+        var seen = Set<String>()
+        var pending: [(id: String, text: String, date: String, themes: [String])] = []
+
+        for r in reflections {
+            guard let decisions = r["decisions"] as? [String], !decisions.isEmpty else { continue }
+            let created = (r["created_at"] as? String) ?? ""
+            let date = created.count >= 10 ? String(created.prefix(10)) : created
+            let themes = (r["themes"] as? [String]) ?? []
+
+            for raw in decisions {
+                let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                // One-liners with no content aren't judgements. Everything else stands —
+                // the extracted set is clean (1 of 1,138 under this bar).
+                guard text.count >= 25 else { continue }
+                let id = stableId("decision", text)
+                guard !seen.contains(id) else { continue }
+                seen.insert(id)
+                pending.append((id: id, text: text, date: date, themes: themes))
+            }
+        }
+        guard !pending.isEmpty else { return 0 }
+
+        store.beginBulk()
+        for d in pending {
+            _ = store.upsertFacet(
+                id: d.id, kind: "decision", statement: d.text,
+                confidence: 1.0,                       // a decision happened; it isn't inferred
+                status: "active", firstSeen: d.date, lastSeen: d.date,
+                trajectory: [],
+                evidence: [["source_type": "reflection", "snippet": d.text, "ts": d.date]],
+                metadata: ["decided_on": d.date],
+                origin: "emergent"
+            )
+            for t in d.themes {
+                let tid = stableId("theme", t)
+                if themeIds.contains(tid) { _ = store.linkFacetToTheme(facetId: d.id, themeId: tid) }
+            }
+        }
+        store.endBulk()
+        return pending.count
     }
 
     /// Link each belief back to the theme(s) it crystallized from.
@@ -149,7 +205,7 @@ enum SelfModelSynthesizer {
                 for theme in themes {
                     let themeId = stableId("theme", theme)
                     guard themeIds.contains(themeId) else { continue }
-                    _ = store.linkBeliefToTheme(beliefId: beliefId, themeId: themeId)
+                    _ = store.linkFacetToTheme(facetId: beliefId, themeId: themeId)
                 }
             }
         }

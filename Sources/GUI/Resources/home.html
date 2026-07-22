@@ -3106,6 +3106,7 @@
       .sm-brow-name{flex:1;min-width:0;font-family:var(--font-display);font-size:14.5px;line-height:1.35;color:var(--ink);}
       .sm-brow-meta{display:flex;align-items:center;gap:7px;margin-top:7px;flex-wrap:wrap;}
       .sm-yield{font-family:var(--font-mono);font-size:10px;color:var(--sm-accent);white-space:nowrap;}
+      .sm-decdate{font-family:var(--font-mono);font-size:10px;color:var(--sm-green);letter-spacing:.03em;}
       .sm-origin{font-family:var(--font-mono);font-size:9px;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:999px;white-space:nowrap;}
       .sm-origin.emergent{background:var(--growth-tint,var(--surface-sunken));color:var(--sm-green);}
       .sm-origin.declared{background:var(--sm-accent-soft);color:var(--sm-accent);}
@@ -10347,12 +10348,17 @@
 
             const mode = _smBrowse.mode;
             const isRefl = mode === 'reflections';
-            let items = isThemes ? (d.themes || []) : (isRefl ? (_smBrowse.reflections || []) : (d.beliefs || []));
+            const isDec = mode === 'decisions';
+            let items = isThemes ? (d.themes || [])
+                      : isDec ? (d.decisions || [])
+                      : isRefl ? (_smBrowse.reflections || [])
+                      : (d.beliefs || []);
             if (q) {
                 items = items.filter(x => {
                     const hay = isThemes ? x.theme
-                        : (isRefl ? (x.summary + ' ' + (x.themes || []).join(' '))
-                                  : (x.statement + ' ' + (x.from || '')));
+                        : isDec ? (x.statement + ' ' + (x.themes || []).map(t => t.theme).join(' '))
+                        : isRefl ? (x.summary + ' ' + (x.themes || []).join(' '))
+                        : (x.statement + ' ' + (x.from || ''));
                     return (hay || '').toLowerCase().includes(q);
                 });
             }
@@ -10361,14 +10367,17 @@
 
             const head = `<button class="sm-back" onclick="renderSelfModel(_smData)">&lsaquo; You</button>`
                 + `<div class="sm-brow-head">`
-                + `<div class="sm-brow-counts"><span><b>${c.themes||0}</b> themes</span><span><b>${c.beliefs||0}</b> beliefs</span>`
-                + `<span><b>${c.lenses||0}</b> lenses</span><span><b>${c.lineage||0}</b> links</span>`
-                + (_smBrowse.reflections ? `<span><b>${_smBrowse.reflections.length}</b> reflections</span>` : '') + `</div>`
+                + `<div class="sm-brow-counts"><span><b>${c.themes||0}</b> themes</span>`
+                + `<span><b>${c.decisions||0}</b> decisions</span><span><b>${c.beliefs||0}</b> beliefs</span>`
+                + `<span><b>${c.lenses||0}</b> lenses</span><span><b>${c.lineage||0}</b> links</span></div>`
                 + `<input class="sm-search" id="smBrowseSearch" type="text" placeholder="Search your model&hellip;" value="${escapeHtml(_smBrowse.q)}" oninput="smBrowseSearch(this.value)">`
+                // Order follows the taxonomy: where you work, what you concluded,
+                // what graduated from it, what you saw.
                 + `<div class="sm-modes">`
                 + `<button class="sm-mode ${isThemes?'active':''}" onclick="smBrowseSetMode('themes')">Themes</button>`
+                + `<button class="sm-mode ${isDec?'active':''}" onclick="smBrowseSetMode('decisions')">Decisions</button>`
                 + `<button class="sm-mode ${mode==='beliefs'?'active':''}" onclick="smBrowseSetMode('beliefs')">Beliefs</button>`
-                + `<button class="sm-mode ${isRefl?'active':''}" onclick="smBrowseSetMode('reflections')">Reflections</button>`
+                + `<button class="sm-mode ${isRefl?'active':''}" onclick="smBrowseSetMode('reflections')">Sources</button>`
                 + `</div></div>`;
 
             let body = '';
@@ -10383,8 +10392,22 @@
                         + (t.state ? `<span class="sm-chip state">${escapeHtml(t.state)}</span>` : '')
                         + `<span class="sm-chip ${smTempClass(t.temperature)}"><span class="sm-cdot"></span>${smTempLabel(t.temperature)}</span>`
                         + (inputs ? `<span class="sm-chip inflow"><span class="sm-cdot"></span>${inputs} this week</span>` : '')
-                        + (t.belief_count ? `<span class="sm-yield">&#10022; produced ${t.belief_count} belief${t.belief_count>1?'s':''}</span>` : '')
+                        + (t.decision_count ? `<span class="sm-decdate">&#9673; ${t.decision_count} decision${t.decision_count>1?'s':''}</span>` : '')
+                        + (t.belief_count ? `<span class="sm-yield">&#10022; ${t.belief_count} belief${t.belief_count>1?'s':''}</span>` : '')
                         + `</div></div>`;
+                }).join('') + `</div>`;
+            } else if (isDec) {
+                // A decision is dated and final — the date leads, because a decision's
+                // meaning is bound to when it was made.
+                body = `<div class="sm-brow-list">` + shown.map(x => {
+                    const chips = (x.themes || []).map(t =>
+                        `<span class="sm-themechip" onclick="event.stopPropagation();smOpenThemeNamed('${smEsc(t.theme)}','browser')">&#9675; <span class="t">${escapeHtml(t.theme)}</span></span>`).join('');
+                    return `<div class="sm-brow-item">`
+                        + `<div class="sm-brow-top"><span class="sm-decdate">${escapeHtml(x.date || '')}</span>`
+                        + (x.confirmed ? `<span class="sm-confirmed">&#10003;</span>` : '') + `</div>`
+                        + `<div class="sm-brow-traj"><span class="now" style="font-weight:400">${escapeHtml(x.statement || '')}</span></div>`
+                        + (chips ? `<div class="sm-brow-meta">${chips}</div>` : '')
+                        + `</div>`;
                 }).join('') + `</div>`;
             } else if (isRefl) {
                 body = `<div class="sm-brow-list">` + shown.map(r => {

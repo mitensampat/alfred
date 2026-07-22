@@ -76,6 +76,21 @@ class SelfModelStore {
         );
         CREATE INDEX IF NOT EXISTS idx_lineage_belief ON belief_lineage(belief_id);
         CREATE INDEX IF NOT EXISTS idx_lineage_theme ON belief_lineage(theme_id);
+
+        -- Generalised lineage: any facet can crystallize out of a theme, not just beliefs.
+        -- Decisions are conclusions reached inside a workspace, so they carry the same edge.
+        CREATE TABLE IF NOT EXISTS facet_lineage (
+            facet_id TEXT NOT NULL,
+            theme_id TEXT NOT NULL,
+            created_at TEXT,
+            PRIMARY KEY (facet_id, theme_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_flineage_facet ON facet_lineage(facet_id);
+        CREATE INDEX IF NOT EXISTS idx_flineage_theme ON facet_lineage(theme_id);
+
+        -- Carry the belief edges over; belief_lineage is left in place, unused.
+        INSERT OR IGNORE INTO facet_lineage (facet_id, theme_id, created_at)
+            SELECT belief_id, theme_id, created_at FROM belief_lineage;
         """
 
         var errMsg: UnsafeMutablePointer<CChar>?
@@ -479,21 +494,22 @@ class SelfModelStore {
         return out
     }
 
-    // MARK: - Belief lineage (which theme did this belief crystallize from?)
+    // MARK: - Lineage (which theme did this facet crystallize out of?)
     //
-    // Themes are the organic workstreams; beliefs firm up around them. Lineage records
-    // that ancestry so a belief can always answer "where did I come from".
+    // Themes are the organic workstreams. Beliefs firm up around them and decisions are
+    // reached inside them, so both carry the same ancestry edge — a facet can always
+    // answer "where did I come from".
 
-    /// Record that a belief crystallized from a theme. Idempotent.
-    func linkBeliefToTheme(beliefId: String, themeId: String) -> Bool {
+    /// Record that a facet crystallized from a theme. Idempotent.
+    func linkFacetToTheme(facetId: String, themeId: String) -> Bool {
         dbLock.lock()
         defer { dbLock.unlock() }
         guard let db = db else { return false }
 
-        let sql = "INSERT OR IGNORE INTO belief_lineage (belief_id, theme_id, created_at) VALUES (?, ?, ?)"
+        let sql = "INSERT OR IGNORE INTO facet_lineage (facet_id, theme_id, created_at) VALUES (?, ?, ?)"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
-        sqlite3_bind_text(stmt, 1, (beliefId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 1, (facetId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         sqlite3_bind_text(stmt, 2, (themeId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         sqlite3_bind_text(stmt, 3, (isoNow() as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         let ok = sqlite3_step(stmt) == SQLITE_DONE
@@ -501,38 +517,45 @@ class SelfModelStore {
         return ok
     }
 
-    /// Remove a belief↔theme lineage edge.
-    func unlinkBeliefFromTheme(beliefId: String, themeId: String) -> Bool {
+    /// Remove a facet↔theme lineage edge.
+    func unlinkFacetFromTheme(facetId: String, themeId: String) -> Bool {
         dbLock.lock()
         defer { dbLock.unlock() }
         guard let db = db else { return false }
 
         var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, "DELETE FROM belief_lineage WHERE belief_id = ? AND theme_id = ?", -1, &stmt, nil) == SQLITE_OK else { return false }
-        sqlite3_bind_text(stmt, 1, (beliefId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        guard sqlite3_prepare_v2(db, "DELETE FROM facet_lineage WHERE facet_id = ? AND theme_id = ?", -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, (facetId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         sqlite3_bind_text(stmt, 2, (themeId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         let ok = sqlite3_step(stmt) == SQLITE_DONE
         sqlite3_finalize(stmt)
         return ok
     }
 
-    /// All lineage edges as (belief_id, theme_id) pairs.
-    func allLineage() -> [(belief: String, theme: String)] {
+    /// All lineage edges as (facet_id, theme_id) pairs.
+    func allLineage() -> [(facet: String, theme: String)] {
         dbLock.lock()
         defer { dbLock.unlock() }
         guard let db = db else { return [] }
 
         var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, "SELECT belief_id, theme_id FROM belief_lineage", -1, &stmt, nil) == SQLITE_OK else { return [] }
-        var out: [(belief: String, theme: String)] = []
+        guard sqlite3_prepare_v2(db, "SELECT facet_id, theme_id FROM facet_lineage", -1, &stmt, nil) == SQLITE_OK else { return [] }
+        var out: [(facet: String, theme: String)] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
-            let b = columnText(stmt, 0) ?? ""
+            let f = columnText(stmt, 0) ?? ""
             let t = columnText(stmt, 1) ?? ""
-            if !b.isEmpty && !t.isEmpty { out.append((belief: b, theme: t)) }
+            if !f.isEmpty && !t.isEmpty { out.append((facet: f, theme: t)) }
         }
         sqlite3_finalize(stmt)
         return out
     }
+
+    /// Wrap a bulk write in a transaction — materializing 1,000+ decisions one statement
+    /// at a time is otherwise slow enough to be felt on the read path.
+    func beginBulk() { dbLock.lock(); defer { dbLock.unlock() }
+        if let db = db { sqlite3_exec(db, "BEGIN IMMEDIATE", nil, nil, nil) } }
+    func endBulk() { dbLock.lock(); defer { dbLock.unlock() }
+        if let db = db { sqlite3_exec(db, "COMMIT", nil, nil, nil) } }
 
     /// Remove every link touching a facet (used when a facet is deleted).
     func clearLinks(forFacet id: String) {

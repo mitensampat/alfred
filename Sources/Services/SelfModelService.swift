@@ -73,7 +73,7 @@ enum SelfModelService {
 
         // ---- Belief lineage: which theme did this belief crystallize from? ----
         var themeIdsByBelief: [String: [String]] = [:]
-        for l in store.allLineage() { themeIdsByBelief[l.belief, default: []].append(l.theme) }
+        for l in store.allLineage() { themeIdsByBelief[l.facet, default: []].append(l.theme) }
         let themeById = Dictionary(themeFacets.map { (($0["id"] as? String ?? ""), $0) }, uniquingKeysWith: { a, _ in a })
 
         // ---- Beliefs (trajectory, most recently updated first) ----
@@ -215,6 +215,8 @@ enum SelfModelService {
         let themeFacets = store.getFacets(kind: "theme").filter { verdict($0) != "dismissed" }
         let beliefFacets = store.getFacets(kind: "belief").filter { verdict($0) != "dismissed" }
         let patternFacets = store.getFacets(kind: "pattern").filter { verdict($0) != "dismissed" }
+        let decisionFacets = store.getFacets(kind: "decision").filter { verdict($0) != "dismissed" }
+        let decisionIds = Set(decisionFacets.compactMap { $0["id"] as? String })
 
         // Links + lineage, both directions.
         var lensIdsByBelief: [String: [String]] = [:]
@@ -222,8 +224,8 @@ enum SelfModelService {
         var themeIdsByBelief: [String: [String]] = [:]
         var beliefIdsByTheme: [String: [String]] = [:]
         for l in store.allLineage() {
-            themeIdsByBelief[l.belief, default: []].append(l.theme)
-            beliefIdsByTheme[l.theme, default: []].append(l.belief)
+            themeIdsByBelief[l.facet, default: []].append(l.theme)
+            beliefIdsByTheme[l.theme, default: []].append(l.facet)
         }
         let patternById = Dictionary(patternFacets.map { (($0["id"] as? String ?? ""), $0) }, uniquingKeysWith: { a, _ in a })
         let beliefById = Dictionary(beliefFacets.map { (($0["id"] as? String ?? ""), $0) }, uniquingKeysWith: { a, _ in a })
@@ -237,6 +239,7 @@ enum SelfModelService {
                 guard let b = beliefById[bid] else { return nil }
                 return ["id": bid, "statement": b["statement"] as? String ?? ""]
             }
+            let decidedHere = (beliefIdsByTheme[id] ?? []).filter { decisionIds.contains($0) }.count
             return [
                 "id": id,
                 "theme": f["statement"] as? String ?? "",
@@ -245,7 +248,8 @@ enum SelfModelService {
                 "inputs_this_week": Int(meta["inputs_this_week"] ?? "0") ?? 0,
                 "edge": meta["edge"] ?? "",
                 "beliefs": born,
-                "belief_count": born.count
+                "belief_count": born.count,
+                "decision_count": decidedHere
             ]
         }.sorted {
             let a = tempRankLocal[$0["temperature"] as? String ?? ""] ?? 9
@@ -293,16 +297,38 @@ enum SelfModelService {
             .filter { verdict($0) != "dismissed" }
             .map { ["id": $0["id"] as? String ?? "", "statement": $0["statement"] as? String ?? ""] }
 
+        // Decisions — conclusions reached inside a workspace. Newest first: a decision's
+        // meaning is bound to when it was made.
+        let decisions: [[String: Any]] = decisionFacets.sorted {
+            (($0["metadata"] as? [String: String])?["decided_on"] ?? "") >
+            (($1["metadata"] as? [String: String])?["decided_on"] ?? "")
+        }.map { f -> [String: Any] in
+            let id = f["id"] as? String ?? ""
+            let lineage: [[String: Any]] = (themeIdsByBelief[id] ?? []).prefix(2).compactMap { tid in
+                guard let t = themeById[tid] else { return nil }
+                return ["id": tid, "theme": t["statement"] as? String ?? ""]
+            }
+            return [
+                "id": id,
+                "statement": f["statement"] as? String ?? "",
+                "date": (f["metadata"] as? [String: String])?["decided_on"] ?? "",
+                "confirmed": verdict(f) == "confirmed",
+                "themes": lineage
+            ]
+        }
+
         return [
             "enabled": true,
             "counts": [
                 "themes": themes.count,
+                "decisions": decisions.count,
                 "beliefs": beliefs.count,
                 "lenses": patternFacets.count,
                 "values": values.count,
                 "lineage": store.allLineage().count
             ],
             "themes": themes,
+            "decisions": decisions,
             "beliefs": beliefs,
             "values": values
         ]
