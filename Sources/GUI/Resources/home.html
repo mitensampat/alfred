@@ -2957,13 +2957,13 @@
       .sm-chev{color:var(--ink-faint);font-size:15px;transition:transform .15s,color .15s;}
       .sm-obj:hover .sm-chev{color:var(--sm-accent);transform:translateX(2px);}
       .sm-meta{display:flex;align-items:center;gap:8px;margin-top:9px;flex-wrap:wrap;}
-      .sm-chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap;}
+      .sm-chip{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap;}
       .sm-chip .sm-cdot{width:6px;height:6px;border-radius:50%;}
-      .sm-chip.state{background:var(--surface-sunken);color:var(--ink-secondary);font-family:var(--font-mono);text-transform:uppercase;letter-spacing:.03em;font-size:10px;}
+      .sm-chip.state{background:none;padding-left:0;color:var(--ink-tertiary);font-family:var(--font-mono);text-transform:uppercase;letter-spacing:.05em;font-size:9.5px;font-weight:400;}
       .sm-chip.hot{background:var(--sm-hot-bg);color:var(--sm-hot);} .sm-chip.hot .sm-cdot{background:var(--sm-hot);}
-      .sm-chip.warm{background:var(--sm-warm-bg);color:var(--sm-warm);} .sm-chip.warm .sm-cdot{background:var(--sm-warm);}
-      .sm-chip.cool{background:var(--surface-sunken);color:var(--ink-tertiary);} .sm-chip.cool .sm-cdot{background:var(--ink-faint);}
-      .sm-chip.inflow{background:var(--sm-green-bg);color:var(--sm-green);} .sm-chip.inflow .sm-cdot{background:var(--sm-green);}
+      .sm-chip.warm{background:none;padding-left:0;padding-right:0;color:var(--ink-tertiary);font-weight:400;} .sm-chip.warm .sm-cdot{background:var(--sm-warm);}
+      .sm-chip.cool{background:none;padding-left:0;padding-right:0;color:var(--ink-tertiary);font-weight:400;} .sm-chip.cool .sm-cdot{background:var(--ink-faint);}
+      .sm-chip.inflow{background:none;padding-left:0;padding-right:0;color:var(--ink-tertiary);font-weight:400;font-family:var(--font-mono);font-size:9.5px;} .sm-chip.inflow .sm-cdot{background:var(--sm-green);}
       /* questions */
       .sm-qrow{display:flex;gap:11px;align-items:flex-start;padding:12px 14px;border-left:2px solid var(--sm-accent-line);background:var(--surface);border:1px solid var(--line);border-left-width:2px;border-radius:0 10px 10px 0;}
       .sm-qmark{font-family:var(--font-display);font-size:17px;color:var(--sm-accent);line-height:1;}
@@ -3092,36 +3092,36 @@
       .sm-picker .cancel{padding:12px 16px;text-align:center;color:var(--ink-tertiary);font-size:12px;cursor:pointer;}
       .sm-picker .cancel:hover{color:var(--ink);}
       /* ---- immersive browser ---- */
-      .sm-brow-head{position:sticky;top:0;z-index:3;background:var(--surface);padding-bottom:10px;margin-bottom:4px;}
-      .sm-brow-counts{display:flex;gap:12px;flex-wrap:wrap;font-family:var(--font-mono);font-size:10.5px;color:var(--ink-tertiary);margin-bottom:10px;}
+      .sm-brow-head{position:sticky;top:0;z-index:3;background:var(--surface);padding-bottom:8px;margin-bottom:2px;}
+      .sm-brow-counts{display:flex;gap:10px;flex-wrap:wrap;font-family:var(--font-mono);font-size:10px;color:var(--ink-tertiary);margin-bottom:7px;}
       .sm-brow-counts b{font-family:var(--font-display);font-size:14px;color:var(--ink);font-weight:500;}
-      .sm-search{width:100%;font-family:var(--font-body);font-size:13.5px;padding:9px 13px;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface-sunken);color:var(--ink);}
+      .sm-search{width:100%;font-family:var(--font-body);font-size:13px;padding:7px 13px;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface-sunken);color:var(--ink);}
       .sm-search:focus{outline:none;border-color:var(--sm-accent);}
       /* Five modes can't fit a phone. Scroll them rather than let a non-wrapping flex
          row force the whole browser wider than the viewport. */
-      .sm-modes{display:flex;gap:4px;margin-top:10px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;}
+      .sm-modes{display:flex;gap:4px;margin-top:7px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;}
       .sm-modes::-webkit-scrollbar{display:none;}
       .sm-mode{flex:0 0 auto;}
-      .sm-mode{font-family:var(--font-body);font-size:12px;font-weight:600;padding:5px 13px;border-radius:999px;border:1px solid var(--line-strong);background:none;color:var(--ink-tertiary);cursor:pointer;transition:all .13s;}
+      .sm-mode{font-family:var(--font-body);font-size:11.5px;font-weight:600;padding:4px 12px;border-radius:999px;border:1px solid var(--line-strong);background:none;color:var(--ink-tertiary);cursor:pointer;transition:all .13s;}
       .sm-mode.active{background:var(--sm-accent);border-color:var(--sm-accent);color:#fff;}
       [data-theme="dark"] .sm-mode.active{color:#1a1408;}
       /* Workspace filters — lighter than the mode row, since they narrow a mode
          rather than switch between them. */
-      .sm-filters{display:flex;gap:5px;margin-top:8px;overflow-x:auto;scrollbar-width:none;}
+      .sm-filters{display:flex;gap:5px;margin-top:6px;overflow-x:auto;scrollbar-width:none;}
       .sm-filters::-webkit-scrollbar{display:none;}
       .sm-filter{flex:0 0 auto;font-family:var(--font-body);font-size:11px;padding:4px 10px;border-radius:5px;
                  border:1px solid transparent;background:var(--surface-sunken);color:var(--ink-tertiary);cursor:pointer;transition:all .12s;}
       .sm-filter:hover{color:var(--ink);}
       .sm-filter.on{background:var(--sm-accent-soft);border-color:var(--sm-accent-line);color:var(--sm-accent);font-weight:600;}
       .sm-filter .n{font-family:var(--font-mono);font-size:9.5px;opacity:.75;margin-left:4px;}
-      .sm-brow-list{display:flex;flex-direction:column;gap:8px;}
-      .sm-brow-item{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:11px 14px;cursor:pointer;transition:border-color .14s,transform .12s;}
+      .sm-brow-list{display:flex;flex-direction:column;gap:6px;}
+      .sm-brow-item{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:9px 13px;cursor:pointer;transition:border-color .14s,transform .12s;}
       .sm-brow-item:hover{border-color:var(--sm-accent-line);transform:translateX(2px);}
       .sm-brow-top{display:flex;align-items:center;gap:9px;}
-      .sm-brow-name{flex:1;min-width:0;font-family:var(--font-display);font-size:14.5px;line-height:1.35;color:var(--ink);}
-      .sm-brow-meta{display:flex;align-items:center;gap:7px;margin-top:7px;flex-wrap:wrap;}
-      .sm-yield{font-family:var(--font-mono);font-size:10px;color:var(--sm-accent);white-space:nowrap;}
-      .sm-decdate{font-family:var(--font-mono);font-size:10px;color:var(--sm-green);letter-spacing:.03em;}
+      .sm-brow-name{flex:1;min-width:0;font-family:var(--font-display);font-size:14px;line-height:1.3;color:var(--ink);}
+      .sm-brow-meta{display:flex;align-items:center;gap:9px;margin-top:5px;flex-wrap:wrap;}
+      .sm-yield{font-family:var(--font-mono);font-size:9.5px;color:var(--sm-accent);white-space:nowrap;opacity:.85;}
+      .sm-decdate{font-family:var(--font-mono);font-size:9.5px;color:var(--sm-green);letter-spacing:.03em;opacity:.85;}
       /* ---- graduation review ---- */
       .sm-rev-belief{margin:22px 0 10px;padding-bottom:9px;border-bottom:1px solid var(--line);}
       .sm-rev-belief:first-child{margin-top:4px;}
@@ -3195,6 +3195,13 @@
          iPad is 1024px and still has no cursor, so it kept 23px pagers and a 6×13
          link-remove ×. (hover:none) alone was also wrong — it never matches in a
          desktop browser, so nothing here could be verified while building. */
+      /* Between 600 and 780 the bar still showed sync + a long date, and both wrapped
+         onto two lines — the bar grew to 62px to hold them. Sync is the least useful
+         of the two, so it goes first; the date never wraps. */
+      @media (max-width: 780px){
+        #syncIndicator{display:none !important;}
+        #greetingTime{white-space:nowrap;font-size:10px;}
+      }
       @media (max-width: 600px), (hover: none){
         .sm-inner{max-width:100%;}
         .sm-vbtn{padding:9px 15px;font-size:12px;}
