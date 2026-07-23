@@ -898,6 +898,15 @@
         .cadence-health .ch-m.ok b { color:var(--growth); }
         .cadence-health .ch-m.bad b { color:var(--danger); }
         .cadence-health .ch-run { margin-left:auto; font-family:var(--font-body); font-size:12px; font-weight:600; color:var(--sm-accent, var(--accent-primary)); background:none; border:none; cursor:pointer; }
+        details.cadence-group > summary { list-style:none; cursor:pointer; display:flex; align-items:baseline; gap:8px; }
+        details.cadence-group > summary::-webkit-details-marker { display:none; }
+        details.cadence-group > summary::after { content:"▾"; color:var(--ink-tertiary); font-size:10px; margin-left:auto; padding-right:16px; }
+        details.cadence-group[open] > summary::after { content:"▴"; }
+        details.cadence-group > summary .cg-ct { font-family:var(--font-mono); font-size:9.5px; font-weight:400; color:var(--ink-tertiary); text-transform:none; letter-spacing:0; }
+        .zen-pointer { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:13px 15px; margin:6px 0 4px; border:1px dashed var(--sm-accent-line, var(--line-strong)); border-radius:9px; background:var(--sm-accent-soft, var(--surface-sunken)); }
+        .zen-pointer-t { flex:1; font-family:var(--font-display); font-size:14px; color:var(--ink); }
+        .zen-pointer-acts { display:flex; gap:12px; }
+        .zen-pointer-acts .zen-link { font-weight:600; color:var(--sm-accent, var(--accent-primary)); }
         .cadence-group-label:first-child { padding-top: 8px; }
         .cadence-schedule { font-size: 11px; color: var(--ink-tertiary); cursor: pointer; min-width: 60px; text-align: center; white-space: nowrap; }
         .cadence-schedule:hover { color: var(--ink-secondary); }
@@ -3636,19 +3645,16 @@
                 </div>
                 <!-- DATA TAB (zen: reflections → learning → what alfred knows → capture → footer) -->
                 <div id="panelTabData" style="display:none;">
-                    <div class="zen-lede">Your memory</div>
-                    <div class="zen-lede-sub" id="dataLede">What you're thinking about, what Alfred has come to understand, and the durable picture of you.</div>
+                    <div class="zen-lede">Memory</div>
+                    <div class="zen-lede-sub" id="dataLede">The picture of you — workspaces, beliefs, decisions — lives in You and Model. What stays here is what you&rsquo;ve explicitly told Alfred, and a place to add a thought.</div>
 
-                    <!-- WORKSPACES (themes) — reflections are the raw input beneath these -->
-                    <div class="panel-section zen-section">
-                        <div class="panel-section-label zen-header">
-                            <span>WORKSPACES</span>
-                            <button class="zen-link" onclick="closeSettingsPanel(); openWorkspaces();">Open →</button>
-                        </div>
-                        <div class="zen-card">
-                            <div id="reflectionSummaryStats" class="zen-summary">Loading…</div>
-                            <div id="reflectionThemesList" class="zen-themes"></div>
-                        </div>
+                    <!-- Pointer: the model itself is not managed here anymore -->
+                    <div class="zen-pointer">
+                        <span class="zen-pointer-t">Everything Alfred has come to understand about you</span>
+                        <span class="zen-pointer-acts">
+                            <button class="zen-link" onclick="closeSettingsPanel(); showSurface('you');">You →</button>
+                            <button class="zen-link" onclick="closeSettingsPanel(); showSurface('model');">Model →</button>
+                        </span>
                     </div>
 
                     <!-- LEARNING -->
@@ -7614,9 +7620,13 @@
                 + `<span class="ch-m ${failing ? 'bad' : ''}"><b>${failing}</b> failing</span>`
                 + `<span class="ch-m">last sync <b>${lastSync}</b></span>`
                 + `<button class="ch-run" onclick="runAllCadences()">Run all now</button></div>`;
+            // Daily open by default; Weekly/Recurring collapsed — you glance at Daily,
+            // you rarely touch the rest.
             for (const [label, items] of Object.entries(groups)) {
                 if (items.length === 0) continue;
-                html += `<div class="cadence-group-label">${label}</div>`;
+                const nextRun = items.map(c => c.schedule_display).filter(Boolean)[0] || '';
+                html += `<details class="cadence-group" ${label === 'DAILY' ? 'open' : ''}>`
+                     + `<summary class="cadence-group-label">${label}<span class="cg-ct">${items.length}${nextRun ? ' · ' + escapeHtml(nextRun) : ''}</span></summary>`;
                 items.forEach(c => {
                     const statusClass = getCadenceStatusClass(c);
                     const desc = getCadenceDescription(c.action_type);
@@ -7640,6 +7650,7 @@
                     </div>
                     <div class="cadence-summary-preview" id="cadenceSummary_${c.id}">${escapeHtml(summaryText)}</div>`;
                 });
+                html += `</details>`;
             }
             html += `<div class="cadence-item cadence-add-btn" onclick="openCreateCadence()"><span style="color:var(--ink-secondary);font-size:13px;">+ New Cadence</span></div>`;
             el.innerHTML = html || '<div style="color:var(--ink-tertiary);font-size:12px;padding:12px;">No cadences configured</div>';
