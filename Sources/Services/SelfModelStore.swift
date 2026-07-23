@@ -131,6 +131,18 @@ class SelfModelStore {
             ts TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_now_eng_ws ON now_engagement(workspace_id);
+
+        -- Explicit corrections from the Edit-artifact loop: remove/move an edge, or
+        -- free-text feedback on a facet. The durable record of "Alfred got this wrong",
+        -- owned here (synchronous) so it's never lost — pattern computation reads it.
+        CREATE TABLE IF NOT EXISTS model_feedback (
+            facet_id TEXT NOT NULL,
+            kind TEXT NOT NULL,        -- edge_remove | edge_move | feedback
+            action TEXT,
+            detail TEXT,
+            ts TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_model_feedback_facet ON model_feedback(facet_id);
         """
 
         var errMsg: UnsafeMutablePointer<CChar>?
@@ -648,6 +660,21 @@ class SelfModelStore {
         return ok
     }
 
+    /// Detach a support edge (a decision or lens no longer grounds a belief).
+    @discardableResult
+    func removeSupport(supportId: String, beliefId: String) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "DELETE FROM facet_support WHERE support_id = ? AND belief_id = ?", -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, (supportId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 2, (beliefId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        let ok = sqlite3_step(stmt) == SQLITE_DONE
+        sqlite3_finalize(stmt)
+        return ok
+    }
+
     /// All support edges: (support_id, belief_id, kind, rationale).
     func allSupport() -> [(support: String, belief: String, kind: String, rationale: String?)] {
         dbLock.lock()
@@ -709,6 +736,35 @@ class SelfModelStore {
         let ok = sqlite3_step(stmt) == SQLITE_DONE
         sqlite3_finalize(stmt)
         return ok
+    }
+
+    // MARK: - Model feedback (the Edit-artifact learning record)
+
+    func recordModelFeedback(facetId: String, kind: String, action: String?, detail: String?) {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "INSERT INTO model_feedback (facet_id, kind, action, detail, ts) VALUES (?, ?, ?, ?, ?)", -1, &stmt, nil) == SQLITE_OK else { return }
+        sqlite3_bind_text(stmt, 1, (facetId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 2, (kind as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        if let a = action { sqlite3_bind_text(stmt, 3, (a as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self)) } else { sqlite3_bind_null(stmt, 3) }
+        if let d = detail { sqlite3_bind_text(stmt, 4, (d as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self)) } else { sqlite3_bind_null(stmt, 4) }
+        sqlite3_bind_text(stmt, 5, (isoNow() as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_step(stmt)
+        sqlite3_finalize(stmt)
+    }
+
+    func modelFeedbackCount() -> Int {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return 0 }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM model_feedback", -1, &stmt, nil) == SQLITE_OK else { return 0 }
+        var n = 0
+        if sqlite3_step(stmt) == SQLITE_ROW { n = Int(sqlite3_column_int64(stmt, 0)) }
+        sqlite3_finalize(stmt)
+        return n
     }
 
     // MARK: - Now engagement

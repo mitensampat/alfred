@@ -3153,6 +3153,15 @@
       .sm-linkkind{font-family:var(--font-mono);font-size:8px;text-transform:uppercase;letter-spacing:.06em;padding:2px 6px;border-radius:3px;flex:0 0 auto;margin-top:1px;background:var(--surface-sunken);color:var(--ink-secondary);}
       .sm-linktxt{flex:1;font-family:var(--font-display);font-size:13.5px;line-height:1.3;color:var(--ink);}
       .sm-linkarrow{color:var(--ink-tertiary);align-self:center;font-size:13px;}
+      /* edit-an-artifact affordance */
+      .sm-edge-row{position:relative;display:flex;align-items:stretch;gap:4px;margin-bottom:5px;}
+      .sm-edge-row .sm-edge-link{margin-bottom:0;flex:1;}
+      .sm-edit-btn{flex:0 0 auto;width:30px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink-tertiary);font-size:14px;cursor:pointer;line-height:1;}
+      .sm-edit-btn:hover{border-color:var(--sm-accent);color:var(--sm-accent);}
+      .sm-edit-menu{display:none;position:absolute;right:0;top:calc(100% + 3px);z-index:6;background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;box-shadow:var(--shadow-md);overflow:hidden;min-width:130px;}
+      .sm-edit-menu.open{display:block;}
+      .sm-edit-menu button{display:block;width:100%;text-align:left;padding:9px 13px;background:none;border:none;font-family:var(--font-body);font-size:12.5px;color:var(--ink-secondary);cursor:pointer;}
+      .sm-edit-menu button:hover{background:var(--surface-sunken);color:var(--ink);}
       /* ---- graduation review ---- */
       .sm-rev-belief{margin:22px 0 10px;padding-bottom:9px;border-bottom:1px solid var(--line);}
       .sm-rev-belief:first-child{margin-top:4px;}
@@ -10992,20 +11001,68 @@
             if (d.date) h += `<div class="sm-facet-meta">${escapeHtml((d.date||'').slice(0,10))}</div>`;
             if (d.from_shift) h += `<div class="sm-facet-traj"><span class="was">${escapeHtml(d.from_shift)}</span> &rarr; now</div>`;
             const e = d.edges || {};
-            const grp = (label, arr) => (arr && arr.length)
-                ? `<div class="sm-edge-grp"><div class="sm-edge-lbl">${label}</div>` + arr.map(n =>
-                    `<button class="sm-edge-link" onclick="smOpenFacet('${smEsc(n.id)}')"><span class="sm-linkkind">${SM_KIND_LABEL[n.kind]||n.kind}</span><span class="sm-linktxt">${escapeHtml(n.statement)}</span><span class="sm-linkarrow">&rsaquo;</span></button>`).join('') + `</div>`
+            // edgeMeta(n): the edge params for the Edit affordance, relative to this facet.
+            //   k = lineage|support|lens · a,b are the two ends the backend detaches.
+            //   moveKind = which facet-kind a Move target must be (theme|belief), '' = no move.
+            const grp = (label, arr, edgeMeta) => (arr && arr.length)
+                ? `<div class="sm-edge-grp"><div class="sm-edge-lbl">${label}</div>` + arr.map(n => {
+                    const m = edgeMeta(n);
+                    return `<div class="sm-edge-row"><button class="sm-edge-link" onclick="smOpenFacet('${smEsc(n.id)}')">`
+                        + `<span class="sm-linkkind">${SM_KIND_LABEL[n.kind]||n.kind}</span>`
+                        + `<span class="sm-linktxt">${escapeHtml(n.statement)}</span><span class="sm-linkarrow">&rsaquo;</span></button>`
+                        + `<button class="sm-edit-btn" title="Edit" onclick="smEdgeMenu(this)">&#8942;</button>`
+                        + `<div class="sm-edit-menu" data-k="${m.k}" data-a="${smEsc(m.a)}" data-b="${smEsc(m.b)}" data-mk="${m.moveKind||''}" data-node="${smEsc(n.id)}">`
+                        + `<button onclick="smEdgeRemove(this)">Remove</button>`
+                        + (m.moveKind ? `<button onclick="smEdgeMove(this)">Move to&hellip;</button>` : '')
+                        + `<button onclick="smEdgeFeedback(this)">Feedback</button></div></div>`;
+                }).join('') + `</div>`
                 : '';
+            const self = d.id;
             let edgesHtml = '';
-            edgesHtml += grp('Crystallised from', e.from);
-            edgesHtml += grp('Grounded in', e.grounded_by);
-            edgesHtml += grp('Decided in', e.decided_in);
-            edgesHtml += grp('Grounds', e.grounds);
-            if (e.produced_decisions) edgesHtml += grp('Decisions made here', e.produced_decisions.slice(0,12));
-            if (e.produced_beliefs) edgesHtml += grp('Beliefs formed here', e.produced_beliefs);
-            edgesHtml += grp('Supports', e.supports);
+            edgesHtml += grp('Crystallised from', e.from,        n => ({k:'lineage', a:self, b:n.id, moveKind:'theme'}));
+            edgesHtml += grp('Grounded in',       e.grounded_by,  n => ({k:(n.kind==='pattern'?'lens':'support'), a:n.id, b:self, moveKind:''}));
+            edgesHtml += grp('Decided in',        e.decided_in,   n => ({k:'lineage', a:self, b:n.id, moveKind:'theme'}));
+            edgesHtml += grp('Grounds',           e.grounds,      n => ({k:'support', a:self, b:n.id, moveKind:'belief'}));
+            if (e.produced_decisions) edgesHtml += grp('Decisions made here', e.produced_decisions.slice(0,12), n => ({k:'lineage', a:n.id, b:self, moveKind:'theme'}));
+            if (e.produced_beliefs)   edgesHtml += grp('Beliefs formed here', e.produced_beliefs, n => ({k:'lineage', a:n.id, b:self, moveKind:'theme'}));
+            edgesHtml += grp('Supports', e.supports, n => ({k:'lens', a:self, b:n.id, moveKind:'belief'}));
             h += edgesHtml || `<div class="sm-brow-empty" style="padding:22px 8px">No connections yet.</div>`;
             return h;
+        }
+
+        // ── Edit-artifact: remove / move / feedback, each a learning signal ──
+        function smEdgeMenu(btn){
+            const menu = btn.nextElementSibling;
+            document.querySelectorAll('.sm-edit-menu.open').forEach(m => { if (m !== menu) m.classList.remove('open'); });
+            menu.classList.toggle('open');
+        }
+        async function smEdgeRemove(el){
+            const m = el.closest('.sm-edit-menu');
+            if (!confirm('Remove this connection? This tells Alfred the link was wrong.')) return;
+            await authFetch(`/api/self-model/edge?action=remove&kind=${m.dataset.k}&a=${encodeURIComponent(m.dataset.a)}&b=${encodeURIComponent(m.dataset.b)}`, {method:'POST'});
+            smOpenFacet(_smFacetStack[_smFacetStack.length-1], true);   // re-render current
+        }
+        async function smEdgeMove(el){
+            const m = el.closest('.sm-edit-menu');
+            const wantKind = m.dataset.mk;                 // theme | belief
+            const pool = (_smBrowse.data && (wantKind==='theme'
+                ? (_smBrowse.data.themes||[]).map(t=>({id:t.id,txt:t.theme}))
+                : (_smBrowse.data.beliefs||[]).map(b=>({id:b.id,txt:b.statement})))) || [];
+            const q = (prompt(`Move to which ${wantKind}? Type part of its name:`)||'').trim().toLowerCase();
+            if (!q) return;
+            const hit = pool.find(x => (x.txt||'').toLowerCase().includes(q));
+            if (!hit){ alert('No '+wantKind+' matched. Open Model once so its list is loaded, then try again.'); return; }
+            if (!confirm(`Move to “${hit.txt.slice(0,50)}”?`)) return;
+            await authFetch(`/api/self-model/edge?action=move&kind=${m.dataset.k}&a=${encodeURIComponent(m.dataset.a)}&b=${encodeURIComponent(m.dataset.b)}&newb=${encodeURIComponent(hit.id)}`, {method:'POST'});
+            smOpenFacet(_smFacetStack[_smFacetStack.length-1], true);
+        }
+        async function smEdgeFeedback(el){
+            const m = el.closest('.sm-edit-menu');
+            const txt = (prompt('Tell Alfred what it got wrong here:')||'').trim();
+            if (txt.length < 2) return;
+            await authFetch(`/api/self-model/feedback?facet=${encodeURIComponent(m.dataset.node)}&text=${encodeURIComponent(txt)}`, {method:'POST'});
+            m.classList.remove('open');
+            el.closest('.sm-edge-row').querySelector('.sm-edit-btn').textContent = '✓';
         }
 
         /// Open a theme by name (from the browser or the You list).

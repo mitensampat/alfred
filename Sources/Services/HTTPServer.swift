@@ -1209,6 +1209,12 @@ class HTTPServer {
         case ("POST", "/api/self-model/facet/delete"):
             return handleFacetDelete(request)
 
+        case ("POST", "/api/self-model/edge"):
+            return handleEdgeEdit(request)
+
+        case ("POST", "/api/self-model/feedback"):
+            return handleArtifactFeedback(request)
+
         case ("POST", "/api/self-model/graduate"):
             return handleGraduate(request)
 
@@ -11493,6 +11499,75 @@ extension HTTPServer {
             return HTTPResponse(statusCode: 200, body: ["enabled": false])
         }
         return HTTPResponse(statusCode: 200, body: SelfModelService.browse())
+    }
+
+    /// Edit an edge inside the model — remove it, or move it to another target. Every
+    /// edit is also a training signal: it tells Alfred an extraction (remove) or an
+    /// attribution (move) was wrong, recorded so pattern computation can adjust.
+    private func handleEdgeEdit(_ request: HTTPRequest) -> HTTPResponse {
+        guard getConfig()?.features?.selfModel ?? false else {
+            return HTTPResponse(statusCode: 200, body: ["enabled": false])
+        }
+        let action = request.queryParams["action"] ?? ""
+        let kind = request.queryParams["kind"] ?? ""       // lineage | support | lens
+        let a = (request.queryParams["a"] ?? "").trimmingCharacters(in: .whitespaces)
+        let b = (request.queryParams["b"] ?? "").trimmingCharacters(in: .whitespaces)
+        let newB = (request.queryParams["newb"] ?? "").trimmingCharacters(in: .whitespaces)
+        guard !a.isEmpty, !b.isEmpty, ["remove", "move"].contains(action) else {
+            return HTTPResponse(statusCode: 400, body: ["error": "action, a, b required"])
+        }
+        let store = SelfModelStore.shared
+
+        func detach(_ x: String, _ y: String) -> Bool {
+            switch kind {
+            case "lineage": return store.unlinkFacetFromTheme(facetId: x, themeId: y)
+            case "lens":
+                // Lens edges live in facet_support (migrated from the old facet_link).
+                // Clear both so neither the read path nor legacy rows keep it alive.
+                _ = store.unlinkLens(lensId: x, beliefId: y)
+                return store.removeSupport(supportId: x, beliefId: y)
+            default:        return store.removeSupport(supportId: x, beliefId: y)  // decision support
+            }
+        }
+        func attach(_ x: String, _ y: String) -> Bool {
+            switch kind {
+            case "lineage": return store.linkFacetToTheme(facetId: x, themeId: y)
+            case "lens":    return store.addSupport(supportId: x, beliefId: y, kind: "lens")
+            default:        return store.addSupport(supportId: x, beliefId: y, kind: "decision")
+            }
+        }
+
+        var ok = detach(a, b)
+        if action == "move", !newB.isEmpty { ok = attach(a, newB) && ok }
+
+        // Durable, synchronous record of the correction (owned here so it's never lost).
+        store.recordModelFeedback(
+            facetId: a, kind: action == "move" ? "edge_move" : "edge_remove",
+            action: kind, detail: action == "move" ? "\(b) → \(newB)" : b)
+        // Best-effort: also feed the existing learning pipeline.
+        WorkflowLearningService.shared.recordLearningEvent(
+            eventType: "self_model_edge_edit", context: a, signalValue: action,
+            metadata: ["edge_kind": kind, "from": b, "to": newB])
+        return HTTPResponse(statusCode: 200, body: ["ok": ok, "action": action])
+    }
+
+    /// Free-text feedback on an artifact — "you misread this". Changes nothing in the
+    /// model directly; it's the explicit correction channel that pairs with the implicit
+    /// engagement one, recorded for pattern computation to learn from.
+    private func handleArtifactFeedback(_ request: HTTPRequest) -> HTTPResponse {
+        guard getConfig()?.features?.selfModel ?? false else {
+            return HTTPResponse(statusCode: 200, body: ["enabled": false])
+        }
+        let facet = (request.queryParams["facet"] ?? "").trimmingCharacters(in: .whitespaces)
+        let text = (request.queryParams["text"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !facet.isEmpty, text.count >= 2 else {
+            return HTTPResponse(statusCode: 400, body: ["error": "facet and text required"])
+        }
+        SelfModelStore.shared.recordModelFeedback(facetId: facet, kind: "feedback", action: nil, detail: text)
+        WorkflowLearningService.shared.recordLearningEvent(
+            eventType: "self_model_feedback", context: facet, signalValue: text,
+            metadata: ["source": "artifact_edit"])
+        return HTTPResponse(statusCode: 200, body: ["ok": true])
     }
 
     /// Quick-capture from Now: drop a note / task / decision straight into a workspace.
