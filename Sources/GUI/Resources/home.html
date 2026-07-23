@@ -3220,6 +3220,52 @@
         .sm-back{padding:10px 4px 12px;}
         .sm-brow-more{padding:13px;}
       }
+
+      /* ═══ v3 Now — the 4+1 workspace cards ═══ */
+      #nowWorkspaces{margin-bottom:14px;}
+      .nw-head{font-family:var(--font-mono);font-size:9px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-tertiary);margin:2px 0 10px;}
+      .nw-card{border:1px solid var(--line);border-radius:11px;background:var(--surface);margin-bottom:9px;overflow:hidden;transition:border-color .15s;}
+      .nw-card:hover{border-color:var(--line-strong);}
+      .nw-card.open{border-color:var(--sm-accent-line);}
+      .nw-h{display:flex;align-items:flex-start;gap:11px;padding:12px 14px;width:100%;background:none;border:none;text-align:left;cursor:pointer;}
+      .nw-dot{width:7px;height:7px;border-radius:50%;margin-top:6px;flex:0 0 auto;background:var(--ink-faint);}
+      .nw-dot.hot{background:var(--sm-hot);} .nw-dot.warming{background:var(--sm-warm);}
+      .nw-body{flex:1;min-width:0;}
+      .nw-name{font-family:var(--font-display);font-size:16px;line-height:1.3;color:var(--ink);}
+      .nw-reason{font-family:var(--font-mono);font-size:10px;color:var(--ink-tertiary);margin-top:4px;}
+      .nw-reason .owe{color:var(--sm-hot);}
+      .nw-chev{color:var(--ink-tertiary);font-size:13px;margin-top:3px;transition:transform .18s;}
+      .nw-card.open .nw-chev{transform:rotate(90deg);}
+      .nw-live{max-height:0;overflow:hidden;transition:max-height .25s ease;}
+      .nw-card.open .nw-live{max-height:520px;}
+      .nw-inner{padding:0 14px 13px 32px;}
+      .nw-moved{display:flex;gap:9px;padding:5px 0;font-size:12.5px;color:var(--ink-secondary);border-top:1px dashed var(--line);align-items:baseline;line-height:1.45;}
+      .nw-moved:first-child{border-top:none;}
+      .nw-moved i{font-style:normal;font-family:var(--font-mono);font-size:8.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-tertiary);min-width:44px;flex:0 0 auto;}
+      .nw-q{font-family:var(--font-display);font-style:italic;font-size:13.5px;color:var(--ink-secondary);margin:8px 0 0;padding:7px 10px;background:var(--surface-sunken);border-radius:7px;}
+      .nw-coach{margin:9px 0 0;padding:9px 12px;border-left:2px solid var(--sm-accent);background:var(--sm-accent-soft);border-radius:0 8px 8px 0;}
+      .nw-coach .eb{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--sm-accent);}
+      .nw-coach p{margin:4px 0 0;font-family:var(--font-display);font-size:14px;line-height:1.45;color:var(--ink);}
+      .nw-acts{display:flex;gap:6px;margin-top:11px;flex-wrap:wrap;}
+      .nw-btn{font-family:var(--font-body);font-size:12px;font-weight:600;padding:6px 13px;border-radius:999px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink-secondary);cursor:pointer;}
+      .nw-btn.pri{background:var(--sm-accent);border-color:var(--sm-accent);color:#fff;}
+      .nw-btn.qt{border:none;background:none;color:var(--ink-tertiary);}
+      .nw-cap{display:flex;gap:6px;margin-top:11px;padding-top:10px;border-top:1px dashed var(--line);}
+      .nw-cap select{font-size:11px;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface-sunken);color:var(--ink-secondary);padding:0 8px;font-family:var(--font-mono);}
+      .nw-cap input{flex:1;min-width:0;padding:7px 11px;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface-sunken);color:var(--ink);font-family:var(--font-body);font-size:12.5px;}
+      .nw-cap input:focus{outline:none;border-color:var(--sm-accent);background:var(--surface);}
+      .nw-cap .add{font-size:12px;font-weight:600;padding:6px 12px;border-radius:999px;border:none;background:var(--sm-accent);color:#fff;cursor:pointer;}
+      .nw-attn-lbl{display:flex;align-items:center;gap:8px;margin:16px 0 8px;}
+      .nw-attn-lbl span{font-family:var(--font-mono);font-size:9px;letter-spacing:.11em;text-transform:uppercase;color:var(--sm-hot);}
+      .nw-attn-lbl .rule{flex:1;height:1px;background:var(--sm-hot-bg);}
+      .nw-card.attn{border-color:var(--sm-hot-bg);background:var(--sm-hot-bg);}
+      .nw-card.attn .nw-name{color:var(--ink);}
+      .nw-stand{border:1px solid var(--sm-accent-line);border-radius:11px;background:var(--sm-accent-soft);padding:13px 15px;margin-top:6px;}
+      .nw-stand .eb{font-family:var(--font-mono);font-size:8.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--sm-accent);}
+      .nw-stand p{margin:5px 0 0;font-family:var(--font-display);font-size:15px;line-height:1.5;color:var(--ink);}
+      .nw-newws{width:100%;margin-top:10px;padding:11px;border:1px dashed var(--line-strong);border-radius:10px;background:none;color:var(--ink-tertiary);font-family:var(--font-body);font-size:12.5px;font-weight:600;cursor:pointer;display:flex;align-items:baseline;justify-content:center;gap:8px;}
+      .nw-newws:hover{border-color:var(--sm-accent-line);color:var(--sm-accent);}
+      .nw-newws span{font-family:var(--font-mono);font-size:9.5px;font-weight:400;opacity:.75;}
     </style>
 
     <div id="appContainer" class="hidden" style="display:flex;flex-direction:column;height:100dvh;">
@@ -3246,6 +3292,8 @@
         <div class="conversation" id="conversationScroll" style="position:relative;">
             <div class="ptr-indicator" id="ptrIndicator">&#8635;</div>
             <div class="conversation-inner" id="conversation">
+                <!-- v3 Now: the 4 workspaces you're in + 1 that needs you -->
+                <div id="nowWorkspaces"></div>
                 <!-- Permission banner (post-FTUE) -->
                 <div id="permissionBanner" class="hidden" style="margin-bottom:12px;padding:12px 16px;background:var(--surface-sunken);border:1px solid var(--line);display:flex;align-items:center;gap:10px;">
                     <span id="permissionBannerText" style="flex:1;font-size:13px;color:var(--ink-secondary);line-height:1.4;"></span>
@@ -4370,6 +4418,7 @@
             startGreetingClock();
             loadMorningWalk();
             initSelfModel();
+            loadNowWorkspaces();   // v3 Now: the 4+1 workspace cards lead the Now view
             if (isSunday()) loadWeeklyReflection();
             registerPushNotifications();
             checkPostFtuePermissions();
@@ -9937,6 +9986,70 @@
             document.getElementById('smTabNow').classList.toggle('active', now);
             document.getElementById('smTabYou').classList.toggle('active', !now);
             if (!now && !_smLoaded) loadSelfModel();
+            if (now && !_nowLoaded) loadNowWorkspaces();
+        }
+
+        // ═══ v3 Now: the 4 workspaces you're in + 1 that needs you ═══
+        let _nowLoaded = false;
+        async function loadNowWorkspaces(){
+            const host = document.getElementById('nowWorkspaces');
+            if (!host) return;
+            try {
+                const res = await authFetch('/api/now/workspaces');
+                const d = await res.json();
+                if (!d || d.enabled === false){ host.innerHTML = ''; return; }
+                host.innerHTML = renderNowWorkspaces(d);
+                _nowLoaded = true;
+            } catch (e) { host.innerHTML = ''; }
+        }
+        function renderNowWorkspaces(d){
+            const recent = d.recent || [];
+            if (!recent.length) return '';
+            let h = `<div class="nw-head">Now &middot; ${recent.length} recent${d.attention ? ' + 1 that needs you' : ''}</div>`;
+            recent.forEach(w => h += nwCard(w, false));
+            if (d.attention){
+                h += `<div class="nw-attn-lbl"><span>Needs you</span><div class="rule"></div></div>`;
+                h += nwCard(d.attention, true);
+            }
+            if (d.standing_coaching){
+                h += `<div class="nw-attn-lbl" style="margin-top:16px"><span style="color:var(--sm-accent)">Coach &middot; this week</span><div class="rule" style="background:var(--sm-accent-line)"></div></div>`;
+                h += `<div class="nw-stand"><span class="eb">&#9670; Coach</span><p>${escapeHtml(d.standing_coaching.text||'')}</p></div>`;
+            }
+            h += `<button class="nw-newws" onclick="nwNewWorkspace()">+ New workspace <span>starting something Alfred hasn&rsquo;t seen yet</span></button>`;
+            return h;
+        }
+        function nwCard(w, attn){
+            const tempClass = w.temperature === 'hot' ? 'hot' : (w.temperature === 'warming' ? 'warming' : '');
+            const eid = escapeHtml(w.theme);
+            let live = '';
+            (w.moved||[]).forEach(m => live += `<div class="nw-moved"><i>Moved</i><span>${escapeHtml(m)}</span></div>`);
+            if (w.question) live += `<div class="nw-q">${escapeHtml(w.question)}</div>`;
+            if (w.coaching) live += `<div class="nw-coach"><span class="eb">&#9670; Coach</span><p>${escapeHtml(w.coaching)}</p></div>`;
+            live += `<div class="nw-acts"><button class="nw-btn pri" onclick="event.stopPropagation();smOpenThemeFromNow('${smEsc(w.theme)}')">Open workspace</button>`
+                 + `<button class="nw-btn qt" onclick="event.stopPropagation();nwSnooze(this)">${attn ? 'Not now' : 'Snooze a day'}</button></div>`
+                 + `<div class="nw-cap"><select><option>note</option><option>task</option><option>decision</option></select>`
+                 + `<input placeholder="Capture into this workspace…" onclick="event.stopPropagation()"><button class="add" onclick="event.stopPropagation();nwCapture(this,'${smEsc(w.theme)}')">Add</button></div>`;
+            return `<div class="nw-card${attn?' attn':''}">`
+                + `<button class="nw-h" onclick="this.closest('.nw-card').classList.toggle('open')">`
+                + `<span class="nw-dot ${tempClass}"></span>`
+                + `<span class="nw-body"><span class="nw-name">${escapeHtml(w.theme)}</span>`
+                + `<span class="nw-reason ${attn?'owe':''}">${escapeHtml(w.reason||'')}</span></span>`
+                + `<span class="nw-chev">&rsaquo;</span></button>`
+                + `<div class="nw-live"><div class="nw-inner">${live}</div></div></div>`;
+        }
+        function smOpenThemeFromNow(name){ showSurface('you'); smOpenThemeNamed(name, 'you'); }
+        function nwSnooze(btn){ const c=btn.closest('.nw-card'); c.style.opacity='.5'; c.querySelector('.nw-reason').textContent='snoozed'; }
+        async function nwCapture(btn, theme){
+            const input = btn.parentElement.querySelector('input');
+            const kind = btn.parentElement.querySelector('select').value;
+            const text = (input.value||'').trim(); if (text.length < 2) { input.focus(); return; }
+            input.value=''; input.placeholder='Captured ✓';
+            try { await authFetch(`/api/now/capture?theme=${encodeURIComponent(theme)}&kind=${kind}&text=${encodeURIComponent(text)}`, {method:'POST'}); } catch(e){}
+        }
+        async function nwNewWorkspace(){
+            const name = prompt('Name a workspace you’re starting (Alfred will tag it as manual):');
+            if (!name || name.trim().length < 3) return;
+            try { await authFetch(`/api/self-model/facet/create?kind=theme&statement=${encodeURIComponent(name.trim())}`, {method:'POST'}); _nowLoaded=false; loadNowWorkspaces(); } catch(e){}
         }
 
         async function loadSelfModel(){

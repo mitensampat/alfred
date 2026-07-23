@@ -1227,6 +1227,15 @@ class HTTPServer {
         case ("GET", "/api/self-model/browse"):
             return handleSelfModelBrowse(request)
 
+        case ("GET", "/api/now/workspaces"):
+            guard getConfig()?.features?.selfModel ?? false else {
+                return HTTPResponse(statusCode: 200, body: ["enabled": false])
+            }
+            return HTTPResponse(statusCode: 200, body: NowService.build())
+
+        case ("POST", "/api/now/capture"):
+            return handleNowCapture(request)
+
         case ("GET", "/api/self-model/reflections"):
             return handleSelfModelReflections(request)
 
@@ -11461,6 +11470,37 @@ extension HTTPServer {
             return HTTPResponse(statusCode: 200, body: ["enabled": false])
         }
         return HTTPResponse(statusCode: 200, body: SelfModelService.browse())
+    }
+
+    /// Quick-capture from Now: drop a note / task / decision straight into a workspace.
+    /// It becomes a manual facet tagged to the theme — a captured decision is a real
+    /// decision and joins the model; notes/tasks are stored against the workspace.
+    private func handleNowCapture(_ request: HTTPRequest) -> HTTPResponse {
+        guard getConfig()?.features?.selfModel ?? false else {
+            return HTTPResponse(statusCode: 200, body: ["enabled": false])
+        }
+        let theme = (request.queryParams["theme"] ?? "").trimmingCharacters(in: .whitespaces)
+        let kindRaw = request.queryParams["kind"] ?? "note"
+        let kind = ["note", "task", "decision"].contains(kindRaw) ? kindRaw : "note"
+        let text = (request.queryParams["text"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.count >= 2 else {
+            return HTTPResponse(statusCode: 400, body: ["error": "text too short"])
+        }
+        let now = ISO8601DateFormatter().string(from: Date())
+        let store = SelfModelStore.shared
+        // A captured decision is first-class; note/task are stored under their own kind.
+        let facetKind = kind == "decision" ? "decision" : kind
+        let id = "manual_\(kind)_" + SelfModelSynthesizer.stableId(kind, text + theme)
+        let ok = store.upsertFacet(
+            id: id, kind: facetKind, statement: text,
+            confidence: 1.0, status: "active", firstSeen: now, lastSeen: now,
+            trajectory: [], evidence: [],
+            metadata: ["captured_from": "now", "captured_kind": kind, "decided_on": now],
+            origin: "manual")
+        if !theme.isEmpty {
+            _ = store.linkFacetToTheme(facetId: id, themeId: SelfModelSynthesizer.stableId("theme", theme))
+        }
+        return HTTPResponse(statusCode: 200, body: ["ok": ok, "id": id, "kind": kind])
     }
 
     /// Create a workspace, belief or value by hand.
