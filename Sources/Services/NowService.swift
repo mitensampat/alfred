@@ -26,29 +26,62 @@ enum NowService {
 
     /// Days of quiet before a workspace counts as "going cold" for the attention slot.
     private static let coldThreshold = 5
-    /// Minimum urgency score for slot 5 to appear at all.
-    private static let attentionFloor = 20.0
+    /// Minimum significance×neglect for slot 5 to appear. Tuned to the new score:
+    /// significance is 0–1 (capped track record), neglect 1–8 (age). ~0.8 means a
+    /// workspace needs real production behind it AND real neglect — a zero-decision
+    /// cold topic scores 0 and never surfaces. Zero attention cards on a calm day is fine.
+    private static let attentionFloor = 0.8
 
     static func build() -> [String: Any] {
+        let store = SelfModelStore.shared
         let themes = ReflectionStore.shared.getThemesWithState(days: 60, limit: 200)
         guard !themes.isEmpty else { return ["recent": [], "attention": NSNull()] }
 
-        // Rank by recency of your activity. last_activity is an ISO-ish timestamp,
-        // so lexical sort is chronological.
-        let byRecency = themes.sorted {
-            (($0["last_activity"] as? String) ?? "") > (($1["last_activity"] as? String) ?? "")
+        // ── signals ──
+        let engagement = engagementWeights(store.engagementEvents())      // learned multiplier
+        let captures = store.captureCountsByTheme(sinceDays: 7)           // authored
+        let decisionsByTheme = decisionCounts(store)                     // track record (attention)
+
+        func themeId(_ t: [String: Any]) -> String {
+            SelfModelSynthesizer.stableId("theme", (t["theme"] as? String) ?? "")
         }
-        let recent = Array(byRecency.prefix(4))
+
+        // Recency-4 score: engagement × [0.50 momentum + 0.30 authored + 0.20 freshness].
+        // "Recency" is weighted by YOUR engagement intensity and decay, not a raw
+        // ingestion timestamp — a workspace you keep opening beats one Alfred just synced.
+        func score(_ t: [String: Any]) -> Double {
+            let id = themeId(t)
+            let inputs = t["inputs_this_week"] as? Int ?? 0
+            let days = Double(t["days_since"] as? Int ?? 99)
+            let momentum = min(Double(inputs), 6) / 6.0
+            let authored = min(Double(captures[id] ?? 0), 3) / 3.0
+            let freshness = pow(0.5, days / 1.5)                         // half-life 36h
+            let base = 0.50 * momentum + 0.30 * authored + 0.20 * freshness
+            return (engagement[id] ?? 1.0) * base
+        }
+
+        let scored = themes.map { (t: $0, s: score($0)) }.sorted { $0.s > $1.s }
+
+        // Diversify: one card per object — never four flavours of one workstream.
+        var recent: [[String: Any]] = []
+        var pickedTitles: [String] = []
+        for cand in scored {
+            let title = (cand.t["theme"] as? String) ?? ""
+            if pickedTitles.contains(where: { titleSimilar($0, title) }) { continue }
+            recent.append(cand.t)
+            pickedTitles.append(title)
+            if recent.count == 4 { break }
+        }
         let recentThemes = Set(recent.compactMap { $0["theme"] as? String })
 
-        // Attention: the most urgent workspace NOT already surfaced by recency.
-        // Urgency rewards exactly what recency can't see — going cold on something
-        // that still has an open decision.
-        let attention = byRecency
+        // Attention (slot 5): significance × neglect among workspaces recency can't reach.
+        // Significance is track record (produced decisions), not merely 'deciding' state —
+        // neglect only counts against a workspace that earned attention.
+        let attention = themes
             .filter { !recentThemes.contains(($0["theme"] as? String) ?? "") }
-            .map { (t: $0, score: urgency($0)) }
-            .filter { $0.score >= attentionFloor }
-            .max { $0.score < $1.score }?.t
+            .map { (t: $0, a: attentionScore($0, decisions: decisionsByTheme[themeId($0)] ?? 0)) }
+            .filter { $0.a >= attentionFloor }
+            .max { $0.a < $1.a }?.t
 
         var out: [String: Any] = [
             "recent": recent.map { card($0, attention: false) },
@@ -58,16 +91,55 @@ enum NowService {
         return out
     }
 
-    /// Commit-style urgency: cold + something pending outweighs mere age.
-    private static func urgency(_ t: [String: Any]) -> Double {
-        let days = t["days_since"] as? Int ?? 0
-        let state = (t["state"] as? String) ?? ""
-        let hasQuestion = !((t["edge"] as? String) ?? "").isEmpty
-        var s = 0.0
-        if days >= coldThreshold { s += min(Double(days) * 3, 40) }   // going cold
-        if state == "deciding" { s += 20 }                            // a decision is sitting
-        if hasQuestion { s += 12 }                                    // an open question
-        return s
+    /// Learned per-workspace multiplier from Now interactions, decayed (half-life 7d),
+    /// clamped to [0.3, 2.5]. Snooze three mornings → buried; open daily → anchored.
+    private static func engagementWeights(_ events: [(workspace: String, event: String, ts: String)]) -> [String: Double] {
+        let w: [String: Double] = ["open": 0.15, "capture": 0.4, "snooze": -0.5, "dismiss": -0.8]
+        let iso = ISO8601DateFormatter()
+        let now = Date()
+        var sum: [String: Double] = [:]
+        for e in events {
+            guard let ev = w[e.event], let ts = iso.date(from: e.ts) else { continue }
+            let ageDays = max(0, now.timeIntervalSince(ts) / 86400.0)
+            sum[e.workspace, default: 0] += ev * pow(0.5, ageDays / 7.0)
+        }
+        var out: [String: Double] = [:]
+        for (ws, s) in sum { out[ws] = min(max(1.0 + s, 0.3), 2.5) }
+        return out
+    }
+
+    /// Decisions produced per theme (track record) via lineage.
+    private static func decisionCounts(_ store: SelfModelStore) -> [String: Int] {
+        let decisionIds = Set(store.getFacets(kind: "decision").compactMap { $0["id"] as? String })
+        var out: [String: Int] = [:]
+        for l in store.allLineage() where decisionIds.contains(l.facet) {
+            out[l.theme, default: 0] += 1
+        }
+        return out
+    }
+
+    /// significance × neglect. Owed-commitment and user-promoted terms are deferred
+    /// (they need mapping that doesn't exist yet); track record + neglect ship now.
+    private static func attentionScore(_ t: [String: Any], decisions: Int) -> Double {
+        let days = Double(t["days_since"] as? Int ?? 0)
+        guard days >= Double(coldThreshold) else { return 0 }     // must be going cold
+        let significance = min(Double(decisions), 10) / 10.0      // capped track record
+        let neglect = min(days, 40) / 5.0                         // scales with age
+        return significance * neglect
+    }
+
+    /// Token-Jaccard similarity — same shape as the graduation shortlist. Two workspaces
+    /// above 0.5 are treated as the same object for diversification.
+    private static let stop: Set<String> = ["the","and","for","with","from","that","this","strategy","management","and","through","during"]
+    private static func tokens(_ s: String) -> Set<String> {
+        Set(s.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { $0.count > 3 && !stop.contains($0) })
+    }
+    private static func titleSimilar(_ a: String, _ b: String) -> Bool {
+        let ta = tokens(a), tb = tokens(b)
+        guard !ta.isEmpty, !tb.isEmpty else { return false }
+        let inter = Double(ta.intersection(tb).count)
+        let uni = Double(ta.union(tb).count)
+        return uni > 0 && inter / uni > 0.5
     }
 
     private static func card(_ t: [String: Any], attention: Bool) -> [String: Any] {

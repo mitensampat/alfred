@@ -1236,6 +1236,19 @@ class HTTPServer {
         case ("POST", "/api/now/capture"):
             return handleNowCapture(request)
 
+        case ("POST", "/api/now/engagement"):
+            guard getConfig()?.features?.selfModel ?? false else {
+                return HTTPResponse(statusCode: 200, body: ["enabled": false])
+            }
+            let ws = (request.queryParams["workspace"] ?? "").trimmingCharacters(in: .whitespaces)
+            let event = request.queryParams["event"] ?? ""
+            guard !ws.isEmpty, ["open", "capture", "snooze", "dismiss"].contains(event) else {
+                return HTTPResponse(statusCode: 400, body: ["error": "workspace and valid event required"])
+            }
+            SelfModelStore.shared.logEngagement(
+                workspaceId: SelfModelSynthesizer.stableId("theme", ws), event: event)
+            return HTTPResponse(statusCode: 200, body: ["ok": true])
+
         case ("GET", "/api/self-model/reflections"):
             return handleSelfModelReflections(request)
 

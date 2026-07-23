@@ -121,6 +121,16 @@ class SelfModelStore {
             created_at TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_gprop_status ON graduation_proposal(status);
+
+        -- Now engagement: how you touch the Now surface. open/capture lift a workspace's
+        -- score, snooze/dismiss bury it, both decayed. Makes the surfacing self-correcting
+        -- — a bad auto-promotion gets buried by your own behaviour within a week.
+        CREATE TABLE IF NOT EXISTS now_engagement (
+            workspace_id TEXT NOT NULL,
+            event TEXT NOT NULL,
+            ts TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_now_eng_ws ON now_engagement(workspace_id);
         """
 
         var errMsg: UnsafeMutablePointer<CChar>?
@@ -699,6 +709,60 @@ class SelfModelStore {
         let ok = sqlite3_step(stmt) == SQLITE_DONE
         sqlite3_finalize(stmt)
         return ok
+    }
+
+    // MARK: - Now engagement
+
+    /// Record a Now interaction (open / capture / snooze / dismiss) against a workspace.
+    func logEngagement(workspaceId: String, event: String) {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "INSERT INTO now_engagement (workspace_id, event, ts) VALUES (?, ?, ?)", -1, &stmt, nil) == SQLITE_OK else { return }
+        sqlite3_bind_text(stmt, 1, (workspaceId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 2, (event as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 3, (isoNow() as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_step(stmt)
+        sqlite3_finalize(stmt)
+    }
+
+    /// All engagement events (workspace_id, event, ts) for computing weights.
+    func engagementEvents() -> [(workspace: String, event: String, ts: String)] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return [] }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT workspace_id, event, ts FROM now_engagement", -1, &stmt, nil) == SQLITE_OK else { return [] }
+        var out: [(workspace: String, event: String, ts: String)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            out.append((workspace: columnText(stmt, 0) ?? "", event: columnText(stmt, 1) ?? "", ts: columnText(stmt, 2) ?? ""))
+        }
+        sqlite3_finalize(stmt)
+        return out
+    }
+
+    /// Count of recent manual captures (note/task/decision) linked to each theme, for the
+    /// "authored" signal — items *you* put into a workspace.
+    func captureCountsByTheme(sinceDays: Int) -> [String: Int] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return [:] }
+        let sql = """
+        SELECT l.theme_id, COUNT(*) FROM facet_lineage l
+        JOIN self_facet f ON f.id = l.facet_id
+        WHERE f.origin = 'manual' AND f.metadata_json LIKE '%"captured_from":"now"%'
+          AND f.first_seen >= datetime('now', '-\(sinceDays) days')
+        GROUP BY l.theme_id
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [:] }
+        var out: [String: Int] = [:]
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let t = columnText(stmt, 0) { out[t] = Int(sqlite3_column_int64(stmt, 1)) }
+        }
+        sqlite3_finalize(stmt)
+        return out
     }
 
     /// Wrap a bulk write in a transaction — materializing 1,000+ decisions one statement

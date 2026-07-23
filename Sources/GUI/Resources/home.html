@@ -10078,11 +10078,11 @@
             if (w.question) live += `<div class="nw-q">${escapeHtml(w.question)}</div>`;
             if (w.coaching) live += `<div class="nw-coach"><span class="eb">&#9670; Coach</span><p>${escapeHtml(w.coaching)}</p></div>`;
             live += `<div class="nw-acts"><button class="nw-btn pri" onclick="event.stopPropagation();smOpenThemeFromNow('${smEsc(w.theme)}')">Open workspace</button>`
-                 + `<button class="nw-btn qt" onclick="event.stopPropagation();nwSnooze(this)">${attn ? 'Not now' : 'Snooze a day'}</button></div>`
+                 + `<button class="nw-btn qt" onclick="event.stopPropagation();nwSnooze(this,'${smEsc(w.theme)}')">${attn ? 'Not now' : 'Snooze a day'}</button></div>`
                  + `<div class="nw-cap"><select><option>note</option><option>task</option><option>decision</option></select>`
                  + `<input placeholder="Capture into this workspace…" onclick="event.stopPropagation()"><button class="add" onclick="event.stopPropagation();nwCapture(this,'${smEsc(w.theme)}')">Add</button></div>`;
             return `<div class="nw-card${attn?' attn':''}">`
-                + `<button class="nw-h" onclick="this.closest('.nw-card').classList.toggle('open')">`
+                + `<button class="nw-h" onclick="nwToggle(this,'${smEsc(w.theme)}')">`
                 + `<span class="nw-dot ${tempClass}"></span>`
                 + `<span class="nw-body"><span class="nw-name">${escapeHtml(w.theme)}</span>`
                 + `<span class="nw-reason ${attn?'owe':''}">${escapeHtml(w.reason||'')}</span></span>`
@@ -10090,13 +10090,31 @@
                 + `<div class="nw-live"><div class="nw-inner">${live}</div></div></div>`;
         }
         function smOpenThemeFromNow(name){ showSurface('you'); smOpenThemeNamed(name, 'you'); }
-        function nwSnooze(btn){ const c=btn.closest('.nw-card'); c.style.opacity='.5'; c.querySelector('.nw-reason').textContent='snoozed'; }
+        // Expanding a card is an "I'm in this" signal; log it once per open so the
+        // surfacing learns what you actually return to.
+        function nwToggle(btn, theme){
+            const card = btn.closest('.nw-card');
+            const opening = !card.classList.contains('open');
+            card.classList.toggle('open');
+            if (opening && !card.dataset.logged){ card.dataset.logged = '1'; nwEngage(theme, 'open'); }
+        }
+        function nwSnooze(btn, theme){
+            const c = btn.closest('.nw-card'); c.style.opacity = '.5';
+            const r = c.querySelector('.nw-reason'); if (r) r.textContent = 'snoozed';
+            nwEngage(theme, c.classList.contains('attn') ? 'dismiss' : 'snooze');
+        }
+        async function nwEngage(theme, event){
+            try { await authFetch(`/api/now/engagement?workspace=${encodeURIComponent(theme)}&event=${event}`, {method:'POST'}); } catch(e){}
+        }
         async function nwCapture(btn, theme){
             const input = btn.parentElement.querySelector('input');
             const kind = btn.parentElement.querySelector('select').value;
             const text = (input.value||'').trim(); if (text.length < 2) { input.focus(); return; }
             input.value=''; input.placeholder='Captured ✓';
-            try { await authFetch(`/api/now/capture?theme=${encodeURIComponent(theme)}&kind=${kind}&text=${encodeURIComponent(text)}`, {method:'POST'}); } catch(e){}
+            try {
+                await authFetch(`/api/now/capture?theme=${encodeURIComponent(theme)}&kind=${kind}&text=${encodeURIComponent(text)}`, {method:'POST'});
+                nwEngage(theme, 'capture');   // capturing into a workspace is a strong "I'm in this" signal
+            } catch(e){}
         }
         async function nwNewWorkspace(){
             const name = prompt('Name a workspace you’re starting (Alfred will tag it as manual):');
