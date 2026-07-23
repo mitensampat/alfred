@@ -3124,6 +3124,20 @@
       .sm-brow-meta{display:flex;align-items:center;gap:9px;margin-top:5px;flex-wrap:wrap;}
       .sm-yield{font-family:var(--font-mono);font-size:9.5px;color:var(--sm-accent);white-space:nowrap;opacity:.85;}
       .sm-decdate{font-family:var(--font-mono);font-size:9.5px;color:var(--sm-green);letter-spacing:.03em;opacity:.85;}
+      .sm-walk{margin-left:auto;font-family:var(--font-mono);font-size:9px;color:var(--sm-accent);opacity:.7;}
+      /* walkable facet detail */
+      .sm-facet-badge{margin:2px 0 9px;}
+      .sm-facet-title{font-family:var(--font-display);font-weight:420;font-size:clamp(19px,3vw,23px);line-height:1.28;color:var(--ink);}
+      .sm-facet-meta{font-family:var(--font-mono);font-size:10px;color:var(--ink-tertiary);margin-top:7px;}
+      .sm-facet-traj{font-family:var(--font-mono);font-size:10px;color:var(--ink-tertiary);margin-top:8px;}
+      .sm-facet-traj .was{text-decoration:line-through;text-decoration-color:var(--line-strong);}
+      .sm-edge-grp{margin-top:15px;}
+      .sm-edge-lbl{font-family:var(--font-mono);font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-tertiary);margin-bottom:5px;}
+      .sm-edge-link{display:flex;gap:9px;align-items:baseline;width:100%;text-align:left;background:none;border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin-bottom:5px;cursor:pointer;transition:all .12s;}
+      .sm-edge-link:hover{border-color:var(--sm-accent);background:var(--sm-accent-soft);}
+      .sm-linkkind{font-family:var(--font-mono);font-size:8px;text-transform:uppercase;letter-spacing:.06em;padding:2px 6px;border-radius:3px;flex:0 0 auto;margin-top:1px;background:var(--surface-sunken);color:var(--ink-secondary);}
+      .sm-linktxt{flex:1;font-family:var(--font-display);font-size:13.5px;line-height:1.3;color:var(--ink);}
+      .sm-linkarrow{color:var(--ink-tertiary);align-self:center;font-size:13px;}
       /* ---- graduation review ---- */
       .sm-rev-belief{margin:22px 0 10px;padding-bottom:9px;border-bottom:1px solid var(--line);}
       .sm-rev-belief:first-child{margin-top:4px;}
@@ -10782,9 +10796,10 @@
                 body = `<div class="sm-brow-list">` + shown.map(x => {
                     const chips = (x.themes || []).map(t =>
                         `<span class="sm-themechip" onclick="event.stopPropagation();smOpenThemeNamed('${smEsc(t.theme)}','browser')">&#9675; <span class="t">${escapeHtml(t.theme)}</span></span>`).join('');
-                    return `<div class="sm-brow-item">`
+                    return `<div class="sm-brow-item" onclick="smOpenFacet('${smEsc(x.id)}')">`
                         + `<div class="sm-brow-top"><span class="sm-decdate">${escapeHtml(x.date || '')}</span>`
-                        + (x.confirmed ? `<span class="sm-confirmed">&#10003;</span>` : '') + `</div>`
+                        + (x.confirmed ? `<span class="sm-confirmed">&#10003;</span>` : '')
+                        + `<span class="sm-walk">walk &rsaquo;</span></div>`
                         + `<div class="sm-brow-traj"><span class="now" style="font-weight:400">${escapeHtml(x.statement || '')}</span></div>`
                         + (chips ? `<div class="sm-brow-meta">${chips}</div>` : '')
                         + `</div>`;
@@ -10808,10 +10823,11 @@
                         `<span class="sm-themechip" onclick="event.stopPropagation();smOpenThemeNamed('${smEsc(t.theme)}','browser')">&#9675; <span class="t">${escapeHtml(t.theme)}</span></span>`).join('');
                     const lensChips = (b.lenses || []).map(l =>
                         `<span class="sm-linkchip"><span class="t">${escapeHtml(l.description)}</span></span>`).join('');
-                    return `<div class="sm-brow-item">`
+                    return `<div class="sm-brow-item" onclick="smOpenFacet('${smEsc(b.id)}')">`
                         + `<div class="sm-brow-top"><span class="sm-origin ${badge}">${escapeHtml(badgeText)}</span>`
                         + (b.steps > 1 ? `<span class="sm-kmeta">${b.steps} shifts</span>` : '')
-                        + (b.confirmed ? `<span class="sm-confirmed">&#10003;</span>` : '') + `</div>`
+                        + (b.confirmed ? `<span class="sm-confirmed">&#10003;</span>` : '')
+                        + `<span class="sm-walk">walk &rsaquo;</span></div>`
                         + (b.from
                             ? `<div class="sm-brow-traj"><span class="was">${escapeHtml(b.from)}</span><span class="arr">&rarr;</span><span class="now">${escapeHtml(b.statement)}</span></div>`
                             : `<div class="sm-brow-traj"><span class="now">${escapeHtml(b.statement)}</span></div>`)
@@ -10890,6 +10906,51 @@
 
         // Escape a string for safe embedding inside a single-quoted inline handler.
         function smEsc(s){ return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+
+        // ═══ Walkable facet detail: every edge is a link you follow ═══
+        let _smFacetStack = [];
+        async function smOpenFacet(id, isBack){
+            const el = document.getElementById('youInner');
+            if (!isBack) _smFacetStack.push(id);
+            el.innerHTML = `<button class="sm-back" onclick="smFacetBack()">&lsaquo; back</button><div class="sm-loading">Opening&hellip;</div>`;
+            try {
+                const res = await authFetch('/api/self-model/facet?id=' + encodeURIComponent(id));
+                const d = await res.json();
+                if (!d || d.error){ el.innerHTML = `<button class="sm-back" onclick="smFacetBack()">&lsaquo; back</button><div class="sm-brow-empty">Couldn&rsquo;t open this.</div>`; return; }
+                el.innerHTML = smFacetHTML(d);
+            } catch(e){ el.innerHTML = `<button class="sm-back" onclick="smFacetBack()">&lsaquo; back</button><div class="sm-brow-empty">Couldn&rsquo;t open this.</div>`; }
+            document.getElementById('youScreen').scrollTop = 0;
+        }
+        function smFacetBack(){
+            _smFacetStack.pop();               // drop current
+            const prev = _smFacetStack[_smFacetStack.length - 1];
+            if (prev){ smOpenFacet(prev, true); } else { smBrowseRender(); }
+        }
+        const SM_KIND_LABEL = { theme:'Workspace', decision:'Decision', belief:'Belief', pattern:'Lens', value:'Value' };
+        function smFacetHTML(d){
+            const kl = SM_KIND_LABEL[d.kind] || d.kind;
+            const badge = d.origin === 'declared' ? 'declared' : (d.origin === 'manual' ? 'declared' : 'emergent');
+            let h = `<button class="sm-back" onclick="smFacetBack()">&lsaquo; back</button>`;
+            h += `<div class="sm-facet-badge"><span class="sm-origin ${badge}">${escapeHtml(kl)}${d.origin==='declared'?' · declared':''}</span></div>`;
+            h += `<div class="sm-facet-title">${escapeHtml(d.statement||'')}</div>`;
+            if (d.date) h += `<div class="sm-facet-meta">${escapeHtml((d.date||'').slice(0,10))}</div>`;
+            if (d.from_shift) h += `<div class="sm-facet-traj"><span class="was">${escapeHtml(d.from_shift)}</span> &rarr; now</div>`;
+            const e = d.edges || {};
+            const grp = (label, arr) => (arr && arr.length)
+                ? `<div class="sm-edge-grp"><div class="sm-edge-lbl">${label}</div>` + arr.map(n =>
+                    `<button class="sm-edge-link" onclick="smOpenFacet('${smEsc(n.id)}')"><span class="sm-linkkind">${SM_KIND_LABEL[n.kind]||n.kind}</span><span class="sm-linktxt">${escapeHtml(n.statement)}</span><span class="sm-linkarrow">&rsaquo;</span></button>`).join('') + `</div>`
+                : '';
+            let edgesHtml = '';
+            edgesHtml += grp('Crystallised from', e.from);
+            edgesHtml += grp('Grounded in', e.grounded_by);
+            edgesHtml += grp('Decided in', e.decided_in);
+            edgesHtml += grp('Grounds', e.grounds);
+            if (e.produced_decisions) edgesHtml += grp('Decisions made here', e.produced_decisions.slice(0,12));
+            if (e.produced_beliefs) edgesHtml += grp('Beliefs formed here', e.produced_beliefs);
+            edgesHtml += grp('Supports', e.supports);
+            h += edgesHtml || `<div class="sm-brow-empty" style="padding:22px 8px">No connections yet.</div>`;
+            return h;
+        }
 
         /// Open a theme by name (from the browser or the You list).
         async function smOpenThemeNamed(name, from, metaHint){

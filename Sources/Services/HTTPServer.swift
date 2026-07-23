@@ -1239,6 +1239,16 @@ class HTTPServer {
         case ("GET", "/api/self-model/reflections"):
             return handleSelfModelReflections(request)
 
+        case ("GET", "/api/self-model/facet"):
+            guard getConfig()?.features?.selfModel ?? false else {
+                return HTTPResponse(statusCode: 200, body: ["enabled": false])
+            }
+            guard let fid = request.queryParams["id"], !fid.isEmpty,
+                  let detail = SelfModelService.facetDetail(id: fid) else {
+                return HTTPResponse(statusCode: 404, body: ["error": "not found"])
+            }
+            return HTTPResponse(statusCode: 200, body: detail)
+
         case ("GET", "/api/reflection/thread-candidates"):
             return handleThreadCandidates(request)
 

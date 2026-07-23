@@ -370,6 +370,53 @@ enum SelfModelService {
         ]
     }
 
+    /// One facet plus every edge touching it, resolved to {id,kind,statement} so the
+    /// UI can render each as a link and walk the graph. Only real edges are returned
+    /// (lineage + support, both directions) — sources aren't facets, so a decision
+    /// doesn't fake a source link it doesn't have.
+    static func facetDetail(id: String) -> [String: Any]? {
+        let store = SelfModelStore.shared
+        guard let f = store.getFacet(id: id) else { return nil }
+        let kind = (f["kind"] as? String) ?? ""
+
+        // Resolve helpers
+        func node(_ fid: String) -> [String: Any]? {
+            guard let n = store.getFacet(id: fid) else { return nil }
+            return ["id": fid, "kind": n["kind"] as? String ?? "", "statement": n["statement"] as? String ?? ""]
+        }
+        let lineage = store.allLineage()      // (facet, theme)
+        let support = store.allSupport()      // (support, belief, kind)
+
+        var edges: [String: Any] = [:]
+        switch kind {
+        case "belief":
+            edges["from"] = lineage.filter { $0.facet == id }.compactMap { node($0.theme) }
+            edges["grounded_by"] = support.filter { $0.belief == id }.compactMap { node($0.support) }
+        case "decision":
+            edges["decided_in"] = lineage.filter { $0.facet == id }.compactMap { node($0.theme) }
+            edges["grounds"] = support.filter { $0.support == id }.compactMap { node($0.belief) }
+        case "theme":
+            let facetsHere = lineage.filter { $0.theme == id }.map { $0.facet }
+            edges["produced_decisions"] = facetsHere.compactMap { node($0) }.filter { ($0["kind"] as? String) == "decision" }
+            edges["produced_beliefs"] = facetsHere.compactMap { node($0) }.filter { ($0["kind"] as? String) == "belief" }
+        case "pattern":
+            edges["supports"] = support.filter { $0.support == id }.compactMap { node($0.belief) }
+        default: break
+        }
+
+        let origin = (f["origin"] as? String) ?? "emergent"
+        let traj = f["trajectory"] as? [[String: String]] ?? []
+        return [
+            "id": id, "kind": kind,
+            "statement": f["statement"] as? String ?? "",
+            "origin": origin,
+            "verdict": verdict(f),
+            "from_shift": traj.first?["from"] ?? "",
+            "date": (f["metadata"] as? [String: String])?["decided_on"] ?? (f["last_seen"] as? String ?? ""),
+            "edges": edges
+        ]
+    }
+
     // ───────────── callable verbs ─────────────
 
     /// Confirm / dismiss a facet (the "you are the final editor" tenet).
