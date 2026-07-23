@@ -1215,6 +1215,18 @@ class HTTPServer {
         case ("POST", "/api/self-model/feedback"):
             return handleArtifactFeedback(request)
 
+        case ("POST", "/api/self-model/workspace/promote"):
+            return handleWorkspacePromote(request)
+
+        case ("GET", "/api/self-model/merges"):
+            return handleMergesList(request)
+
+        case ("POST", "/api/self-model/merges/compute"):
+            return handleMergesCompute(request)
+
+        case ("POST", "/api/self-model/merges/resolve"):
+            return handleMergesResolve(request)
+
         case ("POST", "/api/self-model/graduate"):
             return handleGraduate(request)
 
@@ -11568,6 +11580,79 @@ extension HTTPServer {
             eventType: "self_model_feedback", context: facet, signalValue: text,
             metadata: ["source": "artifact_edit"])
         return HTTPResponse(statusCode: 200, body: ["ok": true])
+    }
+
+    /// Manually promote a topic to a workspace, demote a workspace to a topic, or
+    /// return it to auto — the override that always wins over the promotion bar.
+    private func handleWorkspacePromote(_ request: HTTPRequest) -> HTTPResponse {
+        guard getConfig()?.features?.selfModel ?? false else {
+            return HTTPResponse(statusCode: 200, body: ["enabled": false])
+        }
+        let theme = (request.queryParams["theme"] ?? "").trimmingCharacters(in: .whitespaces)
+        let action = request.queryParams["action"] ?? ""   // promote | demote | auto
+        guard !theme.isEmpty, ["promote", "demote", "auto"].contains(action) else {
+            return HTTPResponse(statusCode: 400, body: ["error": "theme and action required"])
+        }
+        let id = SelfModelSynthesizer.stableId("theme", theme)
+        let state: String? = action == "promote" ? "promoted" : (action == "demote" ? "demoted" : nil)
+        let ok = SelfModelStore.shared.setWorkspaceOverride(themeId: id, state: state)
+        return HTTPResponse(statusCode: 200, body: ["ok": ok, "action": action])
+    }
+
+    /// Pending merge proposals, resolved to workspace statements.
+    private func handleMergesList(_ request: HTTPRequest) -> HTTPResponse {
+        let store = SelfModelStore.shared
+        let byId = Dictionary(store.getFacets(kind: "theme").map {
+            (($0["id"] as? String ?? ""), ($0["statement"] as? String ?? ""))
+        }, uniquingKeysWith: { a, _ in a })
+        let rows: [[String: Any]] = store.getMergeProposals(status: "pending").map { p in
+            ["a": p.a, "b": p.b, "a_name": byId[p.a] ?? "", "b_name": byId[p.b] ?? ""]
+        }
+        return HTTPResponse(statusCode: 200, body: ["count": rows.count, "merges": rows])
+    }
+
+    /// Detect merge candidates: two WORKSPACES whose names describe one object.
+    private func handleMergesCompute(_ request: HTTPRequest) -> HTTPResponse {
+        guard getConfig()?.features?.selfModel ?? false else {
+            return HTTPResponse(statusCode: 200, body: ["enabled": false])
+        }
+        let store = SelfModelStore.shared
+        let promoted = SelfModelService.promotedThemeIds(store: store)
+        let workspaces = store.getFacets(kind: "theme").filter { promoted.contains($0["id"] as? String ?? "") }
+            .map { (id: $0["id"] as? String ?? "", name: $0["statement"] as? String ?? "") }
+        var proposed = 0
+        for i in 0..<workspaces.count {
+            for j in (i+1)..<workspaces.count {
+                if SelfModelService.workspacesSimilar(workspaces[i].name, workspaces[j].name) {
+                    if store.addMergeProposal(a: workspaces[i].id, b: workspaces[j].id) { proposed += 1 }
+                }
+            }
+        }
+        return HTTPResponse(statusCode: 200, body: ["ok": true, "proposed": proposed])
+    }
+
+    /// Confirm or reject a merge. On confirm, b is merged into a via mergeThemes and
+    /// b's override is cleared — Alfred only reorganizes your work when you say so.
+    private func handleMergesResolve(_ request: HTTPRequest) -> HTTPResponse {
+        guard getConfig()?.features?.selfModel ?? false else {
+            return HTTPResponse(statusCode: 200, body: ["enabled": false])
+        }
+        let a = request.queryParams["a"] ?? "", b = request.queryParams["b"] ?? ""
+        let action = request.queryParams["action"] ?? ""
+        guard !a.isEmpty, !b.isEmpty, ["merge", "reject"].contains(action) else {
+            return HTTPResponse(statusCode: 400, body: ["error": "a, b, action required"])
+        }
+        let store = SelfModelStore.shared
+        if action == "merge" {
+            let byId = Dictionary(store.getFacets(kind: "theme").map {
+                (($0["id"] as? String ?? ""), ($0["statement"] as? String ?? ""))
+            }, uniquingKeysWith: { x, _ in x })
+            if let aName = byId[a], let bName = byId[b] {
+                _ = ReflectionStore.shared.mergeThemes(source: bName, target: aName)
+            }
+        }
+        _ = store.setMergeStatus(a: a, b: b, status: action == "merge" ? "merged" : "rejected")
+        return HTTPResponse(statusCode: 200, body: ["ok": true, "action": action])
     }
 
     /// Quick-capture from Now: drop a note / task / decision straight into a workspace.

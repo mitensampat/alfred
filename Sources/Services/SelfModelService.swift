@@ -227,6 +227,47 @@ enum SelfModelService {
         ]
     }
 
+    // ───────────── workspace promotion ─────────────
+
+    /// A theme is a WORKSPACE (earned) if it produced a graduated belief or sustained
+    /// decision-making. Everything else is a TOPIC — the cheap substrate. A user
+    /// override always wins. This is the theme→workspace boundary.
+    static let promotionBeliefBar = 1
+    static let promotionDecisionBar = 8
+
+    /// Returns the set of theme *ids* that are workspaces, given produced counts + overrides.
+    static func promotedThemeIds(store: SelfModelStore) -> Set<String> {
+        let decisionIds = Set(store.getFacets(kind: "decision").compactMap { $0["id"] as? String })
+        let beliefIds = Set(store.getFacets(kind: "belief").compactMap { $0["id"] as? String })
+        var dec: [String: Int] = [:], bel: [String: Int] = [:]
+        for l in store.allLineage() {
+            if decisionIds.contains(l.facet) { dec[l.theme, default: 0] += 1 }
+            else if beliefIds.contains(l.facet) { bel[l.theme, default: 0] += 1 }
+        }
+        let overrides = store.workspaceOverrides()
+        var out = Set<String>()
+        for t in store.getFacets(kind: "theme") {
+            guard let id = t["id"] as? String else { continue }
+            if let o = overrides[id] { if o == "promoted" { out.insert(id) }; continue }
+            if (bel[id] ?? 0) >= promotionBeliefBar || (dec[id] ?? 0) >= promotionDecisionBar { out.insert(id) }
+        }
+        return out
+    }
+
+    /// Two workspaces describe the same object — token-Jaccard, a touch stricter than
+    /// Now's diversify (0.45) since a merge is destructive and proposed, not silent.
+    private static let mergeStop: Set<String> = ["the","and","for","with","from","that","this","strategy","management","through","during","and","product","business","model"]
+    static func workspacesSimilar(_ a: String, _ b: String) -> Bool {
+        func tk(_ s: String) -> Set<String> {
+            Set(s.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { $0.count > 3 && !mergeStop.contains($0) })
+        }
+        let ta = tk(a), tb = tk(b)
+        guard ta.count >= 2, tb.count >= 2 else { return false }
+        let inter = Double(ta.intersection(tb).count)
+        let uni = Double(ta.union(tb).count)
+        return uni > 0 && inter / uni >= 0.45
+    }
+
     // ───────────── browse (the immersive "You" surface) ─────────────
 
     /// The whole model, at scale, for exploration — not the curated read path.
@@ -262,6 +303,7 @@ enum SelfModelService {
         let beliefById = Dictionary(beliefFacets.map { (($0["id"] as? String ?? ""), $0) }, uniquingKeysWith: { a, _ in a })
         let themeById = Dictionary(themeFacets.map { (($0["id"] as? String ?? ""), $0) }, uniquingKeysWith: { a, _ in a })
 
+        let workspaceIds = promotedThemeIds(store: store)
         let tempRankLocal = tempRank
         let themes: [[String: Any]] = themeFacets.map { f -> [String: Any] in
             let meta = f["metadata"] as? [String: String] ?? [:]
@@ -280,7 +322,8 @@ enum SelfModelService {
                 "edge": meta["edge"] ?? "",
                 "beliefs": born,
                 "belief_count": born.count,
-                "decision_count": decidedHere
+                "decision_count": decidedHere,
+                "is_workspace": workspaceIds.contains(id)
             ]
         }.sorted {
             let a = tempRankLocal[$0["temperature"] as? String ?? ""] ?? 9

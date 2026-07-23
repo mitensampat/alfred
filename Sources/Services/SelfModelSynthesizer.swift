@@ -42,9 +42,27 @@ enum SelfModelSynthesizer {
         return overlap >= 0.6
     }
 
+    /// Only one materialize may run at a time. Two concurrent runs deadlock: beginBulk
+    /// holds dbLock while acquiring the SQLite write-lock, so A-holds-write / B-holds-dbLock
+    /// cross-wait. A concurrent caller returns the last counts rather than piling up.
+    private static let materializeLock = NSLock()
+    private static var lastCounts: [String: Int] = [:]
+
+    /// Run `work` on a background queue and return its result, or nil if it doesn't
+    /// finish within `seconds`. Used to keep materialize from hanging on a contended
+    /// dependency (the learning service holding its lock during LLM calls).
+    private static func withTimeout<T>(seconds: Double, _ work: @escaping () -> T) -> T? {
+        let sem = DispatchSemaphore(value: 0)
+        var result: T?
+        DispatchQueue.global().async { result = work(); sem.signal() }
+        return sem.wait(timeout: .now() + seconds) == .success ? result : nil
+    }
+
     /// Materialize all facets. Returns per-kind counts after the run.
     @discardableResult
     static func materialize() -> [String: Int] {
+        guard materializeLock.try() else { return lastCounts }
+        defer { materializeLock.unlock() }
         let store = ReflectionStore.shared
         let facets = SelfModelStore.shared
         let now = ISO8601DateFormatter().string(from: Date())
@@ -70,7 +88,7 @@ enum SelfModelSynthesizer {
             )
         }
 
-        // ---- Questions ----
+// ---- Questions ----
         for q in store.getOpenQuestions(limit: 12) where !q.isEmpty {
             _ = facets.upsertFacet(
                 id: "question_" + fnv1a(q), kind: "question", statement: q,
@@ -79,7 +97,11 @@ enum SelfModelSynthesizer {
         }
 
         // ---- Patterns (durable preferences/instructions; skip journal-like context) ----
-        for p in WorkflowLearningService.shared.getLearnedPatterns() where !p.isArchived && p.type != "user_context" {
+        // getLearnedPatterns takes WorkflowLearningService's lock, which computeLearnedPatterns
+        // holds during (sometimes hanging) LLM calls. Bound the wait so materialize — and thus
+        // the whole You/Now surface — never hangs waiting on the learning service.
+        let learnedPatterns = withTimeout(seconds: 3) { WorkflowLearningService.shared.getLearnedPatterns() } ?? []
+        for p in learnedPatterns where !p.isArchived && p.type != "user_context" {
             _ = facets.upsertFacet(
                 id: "pattern_" + p.id, kind: "pattern", statement: p.description,
                 confidence: p.confidence, status: p.isStale ? "fading" : "active",
@@ -88,7 +110,7 @@ enum SelfModelSynthesizer {
                            "reinforcements": String(p.reinforcements)])
         }
 
-        // ---- Beliefs (trajectory chaining) ----
+// ---- Beliefs (trajectory chaining) ----
         // Build chains deterministically in memory (oldest-first), then upsert each chain
         // as ONE belief facet. This keeps the whole pass idempotent — no reliance on
         // prior DB state, so re-running produces identical chains rather than appending.
@@ -122,7 +144,8 @@ enum SelfModelSynthesizer {
         // ---- Lineage ----
         backfillLineage()
 
-        return facets.counts()
+        lastCounts = facets.counts()
+        return lastCounts
     }
 
     /// Promote extracted decisions into first-class facets.

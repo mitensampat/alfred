@@ -29,6 +29,9 @@ class SelfModelStore {
         if sqlite3_open(dbPath, &db) == SQLITE_OK {
             sqlite3_exec(db, "PRAGMA journal_mode=WAL", nil, nil, nil)
             sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nil, nil, nil)
+            // Fail write-lock contention fast instead of blocking forever. Belt-and-
+            // suspenders against the beginBulk deadlock (also serialized in the synthesizer).
+            sqlite3_busy_timeout(db, 4000)
             initializeDatabase()
         } else {
             print("❌ SelfModelStore: Failed to open database")
@@ -143,6 +146,26 @@ class SelfModelStore {
             ts TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_model_feedback_facet ON model_feedback(facet_id);
+
+        -- Workspace promotion: a theme is a WORKSPACE (earned) vs a TOPIC (cheap
+        -- substrate). Promotion is auto by a bar, but a user override wins — promote a
+        -- topic, or demote a workspace, by hand.
+        CREATE TABLE IF NOT EXISTS workspace_override (
+            theme_id TEXT PRIMARY KEY,
+            state TEXT NOT NULL,      -- promoted | demoted
+            ts TEXT
+        );
+
+        -- Merge proposals: two workspaces that look like one object. Propose-and-confirm
+        -- — Alfred never silently reorganizes your work.
+        CREATE TABLE IF NOT EXISTS merge_proposal (
+            a_theme TEXT NOT NULL,
+            b_theme TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            ts TEXT,
+            PRIMARY KEY (a_theme, b_theme)
+        );
+        CREATE INDEX IF NOT EXISTS idx_merge_status ON merge_proposal(status);
         """
 
         var errMsg: UnsafeMutablePointer<CChar>?
@@ -733,6 +756,89 @@ class SelfModelStore {
         guard sqlite3_prepare_v2(db, "UPDATE graduation_proposal SET status = ? WHERE id = ?", -1, &stmt, nil) == SQLITE_OK else { return false }
         sqlite3_bind_text(stmt, 1, (status as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         sqlite3_bind_text(stmt, 2, (id as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        let ok = sqlite3_step(stmt) == SQLITE_DONE
+        sqlite3_finalize(stmt)
+        return ok
+    }
+
+    // MARK: - Workspace promotion & merge proposals
+
+    /// Set or clear a promotion override for a theme. Pass nil to return it to auto.
+    @discardableResult
+    func setWorkspaceOverride(themeId: String, state: String?) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+        var stmt: OpaquePointer?
+        if let s = state {
+            guard sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO workspace_override (theme_id, state, ts) VALUES (?, ?, ?)", -1, &stmt, nil) == SQLITE_OK else { return false }
+            sqlite3_bind_text(stmt, 1, (themeId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(stmt, 2, (s as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(stmt, 3, (isoNow() as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        } else {
+            guard sqlite3_prepare_v2(db, "DELETE FROM workspace_override WHERE theme_id = ?", -1, &stmt, nil) == SQLITE_OK else { return false }
+            sqlite3_bind_text(stmt, 1, (themeId as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        }
+        let ok = sqlite3_step(stmt) == SQLITE_DONE
+        sqlite3_finalize(stmt)
+        return ok
+    }
+
+    /// All promotion overrides: theme_id → "promoted"|"demoted".
+    func workspaceOverrides() -> [String: String] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return [:] }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT theme_id, state FROM workspace_override", -1, &stmt, nil) == SQLITE_OK else { return [:] }
+        var out: [String: String] = [:]
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let t = columnText(stmt, 0), let s = columnText(stmt, 1) { out[t] = s }
+        }
+        sqlite3_finalize(stmt)
+        return out
+    }
+
+    @discardableResult
+    func addMergeProposal(a: String, b: String) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "INSERT OR IGNORE INTO merge_proposal (a_theme, b_theme, status, ts) VALUES (?, ?, 'pending', ?)", -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, (a as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 2, (b as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 3, (isoNow() as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        let ok = sqlite3_step(stmt) == SQLITE_DONE
+        sqlite3_finalize(stmt)
+        return ok
+    }
+
+    func getMergeProposals(status: String = "pending") -> [(a: String, b: String)] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return [] }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT a_theme, b_theme FROM merge_proposal WHERE status = ?", -1, &stmt, nil) == SQLITE_OK else { return [] }
+        sqlite3_bind_text(stmt, 1, (status as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        var out: [(a: String, b: String)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            out.append((a: columnText(stmt, 0) ?? "", b: columnText(stmt, 1) ?? ""))
+        }
+        sqlite3_finalize(stmt)
+        return out
+    }
+
+    @discardableResult
+    func setMergeStatus(a: String, b: String, status: String) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "UPDATE merge_proposal SET status = ? WHERE a_theme = ? AND b_theme = ?", -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, (status as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 2, (a as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 3, (b as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         let ok = sqlite3_step(stmt) == SQLITE_DONE
         sqlite3_finalize(stmt)
         return ok

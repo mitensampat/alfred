@@ -34,7 +34,13 @@ enum NowService {
 
     static func build() -> [String: Any] {
         let store = SelfModelStore.shared
-        let themes = ReflectionStore.shared.getThemesWithState(days: 60, limit: 200)
+        let allThemes = ReflectionStore.shared.getThemesWithState(days: 60, limit: 200)
+        // Now surfaces WORKSPACES, not topics — the promotion bar keeps the cheap
+        // substrate out of the surface you open in the act of work.
+        let promoted = SelfModelService.promotedThemeIds(store: store)
+        let themes = allThemes.filter {
+            promoted.contains(SelfModelSynthesizer.stableId("theme", ($0["theme"] as? String) ?? ""))
+        }
         guard !themes.isEmpty else { return ["recent": [], "attention": NSNull()] }
 
         // ── signals ──
