@@ -3298,6 +3298,7 @@
             <div class="sm-nav" id="smSurfaceNav" style="display:none;">
                 <button type="button" class="sm-tab active" id="smTabNow" onclick="showSurface('now')">Now</button>
                 <button type="button" class="sm-tab" id="smTabYou" onclick="showSurface('you')">You</button>
+                <button type="button" class="sm-tab" id="smTabModel" onclick="showSurface('model')">Model</button>
             </div>
             <div class="top-bar-actions">
                 <span id="syncIndicator" style="font-size:10px;color:var(--ink-faint);margin-right:6px;opacity:0.7;cursor:pointer;" onclick="forceFullRefresh()" title="Tap to refresh"></span>
@@ -10013,14 +10014,20 @@
         }
 
         function showSurface(which){
-            const now = which !== 'you';
-            document.getElementById('conversationScroll').style.display = now ? '' : 'none';
-            document.getElementById('inputArea').style.display = now ? '' : 'none';
-            document.getElementById('youScreen').style.display = now ? 'none' : 'flex';
-            document.getElementById('smTabNow').classList.toggle('active', now);
-            document.getElementById('smTabYou').classList.toggle('active', !now);
-            if (!now && !_smLoaded) loadSelfModel();
-            if (now && !_nowLoaded) loadNowWorkspaces();
+            // Model and You share the self-model screen; Model opens straight into the
+            // browser, You into the curated registers.
+            const isNow = which === 'now';
+            const smVisible = !isNow;  // You or Model
+            document.getElementById('conversationScroll').style.display = isNow ? '' : 'none';
+            document.getElementById('inputArea').style.display = isNow ? '' : 'none';
+            document.getElementById('youScreen').style.display = smVisible ? 'flex' : 'none';
+            document.getElementById('smTabNow').classList.toggle('active', isNow);
+            document.getElementById('smTabYou').classList.toggle('active', which === 'you');
+            const modelTab = document.getElementById('smTabModel');
+            if (modelTab) modelTab.classList.toggle('active', which === 'model');
+            if (isNow && !_nowLoaded) loadNowWorkspaces();
+            if (which === 'you'){ if (!_smLoaded) loadSelfModel(); else renderSelfModel(_smData); }
+            if (which === 'model'){ if (!_smLoaded) loadSelfModel().then(()=>smBrowse()); else smBrowse(); }
         }
 
         // ═══ v3 Now: the 4 workspaces you're in + 1 that needs you ═══
