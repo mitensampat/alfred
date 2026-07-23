@@ -892,6 +892,12 @@
         .cadence-status-dot.disabled { background: var(--line-strong); }
         @keyframes cadence-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
         .cadence-group-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-tertiary); padding: 10px 16px 4px; }
+        .cadence-health { display:flex; align-items:center; gap:16px; flex-wrap:wrap; padding:11px 16px; margin-bottom:4px; background:var(--surface-sunken); border-radius:8px; }
+        .cadence-health .ch-m { font-family:var(--font-mono); font-size:11px; color:var(--ink-secondary); }
+        .cadence-health .ch-m b { font-family:var(--font-display); font-size:16px; font-weight:400; color:var(--ink); margin-right:4px; }
+        .cadence-health .ch-m.ok b { color:var(--growth); }
+        .cadence-health .ch-m.bad b { color:var(--danger); }
+        .cadence-health .ch-run { margin-left:auto; font-family:var(--font-body); font-size:12px; font-weight:600; color:var(--sm-accent, var(--accent-primary)); background:none; border:none; cursor:pointer; }
         .cadence-group-label:first-child { padding-top: 8px; }
         .cadence-schedule { font-size: 11px; color: var(--ink-tertiary); cursor: pointer; min-width: 60px; text-align: center; white-space: nowrap; }
         .cadence-schedule:hover { color: var(--ink-secondary); }
@@ -7596,7 +7602,17 @@
                 'WEEKLY': cadenceList.filter(c => c.schedule?.type === 'weekly'),
                 'RECURRING': cadenceList.filter(c => c.schedule?.type === 'interval')
             };
-            let html = '';
+            // v3 Settings health line — the one thing you open this screen to know:
+            // is it all running? Answerable at a glance instead of by counting toggles.
+            const running = cadenceList.filter(c => c.enabled).length;
+            const failing = cadenceList.filter(c => c.enabled && (c.last_run_status === 'failure' || (c.failure_cooldown_until && new Date(c.failure_cooldown_until) > new Date()))).length;
+            const lastTs = cadenceList.map(c => c.last_run_timestamp).filter(Boolean).sort().pop();
+            const lastSync = lastTs ? formatRelativeTime(lastTs) : 'never';
+            let html = `<div class="cadence-health">`
+                + `<span class="ch-m ${failing ? '' : 'ok'}"><b>${running}</b> running</span>`
+                + `<span class="ch-m ${failing ? 'bad' : ''}"><b>${failing}</b> failing</span>`
+                + `<span class="ch-m">last sync <b>${lastSync}</b></span>`
+                + `<button class="ch-run" onclick="runAllCadences()">Run all now</button></div>`;
             for (const [label, items] of Object.entries(groups)) {
                 if (items.length === 0) continue;
                 html += `<div class="cadence-group-label">${label}</div>`;
@@ -7657,6 +7673,10 @@
             if (el) el.classList.toggle('visible');
         }
 
+        async function runAllCadences() {
+            const enabled = (cadenceList || []).filter(c => c.enabled);
+            for (const c of enabled) { try { await triggerCadence(c.id); } catch(e) {} }
+        }
         async function triggerCadence(id) {
             const btn = document.getElementById('cadenceRun_' + id);
             if (!btn || btn.disabled) return;
