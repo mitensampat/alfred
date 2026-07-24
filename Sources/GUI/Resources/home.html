@@ -3140,12 +3140,19 @@
       .sm-yield{font-family:var(--font-mono);font-size:9.5px;color:var(--sm-accent);white-space:nowrap;opacity:.85;}
       .sm-decdate{font-family:var(--font-mono);font-size:9.5px;color:var(--sm-green);letter-spacing:.03em;opacity:.85;}
       .sm-walk{margin-left:auto;font-family:var(--font-mono);font-size:9px;color:var(--sm-accent);opacity:.7;}
-      /* workspace-row edit menu (rename / merge / promote) */
+      /* workspace edit affordance — inline actions row, same on Now / You / Model.
+         In-flow (not an absolute dropdown) so it can never render behind a sibling card. */
       .sm-ws-item{position:relative;}
       .sm-ws-item .sm-brow-top{align-items:center;gap:8px;}
       .sm-ws-item .sm-brow-name{cursor:pointer;}
-      .sm-ws-item .sm-edit-btn{flex:0 0 auto;width:28px;height:26px;margin-left:auto;}
-      .sm-ws-menu{min-width:150px;}
+      .sm-ws-item .sm-edit-btn{margin-left:auto;}
+      .sm-ws-item .sm-edit-btn,.sm-obj-top .sm-edit-btn,.nw-acts .sm-edit-btn{flex:0 0 auto;width:28px;height:26px;}
+      .nw-acts .sm-edit-btn{margin-left:auto;}
+      .sm-ws-actions{display:none;flex-wrap:wrap;gap:6px;margin-top:10px;padding-top:9px;border-top:1px dashed var(--line);}
+      .sm-menu-open .sm-ws-actions{display:flex;}
+      .sm-ws-actions button{font-family:var(--font-body);font-size:11.5px;padding:6px 12px;border-radius:999px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink-secondary);cursor:pointer;transition:all .12s;}
+      .sm-ws-actions button:hover{border-color:var(--sm-accent);color:var(--sm-accent);}
+      .sm-menu-open .sm-edit-btn{border-color:var(--sm-accent);color:var(--sm-accent);background:var(--sm-accent-soft);}
       /* walkable facet detail */
       .sm-facet-badge{margin:2px 0 9px;}
       .sm-facet-title{font-family:var(--font-display);font-weight:420;font-size:clamp(19px,3vw,23px);line-height:1.28;color:var(--ink);}
@@ -3285,7 +3292,7 @@
       .nw-chev{color:var(--ink-tertiary);font-size:13px;margin-top:3px;transition:transform .18s;}
       .nw-card.open .nw-chev{transform:rotate(90deg);}
       .nw-live{max-height:0;overflow:hidden;transition:max-height .25s ease;}
-      .nw-card.open .nw-live{max-height:520px;}
+      .nw-card.open .nw-live{max-height:640px;}
       .nw-inner{padding:0 14px 13px 32px;}
       .nw-moved{display:flex;gap:9px;padding:5px 0;font-size:12.5px;color:var(--ink-secondary);border-top:1px dashed var(--line);align-items:baseline;line-height:1.45;}
       .nw-moved:first-child{border-top:none;}
@@ -10097,7 +10104,9 @@
             if (w.question) live += `<div class="nw-q">${escapeHtml(w.question)}</div>`;
             if (w.coaching) live += `<div class="nw-coach"><span class="eb">&#9670; Coach</span><p>${escapeHtml(w.coaching)}</p></div>`;
             live += `<div class="nw-acts"><button class="nw-btn pri" onclick="event.stopPropagation();smOpenThemeFromNow('${smEsc(w.theme)}')">Open workspace</button>`
-                 + `<button class="nw-btn qt" onclick="event.stopPropagation();nwSnooze(this,'${smEsc(w.theme)}')">${attn ? 'Not now' : 'Snooze a day'}</button></div>`
+                 + `<button class="nw-btn qt" onclick="event.stopPropagation();nwSnooze(this,'${smEsc(w.theme)}')">${attn ? 'Not now' : 'Snooze a day'}</button>`
+                 + smWsBtn() + `</div>`
+                 + smWsActionsRow(w.id, w.theme, true)
                  + `<div class="nw-cap"><select><option>note</option><option>task</option><option>decision</option></select>`
                  + `<input placeholder="Capture into this workspace…" onclick="event.stopPropagation()"><button class="add" onclick="event.stopPropagation();nwCapture(this,'${smEsc(w.theme)}')">Add</button></div>`;
             return `<div class="nw-card${attn?' attn':''}">`
@@ -10336,13 +10345,15 @@
                 (w, i) => {
                     const inputs = w.inputs_this_week || 0;
                     return `<div class="sm-obj" data-stmt="${escapeHtml(w.theme)}" onclick="smOpenTheme(${i})">`
-                        + `<div class="sm-obj-top"><span class="sm-name">${escapeHtml(w.theme)}</span><span class="sm-chev">&rsaquo;</span></div>`
+                        + `<div class="sm-obj-top"><span class="sm-name">${escapeHtml(w.theme)}</span>`
+                        + smWsBtn() + `<span class="sm-chev">&rsaquo;</span></div>`
                         + `<div class="sm-meta"><span class="sm-chip state">${escapeHtml(w.state||'')}</span>`
                         + `<span class="sm-chip ${smTempClass(w.temperature)}"><span class="sm-cdot"></span>${smTempLabel(w.temperature)}</span>`
                         + (inputs ? `<span class="sm-chip inflow"><span class="sm-cdot"></span>${inputs} input${inputs>1?'s':''} this week</span>` : '')
                         + (w.origin === 'manual' ? `<span class="sm-manual">manual</span>` : '')
-                        + smRowActs(w.id, w.origin)
-                        + `</div></div>`;
+                        + `</div>`
+                        + smWsActionsRow(w.id, w.theme, true)
+                        + `</div>`;
                 },
                 `<div class="sm-empty">Nothing here yet. Workspaces appear as Alfred reads what you discuss &mdash; or add one.</div>`,
                 'theme');
@@ -10855,22 +10866,18 @@
             } else if (isThemes) {
                 body = `<div class="sm-brow-list">` + shown.map(t => {
                     const inputs = t.inputs_this_week || 0;
-                    const demote = t.is_workspace ? 'demote' : 'promote';
                     return `<div class="sm-brow-item sm-ws-item">`
                         + `<div class="sm-brow-top"><span class="sm-brow-name" onclick="smOpenThemeNamed('${smEsc(t.theme)}','browser')">${escapeHtml(t.theme)}</span>`
-                        + `<button class="sm-edit-btn" title="Edit workspace" onclick="event.stopPropagation();smWsMenu(this)">&#8942;</button>`
-                        + `<div class="sm-edit-menu sm-ws-menu" data-id="${smEsc(t.id)}" data-name="${smEsc(t.theme)}">`
-                        + `<button onclick="smWsRename(this)">Rename</button>`
-                        + `<button onclick="smWsMerge(this)">Merge into&hellip;</button>`
-                        + `<button onclick="smWsPromote(this,'${demote}')">${demote === 'demote' ? 'Make a topic' : 'Make a workspace'}</button>`
-                        + `</div></div>`
+                        + smWsBtn() + `</div>`
                         + `<div class="sm-brow-meta" onclick="smOpenThemeNamed('${smEsc(t.theme)}','browser')">`
                         + (t.state ? `<span class="sm-chip state">${escapeHtml(t.state)}</span>` : '')
                         + `<span class="sm-chip ${smTempClass(t.temperature)}"><span class="sm-cdot"></span>${smTempLabel(t.temperature)}</span>`
                         + (inputs ? `<span class="sm-chip inflow"><span class="sm-cdot"></span>${inputs} this week</span>` : '')
                         + (t.decision_count ? `<span class="sm-decdate">&#9673; ${t.decision_count} decision${t.decision_count>1?'s':''}</span>` : '')
                         + (t.belief_count ? `<span class="sm-yield">&#10022; ${t.belief_count} belief${t.belief_count>1?'s':''}</span>` : '')
-                        + `</div></div>`;
+                        + `</div>`
+                        + smWsActionsRow(t.id, t.theme, t.is_workspace)
+                        + `</div>`;
                 }).join('') + `</div>`;
             } else if (isDec) {
                 // A decision is dated and final — the date leads, because a decision's
@@ -10986,42 +10993,58 @@
             } catch (e) { /* the row already shows the outcome */ }
         }
 
-        // ═══ Workspace CRUD from the browser: rename, merge, promote/demote ═══
-        function smWsMenu(btn){
-            const menu = btn.nextElementSibling;
-            document.querySelectorAll('.sm-edit-menu.open').forEach(m => { if (m !== menu) m.classList.remove('open'); });
-            menu.classList.toggle('open');
+        // ═══ Workspace CRUD — same three actions on Now / You / Model ═══
+        // Inline, in-flow actions row (never an absolute dropdown — that fought stacking
+        // contexts and Now's overflow:hidden). The ⋮ toggles a row inside the card.
+        function smWsActionsRow(id, name, isWorkspace){
+            const demote = isWorkspace ? 'demote' : 'promote';
+            return `<div class="sm-ws-actions" data-id="${smEsc(id)}" data-name="${smEsc(name)}">`
+                + `<button onclick="event.stopPropagation();smWsRename(this)">Rename</button>`
+                + `<button onclick="event.stopPropagation();smWsMerge(this)">Merge into&hellip;</button>`
+                + `<button onclick="event.stopPropagation();smWsPromote(this,'${demote}')">${demote === 'demote' ? 'Make a topic' : 'Make a workspace'}</button>`
+                + `</div>`;
+        }
+        function smWsBtn(){ return `<button class="sm-edit-btn" title="Edit workspace" onclick="event.stopPropagation();smWsToggle(this)">&#8942;</button>`; }
+        function smWsToggle(btn){
+            const card = btn.closest('.sm-ws-item,.sm-obj,.nw-card');
+            document.querySelectorAll('.sm-menu-open').forEach(c => { if (c !== card) c.classList.remove('sm-menu-open'); });
+            if (card) card.classList.toggle('sm-menu-open');
         }
         async function smWsRename(el){
-            const m = el.closest('.sm-ws-menu');
+            const m = el.closest('.sm-ws-actions');
             const next = prompt('Rename this workspace — leave blank to restore Alfred’s title:', m.dataset.name);
             if (next === null) return;
             await authFetch(`/api/self-model/facet/rename?id=${encodeURIComponent(m.dataset.id)}&statement=${encodeURIComponent(next.trim())}`, { method: 'POST' });
             await smWsRefresh();
         }
         async function smWsMerge(el){
-            const m = el.closest('.sm-ws-menu');
-            const others = ((_smBrowse.data && _smBrowse.data.themes) || [])
-                .filter(t => t.id !== m.dataset.id && t.is_workspace);
+            const m = el.closest('.sm-ws-actions');
+            if (!(_smBrowse.data && _smBrowse.data.themes)){
+                try { const r = await authFetch('/api/self-model/browse'); _smBrowse.data = await r.json(); } catch(e){}
+            }
+            const others = ((_smBrowse.data && _smBrowse.data.themes) || []).filter(t => t.id !== m.dataset.id && t.is_workspace);
             const q = (prompt(`Merge “${m.dataset.name.slice(0,44)}” INTO which workspace? Type part of its name:`) || '').trim().toLowerCase();
             if (!q) return;
             const hit = others.find(t => (t.theme || '').toLowerCase().includes(q));
             if (!hit) { alert('No workspace matched “' + q + '”.'); return; }
             if (!confirm(`Merge into “${hit.theme.slice(0,50)}”? This one’s decisions and beliefs move over, and it disappears. Can’t be undone.`)) return;
-            // a = target (kept), b = source (merged away)
             await authFetch(`/api/self-model/merges/resolve?a=${encodeURIComponent(hit.id)}&b=${encodeURIComponent(m.dataset.id)}&action=merge`, { method: 'POST' });
             await smWsRefresh();
         }
         async function smWsPromote(el, action){
-            const m = el.closest('.sm-ws-menu');
+            const m = el.closest('.sm-ws-actions');
             await authFetch(`/api/self-model/workspace/promote?theme=${encodeURIComponent(m.dataset.name)}&action=${action}`, { method: 'POST' });
             await smWsRefresh();
         }
-        /// Re-pull the model after a workspace edit and re-render the browser in place.
+        /// Re-pull the model and re-render whichever surface is showing (Now, You, or Model).
         async function smWsRefresh(){
-            const ys = document.getElementById('youScreen'); const keep = ys ? ys.scrollTop : 0;
+            _smBrowse.data = null;
             try { const res = await authFetch('/api/self-model/browse'); _smBrowse.data = await res.json(); } catch (e) {}
-            smBrowseRender();
+            const youShown = getComputedStyle(document.getElementById('youScreen')).display !== 'none';
+            if (!youShown){ _nowLoaded = false; await loadNowWorkspaces(); return; }
+            const ys = document.getElementById('youScreen'); const keep = ys ? ys.scrollTop : 0;
+            if (document.querySelector('#youInner .sm-modes')){ smBrowseRender(); }        // Model browser
+            else { try { const r = await authFetch('/api/self-model'); _smData = await r.json(); } catch(e){} renderSelfModel(_smData, true); }  // You registers
             if (ys) ys.scrollTop = keep;
         }
 
