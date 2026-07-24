@@ -3140,6 +3140,12 @@
       .sm-yield{font-family:var(--font-mono);font-size:9.5px;color:var(--sm-accent);white-space:nowrap;opacity:.85;}
       .sm-decdate{font-family:var(--font-mono);font-size:9.5px;color:var(--sm-green);letter-spacing:.03em;opacity:.85;}
       .sm-walk{margin-left:auto;font-family:var(--font-mono);font-size:9px;color:var(--sm-accent);opacity:.7;}
+      /* workspace-row edit menu (rename / merge / promote) */
+      .sm-ws-item{position:relative;}
+      .sm-ws-item .sm-brow-top{align-items:center;gap:8px;}
+      .sm-ws-item .sm-brow-name{cursor:pointer;}
+      .sm-ws-item .sm-edit-btn{flex:0 0 auto;width:28px;height:26px;margin-left:auto;}
+      .sm-ws-menu{min-width:150px;}
       /* walkable facet detail */
       .sm-facet-badge{margin:2px 0 9px;}
       .sm-facet-title{font-family:var(--font-display);font-weight:420;font-size:clamp(19px,3vw,23px);line-height:1.28;color:var(--ink);}
@@ -10849,9 +10855,16 @@
             } else if (isThemes) {
                 body = `<div class="sm-brow-list">` + shown.map(t => {
                     const inputs = t.inputs_this_week || 0;
-                    return `<div class="sm-brow-item" onclick="smOpenThemeNamed('${smEsc(t.theme)}','browser')">`
-                        + `<div class="sm-brow-top"><span class="sm-brow-name">${escapeHtml(t.theme)}</span><span class="sm-chev">&rsaquo;</span></div>`
-                        + `<div class="sm-brow-meta">`
+                    const demote = t.is_workspace ? 'demote' : 'promote';
+                    return `<div class="sm-brow-item sm-ws-item">`
+                        + `<div class="sm-brow-top"><span class="sm-brow-name" onclick="smOpenThemeNamed('${smEsc(t.theme)}','browser')">${escapeHtml(t.theme)}</span>`
+                        + `<button class="sm-edit-btn" title="Edit workspace" onclick="event.stopPropagation();smWsMenu(this)">&#8942;</button>`
+                        + `<div class="sm-edit-menu sm-ws-menu" data-id="${smEsc(t.id)}" data-name="${smEsc(t.theme)}">`
+                        + `<button onclick="smWsRename(this)">Rename</button>`
+                        + `<button onclick="smWsMerge(this)">Merge into&hellip;</button>`
+                        + `<button onclick="smWsPromote(this,'${demote}')">${demote === 'demote' ? 'Make a topic' : 'Make a workspace'}</button>`
+                        + `</div></div>`
+                        + `<div class="sm-brow-meta" onclick="smOpenThemeNamed('${smEsc(t.theme)}','browser')">`
                         + (t.state ? `<span class="sm-chip state">${escapeHtml(t.state)}</span>` : '')
                         + `<span class="sm-chip ${smTempClass(t.temperature)}"><span class="sm-cdot"></span>${smTempLabel(t.temperature)}</span>`
                         + (inputs ? `<span class="sm-chip inflow"><span class="sm-cdot"></span>${inputs} this week</span>` : '')
@@ -10971,6 +10984,45 @@
                 _smBrowse.data = await res.json();
                 _smData = await (await authFetch('/api/self-model')).json();
             } catch (e) { /* the row already shows the outcome */ }
+        }
+
+        // ═══ Workspace CRUD from the browser: rename, merge, promote/demote ═══
+        function smWsMenu(btn){
+            const menu = btn.nextElementSibling;
+            document.querySelectorAll('.sm-edit-menu.open').forEach(m => { if (m !== menu) m.classList.remove('open'); });
+            menu.classList.toggle('open');
+        }
+        async function smWsRename(el){
+            const m = el.closest('.sm-ws-menu');
+            const next = prompt('Rename this workspace — leave blank to restore Alfred’s title:', m.dataset.name);
+            if (next === null) return;
+            await authFetch(`/api/self-model/facet/rename?id=${encodeURIComponent(m.dataset.id)}&statement=${encodeURIComponent(next.trim())}`, { method: 'POST' });
+            await smWsRefresh();
+        }
+        async function smWsMerge(el){
+            const m = el.closest('.sm-ws-menu');
+            const others = ((_smBrowse.data && _smBrowse.data.themes) || [])
+                .filter(t => t.id !== m.dataset.id && t.is_workspace);
+            const q = (prompt(`Merge “${m.dataset.name.slice(0,44)}” INTO which workspace? Type part of its name:`) || '').trim().toLowerCase();
+            if (!q) return;
+            const hit = others.find(t => (t.theme || '').toLowerCase().includes(q));
+            if (!hit) { alert('No workspace matched “' + q + '”.'); return; }
+            if (!confirm(`Merge into “${hit.theme.slice(0,50)}”? This one’s decisions and beliefs move over, and it disappears. Can’t be undone.`)) return;
+            // a = target (kept), b = source (merged away)
+            await authFetch(`/api/self-model/merges/resolve?a=${encodeURIComponent(hit.id)}&b=${encodeURIComponent(m.dataset.id)}&action=merge`, { method: 'POST' });
+            await smWsRefresh();
+        }
+        async function smWsPromote(el, action){
+            const m = el.closest('.sm-ws-menu');
+            await authFetch(`/api/self-model/workspace/promote?theme=${encodeURIComponent(m.dataset.name)}&action=${action}`, { method: 'POST' });
+            await smWsRefresh();
+        }
+        /// Re-pull the model after a workspace edit and re-render the browser in place.
+        async function smWsRefresh(){
+            const ys = document.getElementById('youScreen'); const keep = ys ? ys.scrollTop : 0;
+            try { const res = await authFetch('/api/self-model/browse'); _smBrowse.data = await res.json(); } catch (e) {}
+            smBrowseRender();
+            if (ys) ys.scrollTop = keep;
         }
 
         // Escape a string for safe embedding inside a single-quoted inline handler.

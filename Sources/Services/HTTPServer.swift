@@ -11648,7 +11648,17 @@ extension HTTPServer {
                 (($0["id"] as? String ?? ""), ($0["statement"] as? String ?? ""))
             }, uniquingKeysWith: { x, _ in x })
             if let aName = byId[a], let bName = byId[b] {
+                // Reassign b's reflections to a (reflection.db).
                 _ = ReflectionStore.shared.mergeThemes(source: bName, target: aName)
+                // Move b's produced decisions/beliefs onto a in the model (lineage), so a's
+                // counts are right immediately; then dismiss b so it disappears from the
+                // list now rather than surviving until the next materialize.
+                for l in store.allLineage() where l.theme == b {
+                    _ = store.unlinkFacetFromTheme(facetId: l.facet, themeId: b)
+                    _ = store.linkFacetToTheme(facetId: l.facet, themeId: a)
+                }
+                _ = store.setVerdict(id: b, verdict: "dismissed")
+                store.recordModelFeedback(facetId: b, kind: "merge", action: nil, detail: "\(bName) → \(aName)")
             }
         }
         _ = store.setMergeStatus(a: a, b: b, status: action == "merge" ? "merged" : "rejected")
