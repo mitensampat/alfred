@@ -489,6 +489,42 @@ class ReflectionStore {
     private static let validStates = ["researching", "deciding", "creating", "monitoring", "archived"]
 
     /// Get detailed timeline and stats for a single theme
+    /// Generic words that appear across many workspace titles ("execution", "strategy")
+    /// carry no discriminating signal, so they're excluded from the overlap score.
+    private static let bestFitStop: Set<String> = [
+        // generic across many workspace titles — no discriminating signal
+        "execution","strategy","management","planning","program","framework",
+        // function words
+        "through","after","before","about","under","which","their","there","would",
+        "could","should","these","those","being","during","across","around","between"
+    ]
+
+    private static func bestFitTokens(_ s: String) -> Set<String> {
+        Set(s.lowercased().split { !$0.isLetter && !$0.isNumber }
+            .map(String.init).filter { $0.count > 3 && !bestFitStop.contains($0) })
+    }
+
+    /// Which theme (among a reflection's own themes) an artifact is most about.
+    /// Scores by how many salient tokens the artifact shares with each theme title;
+    /// the artifact belongs to the argmax. Ties / no-overlap fall back to the first
+    /// theme, so every artifact lands in exactly one place, deterministically.
+    static func bestFitTheme(_ text: String, among themes: [String]) -> String {
+        guard let first = themes.first else { return "" }
+        guard themes.count > 1 else { return first }
+        let tt = bestFitTokens(text)
+        if tt.isEmpty { return first }
+        var best = first
+        var bestScore = -1.0
+        for theme in themes {
+            let th = bestFitTokens(theme)
+            let inter = Double(tt.intersection(th).count)
+            // Overlap count, lightly normalized so a very long title can't win on bulk alone.
+            let score = inter + inter / Double(max(th.count, 1))
+            if score > bestScore { bestScore = score; best = theme }
+        }
+        return best
+    }
+
     func getThemeDetail(theme: String, days: Int = 90) -> [String: Any] {
         dbLock.lock()
         defer { dbLock.unlock() }
@@ -532,6 +568,16 @@ class ReflectionStore {
                 let createdAt = columnText(stmt, 8) ?? ""
                 let dateStr = String(createdAt.prefix(10))
 
+                // A reflection carries several themes, but each shift/decision/question
+                // inside it is usually about only ONE of them. Best-fit attribution: an
+                // artifact belongs to this theme only if this is the theme (among the
+                // reflection's own themes) it's most about — otherwise it's bleeding in
+                // from a co-tagged topic. Single-theme reflections keep everything.
+                let rowThemes = (columnText(stmt, 3).flatMap { jsonDecode($0) as? [String] }) ?? [theme]
+                func belongsHere(_ text: String) -> Bool {
+                    rowThemes.count < 2 || Self.bestFitTheme(text, among: rowThemes) == theme
+                }
+
                 // Extract classifications for fallback state
                 if let classJson = columnText(stmt, 4),
                    let classifications = jsonDecode(classJson) as? [String: String],
@@ -554,6 +600,7 @@ class ReflectionStore {
                 if let qJson = columnText(stmt, 5),
                    let questions = jsonDecode(qJson) as? [String] {
                     for q in questions {
+                        guard belongsHere(q) else { continue }
                         questionCount += 1
                         if edge.isEmpty { edge = q }
                         else if edgeSecondary.isEmpty && q != edge { edgeSecondary = q }
@@ -570,6 +617,7 @@ class ReflectionStore {
                 if let dJson = columnText(stmt, 7),
                    let decisions = jsonDecode(dJson) as? [String] {
                     for d in decisions {
+                        guard belongsHere(d) else { continue }
                         decisionCount += 1
                         if decisionsTyped.count < 25 {
                             decisionsTyped.append(["content": d, "date": dateStr, "rid": String(rid)])
@@ -588,6 +636,8 @@ class ReflectionStore {
                 if let sJson = columnText(stmt, 6),
                    let shifts = jsonDecode(sJson) as? [[String: String]] {
                     for shift in shifts {
+                        let shiftText = [shift["from"], shift["to"], shift["description"]].compactMap { $0 }.joined(separator: " ")
+                        guard belongsHere(shiftText) else { continue }
                         shiftCount += 1
                         var content = ""
                         var sFrom = ""
