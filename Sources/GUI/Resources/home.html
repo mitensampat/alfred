@@ -3157,6 +3157,8 @@
       .sm-menu-open .sm-edit-btn{border-color:var(--sm-accent);color:var(--sm-accent);background:var(--sm-accent-soft);}
       .sm-chip.done{background:var(--sm-accent);color:#fff;border-color:var(--sm-accent);}
       .sm-ws-done .sm-brow-name{color:var(--ink-tertiary);}
+      .sm-more-link{display:inline-block;margin-top:10px;color:var(--sm-accent);font-family:var(--font-body);font-size:12.5px;font-weight:600;cursor:pointer;text-decoration:none;}
+      .sm-more-link:hover{text-decoration:underline;}
       /* Model header topbar + operating-model export */
       .sm-brow-topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;}
       .sm-export-btn{flex:0 0 auto;padding:6px 12px;border:1px solid var(--sm-accent-line);border-radius:999px;background:var(--sm-accent-soft);color:var(--sm-accent);font-family:var(--font-body);font-size:12px;font-weight:600;cursor:pointer;transition:all .12s;}
@@ -10236,7 +10238,7 @@
 
         /// Build a register that shows SM_PER_PAGE items with a compact pager.
         /// renderItem receives (item, absoluteIndex) so handlers can address the full list.
-        function smPaged(key, title, hint, items, renderItem, emptyHtml, addKind){
+        function smPaged(key, title, hint, items, renderItem, emptyHtml, addKind, moreLabel, moreAction){
             const total = items.length;
             const addBtn = addKind ? `<button class="sm-add" onclick="smShowAdd('${key}')">+ Add</button>` : '';
             const addBox = (addKind && _smAdd === key) ? smAddBox(key, addKind) : '';
@@ -10254,7 +10256,10 @@
                   + `<button type="button" class="sm-pbtn" ${p >= pages - 1 ? 'disabled' : ''} onclick="smPageSet('${key}',1,${total})" aria-label="Next">&rsaquo;</button>`
                   + `</div>`
                 : '';
-            return smSection(title, hint, addBox + inner, pager + addBtn);
+            // "See all N in Model" — shown when this register is a curated slice of a larger set.
+            const more = (moreLabel && moreAction)
+                ? `<a class="sm-more-link" onclick="${moreAction}">${moreLabel}</a>` : '';
+            return smSection(title, hint, addBox + inner + more, pager + addBtn);
         }
 
         // ── User-entered facets ──
@@ -10371,6 +10376,9 @@
         function smTempClass(t){ return t==='hot'?'hot':(t==='warming'?'warm':'cool'); }
 
         function smWorkspaces(d){
+            const shown = (d.workspaces || []).length;
+            const total = d.workspaces_total || shown;
+            const moreLabel = total > shown ? `See all ${total} workspaces in Model &rarr;` : '';
             return smPaged('workspaces', 'Workspaces', 'what you&rsquo;re working on &mdash; open one',
                 d.workspaces || [],
                 (w, i) => {
@@ -10387,7 +10395,7 @@
                         + `</div>`;
                 },
                 `<div class="sm-empty">Nothing here yet. Workspaces appear as Alfred reads what you discuss &mdash; or add one.</div>`,
-                'theme');
+                'theme', moreLabel, "showSurface('model')");
         }
 
         // Declared values — only rendered once the user has seeded them. Never inferred.

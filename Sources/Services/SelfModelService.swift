@@ -37,27 +37,34 @@ enum SelfModelService {
         let beliefFacets = store.getFacets(kind: "belief").filter { verdict($0) != "dismissed" }
         let patternFacets = store.getFacets(kind: "pattern").filter { verdict($0) != "dismissed" }
 
-        // ---- Workspaces (theme facets, hottest + freshest first) ----
-        let workspaces: [[String: Any]] = themeFacets.map { f -> [String: Any] in
-            let meta = f["metadata"] as? [String: String] ?? [:]
-            return [
-                "id": f["id"] as? String ?? "",
-                "theme": f["statement"] as? String ?? "",
-                "state": meta["state"] ?? "",
-                "temperature": meta["temperature"] ?? "cooling",
-                "inputs_this_week": Int(meta["inputs_this_week"] ?? "0") ?? 0,
-                "edge": meta["edge"] ?? "",
-                "verdict": verdict(f),
-                "origin": f["origin"] as? String ?? "emergent",
-                "renamed": (f["renamed"] as? Bool) ?? false
-            ]
-        }.sorted {
-            let a = tempRank[$0["temperature"] as? String ?? ""] ?? 9
-            let b = tempRank[$1["temperature"] as? String ?? ""] ?? 9
-            if a != b { return a < b }
-            return ($0["inputs_this_week"] as? Int ?? 0) > ($1["inputs_this_week"] as? Int ?? 0)
-        }
-        let workspacesTop = Array(workspaces.prefix(6))
+        // ---- Workspaces (promoted themes, hottest + freshest first) ----
+        // The register is a *curated* slice of what's active — the exhaustive, searchable
+        // list lives in the Model browser. We surface the top N here and report the true
+        // total so the pager can say "…of N · M total, see all in Model" rather than lie.
+        let promotedIds = promotedThemeIds(store: store)
+        let workspaces: [[String: Any]] = themeFacets
+            .filter { promotedIds.contains(($0["id"] as? String) ?? "") }
+            .map { f -> [String: Any] in
+                let meta = f["metadata"] as? [String: String] ?? [:]
+                return [
+                    "id": f["id"] as? String ?? "",
+                    "theme": f["statement"] as? String ?? "",
+                    "state": meta["state"] ?? "",
+                    "temperature": meta["temperature"] ?? "cooling",
+                    "inputs_this_week": Int(meta["inputs_this_week"] ?? "0") ?? 0,
+                    "edge": meta["edge"] ?? "",
+                    "verdict": verdict(f),
+                    "origin": f["origin"] as? String ?? "emergent",
+                    "renamed": (f["renamed"] as? Bool) ?? false
+                ]
+            }.sorted {
+                let a = tempRank[$0["temperature"] as? String ?? ""] ?? 9
+                let b = tempRank[$1["temperature"] as? String ?? ""] ?? 9
+                if a != b { return a < b }
+                return ($0["inputs_this_week"] as? Int ?? 0) > ($1["inputs_this_week"] as? Int ?? 0)
+            }
+        let workspacesTotal = workspaces.count
+        let workspacesTop = Array(workspaces.prefix(24))
 
         // ---- Questions ----
         let questions: [[String: Any]] = questionFacets.prefix(6).map { f in
@@ -222,6 +229,7 @@ enum SelfModelService {
             "summary": summary,
             "movement": movement,
             "workspaces": workspacesTop,
+            "workspaces_total": workspacesTotal,
             "questions": questions,
             "lenses": ["patterns": patternsOut, "belief_shifts": beliefsOut],
             "values": valuesOut,
