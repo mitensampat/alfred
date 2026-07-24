@@ -30,7 +30,9 @@ enum SelfModelService {
         let store = SelfModelStore.shared
         ensureMaterialized(store)
 
-        let themeFacets = store.getFacets(kind: "theme").filter { verdict($0) != "dismissed" }
+        // Done workspaces drop out of the active register (they're finished); they remain
+        // in the Model browser, reopenable.
+        let themeFacets = store.getFacets(kind: "theme").filter { verdict($0) != "dismissed" && verdict($0) != "done" }
         let questionFacets = store.getFacets(kind: "question").filter { verdict($0) != "dismissed" && verdict($0) != "resolved" }
         let beliefFacets = store.getFacets(kind: "belief").filter { verdict($0) != "dismissed" }
         let patternFacets = store.getFacets(kind: "pattern").filter { verdict($0) != "dismissed" }
@@ -323,7 +325,8 @@ enum SelfModelService {
                 "beliefs": born,
                 "belief_count": born.count,
                 "decision_count": decidedHere,
-                "is_workspace": workspaceIds.contains(id)
+                "is_workspace": workspaceIds.contains(id),
+                "done": verdict(f) == "done"
             ]
         }.sorted {
             let a = tempRankLocal[$0["temperature"] as? String ?? ""] ?? 9

@@ -38,8 +38,15 @@ enum NowService {
         // Now surfaces WORKSPACES, not topics — the promotion bar keeps the cheap
         // substrate out of the surface you open in the act of work.
         let promoted = SelfModelService.promotedThemeIds(store: store)
+        // Workspaces you've marked done leave Now entirely — done is "I'm finished here",
+        // not "quiet". They stay in the Model browser (reopenable), just not in the surface
+        // you open to work.
+        let doneIds = Set(store.getFacets(kind: "theme")
+            .filter { ($0["user_verdict"] as? String) == "done" }
+            .compactMap { $0["id"] as? String })
         let themes = allThemes.filter {
-            promoted.contains(SelfModelSynthesizer.stableId("theme", ($0["theme"] as? String) ?? ""))
+            let id = SelfModelSynthesizer.stableId("theme", ($0["theme"] as? String) ?? "")
+            return promoted.contains(id) && !doneIds.contains(id)
         }
         guard !themes.isEmpty else { return ["recent": [], "attention": NSNull()] }
 
