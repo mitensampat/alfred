@@ -1194,6 +1194,12 @@ class HTTPServer {
         case ("POST", "/api/self-model/verdict"):
             return handleSelfModelVerdict(request)
 
+        case ("POST", "/api/self-model/export"):
+            return await handleSelfModelExport(request)
+
+        case ("GET", "/api/self-model/export"):
+            return handleSelfModelExportGet(request)
+
         case ("POST", "/api/self-model/link"):
             return handleSelfModelLink(request)
 
@@ -11491,6 +11497,35 @@ extension HTTPServer {
     }
 
     /// Confirm / dismiss / clear a facet's verdict. Params: id, verdict (confirmed|dismissed|"" to clear).
+    /// Generate the portable operating-model.md + current.md, save to disk, and
+    /// (unless push=0) mirror to a Notion page. Returns both docs + the Notion URL.
+    private func handleSelfModelExport(_ request: HTTPRequest) async -> HTTPResponse {
+        guard getConfig()?.features?.selfModel ?? false else {
+            return HTTPResponse(statusCode: 200, body: ["enabled": false])
+        }
+        let push = (request.queryParams["push"] ?? "1") != "0"
+        let r = await SelfModelExportService.export(pushToNotion: push)
+        return HTTPResponse(statusCode: 200, body: [
+            "ok": true,
+            "operating_model": r.durable,
+            "current": r.current,
+            "operating_model_path": r.durablePath,
+            "current_path": r.currentPath,
+            "notion_url": r.notionUrl as Any
+        ])
+    }
+
+    /// Return the last-generated docs without regenerating (for preview on open).
+    private func handleSelfModelExportGet(_ request: HTTPRequest) -> HTTPResponse {
+        guard getConfig()?.features?.selfModel ?? false else {
+            return HTTPResponse(statusCode: 200, body: ["enabled": false])
+        }
+        if let saved = SelfModelExportService.lastSaved() {
+            return HTTPResponse(statusCode: 200, body: ["ok": true, "operating_model": saved.durable, "current": saved.current])
+        }
+        return HTTPResponse(statusCode: 200, body: ["ok": true, "operating_model": NSNull(), "current": NSNull()])
+    }
+
     private func handleSelfModelVerdict(_ request: HTTPRequest) -> HTTPResponse {
         guard getConfig()?.features?.selfModel ?? false else {
             return HTTPResponse(statusCode: 200, body: ["enabled": false])

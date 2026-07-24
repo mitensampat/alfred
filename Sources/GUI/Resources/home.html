@@ -3157,6 +3157,30 @@
       .sm-menu-open .sm-edit-btn{border-color:var(--sm-accent);color:var(--sm-accent);background:var(--sm-accent-soft);}
       .sm-chip.done{background:var(--sm-accent);color:#fff;border-color:var(--sm-accent);}
       .sm-ws-done .sm-brow-name{color:var(--ink-tertiary);}
+      /* Model header topbar + operating-model export */
+      .sm-brow-topbar{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+      .sm-export-btn{flex:0 0 auto;padding:6px 12px;border:1px solid var(--sm-accent-line);border-radius:999px;background:var(--sm-accent-soft);color:var(--sm-accent);font-family:var(--font-body);font-size:12px;font-weight:600;cursor:pointer;transition:all .12s;}
+      .sm-export-btn:hover{background:var(--sm-accent);color:#fff;border-color:var(--sm-accent);}
+      .sm-export-ov{position:fixed;inset:0;background:rgba(20,30,50,.34);backdrop-filter:blur(3px);z-index:1000;display:none;align-items:center;justify-content:center;padding:20px;}
+      .sm-export-card{width:min(720px,94vw);max-height:88vh;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line-strong);border-radius:15px;box-shadow:var(--shadow-md);overflow:hidden;}
+      .sm-export-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px 12px;}
+      .sm-export-title{font-family:var(--font-display);font-size:18px;color:var(--ink);}
+      .sm-export-sub{font-family:var(--font-body);font-size:12.5px;color:var(--ink-tertiary);margin-top:3px;max-width:52ch;line-height:1.4;}
+      .sm-export-x{flex:0 0 auto;width:30px;height:30px;border:none;background:var(--surface-sunken);border-radius:8px;color:var(--ink-secondary);font-size:18px;cursor:pointer;line-height:1;}
+      .sm-export-tabs{display:flex;gap:4px;padding:0 20px;}
+      .sm-export-tab{padding:7px 13px;border:none;background:none;font-family:var(--font-mono);font-size:11.5px;color:var(--ink-tertiary);cursor:pointer;border-bottom:2px solid transparent;}
+      .sm-export-tab.active{color:var(--sm-accent);border-bottom-color:var(--sm-accent);}
+      .sm-export-body{flex:1;overflow:auto;margin:10px 0 0;padding:16px 20px;background:var(--surface-sunken);font-family:var(--font-mono);font-size:12px;line-height:1.55;color:var(--ink);white-space:pre-wrap;word-break:break-word;}
+      .sm-export-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;flex-wrap:wrap;}
+      .sm-export-status{font-family:var(--font-body);font-size:12px;color:var(--ink-tertiary);}
+      .sm-export-status a{color:var(--sm-accent);font-weight:600;text-decoration:none;}
+      .sm-export-status a:hover{text-decoration:underline;}
+      .sm-export-actions{display:flex;gap:7px;margin-left:auto;flex-wrap:wrap;}
+      .sm-export-act{padding:7px 13px;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);color:var(--ink-secondary);font-family:var(--font-body);font-size:12px;cursor:pointer;transition:all .12s;}
+      .sm-export-act:hover{border-color:var(--sm-accent);color:var(--sm-accent);}
+      .sm-export-act.pri{background:var(--sm-accent);color:#fff;border-color:var(--sm-accent);}
+      .sm-export-act.pri:hover{opacity:.9;color:#fff;}
+      .sm-export-act:disabled{opacity:.5;cursor:default;}
       /* walkable facet detail */
       .sm-facet-badge{margin:2px 0 9px;}
       .sm-facet-title{font-family:var(--font-display);font-weight:420;font-size:clamp(19px,3vw,23px);line-height:1.28;color:var(--ink);}
@@ -10843,7 +10867,8 @@
             const total = items.length;
             const shown = items.slice(0, _smBrowse.limit);
 
-            const head = `<button class="sm-back" onclick="renderSelfModel(_smData)">&lsaquo; You</button>`
+            const head = `<div class="sm-brow-topbar"><button class="sm-back" onclick="renderSelfModel(_smData)">&lsaquo; You</button>`
+                + `<button class="sm-export-btn" onclick="smExportOpen()" title="Export a portable operating manual any AI can read">&#8682; Operating model</button></div>`
                 + `<div class="sm-brow-head">`
                 + `<input class="sm-search" id="smBrowseSearch" type="text" placeholder="Search your model&hellip;" value="${escapeHtml(_smBrowse.q)}" oninput="smBrowseSearch(this.value)">`
                 // Order follows the taxonomy: where you work, what you concluded,
@@ -11063,6 +11088,85 @@
             if (document.querySelector('#youInner .sm-modes')){ smBrowseRender(); }        // Model browser
             else { try { const r = await authFetch('/api/self-model'); _smData = await r.json(); } catch(e){} renderSelfModel(_smData, true); }  // You registers
             if (ys) ys.scrollTop = keep;
+        }
+
+        // ═══ Portable operating model: export the whole model as Markdown any AI can read ═══
+        let _smExportDoc = { operating: '', current: '', which: 'operating' };
+        function smExportOpen(){
+            let ov = document.getElementById('smExportModal');
+            if (!ov){
+                ov = document.createElement('div');
+                ov.id = 'smExportModal'; ov.className = 'sm-export-ov';
+                ov.innerHTML = `<div class="sm-export-card" onclick="event.stopPropagation()">
+                    <div class="sm-export-top">
+                        <div><div class="sm-export-title">Portable operating model</div>
+                        <div class="sm-export-sub">A curated, abstracted Markdown briefing any AI can pick up &mdash; and a mirror in Notion.</div></div>
+                        <button class="sm-export-x" onclick="smExportClose()">&times;</button>
+                    </div>
+                    <div class="sm-export-tabs">
+                        <button class="sm-export-tab active" data-doc="operating" onclick="smExportTab('operating')">operating-model.md</button>
+                        <button class="sm-export-tab" data-doc="current" onclick="smExportTab('current')">current.md</button>
+                    </div>
+                    <pre class="sm-export-body" id="smExportBody">Generating from your live model&hellip;</pre>
+                    <div class="sm-export-foot">
+                        <span class="sm-export-status" id="smExportStatus"></span>
+                        <span class="sm-export-actions">
+                            <button class="sm-export-act" onclick="smExportCopy()">Copy</button>
+                            <button class="sm-export-act" onclick="smExportDownload()">Download</button>
+                            <button class="sm-export-act pri" id="smExportRun" onclick="smExportRun()">Regenerate + push to Notion</button>
+                        </span>
+                    </div></div>`;
+                ov.onclick = smExportClose;
+                document.body.appendChild(ov);
+            }
+            ov.style.display = 'flex';
+            // Show last-saved immediately if present, else generate.
+            authFetch('/api/self-model/export').then(r => r.json()).then(d => {
+                if (d && d.operating_model){
+                    _smExportDoc.operating = d.operating_model; _smExportDoc.current = d.current || '';
+                    smExportPaint();
+                } else { smExportRun(); }
+            }).catch(() => smExportRun());
+        }
+        function smExportClose(){ const ov = document.getElementById('smExportModal'); if (ov) ov.style.display = 'none'; }
+        function smExportTab(which){
+            _smExportDoc.which = which;
+            document.querySelectorAll('.sm-export-tab').forEach(t => t.classList.toggle('active', t.dataset.doc === which));
+            smExportPaint();
+        }
+        function smExportPaint(){
+            const body = document.getElementById('smExportBody');
+            if (body) body.textContent = _smExportDoc[_smExportDoc.which] || '(empty)';
+        }
+        async function smExportRun(){
+            const btn = document.getElementById('smExportRun');
+            const status = document.getElementById('smExportStatus');
+            const body = document.getElementById('smExportBody');
+            if (btn){ btn.disabled = true; btn.textContent = 'Generating…'; }
+            if (status) status.textContent = '';
+            if (body) body.textContent = 'Curating and abstracting from your live model…';
+            try {
+                const r = await authFetch('/api/self-model/export?push=1', { method: 'POST' });
+                const d = await r.json();
+                _smExportDoc.operating = d.operating_model || ''; _smExportDoc.current = d.current || '';
+                smExportPaint();
+                if (status){
+                    status.innerHTML = d.notion_url
+                        ? `Saved &middot; <a href="${d.notion_url}" target="_blank" rel="noopener">open in Notion &rarr;</a>`
+                        : 'Saved to disk &middot; Notion push unavailable';
+                }
+            } catch(e){ if (body) body.textContent = 'Export failed — ' + e; }
+            if (btn){ btn.disabled = false; btn.textContent = 'Regenerate + push to Notion'; }
+        }
+        function smExportCopy(){
+            const txt = _smExportDoc[_smExportDoc.which] || '';
+            navigator.clipboard?.writeText(txt);
+            const s = document.getElementById('smExportStatus'); if (s) s.textContent = 'Copied ' + _smExportDoc.which;
+        }
+        function smExportDownload(){
+            const name = _smExportDoc.which === 'current' ? 'current.md' : 'operating-model.md';
+            const blob = new Blob([_smExportDoc[_smExportDoc.which] || ''], { type: 'text/markdown' });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
         }
 
         // Escape a string for safe embedding inside a single-quoted inline handler.
