@@ -19,12 +19,28 @@ enum SelfModelExportService {
         let current: String
         let durablePath: String
         let currentPath: String
+        let durableFilename: String
+        let currentFilename: String
         let notionUrl: String?
     }
 
     private static var exportsDir: String {
         (NSHomeDirectory() as NSString).appendingPathComponent(".alfred/exports")
     }
+
+    /// Filename stem from the user's name: "Miten Sampat" → "Miten_Sampat".
+    /// Spaces become underscores; anything not alphanumeric/underscore is dropped.
+    private static func fileBase(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = trimmed.split { $0 == " " || $0 == "\t" }.map(String.init)
+        let joined = words.isEmpty ? "user" : words.joined(separator: "_")
+        let safe = String(joined.unicodeScalars.map {
+            CharacterSet.alphanumerics.contains($0) || $0 == "_" ? Character($0) : "_"
+        })
+        return safe.isEmpty ? "user" : safe
+    }
+    private static func durableFilename(_ name: String) -> String { "\(fileBase(name))_operating_model.md" }
+    private static func currentFilename(_ name: String) -> String { "\(fileBase(name))_current.md" }
     private static var statePath: String {
         (NSHomeDirectory() as NSString).appendingPathComponent(".alfred/self_model_export.json")
     }
@@ -40,8 +56,9 @@ enum SelfModelExportService {
 
         let dDir = exportsDir
         try? FileManager.default.createDirectory(atPath: dDir, withIntermediateDirectories: true)
-        let dPath = (dDir as NSString).appendingPathComponent("operating-model.md")
-        let cPath = (dDir as NSString).appendingPathComponent("current.md")
+        let dName = durableFilename(name), cName = currentFilename(name)
+        let dPath = (dDir as NSString).appendingPathComponent(dName)
+        let cPath = (dDir as NSString).appendingPathComponent(cName)
         try? durable.write(toFile: dPath, atomically: true, encoding: .utf8)
         try? current.write(toFile: cPath, atomically: true, encoding: .utf8)
 
@@ -49,15 +66,18 @@ enum SelfModelExportService {
         if pushToNotion {
             notionUrl = await mirrorToNotion(title: "Operating Model — \(name)", markdown: durable + "\n\n" + current)
         }
-        return Result(durable: durable, current: current, durablePath: dPath, currentPath: cPath, notionUrl: notionUrl)
+        return Result(durable: durable, current: current, durablePath: dPath, currentPath: cPath,
+                      durableFilename: dName, currentFilename: cName, notionUrl: notionUrl)
     }
 
-    /// Return the last-saved docs (or nil if never exported).
-    static func lastSaved() -> (durable: String, current: String)? {
-        let d = try? String(contentsOfFile: (exportsDir as NSString).appendingPathComponent("operating-model.md"), encoding: .utf8)
-        let c = try? String(contentsOfFile: (exportsDir as NSString).appendingPathComponent("current.md"), encoding: .utf8)
+    /// Return the last-saved docs + their filenames (or nil if never exported).
+    static func lastSaved() -> (durable: String, current: String, durableFilename: String, currentFilename: String)? {
+        let name = { let n = AppConfig.load()?.user.name ?? ""; return n.isEmpty ? "User" : n }()
+        let dName = durableFilename(name), cName = currentFilename(name)
+        let d = try? String(contentsOfFile: (exportsDir as NSString).appendingPathComponent(dName), encoding: .utf8)
+        let c = try? String(contentsOfFile: (exportsDir as NSString).appendingPathComponent(cName), encoding: .utf8)
         guard let d = d else { return nil }
-        return (d, c ?? "")
+        return (d, c ?? "", dName, cName)
     }
 
     // MARK: - Durable doc (curated + abstracted, LLM pass)

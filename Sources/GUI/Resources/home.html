@@ -11091,7 +11091,7 @@
         }
 
         // ═══ Portable operating model: export the whole model as Markdown any AI can read ═══
-        let _smExportDoc = { operating: '', current: '', which: 'operating' };
+        let _smExportDoc = { operating: '', current: '', which: 'operating', operatingName: 'operating-model.md', currentName: 'current.md' };
         function smExportOpen(){
             let ov = document.getElementById('smExportModal');
             if (!ov){
@@ -11124,6 +11124,8 @@
             authFetch('/api/self-model/export').then(r => r.json()).then(d => {
                 if (d && d.operating_model){
                     _smExportDoc.operating = d.operating_model; _smExportDoc.current = d.current || '';
+                    if (d.operating_model_filename) _smExportDoc.operatingName = d.operating_model_filename;
+                    if (d.current_filename) _smExportDoc.currentName = d.current_filename;
                     smExportPaint();
                 } else { smExportRun(); }
             }).catch(() => smExportRun());
@@ -11149,6 +11151,8 @@
                 const r = await authFetch('/api/self-model/export?push=1', { method: 'POST' });
                 const d = await r.json();
                 _smExportDoc.operating = d.operating_model || ''; _smExportDoc.current = d.current || '';
+                if (d.operating_model_filename) _smExportDoc.operatingName = d.operating_model_filename;
+                if (d.current_filename) _smExportDoc.currentName = d.current_filename;
                 smExportPaint();
                 if (status){
                     status.innerHTML = d.notion_url
@@ -11164,7 +11168,7 @@
             const s = document.getElementById('smExportStatus'); if (s) s.textContent = 'Copied ' + _smExportDoc.which;
         }
         function smExportDownload(){
-            const name = _smExportDoc.which === 'current' ? 'current.md' : 'operating-model.md';
+            const name = _smExportDoc.which === 'current' ? _smExportDoc.currentName : _smExportDoc.operatingName;
             const blob = new Blob([_smExportDoc[_smExportDoc.which] || ''], { type: 'text/markdown' });
             const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
         }
