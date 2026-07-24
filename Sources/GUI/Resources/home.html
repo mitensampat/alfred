@@ -11104,8 +11104,8 @@
                         <button class="sm-export-x" onclick="smExportClose()">&times;</button>
                     </div>
                     <div class="sm-export-tabs">
-                        <button class="sm-export-tab active" data-doc="operating" onclick="smExportTab('operating')">operating-model.md</button>
-                        <button class="sm-export-tab" data-doc="current" onclick="smExportTab('current')">current.md</button>
+                        <button class="sm-export-tab active" data-doc="operating" onclick="smExportTab('operating')">${escapeHtml(_smExportDoc.operatingName)}</button>
+                        <button class="sm-export-tab" data-doc="current" onclick="smExportTab('current')">${escapeHtml(_smExportDoc.currentName)}</button>
                     </div>
                     <pre class="sm-export-body" id="smExportBody">Generating from your live model&hellip;</pre>
                     <div class="sm-export-foot">
@@ -11139,6 +11139,10 @@
         function smExportPaint(){
             const body = document.getElementById('smExportBody');
             if (body) body.textContent = _smExportDoc[_smExportDoc.which] || '(empty)';
+            const ot = document.querySelector('.sm-export-tab[data-doc="operating"]');
+            const ct = document.querySelector('.sm-export-tab[data-doc="current"]');
+            if (ot) ot.textContent = _smExportDoc.operatingName;
+            if (ct) ct.textContent = _smExportDoc.currentName;
         }
         async function smExportRun(){
             const btn = document.getElementById('smExportRun');
