@@ -17,10 +17,13 @@ enum SelfModelExportService {
     struct Result {
         let durable: String
         let current: String
+        let sounding: String
         let durablePath: String
         let currentPath: String
+        let soundingPath: String
         let durableFilename: String
         let currentFilename: String
+        let soundingFilename: String
         let notionUrl: String?
     }
 
@@ -41,6 +44,10 @@ enum SelfModelExportService {
     }
     private static func durableFilename(_ name: String) -> String { "\(fileBase(name))_operating_model.md" }
     private static func currentFilename(_ name: String) -> String { "\(fileBase(name))_current.md" }
+    private static func soundingFilename(_ name: String) -> String { "\(fileBase(name))_sounding_board.md" }
+    private static func firstName(_ name: String) -> String {
+        String(name.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ").first ?? "they")
+    }
     private static var statePath: String {
         (NSHomeDirectory() as NSString).appendingPathComponent(".alfred/self_model_export.json")
     }
@@ -53,31 +60,84 @@ enum SelfModelExportService {
         let name = rawName.isEmpty ? "User" : rawName
         let durable = await generateDurable(name: name)
         let current = generateCurrent()
+        let dName = durableFilename(name), cName = currentFilename(name), sName = soundingFilename(name)
+        let sounding = generateSoundingBoard(name: name, operatingFilename: dName)
 
         let dDir = exportsDir
         try? FileManager.default.createDirectory(atPath: dDir, withIntermediateDirectories: true)
-        let dName = durableFilename(name), cName = currentFilename(name)
         let dPath = (dDir as NSString).appendingPathComponent(dName)
         let cPath = (dDir as NSString).appendingPathComponent(cName)
+        let sPath = (dDir as NSString).appendingPathComponent(sName)
         try? durable.write(toFile: dPath, atomically: true, encoding: .utf8)
         try? current.write(toFile: cPath, atomically: true, encoding: .utf8)
+        try? sounding.write(toFile: sPath, atomically: true, encoding: .utf8)
 
         var notionUrl: String? = nil
         if pushToNotion {
-            notionUrl = await mirrorToNotion(title: "Operating Model — \(name)", markdown: durable + "\n\n" + current)
+            notionUrl = await mirrorToNotion(title: "Operating Model — \(name)", markdown: durable + "\n\n" + sounding + "\n\n" + current)
         }
-        return Result(durable: durable, current: current, durablePath: dPath, currentPath: cPath,
-                      durableFilename: dName, currentFilename: cName, notionUrl: notionUrl)
+        return Result(durable: durable, current: current, sounding: sounding,
+                      durablePath: dPath, currentPath: cPath, soundingPath: sPath,
+                      durableFilename: dName, currentFilename: cName, soundingFilename: sName, notionUrl: notionUrl)
     }
 
     /// Return the last-saved docs + their filenames (or nil if never exported).
-    static func lastSaved() -> (durable: String, current: String, durableFilename: String, currentFilename: String)? {
+    static func lastSaved() -> (durable: String, current: String, sounding: String,
+                                durableFilename: String, currentFilename: String, soundingFilename: String)? {
         let name = { let n = AppConfig.load()?.user.name ?? ""; return n.isEmpty ? "User" : n }()
-        let dName = durableFilename(name), cName = currentFilename(name)
+        let dName = durableFilename(name), cName = currentFilename(name), sName = soundingFilename(name)
         let d = try? String(contentsOfFile: (exportsDir as NSString).appendingPathComponent(dName), encoding: .utf8)
         let c = try? String(contentsOfFile: (exportsDir as NSString).appendingPathComponent(cName), encoding: .utf8)
+        let s = try? String(contentsOfFile: (exportsDir as NSString).appendingPathComponent(sName), encoding: .utf8)
         guard let d = d else { return nil }
-        return (d, c ?? "", dName, cName)
+        return (d, c ?? "", s ?? "", dName, cName, sName)
+    }
+
+    // MARK: - Sounding-board doc (persona wrapper + how-to — deterministic)
+
+    /// The "What would <Name> think?" wrapper: a persona prompt + setup instructions that
+    /// turn the operating model into a sounding board for someone preparing something for
+    /// <Name>. Reusable across a Claude Project, a custom GPT, or any chat. Uses they/them —
+    /// pronouns aren't inferred from a name.
+    static func generateSoundingBoard(name: String, operatingFilename: String) -> String {
+        let first = firstName(name)
+        return """
+        ---
+        purpose: A "What would \(name) think?" sounding board — to prep or pressure-test something before it reaches them.
+        pairs-with: \(operatingFilename)
+        generated: \(String(ISO8601DateFormatter().string(from: Date()).prefix(10))) · Alfred
+        ---
+
+        # \(name) — Sounding Board
+
+        Load this file **together with `\(operatingFilename)`** into the AI of your choice. The operating-model file is the knowledge; the instructions below are the persona. It helps you *anticipate* \(first) — it is not \(first), and not their authorization.
+
+        ## How to set it up
+        - **Claude Project** — create a Project, add `\(operatingFilename)` as project knowledge, and paste the *Instructions* section below into the Project's custom instructions.
+        - **Custom GPT** — upload `\(operatingFilename)` as a knowledge file, and paste the *Instructions* into the GPT's instructions.
+        - **Any chat** — paste the contents of `\(operatingFilename)`, then paste the *Instructions*, then ask your question.
+
+        ## Instructions (use these as the system prompt)
+
+        You are a sounding board that helps someone prepare for — or pressure-test — something before it reaches \(name). You are grounded in \(first)'s operating model (the attached file). Your job is to *anticipate* \(first), not to be them.
+
+        - Speak in the third person: "\(first) would likely push on…", never "I think" as if you were them.
+        - Be the skeptic \(first) would be. Stress-test the argument, surface the weak assumption, ask the question they'll ask. Do not flatter or rubber-stamp.
+        - When you make a call, cite the principle you're reasoning from (e.g. "they weigh durability over short-term wins, so…"). It grounds you and shows your work.
+        - Weight by provenance tags in the model: `[declared]` = firm, they own it; `[observed]`/`[emergent]` = inferred from behaviour — treat as a strong hypothesis, not doctrine, and say so when you lean on one.
+        - Stay in prep mode. You help the person get ready. You do not decide *for* \(first), authorize anything in their name, or speak for them to others.
+        - If the model doesn't cover something, say so plainly rather than inventing a view.
+
+        ## Good questions to ask it
+        - "How will \(first) react to this proposal — and what will they push on first?"
+        - "What's the one objection to this deck I'm not ready for?"
+        - "How should I frame this ask so it lands with \(first)?"
+        - "Where does this plan run against how \(first) thinks?"
+
+        ## What this is not
+        - Not \(first), and not their sign-off. It reflects how they *think*, which is context — not a mandate to act.
+        - Not always current — it's a snapshot. For anything time-sensitive or high-stakes, check with them directly.
+        """
     }
 
     // MARK: - Durable doc (curated + abstracted, LLM pass)

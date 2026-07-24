@@ -11509,10 +11509,13 @@ extension HTTPServer {
             "ok": true,
             "operating_model": r.durable,
             "current": r.current,
+            "sounding_board": r.sounding,
             "operating_model_path": r.durablePath,
             "current_path": r.currentPath,
+            "sounding_board_path": r.soundingPath,
             "operating_model_filename": r.durableFilename,
             "current_filename": r.currentFilename,
+            "sounding_board_filename": r.soundingFilename,
             "notion_url": r.notionUrl as Any
         ])
     }
@@ -11524,8 +11527,9 @@ extension HTTPServer {
         }
         if let saved = SelfModelExportService.lastSaved() {
             return HTTPResponse(statusCode: 200, body: [
-                "ok": true, "operating_model": saved.durable, "current": saved.current,
-                "operating_model_filename": saved.durableFilename, "current_filename": saved.currentFilename
+                "ok": true, "operating_model": saved.durable, "current": saved.current, "sounding_board": saved.sounding,
+                "operating_model_filename": saved.durableFilename, "current_filename": saved.currentFilename,
+                "sounding_board_filename": saved.soundingFilename
             ])
         }
         return HTTPResponse(statusCode: 200, body: ["ok": true, "operating_model": NSNull(), "current": NSNull()])
