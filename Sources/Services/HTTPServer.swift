@@ -1194,6 +1194,9 @@ class HTTPServer {
         case ("POST", "/api/self-model/verdict"):
             return handleSelfModelVerdict(request)
 
+        case ("POST", "/api/self-model/converge"):
+            return await handleSelfModelConverge(request)
+
         case ("POST", "/api/self-model/export"):
             return await handleSelfModelExport(request)
 
@@ -11533,6 +11536,49 @@ extension HTTPServer {
             ])
         }
         return HTTPResponse(statusCode: 200, body: ["ok": true, "operating_model": NSNull(), "current": NSNull()])
+    }
+
+    /// Dry-run convergence: LLM-cluster the fragmented themes and return the proposed
+    /// merges WITHOUT applying anything. The review gate before automatic merging.
+    private func handleSelfModelConverge(_ request: HTTPRequest) async -> HTTPResponse {
+        guard getConfig()?.features?.selfModel ?? false else {
+            return HTTPResponse(statusCode: 200, body: ["enabled": false])
+        }
+        let (clusters, themeCount) = await SelfModelConvergence.dryRun()
+        let out: [[String: Any]] = clusters.map { c in
+            [
+                "canonical_name": c.canonicalName,
+                "confidence": c.confidence,
+                "survivor": c.survivorName,
+                "survivor_id": c.survivorId,
+                "merges": c.memberNames,
+                "merge_ids": c.memberIds,
+                "count": c.memberIds.count + 1
+            ]
+        }
+        let wouldMerge = clusters.reduce(0) { $0 + $1.memberIds.count }
+        let highMerge = clusters.filter { $0.confidence == "high" }.reduce(0) { $0 + $1.memberIds.count }
+
+        // apply=high applies only high-confidence clusters; apply=all applies everything.
+        let applyMode = request.queryParams["apply"] ?? ""
+        var appliedInfo: [String: Any] = ["applied": false]
+        if applyMode == "high" || applyMode == "all" {
+            let r = SelfModelConvergence.apply(clusters, highOnly: applyMode == "high")
+            appliedInfo = ["applied": true, "mode": applyMode, "clusters_applied": r.applied, "themes_merged": r.merged]
+        }
+
+        return HTTPResponse(statusCode: 200, body: [
+            "ok": true, "dry_run": applyMode.isEmpty,
+            "theme_count": themeCount,
+            "cluster_count": clusters.count,
+            "high_count": clusters.filter { $0.confidence == "high" }.count,
+            "would_merge": wouldMerge,
+            "would_merge_high": highMerge,
+            "themes_after": themeCount - wouldMerge,
+            "themes_after_high": themeCount - highMerge,
+            "apply": appliedInfo,
+            "clusters": out
+        ])
     }
 
     private func handleSelfModelVerdict(_ request: HTTPRequest) -> HTTPResponse {
