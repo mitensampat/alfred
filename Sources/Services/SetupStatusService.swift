@@ -71,15 +71,12 @@ class SetupStatusService {
             missingRequirements.append("Claude API Key")
         }
 
-        // Check Notion configuration
-        if let notionKey = config?.notion.apiKey, !notionKey.isEmpty, notionKey != "YOUR_NOTION_API_KEY" {
-            if let dbId = config?.notion.databaseId, !dbId.isEmpty {
-                completedSteps.append("notion")
-            } else {
-                missingRequirements.append("Notion Database")
-            }
-        } else {
-            missingRequirements.append("Notion API Key")
+        // Check Notion configuration — OPTIONAL. Notion is ~5% of the model and the
+        // self-model layer doesn't touch it, so it never blocks setup; we just record it
+        // as done when present.
+        if let notionKey = config?.notion.apiKey, !notionKey.isEmpty, notionKey != "YOUR_NOTION_API_KEY",
+           let dbId = config?.notion.databaseId, !dbId.isEmpty {
+            completedSteps.append("notion")
         }
 
         // Check Google OAuth (look for tokens file)
@@ -112,8 +109,9 @@ class SetupStatusService {
         // Load progress file to get current step
         let progress = loadProgress()
 
-        // Setup is complete if we have all required items
-        let requiredSteps = ["apiKeys", "notion", "profile"]
+        // Setup is complete if we have all required items. Notion is NOT required — the
+        // self-model runs on messages/calendar/browsing; Notion is an optional add-on.
+        let requiredSteps = ["apiKeys", "profile"]
         let hasAllRequired = requiredSteps.allSatisfy { completedSteps.contains($0) }
 
         // Also check for explicit completion marker
@@ -374,13 +372,14 @@ class SetupStatusService {
                 "message_analysis_model": "claude-haiku-4-5-20251001"
             ],
             "messaging": [
+                // iMessage retired — WhatsApp is the primary source (~90% of the model).
                 "imessage": [
-                    "enabled": true,
+                    "enabled": false,
                     "db_path": "~/Library/Messages/chat.db"
                 ] as [String: Any],
                 "whatsapp": [
                     "enabled": false,
-                    "db_path": ""
+                    "db_path": "~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite"
                 ] as [String: Any],
                 "signal": [
                     "enabled": false,

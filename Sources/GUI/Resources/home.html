@@ -5110,10 +5110,10 @@
                 case 'notion':
                     const dbPickerHtml = notionDatabases.length > 0 ? renderNotionDatabasePickers() : '';
                     return `
-                        <h2>Connect Notion</h2>
-                        <p>Your second brain lives in Notion — Alfred plugs into it. It pulls context from your notes, creates tasks and commitments from your conversations, and makes sure nothing you've written down falls through the cracks.</p>
+                        <h2>Connect Notion <span style="font-size:13px;color:var(--ink-tertiary);font-weight:400;">· optional</span></h2>
+                        <p>If your second brain lives in Notion, Alfred can plug into it — pulling context from your notes and creating tasks from your conversations. Alfred works fully without it, so feel free to <strong>skip and add it later</strong>.</p>
                         <div class="ftue-field">
-                            <label>Notion Integration Token <span class="required">*</span></label>
+                            <label>Notion Integration Token</label>
                             <input type="password" id="ftueNotionApiKey" placeholder="secret_..." value="${ftueData.notionApiKey || ''}">
                             <small>Create an integration at <a href="https://www.notion.so/my-integrations" target="_blank">notion.so/my-integrations</a><br>Then share your databases with the integration.</small>
                             <div style="display: flex; align-items: center; margin-top: 8px;">
@@ -5191,20 +5191,16 @@
                     `;
                 case 'messaging':
                     return `
-                        <h2>Message Sources</h2>
-                        <p>The best commitments happen in conversations — and that's where they get lost. Alfred reads your messages to catch what matters.</p>
+                        <h2>Messages</h2>
+                        <p>Most of the decisions and commitments that matter happen in conversations — and that's where they get lost. This is what Alfred learns the most from.</p>
                         <div class="ftue-toggle">
-                            <input type="checkbox" id="ftueEnableIMessage" ${ftueData.enableIMessage !== false ? 'checked' : ''}>
-                            <div><label for="ftueEnableIMessage">iMessage</label><small>Reads your local Messages database</small></div>
-                        </div>
-                        <div class="ftue-toggle">
-                            <input type="checkbox" id="ftueEnableWhatsApp" ${ftueData.enableWhatsApp ? 'checked' : ''}>
-                            <div><label for="ftueEnableWhatsApp">WhatsApp Desktop</label><small>Reads your local WhatsApp database</small></div>
+                            <input type="checkbox" id="ftueEnableWhatsApp" ${ftueData.enableWhatsApp !== false ? 'checked' : ''}>
+                            <div><label for="ftueEnableWhatsApp">WhatsApp Desktop</label><small>Reads your local WhatsApp database directly on your Mac</small></div>
                         </div>
                         <div style="margin-top:20px;padding:12px 14px;background:var(--surface-sunken);border-radius:8px;">
-                            <p style="font-size:12px;color:var(--ink-secondary);margin:0;line-height:1.5;"><strong style="color:var(--ink);">Privacy-first.</strong> All message processing happens locally on your Mac. Your conversations never leave this machine — Alfred reads the databases directly, no cloud sync, no forwarding.</p>
+                            <p style="font-size:12px;color:var(--ink-secondary);margin:0;line-height:1.5;"><strong style="color:var(--ink);">Privacy-first.</strong> All message processing happens locally on your Mac. Your conversations never leave this machine — no cloud sync, no forwarding.</p>
                         </div>
-                        <p style="font-size: 12px; color: var(--ink-tertiary); margin-top: 12px;">Add your key contacts later in Settings to focus Alfred on the people who matter most.</p>
+                        <p style="font-size: 12px; color: var(--ink-tertiary); margin-top: 12px;">You can skip this and add it later in Settings. But it's where Alfred gets most of its signal, so we recommend connecting it.</p>
                     `;
                 case 'permissions':
                     // Start polling for permission status
@@ -5220,7 +5216,7 @@
                                 <span class="ftue-perm-status pending" id="ftue-status-fda">Checking...</span>
                                 <span class="ftue-perm-granted-check">&#10003;</span>
                             </div>
-                            <div class="ftue-perm-desc">Lets Alfred read iMessage and WhatsApp databases locally on your Mac. Nothing leaves this machine.</div>
+                            <div class="ftue-perm-desc">Lets Alfred read your WhatsApp database locally on your Mac. Nothing leaves this machine.</div>
                             <div class="ftue-perm-steps" id="ftue-steps-fda">
                                 <div class="step"><span class="step-num">1</span><span>Click <strong>Open Settings</strong> below</span></div>
                                 <div class="step"><span class="step-num">2</span><span>Click <strong>+</strong> and select <strong>Alfred.app</strong> from Applications</span></div>
@@ -5238,7 +5234,7 @@
                                 <span class="ftue-perm-status pending" id="ftue-status-contacts">Checking...</span>
                                 <span class="ftue-perm-granted-check">&#10003;</span>
                             </div>
-                            <div class="ftue-perm-desc">Resolves names in your iMessage and WhatsApp conversations so Alfred knows who's who.</div>
+                            <div class="ftue-perm-desc">Resolves names in your WhatsApp conversations so Alfred knows who's who.</div>
                             <div class="ftue-perm-action" id="ftue-action-contacts">
                                 <button onclick="requestContactsPermission()">Grant Access</button>
                             </div>
@@ -5267,11 +5263,10 @@
                         <p style="text-align:center;">Alfred is now embedded in the way you work. It will watch, learn, and get sharper every day. Your job: operate. Alfred's job: make sure nothing consequential slips.</p>
                         <div class="ftue-summary">
                             <div>Claude connected — highest-context coaching active</div>
-                            <div>Notion synced — your second brain is augmented</div>
                             <div>Profile calibrated</div>
+                            ${ftueData.enableWhatsApp !== false ? '<div>WhatsApp — Alfred learns from your conversations</div>' : ''}
                             ${ftueData.googleConnected ? '<div>Calendar wired — briefings and meeting prep ready</div>' : ''}
-                            ${ftueData.enableIMessage ? '<div>iMessage — commitment tracking on</div>' : ''}
-                            ${ftueData.enableWhatsApp ? '<div>WhatsApp — commitment tracking on</div>' : ''}
+                            ${ftueData.notionApiKey ? '<div>Notion synced — your second brain is augmented</div>' : ''}
                         </div>
                         <p style="font-size:13px;color:var(--ink-tertiary);text-align:center;margin-top:16px;">First move: add your key contacts in Settings so Alfred knows who to watch closely.</p>
                         <button class="ftue-launch-btn" onclick="completeFtue()">Let's go</button>
@@ -5289,8 +5284,14 @@
             }
             if (step === 'complete') return '';
             const backBtn = currentFtueStep > 0 ? `<button class="ftue-btn ftue-btn-secondary" onclick="prevFtueStep()">Back</button>` : '<div></div>';
-            // All four connections (Anthropic, Messages, Calendar, Notion) are required — no Skip.
-            return `${backBtn}<div style="display: flex; gap: 8px;">
+            // Only the Claude key and your profile are required. Permissions, messages,
+            // calendar and Notion are optional — add now or later from Settings.
+            const optionalSteps = ['permissions', 'messaging', 'googleOauth', 'notion'];
+            const skipLink = optionalSteps.includes(step)
+                ? `<a href="#" onclick="skipFtueStep(); return false;" style="color:var(--ink-tertiary);font-size:13px;text-decoration:none;align-self:center;">Skip for now</a>`
+                : '';
+            return `${backBtn}<div style="display: flex; gap: 12px; align-items:center;">
+                ${skipLink}
                 <button class="ftue-btn ftue-btn-primary" onclick="nextFtueStep()">Continue</button>
             </div>`;
         }
@@ -5402,28 +5403,24 @@
                     return true;
                 }
                 case 'permissions': {
-                    // Messages is a required connection → Full Disk Access must be granted.
-                    var fdaCard = document.getElementById('ftue-perm-fda');
-                    var fdaOk = fdaCard && fdaCard.classList.contains('granted');
-                    if (!fdaOk) { setFtueError('Grant Full Disk Access to continue — Alfred needs it to read your messages locally. If you just granted it, reopen Alfred so macOS applies it.'); return false; }
+                    // FDA is strongly recommended (Alfred reads WhatsApp locally) but not a hard
+                    // gate — you can grant it later from Settings, so nothing blocks setup here.
                     return true;
                 }
                 case 'messaging': {
-                    const im = document.getElementById('ftueEnableIMessage')?.checked;
                     const wa = document.getElementById('ftueEnableWhatsApp')?.checked;
-                    if (!im && !wa) { setFtueError('Pick at least one message source — commitment tracking is core to how Alfred coaches you.'); return false; }
-                    ftueData.enableIMessage = im; ftueData.enableWhatsApp = wa;
-                    await saveFtueStepData('messaging', { enableIMessage: im ? 'true' : 'false', enableWhatsApp: wa ? 'true' : 'false' });
+                    ftueData.enableWhatsApp = wa;
+                    await saveFtueStepData('messaging', { enableWhatsApp: wa ? 'true' : 'false', enableIMessage: 'false' });
                     return true;
                 }
                 case 'googleOauth': {
-                    if (!ftueData.googleConnected) { setFtueError('Connect Google Calendar to continue — Alfred uses it for meeting prep and your daily briefing.'); return false; }
+                    // Calendar is optional — continue whether or not it's connected.
                     return true;
                 }
                 case 'notion': {
                     const notionKey = document.getElementById('ftueNotionApiKey')?.value?.trim();
-                    if (!notionKey) { setFtueError('Connect Notion to continue.'); return false; }
-                    if (!ftueData.tasksDatabaseId) { setFtueError('Select a Tasks database to continue.'); return false; }
+                    if (!notionKey) return true; // Notion is optional — skip freely.
+                    if (!ftueData.tasksDatabaseId) { setFtueError('Select a Tasks database, or leave the token blank to skip Notion.'); return false; }
                     ftueData.notionApiKey = notionKey;
                     await saveFtueStepData('notion', { notionApiKey: notionKey, tasksDatabaseId: ftueData.tasksDatabaseId, commitmentsDatabaseId: ftueData.commitmentsDatabaseId || ftueData.tasksDatabaseId });
                     return true;

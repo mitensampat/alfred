@@ -11039,30 +11039,27 @@ extension HTTPServer {
             return HTTPResponse(statusCode: 503, body: ["error": "Service not initialized"])
         }
 
-        // 1. Full Disk Access — test by opening iMessage DB
-        var fdaStatus = "unknown"
-        if config.messaging.imessage.enabled || config.messaging.whatsapp.enabled {
-            let chatDbPath = config.messaging.imessage.enabled
-                ? config.messaging.imessage.expandedPath
-                : config.messaging.whatsapp.expandedPath
-            if FileManager.default.fileExists(atPath: chatDbPath) {
-                var testDb: OpaquePointer?
-                let rc = sqlite3_open_v2(chatDbPath, &testDb, SQLITE_OPEN_READONLY, nil)
-                if rc == SQLITE_OK {
-                    var stmt: OpaquePointer?
-                    let tableName = config.messaging.imessage.enabled ? "message" : "ZWAMESSAGE"
-                    let queryRc = sqlite3_prepare_v2(testDb, "SELECT 1 FROM \(tableName) LIMIT 1", -1, &stmt, nil)
-                    fdaStatus = queryRc == SQLITE_OK ? "granted" : "denied"
-                    sqlite3_finalize(stmt)
-                } else {
-                    fdaStatus = "denied"
-                }
-                sqlite3_close(testDb)
+        // 1. Full Disk Access — a single global grant, so sense it from ANY TCC-protected
+        // sqlite file that exists, independent of which message source is enabled. This lets
+        // the permissions step verify FDA before WhatsApp is even configured. Reading a
+        // protected sqlite DB read-only succeeds only when FDA is granted.
+        var fdaStatus = "not_determined"
+        let fdaProbes = [
+            config.messaging.whatsapp.expandedPath,                                   // the real reason we need FDA
+            NSString(string: "~/Library/Messages/chat.db").expandingTildeInPath       // universal sensor (exists on ~all Macs)
+        ].filter { !$0.isEmpty }
+        for path in fdaProbes where FileManager.default.fileExists(atPath: path) {
+            var testDb: OpaquePointer?
+            if sqlite3_open_v2(path, &testDb, SQLITE_OPEN_READONLY, nil) == SQLITE_OK {
+                var stmt: OpaquePointer?
+                let qrc = sqlite3_prepare_v2(testDb, "SELECT 1 FROM sqlite_master LIMIT 1", -1, &stmt, nil)
+                fdaStatus = qrc == SQLITE_OK ? "granted" : "denied"
+                sqlite3_finalize(stmt)
             } else {
-                fdaStatus = "not_found"
+                fdaStatus = "denied"
             }
-        } else {
-            fdaStatus = "not_needed"
+            sqlite3_close(testDb)
+            if fdaStatus == "granted" { break }
         }
 
         // 2. Contacts — check CNContactStore authorization
