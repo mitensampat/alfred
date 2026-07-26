@@ -245,6 +245,10 @@ class SetupStatusService {
                     whatsapp["enabled"] = (data["enableWhatsApp"] as? String) == "true"
                     messaging["whatsapp"] = whatsapp
                 }
+                if var signal = messaging["signal"] as? [String: Any] {
+                    signal["enabled"] = (data["enableSignal"] as? String) == "true"
+                    messaging["signal"] = signal
+                }
                 configDict["messaging"] = messaging
             }
 
@@ -381,9 +385,10 @@ class SetupStatusService {
                     "enabled": false,
                     "db_path": "~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite"
                 ] as [String: Any],
+                // Signal — the FDA-free source (Application Support, not TCC-protected).
                 "signal": [
                     "enabled": false,
-                    "db_path": ""
+                    "db_path": "~/Library/Application Support/Signal/sql/db.sqlite"
                 ] as [String: Any]
             ] as [String: Any],
             "notifications": [

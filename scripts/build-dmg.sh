@@ -61,6 +61,23 @@ if [[ "${SKIP_BUILD}" == "0" ]]; then
     echo ""
 fi
 
+# Build the isolated signal-decrypt helper. It statically links SQLCipher + OpenSSL so the
+# main Alfred binary never links SQLCipher (no symbol conflict). Requires brew sqlcipher +
+# openssl@4 on the build host; the resulting helper is fully self-contained (no runtime deps).
+echo "🔐 Building signal-decrypt helper..."
+SC_PREFIX=$(brew --prefix sqlcipher 2>/dev/null)
+OSSL_PREFIX=$(brew --prefix openssl@4 2>/dev/null)
+if [[ -n "${SC_PREFIX}" && -f "${SC_PREFIX}/lib/libsqlcipher.a" && -f "${OSSL_PREFIX}/lib/libcrypto.a" ]]; then
+    clang helper/signal-decrypt.c "${SC_PREFIX}/lib/libsqlcipher.a" "${OSSL_PREFIX}/lib/libcrypto.a" \
+        -I"${SC_PREFIX}/include/sqlcipher" -framework Security -framework Foundation -lz -O2 \
+        -o "${BUILD_DIR}/signal-decrypt"
+    echo "✓ signal-decrypt helper built (self-contained)"
+else
+    echo "❌ sqlcipher/openssl@4 static libs not found — run: brew install sqlcipher openssl@4"
+    exit 1
+fi
+echo ""
+
 # Verify binary exists
 if [[ ! -f "${BUILD_DIR}/${APP_NAME}" ]]; then
     echo "❌ Binary not found at ${BUILD_DIR}/${APP_NAME}"
@@ -76,6 +93,9 @@ mkdir -p "${APP_BUNDLE}/Contents/Resources"
 
 # Copy binary
 cp "${BUILD_DIR}/${APP_NAME}" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
+
+# Bundle the Signal decrypt helper next to the main binary (SignalReader finds it there).
+cp "${BUILD_DIR}/signal-decrypt" "${APP_BUNDLE}/Contents/MacOS/signal-decrypt"
 
 # Create Info.plist
 # NSContactsUsageDescription is required because the app calls CNContactStore.
@@ -144,13 +164,16 @@ fi
 echo "✓ App bundle created"
 echo ""
 
-# Step 3: Codesign
+# Step 3: Codesign — sign nested helper FIRST (inside-out), then the bundle.
 echo "🔏 Signing app bundle..."
 if [[ "${SIGN_MODE}" == "distribution" ]]; then
     if [[ ! -f "${ENTITLEMENTS}" ]]; then
         echo "❌ Entitlements file missing at ${ENTITLEMENTS}"
         exit 1
     fi
+    # Sign the helper with hardened runtime + timestamp before the outer bundle.
+    codesign --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp \
+        "${APP_BUNDLE}/Contents/MacOS/signal-decrypt"
     # Hardened runtime + entitlements + timestamp — required for notarization
     codesign --force --deep \
         --sign "${SIGN_IDENTITY}" \
@@ -166,6 +189,7 @@ if [[ "${SIGN_MODE}" == "distribution" ]]; then
     codesign --verify --strict --verbose=2 "${APP_BUNDLE}"
     echo "✓ Signature verified"
 else
+    codesign --force --sign - "${APP_BUNDLE}/Contents/MacOS/signal-decrypt"
     codesign --force --sign - --identifier "${BUNDLE_ID}" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
     echo "✓ Ad-hoc signed (not for distribution)"
 fi

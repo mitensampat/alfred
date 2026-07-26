@@ -1008,6 +1008,49 @@ class CadenceRunner {
                 }
             }
 
+            // Signal — the FDA-free source. connect() derives the SQLCipher key from the
+            // Keychain and runs the isolated helper to decrypt to a temp plaintext copy.
+            if config.messaging.signal.enabled {
+                do {
+                    let reader = SignalReader(dbPath: config.messaging.signal.dbPath)
+                    try reader.connect()
+                    let threads = try reader.fetchThreads(since: msgSince)
+                    reader.disconnect()
+
+                    let rule = ThreadEligibility.fromConfig()
+                    let today = Self.todayDateString()
+                    let verdicts = threads
+                        .filter { !ReflectionStore.shared.hasReflection(source: "conversation", sourceId: "sig_\($0.contactIdentifier)_\(today)") }
+                        .map { t in rule.evaluate(t, isFavorite: favorites.isFavorite(t.contactName ?? t.contactIdentifier)) }
+                    let chosen = Set(rule.select(verdicts).map { $0.identifier })
+                    let eligibleThreads = threads.filter { chosen.contains($0.contactIdentifier) }
+                    print("📥 Reflection: Signal \(eligibleThreads.count) threads this run (\(verdicts.filter { $0.eligible }.count) eligible, \(threads.count) seen)")
+
+                    for thread in eligibleThreads {
+                        let formatted = Self.formatThreadForReflection(thread, minLength: minLength)
+                        guard !formatted.isEmpty else { continue }
+                        let extraction = try await extractionService.extract(
+                            from: formatted, source: "conversation",
+                            existingThemes: existingThemes + Array(allNewThemes))
+                        if !extraction.themes.isEmpty {
+                            ReflectionStore.shared.insertReflection(
+                                source: "conversation",
+                                sourceId: "sig_\(thread.contactIdentifier)_\(Self.todayDateString())",
+                                contentSummary: extraction.contentSummary,
+                                themes: extraction.themes,
+                                themeClassifications: extraction.themeClassifications,
+                                openQuestions: extraction.openQuestions,
+                                mentalModelShifts: extraction.mentalModelShifts,
+                                decisions: extraction.decisions)
+                            allNewThemes.formUnion(extraction.themes)
+                            msgProcessed += 1
+                        }
+                    }
+                } catch {
+                    print("⚠️ Reflection: Signal messages error: \(error)")
+                }
+            }
+
             // iMessage
             if config.messaging.imessage.enabled {
                 do {

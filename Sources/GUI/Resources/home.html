@@ -5195,7 +5195,16 @@
                         <p>Most of the decisions and commitments that matter happen in conversations — and that's where they get lost. This is what Alfred learns the most from.</p>
                         <div class="ftue-toggle">
                             <input type="checkbox" id="ftueEnableWhatsApp" ${ftueData.enableWhatsApp !== false ? 'checked' : ''}>
-                            <div><label for="ftueEnableWhatsApp">WhatsApp Desktop</label><small>Reads your local WhatsApp database directly on your Mac</small></div>
+                            <div><label for="ftueEnableWhatsApp">WhatsApp Desktop</label><small>Reads your local WhatsApp database &mdash; needs Full Disk Access</small></div>
+                        </div>
+                        <div class="ftue-toggle">
+                            <input type="checkbox" id="ftueEnableSignal" ${ftueData.enableSignal ? 'checked' : ''} onchange="document.getElementById('ftueSignalVerify').style.display = this.checked ? 'block' : 'none'">
+                            <div><label for="ftueEnableSignal">Signal Desktop <span style="color:var(--growth);font-size:11px;font-weight:600;">&middot; no Full Disk Access</span></label><small>Reads your local Signal database &mdash; asks only for a one-time Keychain grant</small></div>
+                        </div>
+                        <div id="ftueSignalVerify" style="display:${ftueData.enableSignal ? 'block' : 'none'};margin:4px 0 0 30px;">
+                            <button class="ftue-test-btn" onclick="verifySignal()">Grant access &amp; verify</button>
+                            <span id="signalStatus" style="margin-left:8px;font-size:12px;"></span>
+                            <div style="font-size:11px;color:var(--ink-tertiary);margin-top:4px;">Click now (while you're here) so the Keychain prompt appears &mdash; then Alfred reads Signal silently, even overnight.</div>
                         </div>
                         <div style="margin-top:20px;padding:12px 14px;background:var(--surface-sunken);border-radius:8px;">
                             <p style="font-size:12px;color:var(--ink-secondary);margin:0;line-height:1.5;"><strong style="color:var(--ink);">Privacy-first.</strong> All message processing happens locally on your Mac. Your conversations never leave this machine — no cloud sync, no forwarding.</p>
@@ -5265,6 +5274,7 @@
                             <div>Claude connected — highest-context coaching active</div>
                             <div>Profile calibrated</div>
                             ${ftueData.enableWhatsApp !== false ? '<div>WhatsApp — Alfred learns from your conversations</div>' : ''}
+                            ${ftueData.enableSignal ? '<div>Signal — connected, no Full Disk Access</div>' : ''}
                             ${ftueData.googleConnected ? '<div>Calendar wired — briefings and meeting prep ready</div>' : ''}
                             ${ftueData.notionApiKey ? '<div>Notion synced — your second brain is augmented</div>' : ''}
                         </div>
@@ -5409,8 +5419,9 @@
                 }
                 case 'messaging': {
                     const wa = document.getElementById('ftueEnableWhatsApp')?.checked;
-                    ftueData.enableWhatsApp = wa;
-                    await saveFtueStepData('messaging', { enableWhatsApp: wa ? 'true' : 'false', enableIMessage: 'false' });
+                    const sig = document.getElementById('ftueEnableSignal')?.checked;
+                    ftueData.enableWhatsApp = wa; ftueData.enableSignal = sig;
+                    await saveFtueStepData('messaging', { enableWhatsApp: wa ? 'true' : 'false', enableSignal: sig ? 'true' : 'false', enableIMessage: 'false' });
                     return true;
                 }
                 case 'googleOauth': {
@@ -5444,6 +5455,20 @@
 
         async function saveFtueStepData(step, data) {
             try { await fetch('/api/setup/step', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ step, data }) }); } catch (e) { console.error('Failed to save step data:', e); }
+        }
+
+        // Trigger the Signal Keychain grant NOW, in the foreground, so the prompt surfaces
+        // while the user is present — after this the background ingestion reads silently.
+        async function verifySignal() {
+            const el = document.getElementById('signalStatus');
+            el.innerHTML = '<span class="ftue-status loading">Requesting Keychain access — click Allow on the prompt…</span>';
+            try {
+                await saveFtueStepData('messaging', { enableSignal: 'true', enableWhatsApp: document.getElementById('ftueEnableWhatsApp')?.checked ? 'true' : 'false', enableIMessage: 'false' });
+                const r = await fetch('/api/setup/test-signal', { method: 'POST' });
+                const d = await r.json();
+                if (d.ok) el.innerHTML = `<span class="ftue-status success">&#10003; ${d.messages} messages across ${d.threads} chats — no Full Disk Access</span>`;
+                else el.innerHTML = `<span class="ftue-status error">${(d.error || 'Could not read Signal').slice(0, 90)}</span>`;
+            } catch (e) { el.innerHTML = '<span class="ftue-status error">Timed out — did you click Allow on the Keychain prompt?</span>'; }
         }
 
         async function testClaudeApiKey() {

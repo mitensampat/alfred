@@ -994,6 +994,9 @@ class HTTPServer {
         case ("POST", "/api/setup/test-api-key"):
             return await handleTestApiKey(request)
 
+        case ("POST", "/api/setup/test-signal"):
+            return handleTestSignal()
+
         case ("POST", "/api/setup/test-notion"):
             return await handleTestNotion(request)
 
@@ -11033,6 +11036,22 @@ extension HTTPServer {
     }
 
     // MARK: - Permission Status Handlers
+
+    /// Verify the FDA-free Signal path end to end: derive the key (Keychain), run the
+    /// decrypt helper, read the plaintext copy. Triggers the Keychain grant prompt.
+    private func handleTestSignal() -> HTTPResponse {
+        let path = getConfig()?.messaging.signal.dbPath ?? "~/Library/Application Support/Signal/sql/db.sqlite"
+        let reader = SignalReader(dbPath: path)
+        do {
+            try reader.connect()
+            let threads = try reader.fetchThreads(since: Date().addingTimeInterval(-365 * 86400))
+            let messages = threads.reduce(0) { $0 + $1.messages.count }
+            reader.disconnect()
+            return HTTPResponse(statusCode: 200, body: ["ok": true, "threads": threads.count, "messages": messages])
+        } catch {
+            return HTTPResponse(statusCode: 200, body: ["ok": false, "error": "\(error)"])
+        }
+    }
 
     private func handleGetPermissionStatus() async -> HTTPResponse {
         guard let config = alfredService.orchestrator?.config else {
