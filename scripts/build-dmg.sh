@@ -17,7 +17,7 @@
 #   ./scripts/build-dmg.sh [--skip-build] [--skip-notarize]
 set -e
 
-VERSION="2.3.4"
+VERSION="3.0.0"
 APP_NAME="Alfred"
 BUNDLE_ID="com.msfoundry.alfred"
 DMG_NAME="Coach-Alfred-${VERSION}.dmg"
