@@ -55,9 +55,16 @@ enum SelfModelService {
                     "edge": meta["edge"] ?? "",
                     "verdict": verdict(f),
                     "origin": f["origin"] as? String ?? "emergent",
-                    "renamed": (f["renamed"] as? Bool) ?? false
+                    "renamed": (f["renamed"] as? Bool) ?? false,
+                    "frequency": Double(meta["frequency"] ?? "0") ?? 0,
+                    "recurrence": Int(meta["recurrence"] ?? "0") ?? 0
                 ]
             }.sorted {
+                // Importance-first: how much a subject recurs (recency-weighted) is the
+                // primary signal for which workspaces the curated slice should surface.
+                // Temperature breaks ties so an equally-important-but-hotter one leads.
+                let fa = $0["frequency"] as? Double ?? 0, fb = $1["frequency"] as? Double ?? 0
+                if abs(fa - fb) > 0.001 { return fa > fb }
                 let a = tempRank[$0["temperature"] as? String ?? ""] ?? 9
                 let b = tempRank[$1["temperature"] as? String ?? ""] ?? 9
                 if a != b { return a < b }
@@ -244,8 +251,14 @@ enum SelfModelService {
     /// override always wins. This is the theme→workspace boundary.
     static let promotionBeliefBar = 1
     static let promotionDecisionBar = 8
+    // Frequency path: a subject you keep coming back to is a workspace even before it has
+    // produced 8 decisions — recurrence is a direct signal of importance. Guarded by
+    // distinct sources so one loud thread can't promote itself.
+    static let promotionFrequencyBar = 4.0     // recency-weighted recurrence (Σ 0.5^(age/30d))
+    static let promotionSourcesBar = 2
 
-    /// Returns the set of theme *ids* that are workspaces, given produced counts + overrides.
+    /// Returns the set of theme *ids* that are workspaces, given produced counts, recurrence,
+    /// and overrides.
     static func promotedThemeIds(store: SelfModelStore) -> Set<String> {
         let decisionIds = Set(store.getFacets(kind: "decision").compactMap { $0["id"] as? String })
         let beliefIds = Set(store.getFacets(kind: "belief").compactMap { $0["id"] as? String })
@@ -259,7 +272,14 @@ enum SelfModelService {
         for t in store.getFacets(kind: "theme") {
             guard let id = t["id"] as? String else { continue }
             if let o = overrides[id] { if o == "promoted" { out.insert(id) }; continue }
-            if (bel[id] ?? 0) >= promotionBeliefBar || (dec[id] ?? 0) >= promotionDecisionBar { out.insert(id) }
+            let meta = t["metadata"] as? [String: String] ?? [:]
+            let freq = Double(meta["frequency"] ?? "0") ?? 0
+            let sources = Int(meta["distinct_sources"] ?? "0") ?? 0
+            if (bel[id] ?? 0) >= promotionBeliefBar
+                || (dec[id] ?? 0) >= promotionDecisionBar
+                || (freq >= promotionFrequencyBar && sources >= promotionSourcesBar) {
+                out.insert(id)
+            }
         }
         return out
     }
@@ -334,7 +354,9 @@ enum SelfModelService {
                 "belief_count": born.count,
                 "decision_count": decidedHere,
                 "is_workspace": workspaceIds.contains(id),
-                "done": verdict(f) == "done"
+                "done": verdict(f) == "done",
+                "recurrence": Int(meta["recurrence"] ?? "0") ?? 0,
+                "frequency": Double(meta["frequency"] ?? "0") ?? 0
             ]
         }.sorted {
             let a = tempRankLocal[$0["temperature"] as? String ?? ""] ?? 9

@@ -136,7 +136,11 @@ enum NowService {
     private static func attentionScore(_ t: [String: Any], decisions: Int) -> Double {
         let days = Double(t["days_since"] as? Int ?? 0)
         guard days >= Double(coldThreshold) else { return 0 }     // must be going cold
-        let significance = min(Double(decisions), 10) / 10.0      // capped track record
+        // Significance = track record (decisions produced) OR how much the subject recurs.
+        // Recurrence is a direct importance signal — a workspace you keep returning to earns
+        // the attention slot when it goes quiet, even before it has produced many decisions.
+        let freq = t["frequency"] as? Double ?? 0
+        let significance = min(Double(decisions) + freq, 12) / 12.0
         let neglect = min(days, 40) / 5.0                         // scales with age
         return significance * neglect
     }

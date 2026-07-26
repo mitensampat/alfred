@@ -84,7 +84,11 @@ enum SelfModelSynthesizer {
                 trajectory: [], evidence: [],
                 metadata: ["temperature": temp, "state": state,
                            "inputs_this_week": String(t["inputs_this_week"] as? Int ?? 0),
-                           "edge": t["edge"] as? String ?? ""]
+                           "edge": t["edge"] as? String ?? "",
+                           // Frequency signal — how much this subject actually recurs, and how broadly.
+                           "frequency": String(format: "%.3f", t["frequency"] as? Double ?? 0),
+                           "recurrence": String(t["recurrence"] as? Int ?? 0),
+                           "distinct_sources": String(t["distinct_sources"] as? Int ?? 0)]
             )
         }
 

@@ -1217,9 +1217,18 @@ class ReflectionStore {
             var inputsThisWeek: Int = 0
             var sourcesThisWeek: [String: Int] = [:]
             var edge: String = ""                // freshest open question
+            var recencyWeighted: Double = 0      // Σ 0.5^(ageDays/30) — recency-weighted recurrence
+            var sources: Set<String> = []        // distinct sources = breadth, not just volume
         }
 
         var themeData: [String: ThemeAgg] = [:]
+
+        // Frequency signal: recency-weighted recurrence (half-life 30d) + distinct sources.
+        let freqFmt = DateFormatter()
+        freqFmt.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        freqFmt.timeZone = TimeZone(identifier: "UTC")
+        let freqIso = ISO8601DateFormatter()
+        let freqNow = Date()
 
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
             while sqlite3_step(stmt) == SQLITE_ROW {
@@ -1240,6 +1249,10 @@ class ReflectionStore {
                     var agg = themeData[theme] ?? ThemeAgg()
                     agg.count += 1
                     agg.totalRelevance += relevance
+                    if let d = freqFmt.date(from: createdAt) ?? freqIso.date(from: createdAt) {
+                        agg.recencyWeighted += pow(0.5, max(0, freqNow.timeIntervalSince(d) / 86400) / 30.0)
+                    }
+                    agg.sources.insert(source)
                     if agg.count == 1 {
                         // First (most recent) occurrence
                         agg.latestClassification = classifications[theme] ?? "monitoring"
@@ -1349,7 +1362,10 @@ class ReflectionStore {
                 "last_activity": agg.lastActivity,
                 "days_since": daysSince,
                 "inputs_this_week": agg.inputsThisWeek,
-                "sources_this_week": agg.sourcesThisWeek
+                "sources_this_week": agg.sourcesThisWeek,
+                "recurrence": agg.count,
+                "frequency": agg.recencyWeighted,
+                "distinct_sources": agg.sources.count
             ])
         }
 
