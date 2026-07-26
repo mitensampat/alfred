@@ -284,6 +284,25 @@ enum SelfModelService {
         return out
     }
 
+    /// The active workspaces the extractor should attach new activity to, importance-ranked
+    /// (recurrence). Names are the resolved display names (canonical where a workspace was
+    /// renamed by convergence), so new reflections converge on the durable name rather than
+    /// spawning yet another variant. Capped to keep the extraction prompt bounded.
+    static func canonicalWorkspaceNames(limit: Int = 45) -> [String] {
+        let store = SelfModelStore.shared
+        let promoted = promotedThemeIds(store: store)
+        let ws = store.getFacets(kind: "theme").filter {
+            guard let id = $0["id"] as? String else { return false }
+            let v = $0["user_verdict"] as? String
+            return promoted.contains(id) && v != "dismissed" && v != "done"
+        }
+        return ws.sorted {
+            let fa = Double(($0["metadata"] as? [String: String])?["frequency"] ?? "0") ?? 0
+            let fb = Double(($1["metadata"] as? [String: String])?["frequency"] ?? "0") ?? 0
+            return fa > fb
+        }.prefix(limit).compactMap { $0["statement"] as? String }.filter { !$0.isEmpty }
+    }
+
     /// Two workspaces describe the same object — token-Jaccard, a touch stricter than
     /// Now's diversify (0.45) since a merge is destructive and proposed, not silent.
     private static let mergeStop: Set<String> = ["the","and","for","with","from","that","this","strategy","management","through","during","and","product","business","model"]

@@ -25,7 +25,10 @@ class ReflectionExtractionService {
     ///   - source: Where this content came from ("chrome", "youtube", "notion", "claude_export", "manual")
     ///   - existingThemes: Current themes in the store for normalization
     func extract(from rawContent: String, source: String, existingThemes: [String] = []) async throws -> ReflectionExtraction {
-        let systemPrompt = buildSystemPrompt(source: source, existingThemes: existingThemes)
+        // The established workspaces new activity should attach to — fetched here so every
+        // ingestion path gets the anti-fragmentation guidance without threading a param.
+        let workspaces = SelfModelService.canonicalWorkspaceNames()
+        let systemPrompt = buildSystemPrompt(source: source, existingThemes: existingThemes, workspaces: workspaces)
         let userPrompt = buildUserPrompt(rawContent: rawContent, source: source)
 
         let response = try await claudeService.generateText(
@@ -39,7 +42,7 @@ class ReflectionExtractionService {
 
     // MARK: - Prompt Construction
 
-    private func buildSystemPrompt(source: String, existingThemes: [String]) -> String {
+    private func buildSystemPrompt(source: String, existingThemes: [String], workspaces: [String] = []) -> String {
         var prompt = """
         You analyze a person's digital activity to understand what they're actively thinking about.
         Your job is to extract structured reflection data — not summarize content, but identify intellectual engagement patterns.
@@ -57,6 +60,16 @@ class ReflectionExtractionService {
         - Open questions should be specific, not generic. Not "How to grow?" but a question phrased from the content's own vocabulary.
         - Mental model shifts are rare and valuable — only include if there's clear evidence of changed thinking
         """
+
+        if !workspaces.isEmpty {
+            prompt += """
+
+            ESTABLISHED WORKSPACES (attach to these):
+            These are ongoing subjects the person is actively working on. If the new content is about one of them — even a different metric, week, angle, or update of the SAME subject — reuse that workspace's EXACT name. A new metric or diagnostic angle of an existing workspace is NOT a new theme; it belongs to the workspace.
+            Only create a new theme when the content is a genuinely NEW subject not represented below.
+            Workspaces: \(workspaces.joined(separator: "; "))
+            """
+        }
 
         if !existingThemes.isEmpty {
             prompt += """
