@@ -42,7 +42,22 @@ class CadenceRunner {
             return try await runTaskLifecycleScan(cadence: cadence)
         case .reflectionIngestion:
             return try await runReflectionIngestion(cadence: cadence)
+        case .themeConvergence:
+            return try await runThemeConvergence(cadence: cadence)
         }
+    }
+
+    /// Collapse fragmented themes into their true workspaces. Runs after reflection
+    /// ingestion so the day's freshly-minted fragments get merged. Auto-applies only
+    /// high-confidence clusters (medium/low are left for manual review, as agreed).
+    private func runThemeConvergence(cadence: Cadence) async throws -> String {
+        guard AppConfig.load()?.features?.selfModel ?? false else {
+            return "Self-model disabled — convergence skipped"
+        }
+        let (clusters, themeCount) = await SelfModelConvergence.dryRun()
+        guard !clusters.isEmpty else { return "Convergence: \(themeCount) themes, nothing to merge" }
+        let r = SelfModelConvergence.apply(clusters, highOnly: true)
+        return "Convergence: merged \(r.merged) themes into \(r.applied) workspaces (high-confidence) — \(themeCount) themes scanned"
     }
 
     // MARK: - Individual Runners

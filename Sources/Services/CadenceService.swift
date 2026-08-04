@@ -405,6 +405,23 @@ class CadenceService {
                 catchUpWindowHours: 3,
                 notifyOnSuccess: true,
                 emailOnSuccess: false
+            ),
+            Cadence(
+                id: "builtin-theme-convergence",
+                name: "Theme Convergence",
+                icon: "🧲",
+                actionType: .themeConvergence,
+                params: [:],
+                // 30 min after reflection ingestion (22:00) so it collapses the day's new fragments.
+                schedule: .daily(time: "22:30"),
+                enabled: config?.features?.selfModel ?? false,
+                isBuiltIn: true,
+                createdAt: now,
+                lastRunDate: nil,
+                lastRunTimestamp: nil,
+                catchUpWindowHours: 3,
+                notifyOnSuccess: false,
+                emailOnSuccess: false
             )
         ]
     }

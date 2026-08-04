@@ -17,6 +17,7 @@ enum CadenceActionType: String, Codable, CaseIterable {
     case coachingSync = "coaching_sync"
     case taskLifecycleScan = "task_lifecycle_scan"
     case reflectionIngestion = "reflection_ingestion"
+    case themeConvergence = "theme_convergence"
 }
 
 // MARK: - Cadence Schedule
