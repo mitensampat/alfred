@@ -303,13 +303,14 @@ class CommitmentScanTracker {
         return results
     }
 
-    /// Get all open commitments across all threads (not yet closed)
-    func getAllOpenCommitments() -> [(hash: String, title: String, type: String, counterparty: String, extractedAt: String)] {
+    /// Get all open commitments across all threads (not yet closed). Includes source
+    /// thread + extraction confidence so the Desk can show per-item "why this is here".
+    func getAllOpenCommitments() -> [(hash: String, title: String, type: String, counterparty: String, extractedAt: String, threadId: String, confidence: Double)] {
         dbLock.lock()
         defer { dbLock.unlock() }
 
         let query = """
-        SELECT commitment_hash, title, commitment_type, counterparty, extracted_at
+        SELECT commitment_hash, title, commitment_type, counterparty, extracted_at, thread_id, confidence
         FROM commitment_extractions
         WHERE was_closed = 0
         """
@@ -318,14 +319,16 @@ class CommitmentScanTracker {
         guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else { return [] }
         defer { sqlite3_finalize(stmt) }
 
-        var results: [(String, String, String, String, String)] = []
+        var results: [(String, String, String, String, String, String, Double)] = []
         while sqlite3_step(stmt) == SQLITE_ROW {
             let hash = String(cString: sqlite3_column_text(stmt, 0))
             let title = String(cString: sqlite3_column_text(stmt, 1))
             let type = String(cString: sqlite3_column_text(stmt, 2))
             let counterparty = String(cString: sqlite3_column_text(stmt, 3))
             let extractedAt = sqlite3_column_text(stmt, 4).map { String(cString: $0) } ?? "unknown"
-            results.append((hash, title, type, counterparty, extractedAt))
+            let threadId = sqlite3_column_text(stmt, 5).map { String(cString: $0) } ?? ""
+            let confidence = sqlite3_column_double(stmt, 6)
+            results.append((hash, title, type, counterparty, extractedAt, threadId, confidence))
         }
 
         return results
@@ -444,6 +447,22 @@ class CommitmentScanTracker {
                 closureMethod: closureMethod
             )
         }
+    }
+
+    /// Reopen a previously-closed commitment (Undo of a Desk "clear"). Local only —
+    /// the Notion side is reopened best-effort by the caller. The Desk queue reads
+    /// `was_closed = 0`, so this alone restores the row.
+    func reopenCommitment(hash: String) {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+
+        let sql = "UPDATE commitment_extractions SET was_closed = 0, closed_at = NULL WHERE commitment_hash = ?"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+
+        bindText(stmt, 1, hash)
+        sqlite3_step(stmt)
     }
 
     /// Reject a closure detection (user says it's not actually closed)

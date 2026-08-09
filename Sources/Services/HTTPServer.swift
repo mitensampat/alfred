@@ -1279,6 +1279,38 @@ class HTTPServer {
                 workspaceId: SelfModelSynthesizer.stableId("theme", ws), event: event)
             return HTTPResponse(statusCode: 200, body: ["ok": true])
 
+        // ── The Desk ──
+        case ("GET", "/api/desk"):
+            return await handleDesk(request)
+        case ("POST", "/api/desk/clear"):
+            return await handleDeskClear(request)
+        case ("POST", "/api/desk/undo"):
+            return await handleDeskUndo(request)
+        case ("POST", "/api/desk/reply"):
+            return await handleDeskReply(request)
+        case ("POST", "/api/desk/front/meta"):
+            return handleDeskFrontMeta(request)
+        case ("POST", "/api/desk/front/pin"):
+            return handleDeskFrontPin(request)
+        case ("POST", "/api/desk/front/dismiss"):
+            return handleDeskFrontDismiss(request)
+        case ("POST", "/api/desk/front/close"):
+            return handleDeskFrontClose(request)
+        case ("POST", "/api/desk/top/act"):
+            let id = (request.queryParams["id"] ?? "").trimmingCharacters(in: .whitespaces)
+            let kind = request.queryParams["kind"] ?? "front"
+            let action = request.queryParams["action"] == "skip" ? "skip" : "act"
+            let ok = DeskService.recordTopEvent(id: id, kind: kind, action: action)
+            return HTTPResponse(statusCode: ok ? 200 : 400, body: ["ok": ok])
+        case ("GET", "/api/desk/front"):
+            return handleDeskFront(request)
+        case ("GET", "/api/desk/person"):
+            return await handleDeskPerson(request)
+        case ("GET", "/api/desk/item/context"):
+            return await handleDeskItemContext(request)
+        case ("GET", "/api/wa-bridge/status"):
+            return await handleWaBridgeStatus(request)
+
         case ("GET", "/api/self-model/reflections"):
             return handleSelfModelReflections(request)
 
@@ -2844,7 +2876,7 @@ class HTTPServer {
         if let msgConfig = alfredService.orchestrator?.config {
             do {
                 let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: today)!
-                let reader = WhatsAppReader.shared(dbPath: msgConfig.messaging.whatsapp.dbPath)
+                let reader = WhatsAppSource.reader(config: msgConfig)
                 try reader.connect()
                 let threads = try reader.fetchThreads(since: sevenDaysAgo)
                 let totalIncoming = threads.flatMap { $0.messages }.filter { $0.direction == .incoming }.count
@@ -7155,7 +7187,7 @@ The Commitment Check feature requires a properly configured Notion database.
         // Recent message interactions (WhatsApp) — so Coach doesn't nudge about recently-contacted people
         do {
             let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
-            let reader = WhatsAppReader.shared(dbPath: config.messaging.whatsapp.dbPath)
+            let reader = WhatsAppSource.reader(config: config)
             try reader.connect()
             let threads = try reader.fetchThreads(since: sevenDaysAgo)
 
@@ -7217,7 +7249,7 @@ The Commitment Check feature requires a properly configured Notion database.
         guard !allOpen.isEmpty else { return "No open commitments." }
 
         // If a person is mentioned, filter to their commitments
-        let filtered: [(hash: String, title: String, type: String, counterparty: String, extractedAt: String)]
+        let filtered: [(hash: String, title: String, type: String, counterparty: String, extractedAt: String, threadId: String, confidence: Double)]
         if let person = mentionedPerson {
             let personLower = person.lowercased()
             filtered = allOpen.filter { $0.counterparty.lowercased().contains(personLower) }
@@ -9861,7 +9893,7 @@ extension HTTPServer {
             }
 
             // 1. Read WhatsApp threads from last 7 days
-            let whatsappReader = WhatsAppReader.shared(dbPath: config.messaging.whatsapp.dbPath)
+            let whatsappReader = WhatsAppSource.reader(config: config)
             try whatsappReader.connect()
             let since = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
             let threads = try whatsappReader.fetchThreads(since: since)
@@ -11802,6 +11834,587 @@ extension HTTPServer {
         return HTTPResponse(statusCode: 200, body: ["ok": ok, "id": id, "kind": kind])
     }
 
+    // MARK: - The Desk
+
+    /// The Desk surface: queue + fronts + margin + first move. Gathers up to 7 days of
+    /// calendar (today first) for ranking and week stats, then hands off to DeskService.
+    /// Degrades gracefully — no calendar → deadline-ranked queue only.
+    private func handleDesk(_ request: HTTPRequest) async -> HTTPResponse {
+        let config = getConfig()
+        var schedules: [DailySchedule] = []
+        if let orchestrator = alfredService.orchestrator, let user = config?.user {
+            let cal = Calendar.current
+            for offset in 0..<7 {
+                guard let day = cal.date(byAdding: .day, value: offset, to: Date()) else { continue }
+                if let sched = try? await orchestrator.calendarServicePublic
+                    .fetchEventsFromAllCalendars(for: day, userSettings: user) {
+                    schedules.append(sched)
+                }
+            }
+        }
+        return HTTPResponse(statusCode: 200, body: DeskService.build(config: config, schedules: schedules))
+    }
+
+    /// Clear a desk row. Closes the commitment (Notion Tasks + local tracker) and returns
+    /// fresh counts + an honest receipt phrased as consequence to the other person. Actually
+    /// *sending* a reply stays a separate, explicit step — clearing never silently transmits.
+    private func handleDeskClear(_ request: HTTPRequest) async -> HTTPResponse {
+        let id = (request.queryParams["id"] ?? "").trimmingCharacters(in: .whitespaces)
+        let how = request.queryParams["how"] ?? "decided"
+        guard !id.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "id required"])
+        }
+        let allowed = ["decided", "replied", "handed_off", "done", "dismissed"]
+        let method = allowed.contains(how) ? how : "decided"
+
+        // Look up the row for the receipt copy before we close it.
+        let row = CommitmentScanTracker.shared.getAllOpenCommitments()
+            .first { $0.hash == id }
+        let who = row?.counterparty.split(separator: " ").first.map(String.init) ?? "They"
+
+        // Close in Notion (best-effort) AND always mark closed in the local tracker — the
+        // Desk queue reads the local tracker, so this is what removes the row.
+        try? await alfredService.closeCommitmentByHash(hash: id, reason: "Desk: \(method)")
+        CommitmentScanTracker.shared.markCommitmentClosed(hash: id, closureMethod: method)
+
+        let receipt: String
+        switch method {
+        case "replied": receipt = "\(who) has your reply."
+        case "handed_off": receipt = "Handed off. \(who) is no longer waiting on you."
+        case "done": receipt = "Done. \(who) is unblocked."
+        case "dismissed": receipt = "Dismissed — off your desk, not counted as delivered."
+        default: receipt = "\(who) is unblocked."
+        }
+
+        let (deskCount, overWeek) = deskCounts()
+        return HTTPResponse(statusCode: 200, body: [
+            "ok": true, "receipt": receipt, "desk_count": deskCount, "over_week": overWeek
+        ])
+    }
+
+    /// Undo a clear — reopen the commitment locally (and best-effort in Notion).
+    private func handleDeskUndo(_ request: HTTPRequest) async -> HTTPResponse {
+        let id = (request.queryParams["id"] ?? "").trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "id required"])
+        }
+        await alfredService.reopenCommitmentByHash(hash: id)
+        let (deskCount, overWeek) = deskCounts()
+        return HTTPResponse(statusCode: 200, body: [
+            "ok": true, "desk_count": deskCount, "over_week": overWeek
+        ])
+    }
+
+    /// Send a WhatsApp reply for a desk item and clear it. The recipient JID is resolved
+    /// from the commitment's own `thread_id` (already a WhatsApp JID), so the message goes
+    /// to the EXACT thread — no name-search guessing. The send goes through the local
+    /// whatsmeow bridge (tools/wa-bridge, mirrors the Commit app). Only on a confirmed send
+    /// do we close the commitment as "replied". The user composes + triggers this.
+    private func handleDeskReply(_ request: HTTPRequest) async -> HTTPResponse {
+        guard let bodyData = request.body,
+              let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Invalid request body"])
+        }
+        let text = (json["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let id = (json["id"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+        // Chasing a "they owe you" item sends a nudge but must NOT close it — they still
+        // owe you until they deliver. `close:false` sends only.
+        let shouldClose = !(json["close"] as? Bool == false || (json["close"] as? String) == "false")
+        guard !text.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "text required"])
+        }
+
+        // Resolve the exact WhatsApp JID from the commitment's source thread.
+        guard let row = CommitmentScanTracker.shared.getAllOpenCommitments().first(where: { $0.hash == id }) else {
+            return HTTPResponse(statusCode: 200, body: ["ok": false, "error": "This item is no longer open."])
+        }
+        let jid = row.threadId.trimmingCharacters(in: .whitespaces)
+        guard jid.contains("@") else {
+            return HTTPResponse(statusCode: 200, body: ["ok": false,
+                "error": "No WhatsApp thread on file for this item — reply from WhatsApp directly."])
+        }
+
+        let send = await sendViaWhatsAppBridge(jid: jid, message: text)
+        guard send.ok else {
+            return HTTPResponse(statusCode: 200, body: ["ok": false, "error": send.error])
+        }
+
+        // Sent — close the linked commitment as replied (unless it's a chase).
+        if shouldClose {
+            try? await alfredService.closeCommitmentByHash(hash: id, reason: "Desk: replied via WhatsApp")
+            CommitmentScanTracker.shared.markCommitmentClosed(hash: id, closureMethod: "replied")
+        }
+        let (deskCount, overWeek) = deskCounts()
+        return HTTPResponse(statusCode: 200, body: [
+            "ok": true, "receipt": shouldClose ? "Sent to \(row.counterparty)." : "Nudge sent to \(row.counterparty).",
+            "desk_count": deskCount, "over_week": overWeek
+        ])
+    }
+
+    /// Context for a desk item — the REAL evidence, not a synthesized sentence: the recent
+    /// chat messages from that person's thread + a link to the front it belongs to.
+    private func handleDeskItemContext(_ request: HTTPRequest) async -> HTTPResponse {
+        let id = (request.queryParams["id"] ?? "").trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty else { return HTTPResponse(statusCode: 400, body: ["error": "id required"]) }
+        guard let row = CommitmentScanTracker.shared.getAllOpenCommitments().first(where: { $0.hash == id }) else {
+            return HTTPResponse(statusCode: 200, body: ["messages": [], "note": "This item is no longer open."])
+        }
+
+        func sigToks(_ s: String) -> Set<String> {
+            Set(s.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { $0.count > 4 })
+        }
+        let titleToks = sigToks(row.title)
+        var front: [String: Any] = [:]
+        if let f = DeskService.buildFronts().first(where: { !sigToks(($0["name"] as? String) ?? "").intersection(titleToks).isEmpty }) {
+            front = ["id": f["id"] as Any, "name": f["name"] as Any]
+        }
+
+        // Recent messages from this person's thread (real chat).
+        var messages: [[String: Any]] = []
+        if let cfg = getConfig() {
+            let reader = WhatsAppSource.reader(config: cfg)
+            try? reader.connect()
+            let since = Date().addingTimeInterval(-90 * 86400)
+            if let thread = try? reader.fetchThreadByName(row.counterparty, since: since) {
+                let df = DateFormatter(); df.dateFormat = "d MMM · HH:mm"
+                let msgs = thread.messages.sorted { $0.timestamp < $1.timestamp } // chronological
+                func mtoks(_ s: String) -> Set<String> {
+                    Set(s.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { $0.count > 3 })
+                }
+                let titleToksM = mtoks(row.title)
+                // Center on the message most related to THIS commitment, not just the latest.
+                var bestIdx = -1, bestScore = 0
+                for (i, m) in msgs.enumerated() {
+                    let s = mtoks(m.content).intersection(titleToksM).count
+                    if s > bestScore { bestScore = s; bestIdx = i }
+                }
+                let window: ArraySlice<Message>
+                if bestScore >= 1 && bestIdx >= 0 {
+                    window = msgs[max(0, bestIdx - 2)..<min(msgs.count, bestIdx + 4)]
+                } else {
+                    window = msgs.suffix(6)  // no clear anchor → most recent exchange
+                }
+                for m in window {
+                    messages.append([
+                        "from": m.direction == .outgoing ? "You" : (m.senderName ?? row.counterparty),
+                        "text": m.content,
+                        "ts": df.string(from: m.timestamp),
+                        "outgoing": m.direction == .outgoing,
+                        "anchor": bestScore >= 1 && msgs.firstIndex(where: { $0.id == m.id }) == bestIdx
+                    ])
+                }
+            }
+        }
+
+        return HTTPResponse(statusCode: 200, body: [
+            "messages": messages,
+            "front": front.isEmpty ? NSNull() : front,
+            "confidence": Int(row.confidence * 100),
+            "note": messages.isEmpty ? "No recent messages found in this thread." : ""
+        ])
+    }
+
+    /// Pairing / status proxy for the web UI: relays the bridge's /status and, when unpaired,
+    /// its QR as base64 PNG so Alfred can render a scannable code in its own UI. Also reports
+    /// which WhatsApp source is effectively active.
+    private func handleWaBridgeStatus(_ request: HTTPRequest) async -> HTTPResponse {
+        let addr = WhatsAppSource.bridgeAddr
+        let cfg = getConfig()
+        var out: [String: Any] = [
+            "reachable": false,
+            "active_source": cfg.map { WhatsAppSource.activeSourceName(config: $0) } ?? "local_db"
+        ]
+        if let data = await httpGetData("http://\(addr)/status", timeout: 3),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            out["reachable"] = true
+            out["paired"] = obj["paired"] ?? false
+            out["connected"] = obj["connected"] ?? false
+            out["messages"] = obj["messages"] ?? 0
+            if (obj["paired"] as? Bool) != true,
+               let png = await httpGetData("http://\(addr)/qr.png", timeout: 4), !png.isEmpty {
+                out["qr_png_base64"] = png.base64EncodedString()
+            }
+        }
+        return HTTPResponse(statusCode: 200, body: out)
+    }
+
+    /// Minimal async GET returning raw bytes (nil on any failure).
+    private func httpGetData(_ urlString: String, timeout: TimeInterval) async -> Data? {
+        guard let url = URL(string: urlString) else { return nil }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = timeout
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            if let http = resp as? HTTPURLResponse, http.statusCode >= 400 { return nil }
+            return data
+        } catch { return nil }
+    }
+
+    /// POST to the local whatsmeow bridge (tools/wa-bridge on 127.0.0.1:8790). Returns a
+    /// friendly error when the bridge isn't running or the account isn't paired.
+    private func sendViaWhatsAppBridge(jid: String, message: String) async -> (ok: Bool, error: String) {
+        let addr = ProcessInfo.processInfo.environment["WA_BRIDGE_ADDR"] ?? "127.0.0.1:8790"
+        guard let url = URL(string: "http://\(addr)/send") else { return (false, "bad bridge url") }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 25
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["jid": jid, "message": message])
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return (false, "Unexpected bridge response.")
+            }
+            if (obj["ok"] as? Bool) == true { return (true, "") }
+            return (false, (obj["error"] as? String) ?? "Send failed.")
+        } catch {
+            return (false, "WhatsApp bridge isn't running. Start it with: tools/wa-bridge/wa-bridge (then scan the QR once).")
+        }
+    }
+
+    /// Canonical form of a counterparty string for matching/grouping: lowercased, trimmed,
+    /// internal whitespace collapsed. Merges whitespace/case variants (the "CRED " vs "CRED"
+    /// duplicate) without merging genuinely different names (Kunal vs Kunal Shah).
+    static func normalizeCounterparty(_ s: String) -> String {
+        s.lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+    }
+
+    /// Current desk counts, recomputed cheaply from the local tracker. Uses the same
+    /// robust timestamp parsing as DeskService so over-week matches the queue ages.
+    private func deskCounts() -> (Int, Int) {
+        let open = CommitmentScanTracker.shared.getAllOpenCommitments()
+            .filter { $0.type == "I Owe" && !DeskService.isGroupThread($0.threadId) && DeskService.isQualityCommitment($0.title) }
+        let over = open.filter { DeskService.ageDaysPublic(from: $0.extractedAt) >= DeskService.hotAgeDays }.count
+        return (open.count, over)
+    }
+
+    /// Set a front's owner / money / stage / next_date / type. These live in the theme
+    /// facet metadata (new fields) and drive graceful-degradation on the fronts board.
+    private func handleDeskFrontMeta(_ request: HTTPRequest) -> HTTPResponse {
+        let id = (request.queryParams["id"] ?? "").trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "id required"])
+        }
+        let store = SelfModelStore.shared
+        let existing = store.getFacets(kind: "theme").first { ($0["id"] as? String) == id }
+        var meta = (existing?["metadata"] as? [String: String]) ?? [:]
+        // Long values (decision text, the people list) come in the JSON body to dodge URL
+        // limits; short ones can come as query params. Body wins.
+        var bodyFields: [String: Any] = [:]
+        if let b = request.body, let obj = try? JSONSerialization.jsonObject(with: b) as? [String: Any] {
+            bodyFields = obj
+        }
+        for key in ["owner", "money", "stage", "next_date", "type", "decision"] {
+            if let v = (bodyFields[key] as? String) ?? request.queryParams[key] {
+                let t = v.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !t.isEmpty { meta[key] = t }
+            }
+        }
+        // Authoritative people list (JSON array string): [{name,direction,note}]
+        if let pj = (bodyFields["people_json"] as? String) ?? request.queryParams["people_json"] {
+            let t = pj.trimmingCharacters(in: .whitespaces)
+            if !t.isEmpty { meta["people_json"] = t }
+        }
+        let now = ISO8601DateFormatter().string(from: Date())
+        let name = (request.queryParams["name"] ?? existing?["statement"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+        func nz(_ v: String?, _ fallback: String) -> String {
+            let t = (v ?? "").trimmingCharacters(in: .whitespaces)
+            return t.isEmpty ? fallback : t
+        }
+        let ok = store.upsertFacet(
+            id: id,
+            kind: "theme",
+            statement: nz(existing?["statement"] as? String, name),
+            confidence: (existing?["confidence"] as? Double) ?? 0.8,
+            status: nz(existing?["status"] as? String, "active"),
+            firstSeen: (existing?["first_seen"] as? String) ?? now,
+            lastSeen: now,
+            trajectory: (existing?["trajectory"] as? [[String: String]]) ?? [],
+            evidence: (existing?["evidence"] as? [[String: String]]) ?? [],
+            metadata: meta,
+            origin: nz(existing?["origin"] as? String, "manual"),
+            preserveUserMeta: false)
+        return HTTPResponse(statusCode: 200, body: ["ok": ok, "metadata": meta])
+    }
+
+    /// Pin a front to the top of the desk (or unpin). Only one is pinned at a time, so this
+    /// clears `pinned` from every other theme facet and sets it on the target.
+    private func handleDeskFrontPin(_ request: HTTPRequest) -> HTTPResponse {
+        let id = (request.queryParams["id"] ?? "").trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty else { return HTTPResponse(statusCode: 400, body: ["error": "id required"]) }
+        let pin = request.queryParams["pinned"] != "0"
+        let store = SelfModelStore.shared
+        let now = ISO8601DateFormatter().string(from: Date())
+        func nz(_ v: String?, _ fb: String) -> String {
+            let t = (v ?? "").trimmingCharacters(in: .whitespaces); return t.isEmpty ? fb : t
+        }
+        for f in store.getFacets(kind: "theme") {
+            guard let fid = f["id"] as? String else { continue }
+            var meta = (f["metadata"] as? [String: String]) ?? [:]
+            let currentlyPinned = meta["pinned"] == "1"
+            let desired = (fid == id && pin)
+            if desired == currentlyPinned { continue }
+            if desired { meta["pinned"] = "1"; meta.removeValue(forKey: "top_dismissed") } else { meta.removeValue(forKey: "pinned") }
+            _ = store.upsertFacet(
+                id: fid, kind: "theme",
+                statement: nz(f["statement"] as? String, fid),
+                confidence: (f["confidence"] as? Double) ?? 0.8,
+                status: nz(f["status"] as? String, "active"),
+                firstSeen: (f["first_seen"] as? String) ?? now,
+                lastSeen: now,
+                trajectory: (f["trajectory"] as? [[String: String]]) ?? [],
+                evidence: (f["evidence"] as? [[String: String]]) ?? [],
+                metadata: meta,
+                origin: nz(f["origin"] as? String, "manual"),
+                preserveUserMeta: false)
+        }
+        return HTTPResponse(statusCode: 200, body: ["ok": true, "pinned": pin])
+    }
+
+    /// Drop a front from the top stack (or restore it). It stays in the Fronts board; only its
+    /// place at the top of the desk changes. Inverse of pin; a dismissed front is never pinned.
+    private func handleDeskFrontDismiss(_ request: HTTPRequest) -> HTTPResponse {
+        let id = (request.queryParams["id"] ?? "").trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty else { return HTTPResponse(statusCode: 400, body: ["error": "id required"]) }
+        let dismiss = request.queryParams["dismissed"] != "0"
+        let store = SelfModelStore.shared
+        let now = ISO8601DateFormatter().string(from: Date())
+        func nz(_ v: String?, _ fb: String) -> String {
+            let t = (v ?? "").trimmingCharacters(in: .whitespaces); return t.isEmpty ? fb : t
+        }
+        for f in store.getFacets(kind: "theme") {
+            guard let fid = f["id"] as? String, fid == id else { continue }
+            var meta = (f["metadata"] as? [String: String]) ?? [:]
+            let currentlyDismissed = meta["top_dismissed"] == "1"
+            if dismiss == currentlyDismissed { break }
+            if dismiss { meta["top_dismissed"] = "1"; meta.removeValue(forKey: "pinned") }
+            else { meta.removeValue(forKey: "top_dismissed") }
+            _ = store.upsertFacet(
+                id: fid, kind: "theme",
+                statement: nz(f["statement"] as? String, fid),
+                confidence: (f["confidence"] as? Double) ?? 0.8,
+                status: nz(f["status"] as? String, "active"),
+                firstSeen: (f["first_seen"] as? String) ?? now,
+                lastSeen: now,
+                trajectory: (f["trajectory"] as? [[String: String]]) ?? [],
+                evidence: (f["evidence"] as? [[String: String]]) ?? [],
+                metadata: meta,
+                origin: nz(f["origin"] as? String, "manual"),
+                preserveUserMeta: false)
+            break
+        }
+        return HTTPResponse(statusCode: 200, body: ["ok": true, "dismissed": dismiss])
+    }
+
+    /// "Decided — close front": stamp stage=decided and mark the theme done so it leaves the
+    /// board (buildFronts excludes user_verdict == "done"). Reversible: reopen clears the verdict.
+    /// Params: id, reopen=1 to reopen.
+    private func handleDeskFrontClose(_ request: HTTPRequest) -> HTTPResponse {
+        let id = (request.queryParams["id"] ?? "").trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty else { return HTTPResponse(statusCode: 400, body: ["error": "id required"]) }
+        let reopen = request.queryParams["reopen"] == "1"
+        let store = SelfModelStore.shared
+        let now = ISO8601DateFormatter().string(from: Date())
+        func nz(_ v: String?, _ fb: String) -> String {
+            let t = (v ?? "").trimmingCharacters(in: .whitespaces); return t.isEmpty ? fb : t
+        }
+        // Stamp stage=decided on close (a record of how it ended); leave it on reopen.
+        if !reopen {
+            for f in store.getFacets(kind: "theme") where (f["id"] as? String) == id {
+                var meta = (f["metadata"] as? [String: String]) ?? [:]
+                meta["stage"] = "decided"
+                _ = store.upsertFacet(
+                    id: id, kind: "theme",
+                    statement: nz(f["statement"] as? String, id),
+                    confidence: (f["confidence"] as? Double) ?? 0.8,
+                    status: nz(f["status"] as? String, "active"),
+                    firstSeen: (f["first_seen"] as? String) ?? now,
+                    lastSeen: now,
+                    trajectory: (f["trajectory"] as? [[String: String]]) ?? [],
+                    evidence: (f["evidence"] as? [[String: String]]) ?? [],
+                    metadata: meta,
+                    origin: nz(f["origin"] as? String, "manual"),
+                    preserveUserMeta: false)
+                break
+            }
+        }
+        let ok = SelfModelService.setVerdict(id: id, verdict: reopen ? nil : "done")
+        return HTTPResponse(statusCode: ok ? 200 : 404, body: ["ok": ok, "closed": !reopen])
+    }
+
+    /// Front detail: the front card + a dated ledger read from the theme's reflections /
+    /// decisions ("nothing typed by hand") + the people currently in it (from the queue).
+    private func handleDeskFront(_ request: HTTPRequest) -> HTTPResponse {
+        let id = (request.queryParams["id"] ?? "").trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "id required"])
+        }
+        guard let front = DeskService.buildFronts().first(where: { ($0["id"] as? String) == id }) else {
+            return HTTPResponse(statusCode: 404, body: ["error": "front not found"])
+        }
+        let name = front["name"] as? String ?? ""
+        let detail = ReflectionStore.shared.getThemeDetail(theme: name, days: 120)
+        // Ledger: dated timeline rows ("what has actually happened").
+        let timeline = (detail["timeline"] as? [[String: Any]]) ?? []
+        let ledger: [[String: Any]] = timeline.prefix(8).map { item in
+            [
+                "date": item["date"] as? String ?? "",
+                "content": item["content"] as? String ?? "",
+                "type": item["type"] as? String ?? "reflection"
+            ]
+        }
+        // Who is in it: the user's curated list (people_json in facet metadata) if they've
+        // edited it, else auto-derived from commitments that map to this front.
+        let facetMeta = SelfModelStore.shared.getFacets(kind: "theme")
+            .first { ($0["id"] as? String) == id }?["metadata"] as? [String: String] ?? [:]
+        var people: [[String: Any]]
+        var peopleCurated = false
+        if let pj = facetMeta["people_json"], let data = pj.data(using: .utf8),
+           let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+            peopleCurated = true
+            let reliability = Dictionary(TaskLifecycleTracker.shared.getStatsByCounterparty()
+                .map { ($0.name.lowercased(), $0) }, uniquingKeysWith: { a, _ in a })
+            people = arr.compactMap { p in
+                let who = ((p["name"] as? String) ?? "").trimmingCharacters(in: .whitespaces)
+                guard !who.isEmpty else { return nil }
+                let stats = reliability[who.lowercased()]
+                return ["name": who, "contact_id": who,
+                        "direction": (p["direction"] as? String) ?? "",
+                        "note": (p["note"] as? String) ?? "",
+                        "reliability": stats.map { Int($0.completionRate * 100) } as Any]
+            }
+        } else {
+            people = deskPeople(forFront: name)
+        }
+
+        var out = front
+        out["ledger"] = ledger
+        out["people"] = people
+        out["people_curated"] = peopleCurated
+        out["provenance"] = "Read from your threads, the calendar and Notion. Nothing typed by hand."
+        return HTTPResponse(statusCode: 200, body: out)
+    }
+
+    /// Counterparties on open items whose text maps to this front.
+    private func deskPeople(forFront name: String) -> [[String: Any]] {
+        let stop: Set<String> = ["the", "and", "for", "with", "from", "that", "this"]
+        func toks(_ s: String) -> Set<String> {
+            Set(s.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { $0.count > 3 && !stop.contains($0) })
+        }
+        let nameToks = toks(name)
+        let reliability = Dictionary(TaskLifecycleTracker.shared.getStatsByCounterparty()
+            .map { ($0.name.lowercased(), $0) }, uniquingKeysWith: { a, _ in a })
+        var seen = Set<String>()
+        var out: [[String: Any]] = []
+        for c in CommitmentScanTracker.shared.getAllOpenCommitments() {
+            guard !toks(c.title).intersection(nameToks).isEmpty else { continue }
+            let who = c.counterparty.trimmingCharacters(in: .whitespaces)
+            guard !who.isEmpty, !seen.contains(who.lowercased()) else { continue }
+            seen.insert(who.lowercased())
+            let stats = reliability[who.lowercased()]
+            out.append([
+                "name": who,
+                "contact_id": who,
+                "direction": c.type == "I Owe" ? "you_owe" : "they_owe",
+                "reliability": stats.map { Int($0.completionRate * 100) } as Any
+            ])
+        }
+        return out
+    }
+
+    /// Person detail: what you owe vs. what they owe, reliability, a behavioural signal, the
+    /// fronts you share, and a ready-to-send draft. Reply-length trend is omitted when the
+    /// message store can't be read (graceful degradation); engagement trend stands in.
+    private func handleDeskPerson(_ request: HTTPRequest) async -> HTTPResponse {
+        let name = (request.queryParams["id"] ?? "").trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "id required"])
+        }
+        let nameLower = name.lowercased()
+        // Normalized EXACT match on counterparty — not substring — so "Kunal" no longer
+        // sweeps in "Kunal Shah". This keeps the person page's counts identical to the
+        // People-column row the user clicked.
+        let target = Self.normalizeCounterparty(name)
+        let all = CommitmentScanTracker.shared.getAllOpenCommitments()
+            .filter { !DeskService.isGroupThread($0.threadId) && DeskService.isQualityCommitment($0.title) }
+        let mine = all.filter { $0.type == "I Owe" && Self.normalizeCounterparty($0.counterparty) == target }
+        let theirs = all.filter { $0.type == "They Owe Me" && Self.normalizeCounterparty($0.counterparty) == target }
+
+        let stats = TaskLifecycleTracker.shared.getStatsByCounterparty()
+            .first { Self.normalizeCounterparty($0.name) == target }
+            ?? TaskLifecycleTracker.shared.getStatsByCounterparty()
+            .first { $0.name.lowercased().contains(nameLower) }
+        let summary = ContactLearner.shared.getContactSummary(name: name)
+
+        // Oldest thing you owe → the imbalance headline + the draft.
+        let iso = ISO8601DateFormatter()
+        func age(_ s: String) -> Int {
+            let d = iso.date(from: s) ?? { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f.date(from: s) }()
+            guard let d = d else { return 0 }
+            return max(0, Calendar.current.dateComponents([.day], from: d, to: Date()).day ?? 0)
+        }
+        let oldest = mine.max { age($0.extractedAt) < age($1.extractedAt) }
+        let oldestAge = oldest.map { age($0.extractedAt) } ?? 0
+
+        // On-time: a small sample reads best as a ratio (10/10); a large one as a percentage
+        // (413/413 looks absurd). Both come from the same TaskLifecycleTracker stats.
+        let onTime: String
+        if let s = stats, s.completedTasks > 0 {
+            let onTimeCount = s.completedTasks - Int((s.overdueRate * Double(s.completedTasks)).rounded())
+            onTime = s.completedTasks <= 20 ? "\(onTimeCount)/\(s.completedTasks)"
+                                            : "\(Int((1 - s.overdueRate) * 100))%"
+        } else { onTime = "—" }
+
+        // Shared fronts: a front counts as shared only when a distinctive word from its
+        // name (>4 chars, non-stopword) shows up in an open item with this person.
+        let stop: Set<String> = ["the","and","for","with","from","that","this","product","execution","design","program"]
+        func sigToks(_ s: String) -> Set<String> {
+            Set(s.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { $0.count > 4 && !stop.contains($0) })
+        }
+        let allFronts = DeskService.buildFronts()
+        let personTitles = (mine + theirs).map { sigToks($0.title) }
+        let sharedFronts = allFronts.filter { f in
+            guard let fname = f["name"] as? String else { return false }
+            let ft = sigToks(fname)
+            return personTitles.contains { !$0.intersection(ft).isEmpty }
+        }.prefix(3).map { ["id": $0["id"] as Any, "name": $0["name"] as Any, "money": $0["money"] as Any, "stage": $0["stage"] as Any] }
+
+        // Item → dict with a matched front. Context (the real chat) is fetched on demand via
+        // /api/desk/item/context, so no synthesized sentence here.
+        func itemDict(_ c: (hash: String, title: String, type: String, counterparty: String, extractedAt: String, threadId: String, confidence: Double)) -> [String: Any] {
+            let frontName = allFronts.first { f in
+                guard let fn = (f["name"] as? String)?.lowercased() else { return false }
+                let ftoks = Set(fn.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { $0.count > 4 })
+                let ttoks = Set(c.title.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted).filter { $0.count > 4 })
+                return !ftoks.intersection(ttoks).isEmpty
+            }?["name"] as? String
+            return ["text": c.title, "age_days": age(c.extractedAt), "id": c.hash, "front": frontName as Any]
+        }
+
+        return HTTPResponse(statusCode: 200, body: [
+            "name": name,
+            "first_name": firstName(name),
+            "you_owe": mine.count,
+            "you_owe_age": oldestAge,
+            "they_owe": theirs.count,
+            "on_time": onTime,
+            "messages": summary?.totalExtracted ?? 0,
+            "platforms": summary?.platforms ?? [],
+            "open_items": mine.map(itemDict),
+            "their_items": theirs.map(itemDict),
+            "shared_fronts": sharedFronts
+        ])
+    }
+
+
+    private func firstName(_ s: String) -> String {
+        s.split(separator: " ").first.map(String.init) ?? s
+    }
+
     /// Create a workspace, belief or value by hand.
     ///
     /// Marked origin='manual' and given a `manual_` id, which keeps two promises:
@@ -11929,7 +12542,7 @@ extension HTTPServer {
         let since = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
 
         do {
-            let reader = WhatsAppReader.shared(dbPath: config.messaging.whatsapp.dbPath)
+            let reader = WhatsAppSource.reader(config: config)
             try reader.connect()
             let threads = try reader.fetchThreads(since: since)
             reader.disconnect()

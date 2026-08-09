@@ -757,6 +757,33 @@ extension NotionService {
         print("✅ Closed commitment in Notion: \(reason)")
     }
 
+    /// Reopen a commitment previously closed via `closeCommitmentInTasks` (Desk Undo).
+    /// Best-effort: sets Status back to "Not started". Throws on API failure so the caller
+    /// can swallow it — the local tracker reopen is the source of truth for the queue.
+    func reopenCommitmentInTasks(hash: String) async throws {
+        guard tasksDatabaseId != nil else { return }
+        guard let pageId = try await findTaskByHash(hash) else { return }
+
+        let url = URL(string: "https://api.notion.com/v1/pages/\(pageId)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "properties": ["Status": ["status": ["name": "Not started"]]]
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw NSError(domain: "NotionService", code: 102, userInfo: [NSLocalizedDescriptionKey: "Failed to reopen commitment: \(errorBody)"])
+        }
+        print("↩️ Reopened commitment in Notion")
+    }
+
     /// Get commitment statistics from Notion (open, closed, total)
     func getCommitmentStatsFromNotion() async throws -> (open: Int, closed: Int, total: Int) {
         guard let databaseId = tasksDatabaseId else {

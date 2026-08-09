@@ -1,7 +1,7 @@
 import Foundation
 import SQLite3
 
-class WhatsAppReader {
+class WhatsAppReader: WhatsAppMessageSource {
     /// Shared singleton — ensures one SQLite connection, one serial queue, across the entire app.
     /// All callers MUST use `WhatsAppReader.shared(dbPath:)` instead of `WhatsAppReader(dbPath:)`.
     private static var _shared: WhatsAppReader?

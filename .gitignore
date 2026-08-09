@@ -88,3 +88,6 @@ CLAUDE.md
 # Local deployment script
 deploy.sh
 .claude/worktrees/
+
+# Go wa-bridge compiled binary (rebuild via scripts/wa-bridge.sh)
+tools/wa-bridge/wa-bridge

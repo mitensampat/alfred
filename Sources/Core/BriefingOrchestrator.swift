@@ -4,7 +4,8 @@ import CryptoKit
 class BriefingOrchestrator {
     let config: AppConfig
     private let imessageReader: iMessageReader
-    private let whatsappReader: WhatsAppReader
+    /// Resolved per use so pairing the whatsmeow bridge takes over live (auto source).
+    private var whatsappReader: WhatsAppMessageSource { WhatsAppSource.reader(config: config) }
     private let signalReader: SignalReader
     private let gmailReader: GmailReader?
     private let calendarService: MultiCalendarService
@@ -18,14 +19,13 @@ class BriefingOrchestrator {
     let commitmentAnalyzer: CommitmentAnalyzer
     var notionServicePublic: NotionService { notionService }
     var aiServicePublic: ClaudeAIService { aiService }
-    var whatsAppReaderPublic: WhatsAppReader { whatsappReader }
+    var whatsAppReaderPublic: WhatsAppMessageSource { whatsappReader }
     var calendarServicePublic: MultiCalendarService { calendarService }
 
     init(config: AppConfig) {
         self.config = config
 
         self.imessageReader = iMessageReader.shared(dbPath: config.messaging.imessage.dbPath)
-        self.whatsappReader = WhatsAppReader.shared(dbPath: config.messaging.whatsapp.dbPath)
         self.signalReader = SignalReader(dbPath: config.messaging.signal.dbPath)
         self.gmailReader = config.messaging.email.map { GmailReader(config: $0) }
         self.calendarService = MultiCalendarService(configs: config.calendar.google)
@@ -1041,6 +1041,7 @@ class BriefingOrchestrator {
         let imessageDbPath = config.messaging.imessage.dbPath
         let whatsappEnabled = config.messaging.whatsapp.enabled
         let whatsappDbPath = config.messaging.whatsapp.dbPath
+        let capturedConfig = config  // captured to avoid retaining self in the task-group closures
         let signalEnabled = config.messaging.signal.enabled
         let signalDbPath = config.messaging.signal.dbPath
         let emailConfig = config.messaging.email
@@ -1080,7 +1081,8 @@ class BriefingOrchestrator {
             if whatsappEnabled {
                 group.addTask {
                     do {
-                        let reader = WhatsAppReader.shared(dbPath: whatsappDbPath)
+                        _ = whatsappDbPath
+                        let reader = WhatsAppSource.reader(config: capturedConfig)
                         try reader.connect()
                         let threads = try reader.fetchThreads(since: yesterday)
                         reader.disconnect()

@@ -14,6 +14,366 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preload" href="https://fonts.googleapis.com/css2?family=Newsreader:wght@400;500;600&family=Public+Sans:wght@400;500;600&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:wght@400;500;600&family=Public+Sans:wght@400;500;600&display=swap"></noscript>
+    <!-- The Desk: Archivo (display + body), scoped to #deskScreen / #deskMasthead -->
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;700;800&display=swap"></noscript>
+    <style id="deskStyles">
+      /* ════════════════════════════════════════════════════════════
+         THE DESK — Slate palette. A CEO work environment.
+         Blue = Alfred's voice + your next move. Hot red = the clock, only.
+         Radius 0, 2px structural rules, 1px row rules, Archivo, flush-left.
+         ════════════════════════════════════════════════════════════ */
+      :root{
+        --dk-bg:#fafbfc; --dk-surface:#eef1f5; --dk-text:#14171c; --dk-card:#ffffff;
+        --dk-accent:#1d4ed8;
+        --dk-divider:color-mix(in srgb,#14171c 38%,transparent);
+        --dk-n100:#f4f6f9; --dk-n200:#e7eaef; --dk-n300:#d3d8e0; --dk-n400:#b3bac6;
+        --dk-n500:#929aa8; --dk-n600:#737c8b; --dk-n700:#565f6e; --dk-n800:#3b424f; --dk-n900:#262b34;
+        --dk-a100:#edf2fe; --dk-a200:#d9e4fd; --dk-a300:#b9cdfa; --dk-a400:#88a9f5;
+        --dk-a500:#4a77ea; --dk-a600:#1a44bd; --dk-a700:#16389c; --dk-a800:#122b74; --dk-a900:#0d1e4d;
+        --dk-hot:#c2410c; --dk-hot-bg:#fdeee3;
+        /* semantic ink-filled button (so dark mode is a one-line swap) */
+        --dk-ink-bg:#14171c; --dk-ink-bg-hover:#3b424f; --dk-ink-bg-active:#262b34; --dk-ink-fg:#f4f6f9;
+        --dk-hairline:color-mix(in srgb,#14171c 12%,transparent);
+      }
+      [data-theme="dark"]{
+        --dk-bg:#0e1116; --dk-surface:#161b22; --dk-text:#e7eaef; --dk-card:#161b22;
+        --dk-accent:#3b82f6;
+        --dk-divider:color-mix(in srgb,#e7eaef 22%,transparent);
+        --dk-n100:#1c222b; --dk-n200:#232a34; --dk-n300:#2d3540; --dk-n400:#3b434f;
+        --dk-n500:#6b7480; --dk-n600:#9aa3b0; --dk-n700:#b6bec9; --dk-n800:#cfd5dd; --dk-n900:#e7eaef;
+        --dk-a100:#15233f; --dk-a200:#1b3057; --dk-a300:#234176; --dk-a400:#3a5da8;
+        --dk-a500:#4a77ea; --dk-a600:#6b95ef; --dk-a700:#9cbcf7; --dk-a800:#c2d5fb; --dk-a900:#e2ecfe;
+        --dk-hot:#fb923c; --dk-hot-bg:#2b1710;
+        --dk-ink-bg:#e7eaef; --dk-ink-bg-hover:#cfd5dd; --dk-ink-bg-active:#b6bec9; --dk-ink-fg:#14171c;
+        --dk-hairline:color-mix(in srgb,#e7eaef 12%,transparent);
+      }
+
+      /* ── shell ── */
+      #deskScreen, #deskMasthead{
+        font-family:"Archivo",system-ui,sans-serif; color:var(--dk-text);
+        -webkit-font-smoothing:antialiased;
+      }
+      #deskScreen{ flex:1; min-height:0; overflow-y:auto; background:var(--dk-bg); }
+      .dk-wrap{ max-width:1320px; margin:0 auto; }
+      #deskMasthead{ background:var(--dk-bg); border-bottom:2px solid var(--dk-text); }
+      .dk-mast-inner{
+        max-width:1320px; margin:0 auto; display:flex; align-items:center;
+        justify-content:space-between; gap:16px; padding:12px 20px; flex-wrap:wrap;
+      }
+      .dk-mast-left{ display:flex; align-items:baseline; gap:18px; }
+      .dk-wordmark{ font-weight:800; font-size:18px; letter-spacing:-.01em; }
+      .dk-date{ font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--dk-n600); }
+      .dk-mast-right{ display:flex; align-items:center; gap:10px; }
+      .dk-nav{ display:flex; border:2px solid var(--dk-text); }
+      .dk-nav-seg{
+        border:none; border-radius:0; padding:7px 16px; font-family:inherit;
+        font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+        background:transparent; color:var(--dk-n700); cursor:pointer;
+      }
+      .dk-nav-seg + .dk-nav-seg{ border-left:2px solid var(--dk-text); }
+      .dk-nav-seg:hover{ opacity:.8; }
+      .dk-nav-seg.active{ background:var(--dk-text); color:var(--dk-bg); }
+      .dk-icon-btn{
+        border:2px solid var(--dk-text); background:transparent; color:var(--dk-text);
+        width:34px; height:32px; border-radius:0; cursor:pointer; font-size:14px;
+        display:inline-flex; align-items:center; justify-content:center;
+      }
+      .dk-icon-btn:hover{ background:color-mix(in srgb,var(--dk-text) 8%,transparent); }
+
+      /* ── framed body ── */
+      .dk-frame{ border:2px solid var(--dk-text); border-top:none; background:var(--dk-n100); }
+
+      /* ── freshness ribbon: "since you last looked" (blue = Alfred's voice/engagement) ── */
+      .dk-fresh{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--dk-accent); color:#fff; padding:8px 20px; border-bottom:2px solid var(--dk-text); font-family:"Archivo",sans-serif; font-size:11.5px; font-weight:700; letter-spacing:.04em; cursor:pointer; }
+      .dk-fresh .dk-fresh-since{ text-transform:uppercase; letter-spacing:.09em; font-size:10px; opacity:.8; }
+      .dk-fresh .dk-fresh-item{ display:inline-flex; align-items:center; gap:5px; }
+      .dk-fresh .dk-fresh-sep{ opacity:.4; }
+      .dk-fresh .dk-fresh-x{ margin-left:auto; opacity:.6; font-size:13px; line-height:1; }
+      /* ── top of the desk: 3 EQUAL front cards, one pinnable ── */
+      .dk-band{ background:var(--dk-n100); padding:18px 20px; border-bottom:2px solid var(--dk-text); }
+      .dk-topfronts{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; align-items:stretch; }
+      /* Top = the blue zone (all blue edges + light-blue fill); pinned = solid blue. */
+      .dk-topfront{ display:flex; flex-direction:column; text-align:left; border:2px solid var(--dk-accent); border-left:8px solid var(--dk-accent); background:var(--dk-a100); color:var(--dk-text); padding:15px 16px; font-family:inherit; }
+      button.dk-topfront:hover{ background:var(--dk-a200); }
+      /* Move-first top card (v2 tenets): move · stake · on-card actions. */
+      .dk-tf-move{ display:block; width:100%; text-align:left; border:none; background:none; padding:0; margin:9px 0 7px; font-family:"Archivo",sans-serif; font-weight:800; font-size:16.5px; line-height:1.14; letter-spacing:-.01em; color:var(--dk-text); cursor:pointer; }
+      .dk-tf-move:hover{ text-decoration:underline; }
+      .dk-tf-stake{ font-size:12px; line-height:1.4; color:var(--dk-n700); margin-bottom:11px; flex:1; }
+      .dk-tf-about{ color:var(--dk-n600); }
+      .dk-tf-actions{ display:flex; gap:6px; flex-wrap:wrap; margin-top:auto; }
+      .dk-top-compose{ margin-top:10px; }
+      .dk-topfront.pinned .dk-tf-move, .dk-topfront.pinned .dk-tf-stake, .dk-topfront.pinned .dk-tf-about{ color:#fff; }
+      .dk-topfront.pinned .dk-btn-accent{ background:#fff; color:var(--dk-accent); }
+      .dk-topfront.pinned .dk-btn-outline, .dk-topfront.pinned .dk-btn-ghost{ color:#fff; border-color:rgba(255,255,255,.6); }
+      .dk-topfront.pinned{ background:var(--dk-accent); color:#fff; }
+      button.dk-topfront.pinned:hover{ background:var(--dk-a600); }
+      .dk-tf-top{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+      .dk-tf-eyebrow{ font-size:10px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--dk-a700); }
+      .dk-tf-name{ font-weight:800; font-size:18px; line-height:1.12; letter-spacing:-.01em; margin-top:8px; }
+      .dk-tf-meta{ font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--dk-a700); margin-top:8px; opacity:.85; }
+      .dk-tf-alert{ font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--dk-a700); margin-top:3px; opacity:.85; }
+      .dk-tf-alert.hot{ color:var(--dk-hot); opacity:1; }
+      .dk-tf-decision{ font-size:13px; line-height:1.4; color:var(--dk-n800); margin-top:10px; flex:1; }
+      .dk-tf-link{ font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--dk-a700); margin-top:12px; }
+      .dk-topfront.pinned .dk-tf-eyebrow, .dk-topfront.pinned .dk-tf-meta, .dk-topfront.pinned .dk-tf-name,
+      .dk-topfront.pinned .dk-tf-alert, .dk-topfront.pinned .dk-tf-decision, .dk-topfront.pinned .dk-tf-link{ color:#fff; opacity:1; }
+      .dk-pin{ border:none; background:none; cursor:pointer; font-size:16px; line-height:1; color:var(--dk-a500); padding:0 2px; transition:transform .1s; }
+      .dk-pin.on{ color:var(--dk-accent); }
+      .dk-topfront.pinned .dk-pin{ color:#fff; }
+      .dk-pin:hover{ transform:scale(1.18); }
+      .dk-tf-controls{ display:inline-flex; align-items:center; gap:2px; }
+      .dk-tf-x{ cursor:pointer; font-size:12px; line-height:1; color:var(--dk-a500); padding:1px 3px; opacity:.55; transition:opacity .12s,transform .1s; }
+      .dk-tf-x:hover{ opacity:1; transform:scale(1.18); color:var(--dk-hot); }
+      .dk-topfront.pinned .dk-tf-x{ color:rgba(255,255,255,.8); }
+      .dk-top-receipt{ font-size:11.5px; color:var(--dk-n700); margin-top:11px; }
+      .dk-top-receipt strong{ color:var(--dk-text); font-weight:800; }
+      .dk-front-restore{ margin-left:auto; font-size:10.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--dk-accent); cursor:pointer; white-space:nowrap; }
+      .dk-front-restore:hover{ text-decoration:underline; }
+      .dk-top-search-wrap{ display:flex; align-items:center; gap:8px; margin-bottom:12px; }
+      .dk-top-search{ flex:1; min-width:0; font-family:"Archivo",sans-serif; font-size:12.5px; color:var(--dk-text); background:var(--dk-card); border:2px solid var(--dk-text); border-radius:0; padding:8px 11px; }
+      .dk-top-search::placeholder{ color:var(--dk-n500); }
+      .dk-top-search:focus{ outline:none; border-color:var(--dk-accent); }
+      .dk-top-search-x{ font-family:"Archivo",sans-serif; font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--dk-n600); background:none; border:none; cursor:pointer; white-space:nowrap; }
+      .dk-top-search-x:hover{ color:var(--dk-accent); }
+      .dk-band-count-line{ font-size:11px; color:var(--dk-n600); margin-top:12px; letter-spacing:.02em; }
+      .dk-band-count-line strong{ color:var(--dk-text); font-weight:800; }
+      .dk-band-empty{ padding:18px 4px; font-size:14px; color:var(--dk-n700); display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+      .dk-band-empty .dk-btn-white{ color:#16389c; background:var(--dk-accent); border-color:var(--dk-accent); }
+
+      /* ── legacy poster band (kept for reference) ── */
+      .dk-band-row{ display:flex; align-items:flex-end; justify-content:space-between; gap:28px; flex-wrap:wrap; }
+      .dk-band-eyebrow{ font-size:10px; font-weight:700; letter-spacing:.16em; text-transform:uppercase; color:#fff; opacity:.85; }
+      .dk-band-h{ font-weight:800; font-size:40px; line-height:1.04; letter-spacing:-.03em; margin:12px 0 0; color:#fff; max-width:26ch; }
+      .dk-band-sub{ margin:10px 0 0; font-size:15px; line-height:1.5; color:#fff; opacity:.9; max-width:58ch; }
+      .dk-band-actions{ display:flex; gap:8px; margin-top:18px; flex-wrap:wrap; }
+      .dk-band-stat{ flex:0 0 auto; text-align:left; }
+      .dk-band-count{ font-weight:800; font-size:32px; line-height:1; color:#fff; }
+      .dk-band-count-l{ font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:#fff; opacity:.8; margin-top:5px; }
+      .dk-band-quiet{ font-size:11px; line-height:1.5; color:#fff; opacity:.75; margin-top:10px; max-width:18ch; }
+
+      /* ── grid ── */
+      /* Two columns: a wide main environment (list or detail) + a scoped side rail. Fronts and
+         People are DISTINCT views that share this shape; neither shows the other's content. */
+      .dk-grid{ display:grid; grid-template-columns:minmax(360px,1.75fr) minmax(240px,300px); }
+      .dk-col-main{ min-width:0; border-right:2px solid var(--dk-text); }
+      .dk-col-side{ }
+      .dk-sec-head{ padding:17px 20px 10px; }
+      .dk-sec-label{ font-size:10px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--dk-n600); }
+      .dk-sec-explain{ font-size:12px; line-height:1.45; color:var(--dk-n600); margin-top:5px; }
+      .dk-rule2{ border-bottom:2px solid var(--dk-text); }
+
+      /* ── buttons ── */
+      .dk-btn{
+        display:inline-flex; align-items:center; justify-content:flex-start; gap:6px;
+        font-family:"Archivo",sans-serif; font-weight:700; cursor:pointer; text-decoration:none;
+        border:2px solid transparent; border-radius:0; line-height:1.2;
+        background:transparent; color:var(--dk-text); transition:background .12s ease;
+      }
+      .dk-btn-ink{ background:var(--dk-ink-bg); border-color:var(--dk-ink-bg); color:var(--dk-ink-fg); }
+      .dk-btn-ink:hover{ background:var(--dk-ink-bg-hover); border-color:var(--dk-ink-bg-hover); }
+      .dk-btn-ink:active{ background:var(--dk-ink-bg-active); border-color:var(--dk-ink-bg-active); }
+      .dk-btn-outline{ border-color:var(--dk-text); background:transparent; color:var(--dk-text); }
+      .dk-btn-outline:hover{ background:color-mix(in srgb,var(--dk-text) 7%,transparent); }
+      .dk-btn-outline:active{ background:color-mix(in srgb,var(--dk-text) 14%,transparent); }
+      .dk-btn-accent{ background:var(--dk-accent); border-color:var(--dk-accent); color:#fff; }
+      .dk-btn-accent:hover{ background:var(--dk-a600); border-color:var(--dk-a600); }
+      .dk-btn-accent:active{ background:var(--dk-a700); border-color:var(--dk-a700); }
+      /* Band is always the blue field in both themes → white button keeps fixed colours. */
+      .dk-btn-white{ background:#fff; border-color:#fff; color:#16389c; }
+      .dk-btn-white:hover{ background:#edf2fe; border-color:#edf2fe; }
+      .dk-btn-onaccent{ background:transparent; border-color:#fff; color:#fff; }
+      .dk-btn-onaccent:hover{ background:var(--dk-a600); }
+      .dk-btn-ghost{ border:none; background:none; color:var(--dk-a700); padding:1px 4px; cursor:pointer; }
+      .dk-btn-ghost:hover{ text-decoration:underline; }
+      .dk-btn-sm{ padding:7px 13px; font-size:12px; }
+      .dk-btn-md{ padding:11px 17px; font-size:14px; }
+      .dk-btn-block{ width:100%; }
+      #deskScreen :focus-visible, #deskMasthead :focus-visible{ outline:2px solid var(--dk-accent); outline-offset:2px; }
+
+      /* ── queue ── */
+      .dk-queue{ padding:0 20px 6px; }
+      .dk-q-row{ padding:13px 0; border-bottom:1px solid var(--dk-divider); }
+      .dk-q-top{ display:flex; align-items:baseline; gap:10px; }
+      .dk-q-name{ border:none; background:none; padding:0; text-align:left; font-family:inherit; font-size:16px; font-weight:700; cursor:pointer; color:var(--dk-text); }
+      .dk-q-name:hover{ color:var(--dk-a700); }
+      .dk-q-name.static{ cursor:default; }
+      .dk-q-age{ font-size:13px; font-weight:700; margin-left:auto; color:var(--dk-text); }
+      .dk-q-age.hot{ color:var(--dk-hot); }
+      .dk-q-desc{ font-size:14px; line-height:1.45; margin-top:5px; }
+      .dk-ghost-front{ border:none; background:none; padding:1px 4px; font-family:inherit; font-size:11.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--dk-a700); cursor:pointer; }
+      .dk-ghost-front:hover{ text-decoration:underline; }
+      .dk-q-verbs{ display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
+      .dk-q-cleared{ padding:13px 0; border-bottom:1px solid var(--dk-divider); background:var(--dk-a100); padding-left:12px; padding-right:12px; }
+      .dk-q-cleared .dk-q-desc{ color:var(--dk-n700); }
+      .dk-more{ padding:12px 0 2px; font-size:12px; font-weight:700; color:var(--dk-n600); }
+
+      /* ── why this order ── */
+      .dk-why-wrap{ padding:12px 20px 20px; }
+      .dk-why{ font-size:12px; line-height:1.5; color:var(--dk-n700); border-left:6px solid var(--dk-text); padding:10px 13px; background:var(--dk-card); }
+      .dk-why em{ font-style:italic; }
+      .dk-why-pat{ display:block; font-size:11px; letter-spacing:.04em; color:var(--dk-n600); margin-top:7px; }
+
+      /* ── fronts board ── */
+      .dk-fronts-head{ padding:17px 24px 12px; }
+      .dk-fronts-stake{ font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--dk-n600); white-space:nowrap; }
+      .dk-fronts-actions{ display:flex; gap:8px; margin-top:11px; align-items:stretch; }
+      .dk-fronts-search{ flex:1; box-sizing:border-box; font-family:inherit; font-size:13px; padding:7px 10px; border:2px solid var(--dk-text); border-radius:0; background:var(--dk-card); color:var(--dk-text); }
+      .dk-fronts-actions .dk-btn-sm{ white-space:nowrap; padding:7px 13px; }
+      .dk-front{ display:block; width:100%; text-align:left; border:none; border-top:1px solid var(--dk-divider); background:var(--dk-card); padding:17px 22px 18px; cursor:pointer; font-family:inherit; color:var(--dk-text); }
+      .dk-front:first-of-type{ border-top:2px solid var(--dk-text); }
+      button.dk-front:hover{ background:var(--dk-n100); }
+      .dk-front.stuck{ border-left:8px solid var(--dk-hot); }
+      .dk-front.moving{ border-left:8px solid var(--dk-n700); }
+      .dk-front.delegated{ border-left:8px solid var(--dk-n400); }
+      .dk-front-row{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+      .dk-front-name{ font-weight:800; font-size:26px; line-height:1; letter-spacing:-.02em; }
+      .dk-front.delegated .dk-front-name{ color:var(--dk-n700); }
+      .dk-front-money{ font-weight:800; font-size:22px; line-height:1; margin-left:auto; }
+      .dk-front-money small{ font-size:13px; color:var(--dk-n600); font-weight:800; }
+      .dk-tag{ display:inline-flex; align-items:center; font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; padding:3px 8px; background:var(--dk-n200); color:var(--dk-n800); }
+      .dk-front-meta{ display:flex; gap:18px; flex-wrap:wrap; margin-top:12px; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--dk-n600); }
+      .dk-front-meta .hot{ color:var(--dk-hot); }
+      .dk-front-decision{ display:block; font-size:15.5px; line-height:1.45; margin-top:12px; padding-top:12px; border-top:1px solid var(--dk-divider); }
+      .dk-front.delegated .dk-front-decision{ color:var(--dk-n700); }
+      .dk-open-link{ display:inline-block; margin-top:12px; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--dk-a700); }
+      .dk-newfront-wrap{ border-top:2px solid var(--dk-text); padding:14px 22px 18px; }
+      .dk-newfront{ border:2px dashed var(--dk-n400); padding:11px 15px; font-size:12.5px; font-weight:700; color:var(--dk-n700); width:100%; background:transparent; cursor:pointer; text-align:left; font-family:inherit; }
+      .dk-newfront:hover{ background:color-mix(in srgb,var(--dk-text) 5%,transparent); }
+      .dk-newfront small{ font-weight:400; color:var(--dk-n600); }
+
+      /* ── detail (front + person) ── */
+      .dk-detail-head{ padding:19px 24px 18px; border-bottom:2px solid var(--dk-text); background:var(--dk-card); }
+      .dk-back{ border:none; background:none; margin:0 0 10px; padding:3px 6px; font-family:inherit; font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--dk-n600); cursor:pointer; }
+      .dk-back:hover{ color:var(--dk-text); }
+      .dk-detail-titrow{ display:flex; align-items:baseline; justify-content:space-between; gap:18px; flex-wrap:wrap; }
+      .dk-kicker{ font-size:10px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--dk-n600); }
+      .dk-detail-name{ font-weight:800; font-size:38px; line-height:1; letter-spacing:-.03em; margin:8px 0 0; }
+      .dk-detail-sub{ font-size:13px; color:var(--dk-n700); margin-top:8px; }
+      .dk-detail-money{ font-weight:800; font-size:30px; line-height:1; }
+      .dk-detail-money small{ font-size:15px; color:var(--dk-n600); font-weight:800; }
+      .dk-statstrip{ display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); border-bottom:2px solid var(--dk-text); }
+      .dk-stat{ padding:14px 18px; border-right:1px solid var(--dk-divider); }
+      .dk-stat:last-child{ border-right:none; }
+      .dk-stat.hot{ background:var(--dk-hot-bg); }
+      .dk-stat-num{ font-weight:800; font-size:26px; line-height:1; }
+      .dk-stat.hot .dk-stat-num, .dk-stat.hot .dk-stat-l{ color:var(--dk-hot); }
+      .dk-stat-l{ font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--dk-n600); margin-top:5px; }
+      .dk-one{ border-left:8px solid var(--dk-accent); padding:20px 24px 22px; border-bottom:2px solid var(--dk-text); background:var(--dk-card); }
+      .dk-one-eyebrow{ font-size:10px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--dk-accent); }
+      .dk-one-q{ font-weight:800; font-size:30px; line-height:1.12; letter-spacing:-.025em; margin:12px 0 0; max-width:28ch; }
+      .dk-one-ctx{ margin:11px 0 0; font-size:14px; line-height:1.55; color:var(--dk-n800); max-width:62ch; }
+      .dk-two{ display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); }
+      .dk-two-l{ padding:18px 20px 20px 24px; border-right:1px solid var(--dk-divider); }
+      .dk-two-r{ padding:18px 24px 20px 20px; }
+      .dk-person-row{ display:block; width:100%; text-align:left; border:none; border-top:1px solid var(--dk-divider); background:none; padding:11px 0 10px; margin-top:11px; cursor:pointer; font-family:inherit; color:var(--dk-text); }
+      .dk-person-row.static{ cursor:default; }
+      .dk-person-row .r1{ display:flex; align-items:baseline; gap:10px; }
+      .dk-person-row .nm{ flex:1; font-size:14.5px; font-weight:700; }
+      .dk-person-row .bd{ font-size:11px; font-weight:700; text-transform:uppercase; white-space:nowrap; color:var(--dk-n600); }
+      .dk-person-row .bd.hot{ color:var(--dk-hot); }
+      .dk-person-row .sub{ display:block; font-size:11.5px; color:var(--dk-n600); margin-top:3px; }
+      .dk-ledger{ display:grid; grid-template-columns:54px 1fr; gap:12px; border-top:1px solid var(--dk-divider); padding:10px 0 9px; font-size:13.5px; line-height:1.4; }
+      .dk-ledger .dt{ font-size:11.5px; color:var(--dk-n600); }
+      .dk-prov{ font-size:11.5px; line-height:1.5; color:var(--dk-n600); margin-top:10px; }
+      .dk-draft-box{ border:2px solid var(--dk-text); background:var(--dk-card); padding:14px; margin-top:11px; }
+      .dk-draft-box p{ margin:0; font-size:14px; line-height:1.55; }
+      .dk-draft-note{ font-size:11.5px; line-height:1.5; color:var(--dk-n600); margin-top:10px; }
+
+      /* ── margin ── */
+      .dk-cold{ padding:17px 17px 18px; border-bottom:2px solid var(--dk-text); }
+      .dk-cold-row{ border-top:1px solid var(--dk-divider); padding:11px 0 10px; }
+      .dk-cold-row:first-of-type{ margin-top:11px; }
+      .dk-cold-top{ display:flex; align-items:baseline; gap:8px; }
+      .dk-cold-name{ flex:1; font-size:14px; font-weight:700; }
+      .dk-cold-age{ font-size:11px; font-weight:700; color:var(--dk-n600); }
+      .dk-cold-age.hot{ color:var(--dk-hot); }
+      .dk-cold-reason{ font-size:11.5px; line-height:1.45; color:var(--dk-n600); margin-top:4px; }
+      .dk-week{ padding:17px; }
+      .dk-week-stat{ display:flex; align-items:baseline; gap:9px; margin-top:11px; }
+      .dk-week-stat:first-of-type{ margin-top:13px; }
+      .dk-week-num{ font-weight:800; font-size:26px; line-height:1; }
+      .dk-week-num.hot{ color:var(--dk-hot); }
+      .dk-week-l{ font-size:12.5px; line-height:1.3; }
+      .dk-week-foot{ font-size:11.5px; line-height:1.5; color:var(--dk-n600); margin-top:14px; padding-top:11px; border-top:1px solid var(--dk-divider); }
+
+      /* ── chat launcher (demoted) ── */
+      .dk-ask{ display:flex; gap:8px; align-items:center; padding:14px 20px; border-top:2px solid var(--dk-text); background:var(--dk-card); }
+      .dk-ask input{ flex:1; font-family:inherit; font-size:14px; padding:9px 12px; border:2px solid var(--dk-text); border-radius:0; background:var(--dk-bg); color:var(--dk-text); }
+
+      /* ── front inline editing ── */
+      .dk-stat-v{ font-size:14px; font-weight:700; margin-top:5px; }
+      .dk-ed{ cursor:text; border-bottom:1px dashed var(--dk-n400); padding:0 1px; transition:background .1s; }
+      .dk-ed:hover{ background:var(--dk-a100); border-bottom-color:var(--dk-accent); }
+      .dk-ed-empty{ color:var(--dk-n500); font-style:italic; font-weight:400; }
+      .dk-ed-input{ font:inherit; color:var(--dk-text); background:var(--dk-card); border:2px solid var(--dk-accent); border-radius:0; padding:2px 6px; width:100%; max-width:100%; box-sizing:border-box; }
+      textarea.dk-ed-input{ resize:vertical; line-height:1.3; }
+      .dk-ed-select{ font:inherit; font-weight:700; color:var(--dk-text); background:var(--dk-card); border:2px solid var(--dk-accent); border-radius:0; padding:2px 4px; max-width:100%; box-sizing:border-box; cursor:pointer; }
+      .dk-ed-date{ font:inherit; }
+      .dk-x{ position:absolute; top:10px; right:0; border:none; background:none; color:var(--dk-n500); cursor:pointer; font-size:17px; line-height:1; padding:0 3px; }
+      .dk-x:hover{ color:var(--dk-hot); }
+
+      /* ── people rows (one per person) ── */
+      .dk-prow{ display:block; width:100%; text-align:left; border:none; border-bottom:1px solid var(--dk-divider); background:none; padding:13px 0; font-family:inherit; color:var(--dk-text); }
+      .dk-prow-main{ cursor:pointer; }
+      .dk-prow-main:hover{ background:var(--dk-n100); }
+      .dk-prow .dk-q-name:hover{ color:var(--dk-a700); }
+      .dk-prow-acts{ display:flex; gap:6px; margin-top:9px; }
+      .dk-prow-done{ opacity:.9; }
+      .dk-list-undo{ margin-left:8px; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--dk-n600); }
+      .dk-list-compose{ margin-top:11px; }
+      .dk-pcount{ display:inline-block; margin-left:6px; font-size:11px; font-weight:700; color:var(--dk-n100); background:var(--dk-ink-bg); padding:1px 7px; }
+      .dk-people-search{ width:100%; box-sizing:border-box; margin-top:9px; font-family:inherit; font-size:13px; padding:7px 10px; border:2px solid var(--dk-text); border-radius:0; background:var(--dk-card); color:var(--dk-text); }
+
+      /* ── L2 items ── */
+      .dk-item{ border-top:1px solid var(--dk-divider); padding:14px 0; }
+      .dk-item:first-of-type{ border-top:2px solid var(--dk-text); margin-top:11px; }
+      .dk-item-top{ display:flex; align-items:baseline; gap:10px; }
+      .dk-item-text{ flex:1; font-size:15px; font-weight:700; line-height:1.4; }
+      .dk-item-age{ font-size:12px; font-weight:700; color:var(--dk-n600); white-space:nowrap; }
+      .dk-item-age.hot{ color:var(--dk-hot); }
+      .dk-item-actions{ display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; align-items:center; }
+      .dk-item-ctx-btn{ border:none; background:none; color:var(--dk-a700); font-family:inherit; font-size:12px; font-weight:700; cursor:pointer; padding:6px 6px; margin-left:auto; }
+      .dk-item-ctx-btn:hover{ text-decoration:underline; }
+      .dk-item-ctx{ margin-top:10px; padding:10px 13px; background:var(--dk-n100); border-left:3px solid var(--dk-n400); font-size:12.5px; line-height:1.5; color:var(--dk-n700); }
+      .dk-ctx-label{ font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--dk-n600); margin-bottom:8px; }
+      .dk-ctx-chat{ display:flex; flex-direction:column; gap:7px; }
+      .dk-ctx-msg{ font-size:13px; line-height:1.45; padding:7px 10px; background:var(--dk-card); border-left:3px solid var(--dk-n400); }
+      .dk-ctx-msg.out{ border-left-color:var(--dk-accent); }
+      .dk-ctx-from{ font-weight:700; font-size:11px; }
+      .dk-ctx-ts{ color:var(--dk-n500); font-size:10.5px; margin-left:6px; }
+
+      /* ── compose (WhatsApp reply) ── */
+      .dk-compose{ margin-top:11px; }
+      .dk-compose-to{ font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--dk-n600); margin-bottom:6px; }
+      .dk-compose-ta{ width:100%; box-sizing:border-box; font-family:inherit; font-size:14px; line-height:1.5; padding:10px 12px; border:2px solid var(--dk-text); border-radius:0; background:var(--dk-card); color:var(--dk-text); resize:vertical; }
+      .dk-compose-actions{ display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+      .dk-compose-note{ font-size:11px; line-height:1.45; color:var(--dk-n600); margin-top:8px; }
+
+      /* ── responsive: stack band → desk → fronts → margin ── */
+      @media (max-width: 900px){
+        .dk-grid{ grid-template-columns:1fr; }
+        .dk-topfronts{ grid-template-columns:1fr; }
+        .dk-hero-name{ font-size:24px; }
+        /* Phone: the current view stacks band → main → side. A detail hides band + side so the
+           detail owns the screen. The nav switches which environment (Fronts / People). */
+        #deskScreen[data-mview="detail"] #deskBand,
+        #deskScreen[data-mview="detail"] .dk-col-side{ display:none; }
+        .dk-col-main{ border-right:none; border-bottom:2px solid var(--dk-text); }
+        .dk-band-h{ font-size:32px; }
+        .dk-detail-name, .dk-one-q{ font-size:26px; }
+      }
+      /* Phone: keep the masthead nav from overflowing the viewport — compact it and let the
+         wordmark/nav wrap onto two rows rather than forcing a horizontal scroll. */
+      @media (max-width: 520px){
+        .dk-mast-inner{ gap:8px; padding:10px 12px; }
+        .dk-mast-left{ gap:10px; }
+        .dk-date{ display:none; }
+        .dk-mast-right{ gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+        .dk-nav-seg{ padding:7px 11px; letter-spacing:.05em; }
+        .dk-icon-btn{ width:30px; }
+      }
+    </style>
     <style>
         /* ══════════════════════════════════════
            DESIGN SYSTEM — "Alfred Imperial"
@@ -3356,10 +3716,131 @@
       .nw-newws span{font-family:var(--font-mono);font-size:9.5px;font-weight:400;opacity:.75;}
     </style>
 
+    <!-- ═══════════════════════════════════════════════════════════════
+         UNIFY — extend the Desk's Slate + Archivo language to Chat and
+         Model by remapping their shared design tokens to the --dk-* set
+         (already light/dark aware), scoped to those surface containers so
+         FTUE / auth / settings are untouched. Descendants inherit.
+         ═══════════════════════════════════════════════════════════════ -->
+    <style id="deskUnifyStyles">
+      #youScreen, #conversationScroll, #inputArea,
+      #settingsPanel, #ftueWizard, #authScreen {
+        /* surfaces + ink */
+        --canvas: var(--dk-bg);
+        --surface: var(--dk-card);
+        --surface-sunken: var(--dk-n100);
+        --ink: var(--dk-text);
+        --ink-secondary: var(--dk-n700);
+        --ink-tertiary: var(--dk-n600);
+        --ink-faint: var(--dk-n500);
+        --line: var(--dk-hairline);
+        --line-strong: var(--dk-divider);
+        /* accent family — blue is Alfred's voice; headings stay ink */
+        --coach: var(--dk-text);
+        --coach-light: var(--dk-a100);
+        --coach-dark: var(--dk-a700);
+        --growth: var(--dk-n700); --growth-light: var(--dk-n100);
+        --warning: var(--dk-accent); --warning-light: var(--dk-a100);
+        --danger: var(--dk-hot); --danger-light: var(--dk-hot-bg);
+        --info: var(--dk-accent); --info-light: var(--dk-a100);
+        --method: var(--dk-accent); --method-light: var(--dk-a100);
+        --red: var(--dk-hot);
+        /* aliases used by production CSS */
+        --bg-primary: var(--dk-card);
+        --bg-secondary: var(--dk-n100);
+        --bg-tertiary: var(--dk-bg);
+        --text-primary: var(--dk-text);
+        --text-secondary: var(--dk-n700);
+        --text-tertiary: var(--dk-n600);
+        --border-color: var(--dk-hairline);
+        --accent-color: var(--dk-accent);
+        --accent-hover: var(--dk-a600);
+        --accent-primary: var(--dk-accent);
+        --accent-purple: var(--dk-accent);
+        /* squared + Archivo */
+        --radius-sm: 0; --radius-md: 0; --radius-lg: 0;
+        --font-display: "Archivo", system-ui, sans-serif;
+        --font-body: "Archivo", system-ui, sans-serif;
+        --font-ui: "Archivo", system-ui, sans-serif;
+        /* self-model accents */
+        --sm-accent: var(--dk-accent);
+        --sm-accent-soft: var(--dk-a100);
+        --sm-accent-line: var(--dk-a300);
+        --sm-hot: var(--dk-hot); --sm-hot-bg: var(--dk-hot-bg);
+        --sm-warm: var(--dk-n600); --sm-warm-bg: var(--dk-n100);
+        --sm-green: var(--dk-n700); --sm-green-bg: var(--dk-n100);
+        font-family: "Archivo", system-ui, sans-serif;
+      }
+      /* Kill leftover Imperial dark-mode component overrides inside these surfaces so the
+         token remap is the single source of truth (prevents hardcoded navy/gold bleed). */
+      [data-theme="dark"] #youScreen, [data-theme="dark"] #conversationScroll,
+      [data-theme="dark"] #inputArea { background: var(--dk-bg); }
+
+      /* Model surface: flat, squared, hairline-ruled like the Desk. */
+      #youScreen { background: var(--dk-bg); }
+      #youScreen [class*="sm-"], #youScreen input, #youScreen button,
+      #youScreen textarea, #youScreen select { border-radius: 0 !important; }
+      #youScreen .sm-search, #youScreen input[type="text"], #youScreen input:not([type]) {
+        border: 2px solid var(--dk-text) !important; background: var(--dk-card) !important;
+      }
+      /* Structurally match the Desk's Fronts/People: segmented tabs, flat left-bordered
+         cards, uppercase micro-labels — not just token colours. The browse surface uses
+         .sm-mode tabs (Themes/Decisions/Beliefs/Sources/Review) + .sm-brow-name titles. */
+      #youScreen .sm-modes{ gap:0 !important; border-bottom:2px solid var(--dk-text) !important; padding-bottom:0 !important; margin-top:12px !important; }
+      #youScreen .sm-mode{ border:2px solid var(--dk-text) !important; border-bottom:none !important; border-radius:0 !important; background:var(--dk-card) !important; color:var(--dk-n700) !important; font-family:"Archivo",sans-serif !important; font-weight:700 !important; font-size:10.5px !important; letter-spacing:.07em !important; text-transform:uppercase !important; padding:8px 13px !important; margin-right:-2px !important; margin-bottom:-2px !important; transition:background .12s !important; }
+      #youScreen .sm-mode:hover{ background:var(--dk-n100) !important; }
+      #youScreen .sm-mode.active{ background:var(--dk-text) !important; border-color:var(--dk-text) !important; color:var(--dk-bg) !important; }
+      #youScreen .sm-mode .n{ font-family:"Archivo",sans-serif !important; opacity:.7 !important; }
+      #youScreen .sm-search{ border:2px solid var(--dk-text) !important; border-radius:0 !important; background:var(--dk-card) !important; font-family:"Archivo",sans-serif !important; font-size:13px !important; color:var(--dk-text) !important; padding:10px 12px !important; }
+      #youScreen .sm-search:focus{ outline:none !important; border-color:var(--dk-accent) !important; }
+      #youScreen .sm-filter{ border:2px solid var(--dk-line) !important; border-radius:0 !important; background:var(--dk-card) !important; font-family:"Archivo",sans-serif !important; font-weight:700 !important; font-size:10px !important; letter-spacing:.07em !important; text-transform:uppercase !important; color:var(--dk-n600) !important; padding:5px 11px !important; margin-right:-2px !important; }
+      #youScreen .sm-filter.on{ background:var(--dk-n700) !important; border-color:var(--dk-n700) !important; color:var(--dk-bg) !important; }
+      #youScreen .sm-filter .n{ font-family:"Archivo",sans-serif !important; opacity:.65 !important; }
+      #youScreen .sm-brow-list{ gap:0 !important; margin-top:14px !important; }
+      #youScreen .sm-brow-item{ background:var(--dk-card) !important; border:2px solid var(--dk-text) !important; border-left:8px solid var(--dk-n700) !important; border-radius:0 !important; padding:14px 16px !important; margin-bottom:10px !important; transition:background .12s !important; }
+      #youScreen .sm-brow-item:hover{ background:var(--dk-n100) !important; transform:none !important; border-left-color:var(--dk-accent) !important; }
+      #youScreen .sm-brow-name{ font-family:"Archivo",sans-serif !important; font-weight:800 !important; font-size:15.5px !important; line-height:1.18 !important; letter-spacing:-.01em !important; color:var(--dk-text) !important; }
+      #youScreen .sm-brow-meta{ font-size:10.5px !important; font-weight:700 !important; letter-spacing:.06em !important; text-transform:uppercase !important; color:var(--dk-n600) !important; margin-top:8px !important; }
+      #youScreen .sm-sub-label{ font-family:"Archivo",sans-serif !important; font-size:10px !important; font-weight:700 !important; letter-spacing:.14em !important; text-transform:uppercase !important; color:var(--dk-n600) !important; }
+      #youScreen .sm-chip.state{ font-family:"Archivo",sans-serif !important; font-size:9.5px !important; font-weight:700 !important; letter-spacing:.08em !important; text-transform:uppercase !important; color:var(--dk-n600) !important; }
+      #youScreen .sm-chip.hot{ background:var(--dk-hot-bg) !important; color:var(--dk-hot) !important; border-radius:0 !important; }
+      #youScreen .sm-chip.hot .sm-cdot{ background:var(--dk-hot) !important; }
+      #youScreen .sm-back{ font-family:"Archivo",sans-serif !important; font-weight:700 !important; text-transform:uppercase !important; letter-spacing:.1em !important; font-size:11px !important; color:var(--dk-n600) !important; }
+      #youScreen .sm-back:hover{ color:var(--dk-accent) !important; }
+      #youScreen .sm-export-btn{ border-radius:0 !important; border:2px solid var(--dk-text) !important; font-family:"Archivo",sans-serif !important; font-weight:700 !important; text-transform:uppercase !important; letter-spacing:.06em !important; font-size:10px !important; color:var(--dk-text) !important; background:var(--dk-card) !important; }
+
+      /* Chat: squared bubbles + squared composer, Slate accent. */
+      #conversationScroll .chat-bubble, #conversationScroll .message,
+      #conversationScroll .bubble, #conversationScroll .msg { border-radius: 0 !important; }
+      #inputArea .input-inner, #inputArea textarea, #inputArea .input-row-v2 { border-radius: 0 !important; }
+      #inputArea textarea { border-radius: 0 !important; }
+      #inputArea .send-btn-v2 { border-radius: 0 !important; background: var(--dk-accent) !important; }
+
+      /* Settings / FTUE / Auth: same dark ground, squared controls, Archivo. */
+      [data-theme="dark"] #settingsPanel, [data-theme="dark"] #ftueWizard,
+      [data-theme="dark"] #authScreen { background: var(--dk-bg); }
+      #settingsPanel button, #settingsPanel input, #settingsPanel textarea, #settingsPanel select,
+      #ftueWizard button, #ftueWizard input, #ftueWizard textarea, #ftueWizard select,
+      #ftueWizard .ftue-field, #ftueWizard .ftue-container,
+      #authScreen button, #authScreen input, #authScreen .auth-card {
+        border-radius: 0 !important;
+      }
+      /* keep round toggles / switches / radios / dots / avatars */
+      #settingsPanel [class*="toggle"], #settingsPanel [class*="switch"],
+      #settingsPanel [class*="radio"], #settingsPanel [class*="dot"], #settingsPanel [class*="avatar"],
+      #ftueWizard [class*="toggle"], #ftueWizard [class*="switch"], #ftueWizard [class*="dot"] {
+        border-radius: 999px !important;
+      }
+      /* FTUE/Settings primary actions adopt the ink-filled Desk button; accents stay blue. */
+      #ftueWizard .ftue-next-btn, #ftueWizard .ftue-oauth-btn {
+        background: var(--dk-ink-bg) !important; color: var(--dk-ink-fg) !important; border-color: var(--dk-ink-bg) !important;
+      }
+    </style>
+
     <div id="appContainer" class="hidden" style="display:flex;flex-direction:column;height:100dvh;">
 
-        <!-- TOP BAR -->
-        <div class="top-bar-wrapper">
+        <!-- TOP BAR (legacy Now/You chrome — hidden once The Desk is the primary surface) -->
+        <div class="top-bar-wrapper" id="mainTopBar">
         <div class="top-bar top-bar-main">
             <div class="top-bar-title">Coach Alfred</div>
             <!-- Now/You surface toggle (revealed by initSelfModel when features.self_model is on) -->
@@ -3375,6 +3856,55 @@
                 <button class="top-bar-btn" onclick="openSettingsPanel()" title="Settings">&#9881;&#65039;</button>
             </div>
         </div>
+        </div>
+
+        <!-- ═══ THE DESK — persistent masthead (app chrome) ═══ -->
+        <div id="deskMasthead" style="display:none;">
+            <div class="dk-mast-inner">
+                <div class="dk-mast-left">
+                    <span class="dk-wordmark">ALFRED</span>
+                    <span class="dk-date" id="deskDateLabel">&mdash;</span>
+                </div>
+                <div class="dk-mast-right">
+                    <div class="dk-nav">
+                        <button type="button" class="dk-nav-seg active" id="deskNavFronts" onclick="deskNav('fronts')">Fronts</button>
+                        <button type="button" class="dk-nav-seg" id="deskNavPeople" onclick="deskNav('people')">People</button>
+                        <button type="button" class="dk-nav-seg" id="deskNavModel" onclick="deskNav('model')">Model</button>
+                    </div>
+                    <button type="button" class="dk-icon-btn" id="waStatusBtn" onclick="waPairOpen()" title="WhatsApp connection" style="width:auto;padding:0 9px;gap:6px;">
+                        <span id="waDot" style="width:8px;height:8px;border-radius:50%;background:var(--dk-n400);display:inline-block;"></span>
+                        <span style="font-size:11px;font-weight:700;letter-spacing:.06em;">WA</span>
+                    </button>
+                    <button type="button" class="dk-icon-btn" onclick="toggleTheme()" title="Toggle dark mode">&#9728;&#65039;</button>
+                    <button type="button" class="dk-icon-btn" onclick="openSettingsPanel()" title="Settings">&#9881;&#65039;</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- WhatsApp bridge pairing modal -->
+        <div id="waPairOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;font-family:'Archivo',sans-serif;" onclick="if(event.target===this)waPairClose()">
+            <div style="max-width:420px;margin:8vh auto;background:var(--dk-card);border:2px solid var(--dk-text);color:var(--dk-text);">
+                <div style="padding:15px 20px;border-bottom:2px solid var(--dk-text);display:flex;justify-content:space-between;align-items:center;">
+                    <span style="font-weight:800;font-size:16px;">WhatsApp connection</span>
+                    <button type="button" class="dk-icon-btn" onclick="waPairClose()" style="width:30px;height:28px;">&#10005;</button>
+                </div>
+                <div id="waPairBody" style="padding:22px;"></div>
+            </div>
+        </div>
+
+        <!-- ═══ THE DESK — primary surface (band + 3-column grid), rendered by loadDesk() ═══ -->
+        <div id="deskScreen" style="display:none;">
+            <div class="dk-wrap">
+                <div class="dk-frame">
+                    <div id="deskFreshRibbon" class="dk-fresh" style="display:none;" onclick="deskFreshDismiss()" title="Dismiss"></div>
+                    <div id="deskBand" class="dk-band"></div>
+                    <div id="deskGrid" class="dk-grid"></div>
+                    <div class="dk-ask">
+                        <input id="deskAskInput" placeholder="Ask Alfred about the first move&hellip;" onkeydown="if(event.key==='Enter')deskAsk();">
+                        <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskAsk()">Ask</button>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- CONVERSATION -->
@@ -4504,7 +5034,16 @@
             startGreetingClock();
             loadMorningWalk();
             initSelfModel();
-            loadNowWorkspaces();   // v3 Now: the 4+1 workspace cards lead the Now view
+            // The Desk is now the primary surface (replaces the Now workspace cards).
+            // The self-model + beliefs stay reachable via the Model nav segment.
+            document.getElementById('mainTopBar').style.display = 'none';
+            deskShowSurface('desk');
+            _deskEntity = 'fronts'; _deskView = 'list';
+            deskNavActive('Fronts');
+            deskSetMobile('list');
+            loadDesk();
+            waBridgePoll();
+            setInterval(waBridgePoll, 30000);  // keep the WA status dot fresh
             if (isSunday()) loadWeeklyReflection();
             registerPushNotifications();
             checkPostFtuePermissions();
@@ -10120,6 +10659,1143 @@
             if (isNow && !_nowLoaded) loadNowWorkspaces();
             if (which === 'you'){ if (!_smLoaded) loadSelfModel(); else renderSelfModel(_smData); }
             if (which === 'model'){ if (!_smLoaded) loadSelfModel().then(()=>smBrowse()); else smBrowse(); }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // THE DESK — primary surface. Queue + fronts + margin, first move.
+        // The self-model stays reachable via the Model nav segment.
+        // ═══════════════════════════════════════════════════════════════
+        let _deskData = null, _deskView = 'fronts', _deskSel = null, _deskLoaded = false;
+        let _deskQueue = [], _deskCleared = {}, _deskCount = 0, _deskOver = 0;
+        let _deskItemCleared = {}, _deskPeopleFilter = '', _deskFrontsFilter = '';
+        let _deskEntity = 'fronts';   // which contained environment the desk is showing: 'fronts' | 'people'
+        let _deskListReceipts = {};   // id → {name, text}: items acted on from the People list
+        let _deskTopDismissed = new Set();   // fronts dropped from the top stack this session (optimistic)
+        let _deskTopReceipt = null;   // {id, name}: last top-stack dismissal, for inline Undo
+        let _deskTopSearch = '';      // top-stack search query (find any front to pin up top)
+        let _deskFrontClosed = null;  // {id, name}: last front closed via "decided — close", for Undo
+        let _deskDetail = null;   // fetched front/person detail for the center view
+        const _esc = (s) => escapeHtml(String(s == null ? '' : s));
+
+        function dkFirstSentence(s, cap = 150){
+            if (!s) return '';
+            let t = String(s).split(/(?<=[.!?])\s/)[0] || String(s);
+            if (t.length > cap) t = t.slice(0, cap - 1).trim() + '…';
+            return t;
+        }
+        function dkShort(text){
+            const head = String(text || '').split(/[—\-–]/)[0];
+            return head.trim().replace(/\.$/, '');
+        }
+        function dkParseMoney(s){
+            if (!s) return 0;
+            const m = String(s).replace(/[,$\s]/g,'').match(/([\d.]+)\s*([mMkK]?)/);
+            if (!m) return 0;
+            let n = parseFloat(m[1]) || 0;
+            if (/m/i.test(m[2])) n *= 1e6; else if (/k/i.test(m[2])) n *= 1e3;
+            return n;
+        }
+        function dkFmtMoney(n){
+            if (n >= 1e6) return '$' + (Math.round(n/1e5)/10) + 'M';
+            if (n >= 1e3) return '$' + Math.round(n/1e3) + 'K';
+            return '$' + Math.round(n);
+        }
+
+        // ── surface routing (masthead persists; Desk / Model / Chat swap) ──
+        function deskShowSurface(which){
+            const desk = which === 'desk', model = which === 'model', chat = which === 'chat';
+            document.getElementById('deskScreen').style.display  = desk  ? '' : 'none';
+            document.getElementById('youScreen').style.display   = model ? 'flex' : 'none';
+            document.getElementById('conversationScroll').style.display = chat ? '' : 'none';
+            document.getElementById('inputArea').style.display   = chat ? '' : 'none';
+            document.getElementById('deskMasthead').style.display = '';
+            document.getElementById('mainTopBar').style.display = 'none';
+            if (model){ if (!_smLoaded) loadSelfModel().then(()=>smBrowse()); else smBrowse(); }
+        }
+        // Fronts and People are DISTINCT contained environments that share one shape (top-desk +
+        // searchable list + scoped side rail). The nav switches which environment fills the desk.
+        function deskNav(seg){
+            ['Fronts','People','Model'].forEach(s => document.getElementById('deskNav'+s).classList.remove('active'));
+            if (seg === 'fronts' || seg === 'people'){
+                _deskEntity = seg; _deskView = 'list'; _deskSel = null; _deskDetail = null;
+                deskShowSurface('desk');
+                document.getElementById('deskNav' + (seg === 'fronts' ? 'Fronts' : 'People')).classList.add('active');
+                deskSetMobile('list');
+                renderDeskBand(); renderDeskGrid();
+            } else if (seg === 'model'){
+                deskShowSurface('model'); document.getElementById('deskNavModel').classList.add('active');
+            }
+        }
+        function deskNavActive(seg){
+            ['Fronts','People','Model'].forEach(s => document.getElementById('deskNav'+s).classList.remove('active'));
+            document.getElementById('deskNav'+seg).classList.add('active');
+        }
+        // On phone the desk is one screen at a time. data-mview = 'list' (band + list + rail) or
+        // 'detail' (a front/person detail owns the screen; band + rail hide).
+        function deskSetMobile(view){
+            const el = document.getElementById('deskScreen');
+            if (el) el.setAttribute('data-mview', view || 'list');
+        }
+
+        // ── load ──
+        async function loadDesk(){
+            try {
+                const res = await authFetch('/api/desk');
+                const d = await res.json();
+                _deskData = d;
+                _deskCleared = {};
+                _deskListReceipts = {};
+                _deskTopDismissed = new Set();
+                _deskTopReceipt = null;
+                _deskCount = d.desk_count || 0;
+                _deskOver = d.over_week || 0;
+                // Dedupe identical who+text rows (repeat extractions of one promise).
+                const seen = new Set();
+                _deskQueue = (d.queue || []).filter(r => {
+                    const k = (r.who_full||r.who||'') + '|' + (r.text||'');
+                    if (seen.has(k)) return false; seen.add(k); return true;
+                });
+                document.getElementById('deskDateLabel').textContent = d.date_label || '';
+                deskFreshness();
+                renderDeskBand();
+                renderDeskGrid();
+                _deskLoaded = true;
+            } catch (e){ console.error('[Desk] load failed', e); }
+        }
+
+        // ── A1: "since you last looked" — diff this load against the last one (per-device,
+        // localStorage). Honest deltas only, all derivable from the payload: new items on you,
+        // items resolved, relationships newly cold. The baseline is your previous desk open.
+        const _DESK_SNAP_KEY = 'alfred_desk_snap_v1';
+        function deskFreshSnapshot(){
+            const ids = (_deskQueue || []).map(r => String(r.id));
+            const cold = ((_deskData && _deskData.going_cold) || []).map(c => String(c.contact_id || c.name));
+            return { ts: Date.now(), ids, cold };
+        }
+        function deskFreshSinceLabel(ts){
+            const then = new Date(ts), now = new Date();
+            const sameDay = then.toDateString() === now.toDateString();
+            const yst = new Date(now); yst.setDate(now.getDate() - 1);
+            const isYst = then.toDateString() === yst.toDateString();
+            if (sameDay) return 'since ' + then.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+            if (isYst)   return 'since yesterday';
+            const days = Math.round((now - then) / 86400000);
+            if (days < 7) return 'since ' + then.toLocaleDateString([], { weekday: 'long' });
+            return 'since ' + then.toLocaleDateString([], { month: 'short', day: 'numeric' });
+        }
+        function deskFreshness(){
+            const el = document.getElementById('deskFreshRibbon');
+            if (!el) return;
+            const cur = deskFreshSnapshot();
+            let prev = null;
+            try { prev = JSON.parse(localStorage.getItem(_DESK_SNAP_KEY) || 'null'); } catch(e){}
+            // Always advance the baseline to this open, so "last looked" = the previous open.
+            try { localStorage.setItem(_DESK_SNAP_KEY, JSON.stringify(cur)); } catch(e){}
+            if (!prev || !Array.isArray(prev.ids)){ el.style.display = 'none'; return; }  // first ever open
+            const prevIds = new Set(prev.ids), curIds = new Set(cur.ids);
+            const prevCold = new Set(prev.cold || []), curCold = new Set(cur.cold || []);
+            const newOn   = cur.ids.filter(i => !prevIds.has(i)).length;
+            const cleared = prev.ids.filter(i => !curIds.has(i)).length;
+            const newCold = (cur.cold || []).filter(i => !prevCold.has(i));
+            const parts = [];
+            if (newOn)   parts.push(`<span class="dk-fresh-item">+${newOn} new on you</span>`);
+            if (cleared) parts.push(`<span class="dk-fresh-item">${cleared} cleared</span>`);
+            if (newCold.length){
+                const nm = (((_deskData && _deskData.going_cold) || []).find(c => String(c.contact_id || c.name) === newCold[0]) || {}).name || 'someone';
+                const extra = newCold.length > 1 ? ` +${newCold.length - 1} more` : '';
+                parts.push(`<span class="dk-fresh-item">${_esc(String(nm).split(' ')[0])} went cold${extra}</span>`);
+            }
+            if (!parts.length){ el.style.display = 'none'; return; }  // nothing changed → no noise
+            el.style.display = 'flex';
+            el.innerHTML = `<span class="dk-fresh-since">${deskFreshSinceLabel(prev.ts)}</span>`
+                + parts.join('<span class="dk-fresh-sep">·</span>')
+                + `<span class="dk-fresh-x">✕</span>`;
+        }
+        function deskFreshDismiss(){
+            const el = document.getElementById('deskFreshRibbon');
+            if (el){ el.style.display = 'none'; }
+        }
+
+        // ── first move (advances client-side as rows clear) ──
+        function deskFirstMove(){
+            const d = _deskData || {};
+            const live = _deskQueue.filter(r => !_deskCleared[r.id]);
+            const fm = d.first_move;
+            if (fm && fm.clear_id && !_deskCleared[fm.clear_id]) return fm;
+            if (fm && fm.front_id && !fm.clear_id) return fm;
+            if (!live.length){
+                return { eyebrow:'Desk is moving', headline:'Nothing urgent left. Protect an hour for deep work.',
+                         sub:'Alfred re-ranks overnight and opens with the first move.', verb:null, kind:'clear' };
+            }
+            const top = live[0];
+            return { eyebrow:'Next · on your desk', headline: (top.who + ': ' + dkShort(top.text) + '. ' + top.age_days + ' days old.'),
+                     sub:'Attach what you have and make the ask one sentence.', clear_id: top.id, contact_id: top.contact_id,
+                     verb:'Ship it now', kind:'oldest' };
+        }
+
+        // Top of the desk = the company's 3 biggest fronts: a blue hero (pinned or top-ranked)
+        // + 2 supporting cards. Any card can be pinned to hold the hero slot.
+        function dkTrunc(s, n){ s = String(s||''); return s.length > n ? s.slice(0, n-1).trim() + '…' : s; }
+        function dkPinBtn(f){
+            return `<span class="dk-pin ${f.pinned?'on':''}" title="${f.pinned?'Unpin':'Pin to top'}" onclick="event.stopPropagation();deskPinFront('${_esc(f.id)}',${f.pinned?'false':'true'})">${f.pinned?'★':'☆'}</span>`;
+        }
+        function dkTfDismissBtn(f){
+            return `<span class="dk-tf-x" title="Drop from the top stack (stays in Fronts)" onclick="event.stopPropagation();deskDismissTopFront('${_esc(f.id)}')">✕</span>`;
+        }
+        // A top card is a MOVE (v2 tenets): why-now eyebrow · the move · the stake · act from the
+        // card. Front's move usually = decide the one thing; deciding opens the front.
+        function renderTopFront(f){
+            const eyebrow = f.pinned ? ('★ ' + _esc(f.why_now || 'Pinned')) : _esc(f.why_now || f.top_reason || f.type || '');
+            const actLabel = /^Decide/i.test(f.move || '') ? 'Decide →' : 'Open front →';
+            return `<div class="dk-topfront ${f.pinned?'pinned':''}">
+                    <span class="dk-tf-top">
+                        <span class="dk-tf-eyebrow">${eyebrow}</span>
+                        <span class="dk-tf-controls">${dkPinBtn(f)}${dkTfDismissBtn(f)}</span>
+                    </span>
+                    <button type="button" class="dk-tf-move" onclick="deskTopOpen('front','${_esc(f.id)}')">${_esc(f.move || f.name)}</button>
+                    <div class="dk-tf-stake">${_esc(f.stake || '')}</div>
+                    <div class="dk-tf-actions">
+                        <button type="button" class="dk-btn dk-btn-accent dk-btn-sm" onclick="deskTopOpen('front','${_esc(f.id)}')">${actLabel}</button>
+                    </div>
+                </div>`;
+        }
+        // The top stack = server's top_fronts, minus anything dismissed (server-persisted via
+        // f.top_dismissed, or this session via _deskTopDismissed), backfilled from the board so
+        // a freed slot fills immediately without a reload.
+        function deskTopStack(){
+            // Search mode: find ANY front (across the whole board) to promote into the stack.
+            const q = (_deskTopSearch || '').toLowerCase().trim();
+            if (q){
+                const all = (_deskData && _deskData.fronts) || [];
+                return all.filter(f => (f.name + ' ' + (f.type||'') + ' ' + (f.owner||'') + ' ' + (f.decision||'')).toLowerCase().includes(q)).slice(0, 3);
+            }
+            const base = (_deskData && _deskData.top_fronts) || [];
+            let stack = base.filter(f => !_deskTopDismissed.has(f.id) && f.top_dismissed !== true);
+            if (stack.length < 3 && _deskData && _deskData.fronts){
+                const have = new Set(stack.map(f => f.id));
+                for (const f of _deskData.fronts){
+                    if (stack.length >= 3) break;
+                    if (have.has(f.id) || _deskTopDismissed.has(f.id) || f.top_dismissed === true) continue;
+                    stack.push(f); have.add(f.id);
+                }
+            }
+            return stack.slice(0, 3);
+        }
+        function renderDeskBand(){
+            if (_deskEntity === 'people') return renderPeopleBand();
+            const q = (_deskTopSearch || '');
+            const top = deskTopStack();
+            const countLine = `<div class="dk-band-count-line"><strong>${_deskCount}</strong> on the desk · ${_deskOver} over a week</div>`;
+            const receipt = _deskTopReceipt
+                ? `<div class="dk-top-receipt">Dropped <strong>${_esc(_deskTopReceipt.name)}</strong> from the top — still in Fronts below.
+                     <button type="button" class="dk-btn-ghost dk-list-undo" onclick="deskRestoreTopFront('${_esc(_deskTopReceipt.id)}')">Undo</button></div>`
+                : '';
+            // Search finds any front and renders it as a top card (pin it to make it stick).
+            const search = `<div class="dk-top-search-wrap">
+                    <input class="dk-top-search" placeholder="Search fronts to bring one up top&hellip;" value="${_esc(q)}"
+                        oninput="_deskTopSearch=this.value; renderDeskBand(); const el=document.querySelector('.dk-top-search'); if(el){el.focus(); el.setSelectionRange(el.value.length,el.value.length);}">
+                    ${q ? `<button type="button" class="dk-top-search-x" onclick="_deskTopSearch=''; renderDeskBand();">Clear</button>` : ''}
+                </div>`;
+            if (!top.length){
+                const empty = q
+                    ? `<div class="dk-band-empty">No fronts match &ldquo;${_esc(q)}&rdquo;.</div>`
+                    : `<div class="dk-band-empty">Nothing at the top clears the bar right now — protect the block you've got. Search below to pull a front up, or <button type="button" class="dk-btn dk-btn-white dk-btn-sm" onclick="deskNewFront()">+ Add a front</button></div>`;
+                document.getElementById('deskBand').innerHTML = `${search}${empty}${receipt}${countLine}`;
+                return;
+            }
+            const cards = top.map(renderTopFront).join('');
+            document.getElementById('deskBand').innerHTML = `${search}<div class="dk-topfronts">${cards}</div>${receipt}${countLine}`;
+        }
+        // People Top-Desk: the 3 people most on you right now — a meeting today first, then the
+        // oldest clock, then the most owed. Move-first framing (the one thing they're waiting on).
+        // People top cards, shaped to the v2 tenets: why-now · the move (reply) · the stake, ranked
+        // by leverage (a reliable counterparty — your silence lands on them) × asymmetry (one reply
+        // clears them) with the learned nudge. Only people with a real clock clear the bar.
+        function deskPeopleTop(){
+            const learned = (_deskData && _deskData.top_engagement) || {};
+            let people = deskPeopleGrouped().map(p => {
+                const meeting = p.items.find(i => i.meeting_today);
+                const top = meeting || p.items.slice().sort((a,b) => (b.age_days||0) - (a.age_days||0))[0];
+                const rel = p.items.reduce((m,i) => Math.max(m, i.reliability||0), 0);
+                const single = p.items.length === 1;
+                let why, real = true;
+                if (meeting) why = 'You see them today';
+                else if (p.oldest >= 7) why = `${p.oldest}d on you`;
+                else if (p.items.length >= 3) why = `${p.items.length} waiting on you`;
+                else if (p.oldest >= 3) why = `${p.oldest}d on you`;
+                else { why = 'Recent'; real = false; }
+                const stake = single ? 'One reply clears them' : `${p.items.length} things waiting on you`;
+                const nudge = (learned[p.contact_id] || 0) * 15;
+                const score = (meeting?300:0) + p.oldest*3 + (rel/100)*40 + (single?25:0) + Math.min(p.items.length,8)*4 + nudge;
+                const clears = !!meeting || p.oldest >= 3 || p.items.length >= 3;
+                return Object.assign({}, p, { meeting: !!meeting, top, why_now: why, stake, single, score, clears });
+            });
+            people.sort((a,b) => b.score - a.score);
+            return people.filter(p => p.clears).slice(0, 3);
+        }
+        function renderTopPerson(p){
+            const id = _esc(String(p.top ? p.top.id : ''));
+            const about = p.top ? _esc(dkShort(p.top.text)) : '';
+            return `<div class="dk-topfront ${p.meeting?'pinned':''}">
+                    <span class="dk-tf-top"><span class="dk-tf-eyebrow">${_esc(p.why_now)}</span></span>
+                    <button type="button" class="dk-tf-move" onclick="deskTopOpen('person','${_esc(p.contact_id)}')">Reply to ${_esc(p.name)}</button>
+                    <div class="dk-tf-stake">${_esc(p.stake)}${about?` · <span class="dk-tf-about">${about}</span>`:''}</div>
+                    <div class="dk-tf-actions">
+                        <button type="button" class="dk-btn dk-btn-accent dk-btn-sm" onclick="deskTopReply('${id}','${_esc(p.contact_id)}')">Reply</button>
+                        <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskTopDone('${id}','${_esc(p.contact_id)}')">Done</button>
+                        <button type="button" class="dk-btn dk-btn-ghost dk-btn-sm" onclick="deskTopOpen('person','${_esc(p.contact_id)}')">Open →</button>
+                    </div>
+                    <div class="dk-compose dk-top-compose" id="dktopcompose-${id}" style="display:none;"></div>
+                </div>`;
+        }
+        function renderPeopleBand(){
+            const top = deskPeopleTop();
+            const countLine = `<div class="dk-band-count-line"><strong>${_deskCount}</strong> on you · ${_deskOver} over a week</div>`;
+            if (!top.length){
+                document.getElementById('deskBand').innerHTML = `<div class="dk-band-empty">No one has a real clock on you right now — protect the block you've got.</div>${countLine}`;
+                return;
+            }
+            const cards = top.map(renderTopPerson).join('');
+            document.getElementById('deskBand').innerHTML = `<div class="dk-topfronts">${cards}</div>${countLine}`;
+        }
+        async function deskPinFront(id, pin){
+            try { await authFetch('/api/desk/front/pin?id=' + encodeURIComponent(id) + '&pinned=' + (pin ? '1' : '0'), { method: 'POST' }); }
+            catch(e){ console.error('[Desk] pin failed', e); }
+            await loadDesk();
+        }
+        // Drop a card from the top stack: the next front slides up, an Undo receipt appears, and
+        // the front stays in the Fronts board (marked, with Restore). Persisted server-side.
+        function dkFindFront(id){
+            return (((_deskData && _deskData.top_fronts) || []).find(f => f.id === id))
+                || (((_deskData && _deskData.fronts) || []).find(f => f.id === id));
+        }
+        async function deskDismissTopFront(id){
+            const f = dkFindFront(id);
+            _deskTopDismissed.add(id);
+            _deskTopReceipt = { id, name: (f && f.name) || 'that front' };
+            deskTopAct('front', id, 'skip');   // tenet 10: dismissing is a skip signal
+            renderDeskBand(); renderDeskCenter();
+            try { await authFetch('/api/desk/front/dismiss?id=' + encodeURIComponent(id) + '&dismissed=1', { method: 'POST' }); }
+            catch(e){ console.error('[Desk] dismiss failed', e); }
+        }
+        async function deskRestoreTopFront(id){
+            _deskTopDismissed.delete(id);
+            if (_deskTopReceipt && _deskTopReceipt.id === id) _deskTopReceipt = null;
+            const bf = ((_deskData && _deskData.fronts) || []).find(f => f.id === id); if (bf) bf.top_dismissed = false;
+            const tf = ((_deskData && _deskData.top_fronts) || []).find(f => f.id === id); if (tf) tf.top_dismissed = false;
+            renderDeskBand(); renderDeskCenter();
+            try { await authFetch('/api/desk/front/dismiss?id=' + encodeURIComponent(id) + '&dismissed=0', { method: 'POST' }); }
+            catch(e){ console.error('[Desk] restore failed', e); }
+        }
+
+        // ── grid ── Fronts is the hero (left, main); People is the smaller middle column;
+        // Going Cold + your week sit in the right margin. Front/person detail open in the
+        // main (left) column — master-detail, with Fronts as its home.
+        function renderDeskGrid(){
+            document.getElementById('deskGrid').innerHTML =
+                `<div class="dk-col-main" id="deskColMain">${renderDeskCenterHTML()}</div>` +
+                `<div class="dk-col-side" id="deskColMargin">${renderMarginColumn()}</div>`;
+        }
+        function renderDeskCenter(){
+            const el = document.getElementById('deskColMain');
+            if (el) el.innerHTML = renderDeskCenterHTML();
+        }
+        // Re-render the main environment (list or detail) + the side rail together.
+        function refreshPeopleMargin(){
+            const p = document.getElementById('deskColMain'), m = document.getElementById('deskColMargin');
+            if (p) p.innerHTML = renderDeskCenterHTML();
+            if (m) m.innerHTML = renderMarginColumn();
+        }
+
+        // Canonical grouping key + a clean display name. Person names collapse to a first
+        // name; group/channel-ish names keep enough to stay distinct (so two "CRED …"
+        // threads don't both read "CRED"). Whitespace/case variants merge.
+        function dkNormKey(s){ return String(s||'').toLowerCase().trim().replace(/\s+/g,' '); }
+        function dkPersonDisplay(full){
+            const s = String(full||'').trim().replace(/\s+/g,' ');
+            if (!s) return s;
+            const groupish = /[-|<>]/.test(s) || s.split(' ').length > 3
+                || /\b(team|group|founders|leads|directs|revenue|home|insights|updates|channel|board)\b/i.test(s);
+            if (groupish) return s.length > 22 ? s.slice(0,21) + '…' : s;
+            return s.split(' ')[0];
+        }
+        // ── people column — ONE row per person (aggregates their items); click → L2 ──
+        function deskPeopleGrouped(){
+            const by = {};
+            for (const r of _deskQueue){
+                if (_deskCleared[r.id]) continue;
+                const full = (r.who_full || r.contact_id || r.who || '').trim();
+                const key = dkNormKey(full);
+                if (!key) continue;
+                if (!by[key]) by[key] = { name: dkPersonDisplay(full), full: full, contact_id: full, items: [] };
+                by[key].items.push(r);
+            }
+            const people = Object.values(by).map(p => {
+                p.oldest = p.items.reduce((m, i) => Math.max(m, i.age_days || 0), 0);
+                p.hot = p.oldest >= 7;
+                return p;
+            });
+            // Whose clock is running: oldest-first, then most items.
+            people.sort((a, b) => b.oldest - a.oldest || b.items.length - a.items.length);
+            return people;
+        }
+        function renderPeopleColumn(){
+            const all = deskPeopleGrouped();
+            const q = (_deskPeopleFilter || '').toLowerCase().trim();
+            const people = q ? all.filter(p => (p.name + ' ' + p.full).toLowerCase().includes(q)) : all;
+            const CAP = q ? 60 : 16;
+            const shown = people.slice(0, CAP);
+            let html = `<div class="dk-sec-head">
+                    <div class="dk-sec-label">People · ${all.length} on you</div>
+                    <div class="dk-sec-explain">One line per person. Open them to reply, close or dismiss each item.</div>
+                    <input class="dk-people-search" placeholder="Search people…" value="${_esc(_deskPeopleFilter || '')}"
+                        oninput="_deskPeopleFilter=this.value; const el=document.getElementById('deskColMain'); if(el){el.innerHTML=renderPeopleColumn(); const s=el.querySelector('.dk-people-search'); if(s){s.focus(); s.setSelectionRange(s.value.length,s.value.length);}}">
+                </div>
+                <div class="dk-queue"><div class="dk-rule2"></div>`;
+            // Receipts for items just acted on from this list (survive the re-render; Undo).
+            for (const [rid, rc] of Object.entries(_deskListReceipts)){
+                html += `<div class="dk-prow dk-prow-done">
+                    <span class="dk-q-top"><span class="dk-q-name" style="color:var(--dk-n600);">${_esc(rc.name)}</span>
+                        <button type="button" class="dk-btn-ghost dk-list-undo" onclick="deskListUndo('${_esc(rid)}')">Undo</button></span>
+                    <span class="dk-q-desc" style="display:block;color:var(--dk-n600);">${_esc(rc.text)}</span>
+                </div>`;
+            }
+            for (const p of shown){
+                const ageCls = p.hot ? 'dk-q-age hot' : 'dk-q-age';
+                const n = p.items.length;
+                const single = n === 1 ? p.items[0] : null;
+                const id = single ? _esc(String(single.id)) : '';
+                const sub = n === 1 ? _esc(p.items[0].text) : `${n} open items`;
+                // Single-item people are actionable in place — Reply/Done without opening L2.
+                // Multi-item people still open the L2 page (Done is ambiguous across items).
+                const acts = single
+                    ? `<span class="dk-prow-acts">
+                        <button type="button" class="dk-btn dk-btn-ink dk-btn-sm" onclick="event.stopPropagation();deskListReply('${id}')">Reply</button>
+                        <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="event.stopPropagation();deskListClose('${id}')">Done</button>
+                       </span>`
+                    : '';
+                html += `<div class="dk-prow"${single?` id="dkprow-${id}"`:''}>
+                    <div class="dk-prow-main" onclick="deskOpenPerson('${_esc(p.contact_id)}',true)">
+                        <span class="dk-q-top">
+                            <span class="dk-q-name" style="cursor:pointer;">${_esc(p.name)}</span>
+                            <span class="${ageCls}">${p.oldest}d</span>
+                        </span>
+                        <span class="dk-q-desc" style="display:block;">${sub}${n>1?` <span class="dk-pcount">${n}</span>`:''}</span>
+                    </div>
+                    ${acts}
+                    ${single?`<div class="dk-compose dk-list-compose" id="dklcompose-${id}" style="display:none;"></div>`:''}
+                </div>`;
+            }
+            if (people.length > CAP) html += `<div class="dk-more">+ ${people.length - CAP} more people waiting.</div>`;
+            html += `</div>`;
+            // why this order
+            const why = (_deskData && _deskData.why_this_order) || {};
+            const pat = why.pattern;
+            html += `<div class="dk-why-wrap"><div class="dk-why">
+                    <strong>Why this order.</strong> ${_esc(why.text || 'Ranked by whose clock is running.')}
+                    ${pat ? `<span class="dk-why-pat">Ranked with: <em>${_esc(pat.statement)}</em>${pat.reinforced ? ' · '+pat.reinforced+'× reinforced' : ''}</span>` : ''}
+                </div></div>`;
+            return html;
+        }
+
+        // ── side rail — scoped to the current environment. People: relationships cooling + your
+        // week. Fronts: fronts stalling + fronts health. No cross-contamination. ──
+        function renderMarginColumn(){
+            return _deskEntity === 'people' ? renderPeopleMarginHTML() : renderFrontsMarginHTML();
+        }
+        function renderPeopleMarginHTML(){
+            const d = _deskData || {}; const cold = d.going_cold || []; const w = d.week || {};
+            const cr = cold.map(c => {
+                const chase = c.chase ? `<button type="button" class="dk-btn dk-btn-outline dk-btn-sm" style="margin-top:8px;" onclick="deskChase('${_esc(c.name)}')">Chase ${_esc(String(c.name||'').split(' ')[0])}</button>` : '';
+                const ageCls = c.hot ? 'dk-cold-age hot' : 'dk-cold-age';
+                return `<div class="dk-cold-row"><div class="dk-cold-top">
+                        <button type="button" class="dk-cold-name" style="border:none;background:none;text-align:left;padding:0;font-family:inherit;cursor:pointer;color:var(--dk-text);" onclick="deskOpenPerson('${_esc(c.contact_id)}',true)">${_esc(c.name)}</button>
+                        <span class="${ageCls}">${c.days}d</span></div>
+                    <div class="dk-cold-reason">${_esc(c.reason)}</div>${chase}</div>`;
+            }).join('') || `<div class="dk-cold-reason" style="margin-top:11px;">No relationships cooling right now.</div>`;
+            return `<div class="dk-cold"><div class="dk-sec-label">People going cold</div>${cr}</div>
+                <div class="dk-week"><div class="dk-sec-label">Your week, honestly</div>
+                    <div class="dk-week-stat"><span class="dk-week-num">${w.meeting_h||0}h</span><span class="dk-week-l">in meetings · ${w.focus_h||0}h focus</span></div>
+                    <div class="dk-week-stat"><span class="dk-week-num hot">${_deskOver}</span><span class="dk-week-l">people waiting over a week</span></div>
+                    <div class="dk-week-foot">Friday 17:00, Alfred asks one question about whichever number looks worst.</div>
+                </div>`;
+        }
+        function renderFrontsMarginHTML(){
+            const d = _deskData || {}; const cold = d.fronts_cold || []; const w = d.week || {};
+            const cr = cold.map(c => {
+                const ageCls = c.hot ? 'dk-cold-age hot' : 'dk-cold-age';
+                return `<div class="dk-cold-row"><div class="dk-cold-top">
+                        <button type="button" class="dk-cold-name" style="border:none;background:none;text-align:left;padding:0;font-family:inherit;cursor:pointer;color:var(--dk-text);" onclick="deskOpenFront('${_esc(c.id)}')">${_esc(c.name)}</button>
+                        <span class="${ageCls}">${c.days}d</span></div>
+                    <div class="dk-cold-reason">${_esc(c.reason)}</div></div>`;
+            }).join('') || `<div class="dk-cold-reason" style="margin-top:11px;">No fronts stalling right now.</div>`;
+            return `<div class="dk-cold"><div class="dk-sec-label">Fronts going cold</div>${cr}</div>
+                <div class="dk-week"><div class="dk-sec-label">Fronts health</div>
+                    <div class="dk-week-stat"><span class="dk-week-num">${w.unattended_fronts||0}</span><span class="dk-week-l">front${(w.unattended_fronts===1)?'':'s'} running without you</span></div>
+                    <div class="dk-week-stat"><span class="dk-week-num">${w.handed_off||0}</span><span class="dk-week-l">handed off, not done by you</span></div>
+                    <div class="dk-week-stat"><span class="dk-week-num ${cold.length?'hot':''}">${cold.length}</span><span class="dk-week-l">stalled over ${'2 weeks'}</span></div>
+                    <div class="dk-week-foot">Friday 17:00, Alfred asks one question about whichever number looks worst.</div>
+                </div>`;
+        }
+
+        // ── center views ──
+        function renderDeskCenterHTML(){
+            if (_deskView === 'front') return renderFrontDetail();
+            if (_deskView === 'person') return renderPersonDetail();
+            return _deskEntity === 'people' ? renderPeopleColumn() : renderFrontsBoard();
+        }
+
+        function renderFrontsBoard(){
+            const allFronts = (_deskData && _deskData.fronts) || [];
+            const totalFronts = (_deskData && _deskData.fronts_total) || allFronts.length;
+            const q = (_deskFrontsFilter || '').toLowerCase().trim();
+            const matched = q ? allFronts.filter(f => (f.name + ' ' + (f.type||'') + ' ' + (f.decision||'') + ' ' + (f.owner||'')).toLowerCase().includes(q)) : allFronts;
+            const BOARD_CAP = 12;
+            const fronts = q ? matched : matched.slice(0, BOARD_CAP);
+            const hiddenCount = q ? 0 : Math.max(0, matched.length - BOARD_CAP);
+            const stake = allFronts.reduce((s,f) => s + dkParseMoney(f.money), 0);
+            const closedReceipt = _deskFrontClosed
+                ? `<div class="dk-top-receipt" style="padding:12px 24px 0;">Closed <strong>${_esc(_deskFrontClosed.name)}</strong> — decided, off the board.
+                     <button type="button" class="dk-btn-ghost dk-list-undo" onclick="dkReopenFront('${_esc(_deskFrontClosed.id)}')">Undo</button></div>`
+                : '';
+            let html = closedReceipt + `<div class="dk-fronts-head">
+                    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+                        <div>
+                            <div class="dk-sec-label">Fronts · ${totalFronts} live</div>
+                            <div class="dk-sec-explain">What the company is running. Money, owner, stage, and the one thing in the way.</div>
+                        </div>
+                        ${stake > 0 ? `<span class="dk-fronts-stake">${dkFmtMoney(stake)} at stake</span>` : ''}
+                    </div>
+                    <div class="dk-fronts-actions">
+                        <input class="dk-fronts-search" placeholder="Search fronts…" value="${_esc(_deskFrontsFilter||'')}"
+                            oninput="_deskFrontsFilter=this.value; renderDeskCenter(); const el=document.querySelector('.dk-fronts-search'); if(el){el.focus(); el.setSelectionRange(el.value.length,el.value.length);}">
+                        <button type="button" class="dk-btn dk-btn-ink dk-btn-sm" onclick="deskNewFront()">+ New front</button>
+                    </div>
+                </div>`;
+            if (!fronts.length){
+                html += `<div style="padding:16px 24px;color:var(--dk-n600);font-size:14px;">${q ? 'No fronts match “'+_esc(q)+'”.' : 'No fronts yet. As Alfred sees deals, raises, hires and products in your threads, they surface here.'}</div>`;
+            }
+            for (const f of fronts){
+                const status = f.status || 'moving';
+                const money = f.money ? `<span class="dk-front-money">${_esc(f.money)}</span>` : '';
+                const alert = status === 'stuck' ? `<span class="hot">Stuck ${f.days_since}d, on you</span>`
+                            : status === 'delegated' ? `<span>Running without you</span>` : `<span>Moving</span>`;
+                const decision = f.decision ? `<span class="dk-front-decision"><strong>${_esc(f.decision)}</strong>${f.moved ? ' ' + _esc(dkFirstSentence(f.moved, 120)) : ''}</span>` : '';
+                const droppedFromTop = (f.top_dismissed === true || _deskTopDismissed.has(f.id));
+                const restore = droppedFromTop ? `<span class="dk-front-restore" title="Bring back to the top stack" onclick="event.stopPropagation();deskRestoreTopFront('${_esc(f.id)}')">↑ Restore to top</span>` : '';
+                html += `<button type="button" class="dk-front ${status}" onclick="deskOpenFront('${_esc(f.id)}')">
+                        <span class="dk-front-row">
+                            <span class="dk-front-name">${_esc(f.name)}</span>
+                            <span class="dk-tag">${_esc(f.type || 'workspace')}</span>
+                            ${money}${restore}
+                        </span>
+                        <span class="dk-front-meta">
+                            <span>Stage · ${_esc(f.stage || '—')}</span><span>Owner · ${_esc(f.owner || 'you')}</span>${alert}
+                        </span>
+                        ${decision}
+                        <span class="dk-open-link">Open front →</span>
+                    </button>`;
+            }
+            if (hiddenCount > 0){
+                html += `<div class="dk-more">+ ${hiddenCount} more front${hiddenCount===1?'':'s'} — search to find them.</div>`;
+            }
+            return html;
+        }
+
+        // ── front detail (async fetch stored in _deskDetail) ──
+        async function deskOpenFront(id){
+            deskShowSurface('desk'); deskNavActive('Fronts'); deskSetMobile('detail');
+            _deskView = 'front'; _deskSel = id; _deskDetail = null; renderDeskCenter();
+            try {
+                const res = await authFetch('/api/desk/front?id=' + encodeURIComponent(id));
+                _deskDetail = await res.json();
+            } catch(e){ _deskDetail = { error: true }; }
+            renderDeskCenter();
+        }
+        // Front detail is an EDITABLE artifact: click any dotted field (type/money/stage/
+        // owner/next date/the decision) to edit; add or remove people from "Who is in it".
+        function renderFrontDetail(){
+            const d = _deskDetail;
+            if (!d) return `<div style="padding:24px;color:var(--dk-n600);">Opening front…</div>`;
+            if (d.error) return `<div style="padding:24px;color:var(--dk-hot);">Could not load this front.</div>`;
+            const id = _esc(d.id);
+            const ed = (key, val, ml, ph, editor, disp) => {
+                const has = (val != null && String(val).length);
+                const shown = has ? _esc(disp != null ? disp : val) : `<span class="dk-ed-empty">${_esc(ph || 'set')}</span>`;
+                return `<span class="dk-ed" data-fid="${id}" data-key="${key}" data-ml="${ml?1:0}" data-editor="${editor||'text'}" data-val="${_esc(val||'')}" onclick="dkStartEdit(this)" title="Click to edit">${shown}</span>`;
+            };
+            const stuck = d.stuck ? `<div class="dk-stat hot"><div class="dk-stat-num">${d.stuck.days}d</div><div class="dk-stat-l">Stuck, on you</div></div>` : '';
+            const ledger = (d.ledger || []).map(l => `<div class="dk-ledger"><span class="dt">${_esc(l.date)}</span><span>${_esc(l.content)}</span></div>`).join('') || `<div class="dk-prov">Nothing recorded on this front yet.</div>`;
+            const people = (d.people || []).map(p => {
+                const bd = p.direction === 'you_owe' ? `<span class="bd hot">you owe →</span>`
+                        : p.direction === 'they_owe' ? `<span class="bd">they owe you</span>`
+                        : (p.reliability != null ? `<span class="bd">${p.reliability}% on time</span>` : `<span class="bd">in it</span>`);
+                return `<div class="dk-person-row" style="position:relative;padding-right:24px;">
+                    <span class="r1"><button type="button" class="nm" style="border:none;background:none;padding:0;text-align:left;font:inherit;cursor:pointer;color:var(--dk-text);" onclick="deskOpenPerson('${_esc(p.contact_id||p.name)}',true)">${_esc(p.name)}</button>${bd}</span>
+                    <button type="button" class="dk-x" title="Remove from front" onclick="dkPeopleRemove('${id}','${_esc(p.name)}')">&times;</button>
+                </div>`;
+            }).join('') || `<div class="dk-prov">No one added yet.</div>`;
+            return `<div class="dk-detail-head">
+                    <button type="button" class="dk-back" onclick="deskGoFronts()">← Fronts</button>
+                    <div class="dk-detail-titrow">
+                        <div><div class="dk-kicker">Front · ${ed('type', d.type||'workspace', false, 'type')}</div><h2 class="dk-detail-name">${_esc(d.name)}</h2></div>
+                        <div style="text-align:right;"><div class="dk-detail-money">${ed('money', d.money, false, 'set $')}</div><div class="dk-stat-l">At stake</div></div>
+                    </div>
+                </div>
+                <div class="dk-statstrip">
+                    <div class="dk-stat"><div class="dk-stat-l">Stage</div><div class="dk-stat-v">${ed('stage', d.stage, false, 'set stage', 'stage')}</div></div>
+                    <div class="dk-stat"><div class="dk-stat-l">Owner</div><div class="dk-stat-v">${ed('owner', d.owner||'you', false, 'set owner', 'owner')}</div></div>
+                    <div class="dk-stat"><div class="dk-stat-l">Next date</div><div class="dk-stat-v">${ed('next_date', d.next_date, false, 'set date', 'date', dkFmtDate(d.next_date))}</div></div>
+                    ${stuck}
+                </div>
+                <div class="dk-one">
+                    <div class="dk-one-eyebrow">The one decision</div>
+                    <p class="dk-one-q">${ed('decision', d.decision, true, 'Frame the one decision this front turns on')}</p>
+                </div>
+                <div class="dk-two">
+                    <div class="dk-two-l">
+                        <div class="dk-sec-label">Who is in it${d.people_curated ? '' : ' <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--dk-n500);">· auto</span>'}</div>
+                        ${people}
+                        <div id="dkAddPerson-${id}" style="margin-top:12px;"><button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="dkPeopleAdd('${id}')">+ Add person</button></div>
+                    </div>
+                    <div class="dk-two-r"><div class="dk-sec-label">What has actually happened</div>${ledger}
+                        <div class="dk-prov">${_esc(d.provenance || 'Read from your threads, the calendar and Notion. Nothing typed by hand.')}</div></div>
+                </div>`;
+        }
+
+        // ── front inline editing ──
+        // Stage is a fixed vocabulary; the last option closes the front.
+        const DK_STAGES = ['researching','deciding','executing','monitoring','blocked','decided'];
+        const DK_STAGE_CLOSE = '__close';
+        function dkCap(s){ s = String(s||''); return s ? s[0].toUpperCase() + s.slice(1) : s; }
+        // Known people for owner auto-complete: desk queue + this front's people + going-cold + you.
+        function dkKnownPeople(){
+            const set = new Set(['you']);
+            ((_deskData && _deskData.queue) || []).forEach(r => { const n = (r.who_full || r.contact_id || r.who || '').trim(); if (n) set.add(n); });
+            ((_deskDetail && _deskDetail.people) || []).forEach(p => { if (p.name) set.add(p.name); });
+            ((_deskData && _deskData.going_cold) || []).forEach(c => { if (c.name) set.add(c.name); });
+            return [...set].sort((a,b) => a.localeCompare(b));
+        }
+        function dkFmtDate(v){
+            if (!v) return v;
+            const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (!m) return v;
+            const dt = new Date(+m[1], +m[2]-1, +m[3]);
+            const opts = { month: 'short', day: 'numeric' };
+            if (dt.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+            return dt.toLocaleDateString([], opts);
+        }
+        function dkStartEdit(el){
+            if (el.dataset.editing === '1') return;
+            el.dataset.editing = '1';
+            const key = el.dataset.key, fid = el.dataset.fid, ml = el.dataset.ml === '1',
+                  cur = el.dataset.val || '', editor = el.dataset.editor || 'text';
+
+            // Stage → a <select>; the final option decides + closes the front.
+            if (editor === 'stage'){
+                const sel = document.createElement('select');
+                sel.className = 'dk-ed-select';
+                const opts = DK_STAGES.slice();
+                if (cur && !opts.includes(cur.toLowerCase())) opts.unshift(cur.toLowerCase());
+                sel.innerHTML = opts.map(o => `<option value="${_esc(o)}"${o===String(cur).toLowerCase()?' selected':''}>${_esc(dkCap(o))}</option>`).join('')
+                    + `<option disabled>──────────</option>`
+                    + `<option value="${DK_STAGE_CLOSE}">✓ Decided — close front</option>`;
+                el.textContent = ''; el.appendChild(sel); sel.focus();
+                let done = false;
+                sel.addEventListener('change', () => {
+                    if (done) return; done = true;
+                    if (sel.value === DK_STAGE_CLOSE) dkCloseFront(fid, _deskDetail && _deskDetail.name);
+                    else dkSaveMeta(fid, { stage: sel.value });
+                });
+                sel.addEventListener('blur', () => { if (!done){ done = true; renderDeskCenter(); } });
+                return;
+            }
+
+            // Next date → a native date picker.
+            if (editor === 'date'){
+                const inp = document.createElement('input');
+                inp.type = 'date'; inp.className = 'dk-ed-input dk-ed-date';
+                const m = String(cur).match(/^(\d{4}-\d{2}-\d{2})$/); if (m) inp.value = m[1];
+                el.textContent = ''; el.appendChild(inp); inp.focus();
+                let done = false;
+                const commit = () => { if (done) return; done = true; dkSaveMeta(fid, { next_date: inp.value }); };
+                inp.addEventListener('change', commit);
+                inp.addEventListener('keydown', e => { if (e.key === 'Escape'){ e.preventDefault(); done = true; renderDeskCenter(); } });
+                inp.addEventListener('blur', commit);
+                return;
+            }
+
+            // Owner → text input with a datalist of known people (native auto-complete).
+            const inp = document.createElement('input');
+            inp.className = 'dk-ed-input'; inp.value = cur;
+            if (ml){ /* multiline */ }
+            if (editor === 'owner'){
+                let dl = document.getElementById('dkOwnerList');
+                if (!dl){ dl = document.createElement('datalist'); dl.id = 'dkOwnerList'; document.body.appendChild(dl); }
+                dl.innerHTML = dkKnownPeople().map(n => `<option value="${_esc(n)}">`).join('');
+                inp.setAttribute('list', 'dkOwnerList'); inp.setAttribute('autocomplete', 'off');
+            }
+            const inpEl = ml ? document.createElement('textarea') : inp;
+            if (ml){ inpEl.className = 'dk-ed-input'; inpEl.value = cur; inpEl.rows = 3; }
+            el.textContent = ''; el.appendChild(inpEl); inpEl.focus(); if (inpEl.select) inpEl.select();
+            let done = false;
+            const commit = () => { if (done) return; done = true; dkSaveMeta(fid, { [key]: inpEl.value }); };
+            const cancel = () => { if (done) return; done = true; renderDeskCenter(); };
+            inpEl.addEventListener('keydown', e => {
+                if (e.key === 'Enter' && !ml){ e.preventDefault(); commit(); }
+                else if (e.key === 'Enter' && ml && (e.metaKey || e.ctrlKey)){ e.preventDefault(); commit(); }
+                else if (e.key === 'Escape'){ e.preventDefault(); cancel(); }
+            });
+            inpEl.addEventListener('blur', commit);
+        }
+        // Decided — close a front (removes it from the board; reversible). Returns to the board
+        // with an Undo receipt.
+        async function dkCloseFront(fid, name){
+            _deskFrontClosed = { id: fid, name: name || 'Front' };
+            try { await authFetch('/api/desk/front/close?id=' + encodeURIComponent(fid), { method: 'POST' }); }
+            catch(e){ console.error('[Desk] front close failed', e); }
+            try { const res = await authFetch('/api/desk'); _deskData = await res.json(); } catch(e){}
+            deskGoFronts();
+        }
+        async function dkReopenFront(fid){
+            _deskFrontClosed = null;
+            try { await authFetch('/api/desk/front/close?id=' + encodeURIComponent(fid) + '&reopen=1', { method: 'POST' }); }
+            catch(e){ console.error('[Desk] front reopen failed', e); }
+            try { const res = await authFetch('/api/desk'); _deskData = await res.json(); } catch(e){}
+            renderDeskGrid();
+        }
+        async function dkSaveMeta(fid, fields){
+            try {
+                await authFetch('/api/desk/front/meta?id=' + encodeURIComponent(fid), {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) });
+            } catch(e){ console.error('[Desk] front meta save failed', e); }
+            await dkReloadFront(fid);
+        }
+        async function dkReloadFront(fid){
+            try { const res = await authFetch('/api/desk/front?id=' + encodeURIComponent(fid)); _deskDetail = await res.json(); }
+            catch(e){ _deskDetail = { error: true }; }
+            _deskView = 'front'; _deskSel = fid; renderDeskCenter();
+            authFetch('/api/desk').then(r => r.json()).then(dd => { _deskData = dd; }).catch(()=>{});
+        }
+        function dkFrontPeople(){ return ((_deskDetail && _deskDetail.people) || []).map(p => ({ name: p.name, direction: p.direction || '', note: p.note || '' })); }
+        async function dkPeoplePost(fid, list){
+            try {
+                await authFetch('/api/desk/front/meta?id=' + encodeURIComponent(fid), {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ people_json: JSON.stringify(list) }) });
+            } catch(e){ console.error('[Desk] people save failed', e); }
+            await dkReloadFront(fid);
+        }
+        function dkPeopleRemove(fid, name){ dkPeoplePost(fid, dkFrontPeople().filter(p => p.name !== name)); }
+        function dkPeopleAdd(fid){
+            const host = document.getElementById('dkAddPerson-' + fid);
+            if (!host) return;
+            host.innerHTML = `<input class="dk-ed-input" id="dkAddName-${_esc(fid)}" placeholder="Name" style="margin-bottom:8px;">
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                    <button type="button" class="dk-btn dk-btn-ink dk-btn-sm" onclick="dkPeopleAddSave('${_esc(fid)}','you_owe')">You owe them</button>
+                    <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="dkPeopleAddSave('${_esc(fid)}','they_owe')">They owe you</button>
+                    <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="renderDeskCenter()">Cancel</button>
+                </div>`;
+            const inp = document.getElementById('dkAddName-' + fid); if (inp) inp.focus();
+        }
+        function dkPeopleAddSave(fid, dir){
+            const inp = document.getElementById('dkAddName-' + fid);
+            const name = inp ? inp.value.trim() : '';
+            if (!name) return;
+            const list = dkFrontPeople();
+            list.push({ name: name, direction: dir, note: '' });
+            dkPeoplePost(fid, list);
+        }
+
+        // ── person detail ──
+        async function deskOpenPerson(id, keepPeople){
+            deskShowSurface('desk'); deskNavActive(keepPeople ? 'People' : 'Fronts'); deskSetMobile('detail');
+            _deskView = 'person'; _deskSel = id; _deskDetail = null; _deskItemCleared = {}; renderDeskCenter();
+            try {
+                const res = await authFetch('/api/desk/person?id=' + encodeURIComponent(id));
+                _deskDetail = await res.json();
+            } catch(e){ _deskDetail = { error: true }; }
+            renderDeskCenter();
+        }
+        // L2 person page: every item they're waiting on, each with Context / Reply / Done /
+        // Dismiss. Reply opens an inline compose window that sends a real WhatsApp message.
+        // One item row, for both directions. you_owe → Reply/Done/Dismiss; they_owe →
+        // Chase/Got it/Dismiss. Cleared items show an Undo receipt in place.
+        function dkItemHtml(it, mode){
+            const id = _esc(it.id);
+            if (_deskItemCleared[id]){
+                return `<div class="dk-item"><div class="dk-item-top">
+                        <span class="dk-item-text" style="color:var(--dk-n600);">${_esc(it.text)}</span>
+                        <button type="button" class="dk-btn-ghost" style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dk-n600);" onclick="deskItemUndo('${id}')">Undo</button></div>
+                    <div class="dk-item-ctx" style="display:block;background:var(--dk-a100);border-left-color:var(--dk-accent);"><strong>${_esc(_deskItemCleared[id])}</strong></div></div>`;
+            }
+            const actions = (mode === 'they_owe')
+                ? `<button type="button" class="dk-btn dk-btn-ink dk-btn-sm" onclick="deskItemReply('${id}',true)">Chase</button>
+                   <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskItemClose('${id}','done')">Got it</button>
+                   <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskItemClose('${id}','dismissed')">Dismiss</button>
+                   <button type="button" class="dk-item-ctx-btn" onclick="deskItemContext('${id}')">Context</button>`
+                : `<button type="button" class="dk-btn dk-btn-ink dk-btn-sm" onclick="deskItemReply('${id}',false)">Reply</button>
+                   <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskItemClose('${id}','done')">Done</button>
+                   <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskItemClose('${id}','dismissed')">Dismiss</button>
+                   <button type="button" class="dk-item-ctx-btn" onclick="deskItemContext('${id}')">Context</button>`;
+            return `<div class="dk-item" id="dkitem-${id}">
+                    <div class="dk-item-top"><span class="dk-item-text">${_esc(it.text)}</span><span class="dk-item-age ${it.age_days>=7?'hot':''}">${it.age_days}d</span></div>
+                    <div class="dk-item-actions">${actions}</div>
+                    <div class="dk-item-ctx" id="dkctx-${id}" style="display:none;"></div>
+                    <div class="dk-compose" id="dkcompose-${id}" style="display:none;"></div>
+                </div>`;
+        }
+        function renderPersonDetail(){
+            const d = _deskDetail;
+            if (!d) return `<div style="padding:24px;color:var(--dk-n600);">Opening person…</div>`;
+            if (d.error) return `<div style="padding:24px;color:var(--dk-hot);">Could not load this person.</div>`;
+            const owe = d.you_owe || 0, owed = d.they_owe || 0;
+            const its = d.open_items || [], their = d.their_items || [];
+            const youOwe = its.length ? its.map(it => dkItemHtml(it, 'you_owe')).join('')
+                : `<div class="dk-prov" style="margin-top:11px;">Nothing open from you — you're clear with ${_esc(d.first_name || d.name)}.</div>`;
+            const theyOwe = their.map(it => dkItemHtml(it, 'they_owe')).join('');
+            const fronts = (d.shared_fronts || []).map(f => `<button type="button" class="dk-person-row" onclick="deskOpenFront('${_esc(f.id)}')"><span class="nm" style="font-size:14.5px;font-weight:700;">${_esc(f.name)}</span><span class="sub">${f.money?_esc(f.money)+' · ':''}${_esc(f.stage||'')} · open front →</span></button>`).join('') || '';
+            return `<div class="dk-detail-head">
+                    <button type="button" class="dk-back" onclick="deskGoFronts()">← Fronts</button>
+                    <div class="dk-detail-titrow"><div>
+                        <div class="dk-kicker">Person · external</div>
+                        <h2 class="dk-detail-name">${_esc(d.name)}</h2>
+                        <div class="dk-detail-sub">${owe} you owe · ${owed} they owe${(d.platforms&&d.platforms.length)?' · '+_esc(d.platforms.join(', ')):''}</div>
+                    </div></div>
+                </div>
+                <div class="dk-statstrip">
+                    <div class="dk-stat ${owe>0?'hot':''}"><div class="dk-stat-num">${owe}</div><div class="dk-stat-l">You owe${d.you_owe_age?` · ${d.you_owe_age}d`:''}</div></div>
+                    <div class="dk-stat"><div class="dk-stat-num">${owed}</div><div class="dk-stat-l">They owe you</div></div>
+                    <div class="dk-stat"><div class="dk-stat-num">${_esc(d.on_time||'—')}</div><div class="dk-stat-l">On time</div></div>
+                </div>
+                <div style="padding:18px 24px 22px;">
+                    <div class="dk-sec-label">You owe them · ${its.length}</div>
+                    <div style="margin-top:4px;">${youOwe}</div>
+                    ${their.length ? `<div class="dk-sec-label" style="margin-top:24px;">They owe you · ${their.length}</div><div style="margin-top:4px;">${theyOwe}</div>` : ''}
+                    ${fronts?`<div class="dk-sec-label" style="margin-top:24px;">Fronts you share</div>${fronts}`:''}
+                    <div class="dk-prov" style="margin-top:16px;">Reply / Chase sends a WhatsApp message. Done / Got it closes the item. Dismiss removes it without counting.</div>
+                </div>`;
+        }
+
+        // ── L2 item actions ──
+        // Context = the real evidence: recent chat messages from this thread + the front it
+        // belongs to (fetched on demand), not a synthesized sentence.
+        async function deskItemContext(id){
+            const el = document.getElementById('dkctx-' + id);
+            if (!el) return;
+            if (el.style.display === 'block'){ el.style.display = 'none'; return; }
+            el.style.display = 'block';
+            el.innerHTML = '<span style="color:var(--dk-n600);">Loading context…</span>';
+            try {
+                const r = await authFetch('/api/desk/item/context?id=' + encodeURIComponent(id));
+                const d = await r.json();
+                let html = '';
+                if ((d.messages || []).length){
+                    html += '<div class="dk-ctx-label">From your thread</div><div class="dk-ctx-chat">' + d.messages.map(m =>
+                        `<div class="dk-ctx-msg ${m.outgoing?'out':''}"><div><span class="dk-ctx-from">${_esc(m.from)}</span><span class="dk-ctx-ts">${_esc(m.ts)}</span></div><div>${_esc(m.text)}</div></div>`
+                    ).join('') + '</div>';
+                } else {
+                    html += `<div style="color:var(--dk-n600);">${_esc(d.note || 'No recent messages found.')}</div>`;
+                }
+                if (d.front && d.front.id){
+                    html += `<div style="margin-top:10px;"><button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskOpenFront('${_esc(d.front.id)}')">Part of ${_esc(d.front.name)} → open front</button></div>`;
+                }
+                el.innerHTML = html;
+            } catch(e){ el.innerHTML = '<span style="color:var(--dk-hot);">Could not load context.</span>'; }
+        }
+        function deskCurrentItem(id){ return ((_deskDetail && _deskDetail.open_items) || []).find(i => String(i.id) === String(id)); }
+        // Reply (you owe) or Chase (they owe) — a BLANK compose box; you write your own
+        // message. No drafts. `chase` sends a nudge that keeps the item open.
+        function deskItemReply(id, chase){
+            const host = document.getElementById('dkcompose-' + id);
+            if (!host) return;
+            if (host.style.display === 'block'){ host.style.display = 'none'; host.innerHTML = ''; return; }
+            const to = (_deskDetail && _deskDetail.name) || '';
+            host.style.display = 'block';
+            host.innerHTML = `<div class="dk-compose-to">${chase?'Nudge':'To'} ${_esc(to)} · WhatsApp</div>
+                <textarea class="dk-compose-ta" id="dkta-${_esc(id)}" rows="4" placeholder="Write your message…"></textarea>
+                <div class="dk-compose-actions">
+                    <button type="button" class="dk-btn dk-btn-accent dk-btn-sm" id="dksend-${_esc(id)}" onclick="deskItemSend('${_esc(id)}',${chase?'true':'false'})">Send WhatsApp</button>
+                    <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskItemReply('${_esc(id)}',${chase?'true':'false'})">Cancel</button>
+                </div>
+                <div class="dk-compose-note">Sends to ${_esc(to)}'s WhatsApp thread${chase?' — a nudge; keeps the item open.':', then closes this item.'}</div>`;
+            const ta = document.getElementById('dkta-' + id);
+            if (ta) ta.focus();
+        }
+        async function deskItemSend(id, chase){
+            const to = (_deskDetail && _deskDetail.name) || '';
+            const ta = document.getElementById('dkta-' + id);
+            const text = ta ? ta.value.trim() : '';
+            if (!text || !to) return;
+            const btn = document.getElementById('dksend-' + id);
+            if (btn){ btn.disabled = true; btn.textContent = 'Sending…'; }
+            try {
+                const body = { id, to, text };
+                if (chase) body.close = false;
+                const res = await authFetch('/api/desk/reply', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                const r = await res.json();
+                if (r && r.ok){
+                    if (typeof r.desk_count === 'number'){ _deskCount = r.desk_count; _deskOver = r.over_week; }
+                    if (chase){
+                        const host = document.getElementById('dkcompose-' + id);
+                        if (host){ host.style.display = 'none'; host.innerHTML = ''; }
+                        renderDeskBand();
+                    } else {
+                        _deskItemCleared[id] = r.receipt || 'Sent.';
+                        _deskCleared[id] = true;
+                        renderDeskCenter(); renderDeskBand(); refreshPeopleMargin();
+                    }
+                } else {
+                    alert('Send failed: ' + ((r && r.error) || 'unknown') + '\n\nMake sure the WhatsApp bridge is connected (● WA).');
+                    if (btn){ btn.disabled = false; btn.textContent = 'Send WhatsApp'; }
+                }
+            } catch(e){
+                alert('Send failed. The WhatsApp bridge may not be connected yet (● WA).');
+                if (btn){ btn.disabled = false; btn.textContent = 'Send WhatsApp'; }
+            }
+        }
+        // Done / Dismiss / Got it — optimistic receipt with Undo, in place (no full reload).
+        async function deskItemClose(id, how){
+            _deskItemCleared[id] = how === 'dismissed' ? 'Dismissed — off your desk, not counted.' : 'Done. Closed.';
+            _deskCleared[id] = true;
+            renderDeskCenter(); renderDeskBand(); refreshPeopleMargin();
+            try {
+                const res = await authFetch('/api/desk/clear?id=' + encodeURIComponent(id) + '&how=' + encodeURIComponent(how), { method: 'POST' });
+                const r = await res.json();
+                if (r && typeof r.desk_count === 'number'){ _deskCount = r.desk_count; _deskOver = r.over_week; if (r.receipt) _deskItemCleared[id] = r.receipt; renderDeskCenter(); renderDeskBand(); refreshPeopleMargin(); }
+            } catch(e){ console.error('[Desk] item close failed', e); }
+        }
+        async function deskItemUndo(id){
+            delete _deskItemCleared[id];
+            delete _deskCleared[id];
+            renderDeskCenter(); renderDeskBand(); refreshPeopleMargin();
+            try {
+                const res = await authFetch('/api/desk/undo?id=' + encodeURIComponent(id), { method: 'POST' });
+                const r = await res.json();
+                if (r && typeof r.desk_count === 'number'){ _deskCount = r.desk_count; _deskOver = r.over_week; renderDeskBand(); refreshPeopleMargin(); }
+            } catch(e){ console.error('[Desk] item undo failed', e); }
+        }
+
+        // ── C2: inline actions on the People LIST (single-item people, no L2 drill) ──
+        // Resolve the recipient from the grouped list by item id (avoids quoting names inline).
+        function deskListItem(id){
+            for (const p of deskPeopleGrouped()){
+                for (const it of p.items){ if (String(it.id) === String(id)) return { item: it, person: p }; }
+            }
+            return null;
+        }
+        function deskListReply(id){
+            const host = document.getElementById('dklcompose-' + id);
+            if (!host) return;
+            if (host.style.display === 'block'){ host.style.display = 'none'; host.innerHTML = ''; return; }
+            const ctx = deskListItem(id); const nm = ctx ? ctx.person.name : '';
+            host.style.display = 'block';
+            host.innerHTML = `<div class="dk-compose-to">To ${_esc(nm)} · WhatsApp</div>
+                <textarea class="dk-compose-ta" id="dklta-${_esc(id)}" rows="3" placeholder="Write your message…"></textarea>
+                <div class="dk-compose-actions">
+                    <button type="button" class="dk-btn dk-btn-accent dk-btn-sm" id="dklsend-${_esc(id)}" onclick="deskListSend('${_esc(id)}')">Send WhatsApp</button>
+                    <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskListReply('${_esc(id)}')">Cancel</button>
+                </div>
+                <div class="dk-compose-note">Sends to ${_esc(nm)}'s WhatsApp thread, then closes this item.</div>`;
+            const ta = document.getElementById('dklta-' + id); if (ta) ta.focus();
+        }
+        async function deskListSend(id){
+            const ctx = deskListItem(id); if (!ctx) return;
+            const to = ctx.person.full || ctx.person.name;
+            const ta = document.getElementById('dklta-' + id); const text = ta ? ta.value.trim() : '';
+            if (!text || !to) return;
+            const btn = document.getElementById('dklsend-' + id); if (btn){ btn.disabled = true; btn.textContent = 'Sending…'; }
+            try {
+                const res = await authFetch('/api/desk/reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, to, text }) });
+                const r = await res.json();
+                if (r && r.ok){
+                    if (typeof r.desk_count === 'number'){ _deskCount = r.desk_count; _deskOver = r.over_week; }
+                    _deskListReceipts[id] = { name: ctx.person.name, text: r.receipt || 'Sent — item closed.' };
+                    _deskCleared[id] = true;
+                    refreshPeopleMargin(); renderDeskBand();
+                } else {
+                    alert('Send failed: ' + ((r && r.error) || 'unknown') + '\n\nMake sure the WhatsApp bridge is connected (● WA).');
+                    if (btn){ btn.disabled = false; btn.textContent = 'Send WhatsApp'; }
+                }
+            } catch(e){
+                alert('Send failed. The WhatsApp bridge may not be connected yet (● WA).');
+                if (btn){ btn.disabled = false; btn.textContent = 'Send WhatsApp'; }
+            }
+        }
+        async function deskListClose(id){
+            const ctx = deskListItem(id); const nm = ctx ? ctx.person.name : '';
+            _deskListReceipts[id] = { name: nm, text: 'Done. Closed.' };
+            _deskCleared[id] = true;
+            refreshPeopleMargin(); renderDeskBand();
+            try {
+                const res = await authFetch('/api/desk/clear?id=' + encodeURIComponent(id) + '&how=done', { method: 'POST' });
+                const r = await res.json();
+                if (r && typeof r.desk_count === 'number'){ _deskCount = r.desk_count; _deskOver = r.over_week; if (r.receipt && _deskListReceipts[id]) _deskListReceipts[id].text = r.receipt; refreshPeopleMargin(); renderDeskBand(); }
+            } catch(e){ console.error('[Desk] list close failed', e); }
+        }
+        async function deskListUndo(id){
+            delete _deskListReceipts[id];
+            delete _deskCleared[id];
+            refreshPeopleMargin(); renderDeskBand();
+            try {
+                const res = await authFetch('/api/desk/undo?id=' + encodeURIComponent(id), { method: 'POST' });
+                const r = await res.json();
+                if (r && typeof r.desk_count === 'number'){ _deskCount = r.desk_count; _deskOver = r.over_week; renderDeskBand(); }
+            } catch(e){ console.error('[Desk] list undo failed', e); }
+        }
+
+        // ── Top-desk actions (tenet 6: act from the card) + learning log (tenet 10) ──
+        function deskTopAct(kind, id, action){
+            try { authFetch('/api/desk/top/act?kind=' + kind + '&id=' + encodeURIComponent(id) + '&action=' + action, { method: 'POST' }); } catch(e){}
+        }
+        function deskTopOpen(kind, id){
+            deskTopAct(kind, id, 'act');
+            if (kind === 'front') deskOpenFront(id); else deskOpenPerson(id, true);
+        }
+        function deskTopReply(id, contactId){
+            const host = document.getElementById('dktopcompose-' + id);
+            if (!host) return;
+            if (host.style.display === 'block'){ host.style.display = 'none'; host.innerHTML = ''; return; }
+            const ctx = deskListItem(id); const nm = ctx ? ctx.person.name : '';
+            host.style.display = 'block';
+            host.innerHTML = `<textarea class="dk-compose-ta" id="dktopta-${_esc(id)}" rows="3" placeholder="Write ${_esc(nm)} a message&hellip;"></textarea>
+                <div class="dk-compose-actions">
+                    <button type="button" class="dk-btn dk-btn-accent dk-btn-sm" id="dktopsend-${_esc(id)}" onclick="deskTopSend('${_esc(id)}','${_esc(contactId)}')">Send WhatsApp</button>
+                    <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskTopReply('${_esc(id)}','${_esc(contactId)}')">Cancel</button>
+                </div>`;
+            const ta = document.getElementById('dktopta-' + id); if (ta) ta.focus();
+        }
+        async function deskTopSend(id, contactId){
+            const ctx = deskListItem(id); if (!ctx) return;
+            const to = ctx.person.full || ctx.person.name;
+            const ta = document.getElementById('dktopta-' + id); const text = ta ? ta.value.trim() : '';
+            if (!text || !to) return;
+            const btn = document.getElementById('dktopsend-' + id); if (btn){ btn.disabled = true; btn.textContent = 'Sending…'; }
+            try {
+                const res = await authFetch('/api/desk/reply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, to, text }) });
+                const r = await res.json();
+                if (r && r.ok){
+                    if (typeof r.desk_count === 'number'){ _deskCount = r.desk_count; _deskOver = r.over_week; }
+                    _deskListReceipts[id] = { name: ctx.person.name, text: r.receipt || 'Sent — item closed.' };
+                    _deskCleared[id] = true;
+                    deskTopAct('person', contactId, 'act');
+                    renderDeskBand(); refreshPeopleMargin();
+                } else {
+                    alert('Send failed: ' + ((r && r.error) || 'unknown') + '\n\nMake sure the WhatsApp bridge is connected (● WA).');
+                    if (btn){ btn.disabled = false; btn.textContent = 'Send WhatsApp'; }
+                }
+            } catch(e){
+                alert('Send failed. The WhatsApp bridge may not be connected yet (● WA).');
+                if (btn){ btn.disabled = false; btn.textContent = 'Send WhatsApp'; }
+            }
+        }
+        function deskTopDone(id, contactId){ deskTopAct('person', contactId, 'act'); deskListClose(id); }
+
+        function deskGoFronts(){ deskNav('fronts'); }
+
+        // ── mutations ──
+        async function deskClear(id, how, fromBand){
+            _deskCleared[id] = how === 'handed_off' ? 'Handed off. No longer waiting on you.'
+                             : how === 'replied' ? 'Reply sent with a one-line reason.'
+                             : 'Unblocked. Sent with a one-line ask.';
+            if (_deskCount > 0) _deskCount -= 1;
+            const row = _deskQueue.find(r => r.id === id);
+            if (row && row.hot && _deskOver > 0) _deskOver -= 1;
+            renderDeskBand(); refreshPeopleMargin();
+            if (_deskView !== 'fronts') { _deskView = 'fronts'; deskNavActive('Fronts'); renderDeskCenter(); }
+            try {
+                const res = await authFetch('/api/desk/clear?id=' + encodeURIComponent(id) + '&how=' + encodeURIComponent(how), { method:'POST' });
+                const d = await res.json();
+                if (d && typeof d.desk_count === 'number'){ _deskCount = d.desk_count; _deskOver = d.over_week; if (d.receipt) _deskCleared[id] = d.receipt; renderDeskBand(); refreshPeopleMargin(); }
+            } catch(e){ console.error('[Desk] clear failed', e); }
+        }
+        async function deskUndo(id){
+            delete _deskCleared[id];
+            _deskCount += 1;
+            const row = _deskQueue.find(r => r.id === id);
+            if (row && row.hot) _deskOver += 1;
+            renderDeskBand(); refreshPeopleMargin();
+            try {
+                const res = await authFetch('/api/desk/undo?id=' + encodeURIComponent(id), { method:'POST' });
+                const d = await res.json();
+                if (d && typeof d.desk_count === 'number'){ _deskCount = d.desk_count; _deskOver = d.over_week; renderDeskBand(); refreshPeopleMargin(); }
+            } catch(e){ console.error('[Desk] undo failed', e); }
+        }
+
+        function deskChase(name){ deskAsk('Draft a short, warm nudge to ' + name + ' about what they owe me.'); }
+        function deskNewFront(){
+            const name = prompt('Name the new front (a deal, raise, hire or product):');
+            if (!name) return;
+            deskAsk('Set up a new front called "' + name + '" and tell me what you know about it.');
+        }
+        // ── demoted chat (opens pre-seeded) ──
+        function deskAsk(prefill){
+            const input = document.getElementById('deskAskInput');
+            const text = (typeof prefill === 'string' && prefill) ? prefill : (input ? input.value.trim() : '');
+            deskShowSurface('chat');
+            deskNavActive('Fronts');
+            if (text){ if (input) input.value = ''; setTimeout(() => sendChat(text), 60); }
+        }
+        function deskAskAbout(name){ deskAsk('Help me edit the draft to ' + name + '.'); }
+
+        // ── WhatsApp bridge pairing / status ──
+        let _waPollTimer = null, _waModalOpen = false;
+        async function waBridgePoll(){
+            try {
+                const r = await authFetch('/api/wa-bridge/status');
+                const d = await r.json();
+                const dot = document.getElementById('waDot');
+                if (dot){
+                    let color = 'var(--dk-n400)';
+                    if (d.reachable && d.paired) color = '#2ea043';
+                    else if (d.reachable && !d.paired) color = 'var(--dk-hot)';
+                    dot.style.background = color;
+                    const btn = document.getElementById('waStatusBtn');
+                    if (btn) btn.title = (d.reachable ? (d.paired ? 'WhatsApp: connected via bridge' : 'WhatsApp: needs pairing') : ('WhatsApp: ' + (d.active_source === 'bridge' ? 'bridge (starting)' : 'local database')));
+                }
+                if (_waModalOpen) waRenderPairBody(d);
+            } catch(e){}
+        }
+        function waRenderPairBody(d){
+            const el = document.getElementById('waPairBody');
+            if (!el) return;
+            if (!d.reachable){
+                el.innerHTML = `<div style="font-size:14px;line-height:1.55;color:var(--dk-n700);">The WhatsApp bridge isn't running yet. Start it once:
+                    <code style="display:block;background:var(--dk-n100);padding:9px 11px;margin:10px 0;font-size:12px;">./scripts/wa-bridge.sh install</code>
+                    Alfred is reading WhatsApp from the local database (<b>${_esc(d.active_source||'local_db')}</b>) in the meantime.</div>`;
+                return;
+            }
+            if (d.paired){
+                el.innerHTML = `<div style="text-align:center;padding:8px 0;">
+                    <div style="font-size:30px;color:#2ea043;">&#10003;</div>
+                    <div style="font-weight:800;font-size:18px;margin-top:6px;">Connected</div>
+                    <div style="color:var(--dk-n600);font-size:13px;margin-top:6px;">${d.messages||0} messages synced · source: <b>${_esc(d.active_source||'bridge')}</b></div>
+                    <div style="color:var(--dk-n600);font-size:12px;margin-top:14px;line-height:1.5;">Full Disk Access is no longer required for WhatsApp — Alfred reads &amp; sends over the bridge.</div>
+                </div>`;
+                return;
+            }
+            const img = d.qr_png_base64
+                ? `<img src="data:image/png;base64,${d.qr_png_base64}" alt="Pairing QR" style="width:240px;height:240px;image-rendering:pixelated;border:1px solid var(--dk-divider);">`
+                : `<div style="color:var(--dk-n600);padding:40px 0;">Generating code…</div>`;
+            el.innerHTML = `<div style="text-align:center;">
+                <div style="font-size:13px;line-height:1.55;color:var(--dk-n700);margin-bottom:14px;">On your phone: <b>WhatsApp → Settings → Linked Devices → Link a Device</b>, then scan:</div>
+                ${img}
+                <div style="font-size:11px;color:var(--dk-n600);margin-top:12px;line-height:1.5;">The code refreshes automatically. Once linked, Alfred reads &amp; sends WhatsApp with no Full Disk Access.</div>
+            </div>`;
+        }
+        function waPairOpen(){
+            _waModalOpen = true;
+            document.getElementById('waPairOverlay').style.display = 'block';
+            document.getElementById('waPairBody').innerHTML = '<div style="color:var(--dk-n600);text-align:center;padding:30px 0;">Checking the bridge…</div>';
+            waBridgePoll();
+            if (_waPollTimer) clearInterval(_waPollTimer);
+            _waPollTimer = setInterval(waBridgePoll, 4000);
+        }
+        function waPairClose(){
+            _waModalOpen = false;
+            document.getElementById('waPairOverlay').style.display = 'none';
+            if (_waPollTimer){ clearInterval(_waPollTimer); _waPollTimer = null; }
+            waBridgePoll();
         }
 
         // ═══ v3 Now: the 4 workspaces you're in + 1 that needs you ═══

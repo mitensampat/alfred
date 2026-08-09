@@ -302,14 +302,23 @@ struct MessagingConfig: Codable {
     struct MessagePlatformConfig: Codable {
         let enabled: Bool
         let dbPath: String
+        /// WhatsApp read source: "auto" (bridge when paired, else local DB), "bridge"
+        /// (whatsmeow), or "local_db" (WhatsApp Desktop DB, needs Full Disk Access).
+        /// Defaults to "auto" so pairing the bridge takes over without breaking anything.
+        let source: String?
 
         enum CodingKeys: String, CodingKey {
             case enabled
             case dbPath = "db_path"
+            case source
         }
 
         var expandedPath: String {
             (dbPath as NSString).expandingTildeInPath
+        }
+
+        var readSource: String {
+            (source?.isEmpty == false ? source! : "auto").lowercased()
         }
     }
 

@@ -511,7 +511,7 @@ CRITICAL RULES (override everything else):
                 if let config = alfredService.orchestrator?.config {
                     do {
                         let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
-                        let reader = WhatsAppReader.shared(dbPath: config.messaging.whatsapp.dbPath)
+                        let reader = WhatsAppSource.reader(config: config)
                         try reader.connect()
                         let threads = try reader.fetchThreads(since: sevenDaysAgo)
 
@@ -647,7 +647,7 @@ CRITICAL RULES (override everything else):
                 if let config = alfredService.orchestrator?.config {
                     do {
                         let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
-                        let reader = WhatsAppReader.shared(dbPath: config.messaging.whatsapp.dbPath)
+                        let reader = WhatsAppSource.reader(config: config)
                         try reader.connect()
                         let threads = try reader.fetchThreads(since: sevenDaysAgo)
 
@@ -745,7 +745,7 @@ CRITICAL RULES (override everything else):
                 if let config = alfredService.orchestrator?.config {
                     do {
                         let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
-                        let reader = WhatsAppReader.shared(dbPath: config.messaging.whatsapp.dbPath)
+                        let reader = WhatsAppSource.reader(config: config)
                         try reader.connect()
                         let threads = try reader.fetchThreads(since: sevenDaysAgo)
 

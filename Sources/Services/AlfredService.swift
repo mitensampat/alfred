@@ -525,6 +525,15 @@ class AlfredService: ObservableObject {
         try await orchestrator.notionServicePublic.closeCommitmentInTasks(hash: hash, reason: reason)
     }
 
+    /// Reopen a commitment (Desk Undo). Local tracker is authoritative for the queue;
+    /// Notion is reopened best-effort and never fails the Undo.
+    func reopenCommitmentByHash(hash: String) async {
+        CommitmentScanTracker.shared.reopenCommitment(hash: hash)
+        if let orchestrator = orchestrator {
+            try? await orchestrator.notionServicePublic.reopenCommitmentInTasks(hash: hash)
+        }
+    }
+
     /// Build smart list of contacts/threads to scan for commitments
     /// Includes: All Favorites + Active threads with >5 messages
     private func buildSmartContactList(appConfig: AppConfig) -> [String] {

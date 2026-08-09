@@ -244,6 +244,14 @@ class SelfModelStore {
 
     // MARK: - Insert / Upsert
 
+    /// Metadata keys authored by hand on the Desk (front editor / pin / dismiss / people),
+    /// as opposed to the machine keys the synthesizer recomputes each materialize()
+    /// (temperature, state, edge, frequency, …). These are carried across a recompute.
+    static let userAuthoredMetaKeys: Set<String> = [
+        "owner", "money", "stage", "next_date", "type", "decision",
+        "pinned", "top_dismissed", "people_json", "people_curated"
+    ]
+
     /// Insert a facet, or replace it if the id already exists.
     /// Preserves an existing user_verdict: INSERT OR REPLACE would wipe the row,
     /// so we read the current verdict first and re-apply it.
@@ -258,30 +266,46 @@ class SelfModelStore {
         trajectory: [[String: String]],
         evidence: [[String: String]],
         metadata: [String: String],
-        origin: String = "emergent"
+        origin: String = "emergent",
+        // Front edits (owner/money/stage/pinned/…) live in metadata but are authored by hand;
+        // the daily materialize() recomputes only the machine keys and would drop the rest.
+        // Default-on so convergence carries user keys forward; handlers that intentionally
+        // REMOVE a user key (unpin, restore) pass false so the removal actually sticks.
+        preserveUserMeta: Bool = true
     ) -> Bool {
         dbLock.lock()
         defer { dbLock.unlock() }
         guard let db = db else { return false }
 
-        // Preserve verdict AND any user rename — REPLACE would otherwise erase both,
-        // so every materialize() would silently undo the user's edits.
+        // Preserve verdict, any user rename, AND hand-authored front keys — REPLACE would
+        // otherwise erase them, so every materialize() would silently undo the user's edits.
         var existingVerdict: String? = nil
         var existingUserStatement: String? = nil
-        let verdictSql = "SELECT user_verdict, user_statement FROM self_facet WHERE id = ?"
+        var existingMetaJson: String? = nil
+        let verdictSql = "SELECT user_verdict, user_statement, metadata_json FROM self_facet WHERE id = ?"
         var vStmt: OpaquePointer?
         if sqlite3_prepare_v2(db, verdictSql, -1, &vStmt, nil) == SQLITE_OK {
             sqlite3_bind_text(vStmt, 1, (id as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
             if sqlite3_step(vStmt) == SQLITE_ROW {
                 existingVerdict = columnText(vStmt, 0)
                 existingUserStatement = columnText(vStmt, 1)
+                existingMetaJson = columnText(vStmt, 2)
             }
         }
         sqlite3_finalize(vStmt)
 
+        // Carry hand-authored keys forward when the incoming write doesn't set them (i.e. a
+        // recompute). A user edit that clears a key passes preserveUserMeta:false.
+        var effectiveMeta = metadata
+        if preserveUserMeta, let existingMeta = jsonDecode(existingMetaJson) as? [String: String] {
+            for key in Self.userAuthoredMetaKeys where effectiveMeta[key] == nil {
+                if let v = existingMeta[key] { effectiveMeta[key] = v }
+            }
+        }
+
         let trajectoryJson = jsonEncode(trajectory)
         let evidenceJson = jsonEncode(evidence)
-        let metadataJson = jsonEncode(metadata)
+        let metadataJson = jsonEncode(effectiveMeta)
 
         let sql = """
         INSERT OR REPLACE INTO self_facet
