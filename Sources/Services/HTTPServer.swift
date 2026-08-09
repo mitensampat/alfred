@@ -1296,6 +1296,17 @@ class HTTPServer {
             return handleDeskFrontDismiss(request)
         case ("POST", "/api/desk/front/close"):
             return handleDeskFrontClose(request)
+        case ("GET", "/api/schedule/parse"):
+            // Phase-1 dev check for the @schedule command parser.
+            let q = request.queryParams["q"] ?? ""
+            do {
+                let c = try ScheduleCommandParser.parse(q)
+                return HTTPResponse(statusCode: 200, body: [
+                    "ok": true, "verb": c.verb.rawValue, "name": c.name,
+                    "duration_min": c.durationMin, "format": c.format, "window": c.window])
+            } catch {
+                return HTTPResponse(statusCode: 200, body: ["ok": false, "error": "\(error)"])
+            }
         case ("POST", "/api/desk/top/act"):
             let id = (request.queryParams["id"] ?? "").trimmingCharacters(in: .whitespaces)
             let kind = request.queryParams["kind"] ?? "front"
