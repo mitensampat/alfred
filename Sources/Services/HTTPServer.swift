@@ -1307,6 +1307,50 @@ class HTTPServer {
             } catch {
                 return HTTPResponse(statusCode: 200, body: ["ok": false, "error": "\(error)"])
             }
+        case ("GET", "/api/schedule/selftest"):
+            // Phase-1 dev check: run the consent contract through the pure engine.
+            var results: [[String: Any]] = []
+            let now = Date()
+            func mk(_ state: ScheduleState) -> ScheduleSession {
+                var s = ScheduleSession(id: "t", contactJID: "j", contactName: "Kunal", state: state, intent: .schedule)
+                s.slots = (0..<3).map { ScheduleSlot(start: now.addingTimeInterval(3600 * Double($0 + 1)),
+                                                     end: now.addingTimeInterval(3600 * Double($0 + 1) + 1800)) }
+                s.lastPromptAt = now.addingTimeInterval(-60)   // inside the consent window
+                return s
+            }
+            func rec(_ name: String, _ got: ScheduleAction, _ want: ScheduleAction) {
+                results.append(["case": name, "action": got.rawValue, "want": want.rawValue, "pass": got == want])
+            }
+            var s1 = mk(.replySurfaced); s1.lastPromptAt = now.addingTimeInterval(-3 * 3600)
+            rec("out-of-scope 'yes' ignored (notepad safety)",
+                ScheduleEngine.handleSelfChat(&s1, .init(text: "yes", now: now)).action, .none)
+            var s2 = mk(.replySurfaced)
+            rec("scoped 'yes 2' after reply -> request_booking",
+                ScheduleEngine.handleSelfChat(&s2, .init(text: "yes 2", now: now, isNextAfterPrompt: true)).action, .requestBooking)
+            var s3 = mk(.awaitingReply)
+            rec("soft yes -> hold (never books)",
+                ScheduleEngine.handleCounterpartReply(&s3, ScheduleInterpretation(intent: .softYes, slotIndex: 1, confidence: "high"), now, now).action, .hold)
+            var s4 = mk(.slotsProposed)
+            rec("bare 'yes' over options -> ask which slot",
+                ScheduleEngine.handleSelfChat(&s4, .init(text: "yes", now: now, isNextAfterPrompt: true)).action, .ask)
+            var s5 = mk(.awaitingReply)
+            rec("deference -> surface_pick",
+                ScheduleEngine.handleCounterpartReply(&s5, ScheduleInterpretation(intent: .deference, confidence: "high"), now, now).action, .surfacePick)
+            var s6 = mk(.replySurfaced); s6.surfaced = ScheduleInterpretation(intent: .accept, slotIndex: 1, confidence: "high")
+            rec("thread changed at 'yes' -> surface_change",
+                ScheduleEngine.decideBooking(&s6, ScheduleInterpretation(intent: .counter, confidence: "high"), true, now).action, .surfaceChange)
+            var s6b = mk(.replySurfaced); s6b.surfaced = ScheduleInterpretation(intent: .accept, slotIndex: 1, confidence: "high")
+            rec("verified accept + free -> book",
+                ScheduleEngine.decideBooking(&s6b, ScheduleInterpretation(intent: .accept, slotIndex: 1, confidence: "high"), true, now).action, .book)
+            var s7 = mk(.slotsProposed)
+            _ = ScheduleEngine.handleSelfChat(&s7, .init(text: "propose", now: now, isNextAfterPrompt: true))
+            rec("double 'propose' -> already_proposed",
+                ScheduleEngine.handleSelfChat(&s7, .init(text: "propose", now: now, forceScoped: true)).action, .alreadyProposed)
+            var s8 = mk(.slotsProposed)
+            rec("'leave it' -> close",
+                ScheduleEngine.handleSelfChat(&s8, .init(text: "leave it", now: now, isNextAfterPrompt: true)).action, .close)
+            let allPass = results.allSatisfy { ($0["pass"] as? Bool) == true }
+            return HTTPResponse(statusCode: 200, body: ["ok": allPass, "passed": results.filter { ($0["pass"] as? Bool) == true }.count, "total": results.count, "cases": results])
         case ("POST", "/api/desk/top/act"):
             let id = (request.queryParams["id"] ?? "").trimmingCharacters(in: .whitespaces)
             let kind = request.queryParams["kind"] ?? "front"

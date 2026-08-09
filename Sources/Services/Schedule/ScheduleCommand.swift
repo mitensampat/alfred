@@ -2,7 +2,7 @@ import Foundation
 
 /// A parsed "@schedule <name> [duration] [format] [window]" line. Brackets are optional and
 /// order-insensitive after the name. Faithful port of Commit's schedule/command.go.
-struct ScheduleCommand: Equatable {
+struct ScheduleCommand: Equatable, Codable {
     var verb: ScheduleIntent = .schedule
     var name: String = ""
     var durationMin: Int = 0        // 0 = infer

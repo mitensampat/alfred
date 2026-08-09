@@ -93,6 +93,131 @@ struct ScheduleSession: Codable {
     var lastPromptAt: Date?
     var bookedEventID: String = ""
     var bookedLink: String = ""
+    var bookedSlot: ScheduleSlot?
     var createdAt: Date?
     var updatedAt: Date?
+
+    // Idempotent propose: a second propose within proposeDedupWindow is a no-op.
+    var proposedAt: Date?
+    var proposedSlots: [Int] = []       // 1-based indices actually sent
+    // AwaitingDraftEdit — the user said "edit"; the next scoped self-chat msg replaces the draft.
+    var awaitingDraftEdit: Bool = false
+    // PickedIndex — the 1-based slot Alfred chose when the counterpart handed the choice back.
+    var pickedIndex: Int = 0
+    // Surfaced — the interpretation we showed the user in the yes/edit/leave-it prompt. At "yes"
+    // time the thread is re-read; a materially different fresh reading surfaces the change instead.
+    var surfaced: ScheduleInterpretation?
+    var surfacedAtMsgTime: Date?
+    var lastActivity: Date?             // drives silent expiry (48h)
+    var lastMediaSurfacedAt: Date?      // rate-limits "they sent a voice note" nudges
+    var toneNote: String = ""           // standing "make it warmer" applied on every redraft
+    var candidates: [ScheduleContactCandidate] = []   // pending disambiguation (resolving)
+    var cmd: ScheduleCommand?           // original parsed command, kept while resolving
+    var lastPromptID: String = ""       // WhatsApp message ID of our last self-chat prompt
+    var oldEventID: String = ""         // @schedule move: event to delete once rebooked
+}
+
+// MARK: - Consent scoping + idempotency windows (Commit hardening reqs 3 & 6)
+
+enum ScheduleConst {
+    static let consentWindow: TimeInterval = 2 * 3600
+    static let proposeDedupWindow: TimeInterval = 5 * 60
+    static let sessionExpiry: TimeInterval = 48 * 3600
+    static let mediaBurstWindow: TimeInterval = 15 * 60
+}
+
+// MARK: - Interpreter vocabulary
+
+/// A non-text message we received but can't read (voice notes are common on WhatsApp).
+enum ScheduleMediaKind: String, Codable {
+    case voice = "voice note", audio = "audio message", image = "photo"
+    case video, document, sticker
+}
+
+/// The interpreter's classification of the latest counterpart thread state.
+enum ScheduleReplyIntent: String, Codable {
+    case accept, reject
+    case counter = "counter_propose"
+    case ambiguous, unrelated
+    case softYes = "soft_yes"           // SAFETY-CRITICAL: a hedge; never books
+    case deference                       // "you pick" — we choose, then still need the user's yes
+    case scopeChange = "scope_change"    // shape changed, not time
+    case directive                       // "call me at 5" — an instruction, not a negotiation
+    case notScheduling = "not_scheduling"
+}
+
+/// Structured reading of the counterpart thread — always the LATEST state.
+struct ScheduleInterpretation: Codable {
+    var intent: ScheduleReplyIntent
+    var slotIndex: Int = 0              // 1-based accepted slot; 0 if none
+    var counterTime: String = ""        // RFC3339 in the user's tz for an unoffered concrete time
+    var sideNote: String = ""           // non-scheduling content worth relaying
+    var confidence: String = ""         // "high" | "low"; the engine never books on low
+    var deferSlots: [Int] = []          // deference subset ("Tue or Wed, you choose" → [1,2])
+    var newDurationMin: Int = 0          // scope_change
+    var newFormat: String = ""           // scope_change: call | video | in-person
+    var needsVenue: Bool = false         // scope_change: a place must be decided
+    var requestedPlatform: String = ""   // scope_change: a named video tool (we only do Meet)
+    var wrongPerson: Bool = false        // not_scheduling: "who is this?" — close loudly
+
+    /// Whether two interpretations would book the same thing (scope + defer participate, so a
+    /// stale scope/narrowing can't slip through the correction-race gate).
+    func sameOutcome(_ b: ScheduleInterpretation?) -> Bool {
+        guard let b = b else { return false }
+        return intent == b.intent && slotIndex == b.slotIndex && counterTime == b.counterTime
+            && newDurationMin == b.newDurationMin && newFormat == b.newFormat
+            && ScheduleEngine.sameInts(deferSlots, b.deferSlots)
+    }
+}
+
+/// Classifies the user's own self-chat free text while a draft is pending — the foot-gun an
+/// instruction silently armed as the outbound draft would be.
+enum ScheduleSelfTextKind: String, Codable {
+    case instruction, draft, note, unclear
+}
+
+struct ScheduleSelfTextClass: Codable {
+    var kind: ScheduleSelfTextKind
+    var window: String = ""
+    var durationMin: Int = 0
+    var format: String = ""
+    var toneNote: String = ""
+    var confidence: String = ""         // "high" | "low"; low degrades to unclear
+    func needsRecompute() -> Bool { !window.isEmpty || durationMin > 0 || !format.isEmpty }
+}
+
+struct ScheduleContactCandidate: Codable {
+    var jid: String
+    var name: String
+}
+
+// MARK: - Engine I/O
+
+/// A self-chat message the user typed, with the scoping facts the engine needs.
+struct ScheduleSelfChatInput {
+    var text: String
+    var now: Date
+    /// First self-chat message after Alfred's last prompt (nothing else in between).
+    var isNextAfterPrompt: Bool = false
+    /// The text carried the @schedule prefix, which always counts.
+    var forceScoped: Bool = false
+}
+
+/// The engine's output. The engine mutates the session in place and returns what the wiring does.
+struct ScheduleDecision {
+    var action: ScheduleAction
+    var reply: String = ""              // suggested self-chat text
+    var index: Int = 0                  // 1-based slot/contact index, when relevant
+    var indices: [Int] = []             // propose subset
+    var text: String = ""               // replacement draft text
+    var interp: ScheduleInterpretation? // for surface actions
+    var selfClass: ScheduleSelfTextClass?   // for applyInstruction
+    var reason: String = ""
+
+    init(_ action: ScheduleAction, reply: String = "", index: Int = 0, indices: [Int] = [],
+         text: String = "", interp: ScheduleInterpretation? = nil,
+         selfClass: ScheduleSelfTextClass? = nil, reason: String = "") {
+        self.action = action; self.reply = reply; self.index = index; self.indices = indices
+        self.text = text; self.interp = interp; self.selfClass = selfClass; self.reason = reason
+    }
 }
