@@ -8,6 +8,9 @@ class GoogleCalendarService {
     private var refreshToken: String?
     private var tokenStorePath: String
 
+    /// Whether we have a usable access token (used by the @schedule calendar service).
+    var isConnected: Bool { accessToken != nil }
+
     init(config: CalendarConfig.GoogleCalendarConfig, accountName: String = "primary") {
         self.config = config
         self.accountName = accountName
@@ -192,14 +195,17 @@ class GoogleCalendarService {
         endTime: Date,
         location: String?,
         description: String?,
-        attendees: [String]? = nil  // email addresses to invite
+        attendees: [String]? = nil,  // email addresses to invite
+        withMeet: Bool = false       // attach a Google Meet conference
     ) async throws -> CreatedEvent {
         guard let accessToken = accessToken else {
             throw CalendarError.notAuthenticated
         }
 
         let encodedCalendarId = calendarId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? calendarId
-        let url = URL(string: "https://www.googleapis.com/calendar/v3/calendars/\(encodedCalendarId)/events")!
+        var urlComponents = URLComponents(string: "https://www.googleapis.com/calendar/v3/calendars/\(encodedCalendarId)/events")!
+        if withMeet { urlComponents.queryItems = [URLQueryItem(name: "conferenceDataVersion", value: "1")] }
+        let url = urlComponents.url!
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -219,6 +225,12 @@ class GoogleCalendarService {
         if let attendees = attendees, !attendees.isEmpty {
             eventBody["attendees"] = attendees.map { ["email": $0] }
         }
+        if withMeet {
+            eventBody["conferenceData"] = ["createRequest": [
+                "requestId": UUID().uuidString,
+                "conferenceSolutionKey": ["type": "hangoutsMeet"]
+            ]]
+        }
 
         request.httpBody = try JSONSerialization.data(withJSONObject: eventBody)
 
@@ -226,7 +238,7 @@ class GoogleCalendarService {
 
         if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 401 {
             try await refreshAccessToken()
-            return try await createEvent(title: title, startTime: startTime, endTime: endTime, location: location, description: description, attendees: attendees)
+            return try await createEvent(title: title, startTime: startTime, endTime: endTime, location: location, description: description, attendees: attendees, withMeet: withMeet)
         }
 
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
@@ -243,6 +255,13 @@ class GoogleCalendarService {
 
         print("✅ Created calendar event: \(title) (\(eventId))")
 
+        // Meet link: conferenceData.entryPoints[type=video].uri, else hangoutLink.
+        var meetLink = json["hangoutLink"] as? String
+        if meetLink == nil, let conf = json["conferenceData"] as? [String: Any],
+           let entries = conf["entryPoints"] as? [[String: Any]] {
+            meetLink = entries.first { ($0["entryPointType"] as? String) == "video" }?["uri"] as? String
+        }
+
         return CreatedEvent(
             id: eventId,
             title: title,
@@ -251,7 +270,8 @@ class GoogleCalendarService {
             location: location,
             description: description,
             htmlLink: htmlLink,
-            shareableLink: Self.makeShareableLink(title: title, startTime: startTime, endTime: endTime, location: location, description: description)
+            shareableLink: Self.makeShareableLink(title: title, startTime: startTime, endTime: endTime, location: location, description: description),
+            meetLink: meetLink
         )
     }
 

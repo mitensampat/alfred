@@ -66,6 +66,7 @@ struct CreatedEvent: Codable {
     let description: String?
     let htmlLink: String       // Direct link to the event on Google Calendar
     let shareableLink: String  // Template URL anyone can use to add to their calendar
+    var meetLink: String? = nil // Google Meet link when the event was booked with video
 }
 
 struct MeetingBriefing: Codable {

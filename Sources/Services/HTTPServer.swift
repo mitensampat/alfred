@@ -1307,6 +1307,48 @@ class HTTPServer {
             } catch {
                 return HTTPResponse(statusCode: 200, body: ["ok": false, "error": "\(error)"])
             }
+        case ("GET", "/api/schedule/slots-selftest"):
+            // Phase-2 dev check: the pure slot math over synthetic busy intervals (ports Commit's
+            // calendar/slots_test.go assertions).
+            var results: [[String: Any]] = []
+            var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+            let base = cal.date(from: DateComponents(year: 2026, month: 6, day: 1))!   // a fixed day
+            func at(_ h: Int, _ m: Int = 0) -> Date { base.addingTimeInterval(Double(h) * 3600 + Double(m) * 60) }
+            func mkPrefs(_ workdays: Set<Int>) -> ScheduleSlots.Prefs {
+                var p = ScheduleSlots.Prefs(); p.timezone = TimeZone(identifier: "UTC")!
+                p.dayStartMin = 9 * 60; p.dayEndMin = 18 * 60; p.workdays = workdays; p.ignoreTitles = []
+                return p
+            }
+            let from = at(0), to = at(24), dur: TimeInterval = 30 * 60
+            let allDays: Set<Int> = [0, 1, 2, 3, 4, 5, 6]
+            func add(_ name: String, _ pass: Bool, _ note: String = "") { results.append(["case": name, "pass": pass, "note": note]) }
+
+            // A. basics — empty calendar yields slots inside meeting hours.
+            let a = ScheduleSlots.computeSlots(busy: [], from: from, to: to, dur: dur, prefs: mkPrefs(allDays))
+            add("basics: finds slots in meeting hours", !a.isEmpty && a.allSatisfy { $0.start >= at(9) && $0.end <= at(18) }, "\(a.count) slots")
+
+            // B. adjacency — a busy block produces a slot marked adjacent.
+            let busyB = [ScheduleSlots.Interval(start: at(11), end: at(12))]
+            let b = ScheduleSlots.computeSlots(busy: busyB, from: from, to: to, dur: dur, prefs: mkPrefs(allDays))
+            add("prefers adjacency (a slot touches the busy block)", b.contains { $0.adjacent })
+
+            // C. workday exclusion — exclude the base day's weekday → nothing.
+            let goWd = cal.component(.weekday, from: base) - 1
+            let c = ScheduleSlots.computeSlots(busy: [], from: from, to: to, dur: dur, prefs: mkPrefs(allDays.subtracting([goWd])))
+            add("respects workdays (excluded day → empty)", c.isEmpty)
+
+            // D. travel buffer — in-person buffer keeps slots off the edges of a meeting.
+            var pD = mkPrefs(allDays); pD.buffer = 30 * 60
+            let d = ScheduleSlots.computeSlots(busy: busyB, from: from, to: to, dur: dur, prefs: pD)
+            add("travel buffer blocks the meeting edges", d.allSatisfy { !($0.start < at(12, 30) && at(10, 30) < $0.end) })
+
+            // E. no room — a fully-busy window → nothing.
+            let busyE = [ScheduleSlots.Interval(start: at(9), end: at(18))]
+            let e = ScheduleSlots.computeSlots(busy: busyE, from: from, to: to, dur: dur, prefs: mkPrefs(allDays))
+            add("no room → empty", e.isEmpty)
+
+            let allPass = results.allSatisfy { ($0["pass"] as? Bool) == true }
+            return HTTPResponse(statusCode: 200, body: ["ok": allPass, "passed": results.filter { ($0["pass"] as? Bool) == true }.count, "total": results.count, "cases": results])
         case ("GET", "/api/schedule/selftest"):
             // Phase-1 dev check: run the consent contract through the pure engine.
             var results: [[String: Any]] = []
