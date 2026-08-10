@@ -191,6 +191,48 @@ struct ScheduleContactCandidate: Codable {
     var name: String
 }
 
+// Model output is snake_case and often omits fields; decode leniently so any missing/malformed key
+// falls to a safe default (never a spurious booking), matching Commit's defensive parse.
+extension ScheduleInterpretation {
+    enum CodingKeys: String, CodingKey {
+        case intent, slotIndex = "slot_index", counterTime = "counter_time", sideNote = "side_note",
+             confidence, deferSlots = "defer_slots", newDurationMin = "new_duration_min",
+             newFormat = "new_format", needsVenue = "needs_venue", requestedPlatform = "requested_platform",
+             wrongPerson = "wrong_person"
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            intent: (try? c.decode(ScheduleReplyIntent.self, forKey: .intent)) ?? .ambiguous,
+            slotIndex: (try? c.decode(Int.self, forKey: .slotIndex)) ?? 0,
+            counterTime: (try? c.decode(String.self, forKey: .counterTime)) ?? "",
+            sideNote: (try? c.decode(String.self, forKey: .sideNote)) ?? "",
+            confidence: (try? c.decode(String.self, forKey: .confidence)) ?? "",
+            deferSlots: (try? c.decode([Int].self, forKey: .deferSlots)) ?? [],
+            newDurationMin: (try? c.decode(Int.self, forKey: .newDurationMin)) ?? 0,
+            newFormat: (try? c.decode(String.self, forKey: .newFormat)) ?? "",
+            needsVenue: (try? c.decode(Bool.self, forKey: .needsVenue)) ?? false,
+            requestedPlatform: (try? c.decode(String.self, forKey: .requestedPlatform)) ?? "",
+            wrongPerson: (try? c.decode(Bool.self, forKey: .wrongPerson)) ?? false)
+    }
+}
+
+extension ScheduleSelfTextClass {
+    enum CodingKeys: String, CodingKey {
+        case kind, window, durationMin = "duration_min", format, toneNote = "tone_note", confidence
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            kind: (try? c.decode(ScheduleSelfTextKind.self, forKey: .kind)) ?? .unclear,
+            window: (try? c.decode(String.self, forKey: .window)) ?? "",
+            durationMin: (try? c.decode(Int.self, forKey: .durationMin)) ?? 0,
+            format: (try? c.decode(String.self, forKey: .format)) ?? "",
+            toneNote: (try? c.decode(String.self, forKey: .toneNote)) ?? "",
+            confidence: (try? c.decode(String.self, forKey: .confidence)) ?? "")
+    }
+}
+
 // MARK: - Engine I/O
 
 /// A self-chat message the user typed, with the scoping facts the engine needs.

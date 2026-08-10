@@ -1349,6 +1349,36 @@ class HTTPServer {
 
             let allPass = results.allSatisfy { ($0["pass"] as? Bool) == true }
             return HTTPResponse(statusCode: 200, body: ["ok": allPass, "passed": results.filter { ($0["pass"] as? Bool) == true }.count, "total": results.count, "cases": results])
+        case ("GET", "/api/schedule/interpret-selftest"):
+            // Phase-3 LIVE check: runs the reply interpreter on fixed phrases (a few Claude calls).
+            guard let config = AppConfig.load(), !config.ai.anthropicApiKey.isEmpty,
+                  config.ai.anthropicApiKey != "YOUR_API_KEY" else {
+                return HTTPResponse(statusCode: 200, body: ["ok": false, "error": "Claude API key not configured"])
+            }
+            let interp = ScheduleInterpreter(ai: ClaudeAIService(config: config.ai))
+            let tz = TimeZone.current, now = Date()
+            func slot(_ dayOffset: Int, _ hour: Int) -> ScheduleSlot {
+                let s = now.addingTimeInterval(Double(dayOffset) * 86400 + Double(hour) * 3600)
+                return ScheduleSlot(start: s, end: s.addingTimeInterval(1800))
+            }
+            let one = [slot(1, 15)], three = [slot(1, 15), slot(2, 11), slot(3, 16)]
+            let scenarios: [(name: String, slots: [ScheduleSlot], text: String, want: ScheduleReplyIntent)] = [
+                ("1 slot, 'sounds good' -> accept", one, "sounds good", .accept),
+                ("1 slot, hedge 'should be fine, let me confirm tomorrow' -> soft_yes", one, "should be fine, let me confirm tomorrow", .softYes),
+                ("3 slots, 'any of these work, you pick' -> deference", three, "any of these work, you pick", .deference),
+                ("3 slots, 'who is this?' -> not_scheduling", three, "who is this?", .notScheduling),
+                ("3 slots, banter -> unrelated", three, "haha nice meme 😂", .unrelated)
+            ]
+            var results: [[String: Any]] = []
+            for sc in scenarios {
+                let rc = ScheduleReplyContext(contactName: "Kunal", slots: sc.slots, draft: "When works for a quick call?",
+                                              thread: [ScheduleThreadMsg(fromMe: false, text: sc.text, time: now)], now: now, timezone: tz)
+                let got = (try? await interp.interpretReply(rc)) ?? ScheduleInterpretation(intent: .ambiguous)
+                results.append(["case": sc.name, "got": got.intent.rawValue, "want": sc.want.rawValue,
+                                "confidence": got.confidence, "pass": got.intent == sc.want])
+            }
+            let allPass = results.allSatisfy { ($0["pass"] as? Bool) == true }
+            return HTTPResponse(statusCode: 200, body: ["ok": allPass, "passed": results.filter { ($0["pass"] as? Bool) == true }.count, "total": results.count, "cases": results])
         case ("GET", "/api/schedule/selftest"):
             // Phase-1 dev check: run the consent contract through the pure engine.
             var results: [[String: Any]] = []
