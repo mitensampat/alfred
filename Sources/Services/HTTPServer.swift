@@ -1307,6 +1307,32 @@ class HTTPServer {
             } catch {
                 return HTTPResponse(statusCode: 200, body: ["ok": false, "error": "\(error)"])
             }
+        case ("GET", "/api/schedule/store-selftest"):
+            // Phase-4a dev check: a session round-trips through the SQLite store.
+            let store = ScheduleStore.shared
+            let jid = "selftest_\(Int(Date().timeIntervalSince1970))@s.whatsapp.net"
+            var s = ScheduleSession(id: ScheduleStore.newID(), contactJID: jid, contactName: "Kunal",
+                                    state: .slotsProposed, intent: .schedule)
+            s.topic = "quick sync"; s.durationMin = 30; s.draft = "When works for a call?"
+            s.slots = [ScheduleSlot(start: Date().addingTimeInterval(3600), end: Date().addingTimeInterval(5400))]
+            s.surfaced = ScheduleInterpretation(intent: .softYes, slotIndex: 1, confidence: "high")
+            s.createdAt = Date(); s.updatedAt = Date()
+            let saved = store.save(s)
+            let byJID = store.openSession(contactJID: jid)
+            let byID = store.session(id: s.id)
+            let inOpen = store.allOpenSessions().contains { $0.id == s.id }
+            // Close it and confirm it drops out of the open set.
+            var closed = s; closed.state = .closed; _ = store.save(closed)
+            let goneFromOpen = store.openSession(contactJID: jid) == nil
+            var results: [[String: Any]] = []
+            func add(_ n: String, _ p: Bool) { results.append(["case": n, "pass": p]) }
+            add("save() ok", saved)
+            add("openSession(byJID) round-trips state+draft", byJID?.state == .slotsProposed && byJID?.draft == "When works for a call?")
+            add("session(byID) round-trips slots+surfaced", byID?.slots.count == 1 && byID?.surfaced?.intent == .softYes)
+            add("appears in allOpenSessions", inOpen)
+            add("closing drops it from the open set", goneFromOpen)
+            let allPass = results.allSatisfy { ($0["pass"] as? Bool) == true }
+            return HTTPResponse(statusCode: 200, body: ["ok": allPass, "passed": results.filter { ($0["pass"] as? Bool) == true }.count, "total": results.count, "cases": results])
         case ("GET", "/api/schedule/slots-selftest"):
             // Phase-2 dev check: the pure slot math over synthetic busy intervals (ports Commit's
             // calendar/slots_test.go assertions).
