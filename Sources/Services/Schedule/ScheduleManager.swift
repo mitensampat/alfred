@@ -50,6 +50,7 @@ actor ScheduleManager {
         guard ok else { return }
         ScheduleEngine.markPrompted(&s, Date())
         s.lastPromptID = id
+        s.lastPromptText = text
         save(s)
     }
 

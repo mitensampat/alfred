@@ -8,14 +8,16 @@ protocol ScheduleSender {
 }
 
 /// Sends over the local whatsmeow bridge (tools/wa-bridge on 127.0.0.1:8790) — the same transport
-/// the Desk's People replies use. `selfJID` is the user's own JID (their self-chat).
+/// the Desk's People replies use. The user's own JID (their self-chat) is resolved lazily so the
+/// bridge's /status can supply it.
 final class WABridgeSender: ScheduleSender {
-    private let selfJID: String
+    private let selfJIDProvider: () async -> String
 
-    init(selfJID: String) { self.selfJID = selfJID }
+    init(selfJIDProvider: @escaping () async -> String) { self.selfJIDProvider = selfJIDProvider }
 
     func sendSelf(text: String) async -> (ok: Bool, msgID: String) {
-        await sendTo(jid: selfJID, text: text)
+        let jid = await selfJIDProvider()
+        return await sendTo(jid: jid, text: text)
     }
 
     func sendTo(jid: String, text: String) async -> (ok: Bool, msgID: String) {

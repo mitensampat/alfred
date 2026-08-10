@@ -10674,6 +10674,7 @@
         let _deskTopReceipt = null;   // {id, name}: last top-stack dismissal, for inline Undo
         let _deskTopSearch = '';      // top-stack search query (find any front to pin up top)
         let _deskFrontClosed = null;  // {id, name}: last front closed via "decided — close", for Undo
+        let _deskSched = [];          // open @schedule sessions (for the People rail scheduling panel)
         let _deskDetail = null;   // fetched front/person detail for the center view
         const _esc = (s) => escapeHtml(String(s == null ? '' : s));
 
@@ -10760,6 +10761,7 @@
                 renderDeskBand();
                 renderDeskGrid();
                 _deskLoaded = true;
+                deskSchedRefresh();   // load @schedule sessions for the People rail
             } catch (e){ console.error('[Desk] load failed', e); }
         }
 
@@ -11098,6 +11100,46 @@
             return html;
         }
 
+        // ── @schedule surface (People rail): start a meeting, see live sessions, drive consent ──
+        function renderSchedulingBlock(){
+            const ss = _deskSched || [];
+            let html = `<div class="dk-cold" style="margin-bottom:22px;"><div class="dk-sec-label">Scheduling</div>
+                <div class="dk-sec-explain" style="margin-bottom:8px;">Alfred proposes times, sends the ask, and books on a firm yes. Follow-ups also work from your WhatsApp self-chat.</div>
+                <button type="button" class="dk-btn dk-btn-ink dk-btn-sm" onclick="deskSchedNew()">+ Schedule a meeting</button>`;
+            if (!ss.length){ html += `<div class="dk-cold-reason" style="margin-top:10px;">No live scheduling sessions.</div>`; }
+            for (const s of ss){
+                const st = String(s.state||'').replace(/_/g,' ');
+                html += `<div class="dk-cold-row"><div class="dk-cold-top">
+                        <span class="dk-cold-name">${_esc(s.contact_name)}</span><span class="dk-cold-age">${_esc(st)}</span></div>`;
+                if (s.prompt){ html += `<div class="dk-cold-reason" style="white-space:pre-wrap;max-height:150px;overflow:auto;margin-top:4px;">${_esc(s.prompt)}</div>`; }
+                html += `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px;">
+                        <button type="button" class="dk-btn dk-btn-accent dk-btn-sm" onclick="deskSchedSay('propose')">Propose</button>
+                        <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskSchedSay('yes')">Yes</button>
+                        <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskSchedEdit()">Edit…</button>
+                        <button type="button" class="dk-btn dk-btn-ghost dk-btn-sm" onclick="deskSchedSay('leave it')">Leave</button>
+                    </div></div>`;
+            }
+            html += `</div>`;
+            return html;
+        }
+        async function deskSchedRefresh(){
+            try { const r = await authFetch('/api/schedule/sessions'); const d = await r.json(); _deskSched = d.sessions || [];
+                if (_deskEntity === 'people'){ const m = document.getElementById('deskColMargin'); if (m) m.innerHTML = renderMarginColumn(); } } catch(e){}
+        }
+        async function deskSchedSay(text){
+            if (!text) return;
+            try { await authFetch('/api/schedule/say?text=' + encodeURIComponent(text), { method: 'POST' }); } catch(e){}
+            setTimeout(deskSchedRefresh, 1200);
+        }
+        function deskSchedNew(){
+            const who = prompt('Schedule a meeting — who? (e.g. "Kunal 30m tomorrow" or "Priya 1h video next week")');
+            if (who && who.trim()) deskSchedSay('@schedule ' + who.trim());
+        }
+        function deskSchedEdit(){
+            const t = prompt('Tell Alfred what to change, or paste the exact message to send:');
+            if (t && t.trim()) deskSchedSay(t.trim());
+        }
+
         // ── side rail — scoped to the current environment. People: relationships cooling + your
         // week. Fronts: fronts stalling + fronts health. No cross-contamination. ──
         function renderMarginColumn(){
@@ -11113,7 +11155,7 @@
                         <span class="${ageCls}">${c.days}d</span></div>
                     <div class="dk-cold-reason">${_esc(c.reason)}</div>${chase}</div>`;
             }).join('') || `<div class="dk-cold-reason" style="margin-top:11px;">No relationships cooling right now.</div>`;
-            return `<div class="dk-cold"><div class="dk-sec-label">People going cold</div>${cr}</div>
+            return `${renderSchedulingBlock()}<div class="dk-cold"><div class="dk-sec-label">People going cold</div>${cr}</div>
                 <div class="dk-week"><div class="dk-sec-label">Your week, honestly</div>
                     <div class="dk-week-stat"><span class="dk-week-num">${w.meeting_h||0}h</span><span class="dk-week-l">in meetings · ${w.focus_h||0}h focus</span></div>
                     <div class="dk-week-stat"><span class="dk-week-num hot">${_deskOver}</span><span class="dk-week-l">people waiting over a week</span></div>

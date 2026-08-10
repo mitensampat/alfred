@@ -346,7 +346,13 @@ func (a *app) handleStatus(w http.ResponseWriter, r *http.Request) {
 	a.mu.RUnlock()
 	paired := c != nil && c.Store.ID != nil
 	connected := c != nil && c.IsConnected() && c.IsLoggedIn()
-	writeJSON(w, map[string]any{"paired": paired, "connected": connected, "messages": a.store.MessageCount()})
+	// The paired account's own JID, in the canonical <number>@s.whatsapp.net form used in chats —
+	// so Alfred can address the user's self-chat (@schedule prompts).
+	selfJID := ""
+	if paired {
+		selfJID = c.Store.ID.User + "@s.whatsapp.net"
+	}
+	writeJSON(w, map[string]any{"paired": paired, "connected": connected, "messages": a.store.MessageCount(), "jid": selfJID})
 }
 
 func (a *app) handleQR(w http.ResponseWriter, r *http.Request) {

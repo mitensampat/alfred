@@ -1320,6 +1320,8 @@ class HTTPServer {
         case ("POST", "/api/schedule/tick"):
             await ScheduleService.shared.tick()
             return HTTPResponse(statusCode: 200, body: ["ok": true])
+        case ("GET", "/api/schedule/sessions"):
+            return HTTPResponse(statusCode: 200, body: ["sessions": ScheduleService.shared.openSessionsForDesk(), "configured": ScheduleService.shared.configured])
         case ("GET", "/api/schedule/manager-selftest"):
             // Phase-4b dev check: the full @schedule → propose → reply → book flow through the
             // manager with fakes (no WhatsApp / Calendar / Claude).

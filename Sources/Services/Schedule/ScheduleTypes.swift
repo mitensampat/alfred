@@ -114,6 +114,7 @@ struct ScheduleSession: Codable {
     var candidates: [ScheduleContactCandidate] = []   // pending disambiguation (resolving)
     var cmd: ScheduleCommand?           // original parsed command, kept while resolving
     var lastPromptID: String = ""       // WhatsApp message ID of our last self-chat prompt
+    var lastPromptText: String = ""     // text of the last self-chat prompt (mirrored to the Desk)
     var oldEventID: String = ""         // @schedule move: event to delete once rebooked
 }
 
