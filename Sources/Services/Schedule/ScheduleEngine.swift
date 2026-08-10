@@ -48,6 +48,10 @@ enum ScheduleEngine {
         }
     }
 
+    /// Whether the text is a recognized consent word (propose / yes / edit / leave it) — used by
+    /// the manager to route "@schedule yes"-style prefixed consent.
+    static func isConsentText(_ text: String) -> Bool { parseConsent(text).1 }
+
     /// Whether a self-chat message may carry consent semantics: the next message after our prompt,
     /// within the consent window of it, or carrying the @schedule prefix.
     private static func scoped(_ s: ScheduleSession, _ input: ScheduleSelfChatInput) -> Bool {

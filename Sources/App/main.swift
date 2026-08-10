@@ -3369,6 +3369,8 @@ class Scheduler {
             Task {
                 await self?.checkAndRunTasks()
             }
+            // @schedule watcher: poll open sessions' counterpart threads + expiry sweep.
+            Task { await ScheduleService.shared.tick() }
         }
         self.timer = timer
 

@@ -1307,6 +1307,25 @@ class HTTPServer {
             } catch {
                 return HTTPResponse(statusCode: 200, body: ["ok": false, "error": "\(error)"])
             }
+        case ("POST", "/api/schedule/say"):
+            // Drive the scheduler with a self-chat line ("@schedule kunal 30m tomorrow", "propose",
+            // "yes", "edit", "leave it"). The manager's prompts go to the WhatsApp self-chat.
+            let text = request.queryParams["text"] ?? ""
+            guard !text.isEmpty else { return HTTPResponse(statusCode: 400, body: ["error": "text required"]) }
+            guard ScheduleService.shared.configured else {
+                return HTTPResponse(statusCode: 200, body: ["ok": false, "error": "Google Calendar not configured"])
+            }
+            await ScheduleService.shared.handle(text)
+            return HTTPResponse(statusCode: 200, body: ["ok": true])
+        case ("POST", "/api/schedule/tick"):
+            await ScheduleService.shared.tick()
+            return HTTPResponse(statusCode: 200, body: ["ok": true])
+        case ("GET", "/api/schedule/manager-selftest"):
+            // Phase-4b dev check: the full @schedule → propose → reply → book flow through the
+            // manager with fakes (no WhatsApp / Calendar / Claude).
+            let cases = await ScheduleDryRun.run()
+            let allPass = cases.allSatisfy { ($0["pass"] as? Bool) == true }
+            return HTTPResponse(statusCode: 200, body: ["ok": allPass, "passed": cases.filter { ($0["pass"] as? Bool) == true }.count, "total": cases.count, "cases": cases])
         case ("GET", "/api/schedule/store-selftest"):
             // Phase-4a dev check: a session round-trips through the SQLite store.
             let store = ScheduleStore.shared

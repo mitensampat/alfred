@@ -118,6 +118,22 @@ final class ScheduleStore {
         return sqlite3_step(stmt) == SQLITE_ROW ? decodeRow(stmt) : nil
     }
 
+    /// The most recent closed session for a contact that actually booked something (@schedule
+    /// move/cancel needs the event to act on).
+    func lastBooked(contactJID: String) -> ScheduleSession? {
+        lock.lock(); defer { lock.unlock() }
+        guard let db = db else { return nil }
+        var stmt: OpaquePointer?
+        let sql = "SELECT data FROM schedule_sessions WHERE contact_jid = ? AND state = 'closed' ORDER BY updated_at DESC LIMIT 20"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+        bindText(stmt, 1, contactJID)
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let s = decodeRow(stmt), !s.bookedEventID.isEmpty { return s }
+        }
+        return nil
+    }
+
     /// All open sessions — the watcher iterates these each tick.
     func allOpenSessions() -> [ScheduleSession] {
         lock.lock(); defer { lock.unlock() }
