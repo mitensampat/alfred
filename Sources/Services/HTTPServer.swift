@@ -12413,7 +12413,7 @@ extension HTTPServer {
         return (open.count, over)
     }
 
-    /// Set a front's owner / money / stage / next_date / type. These live in the theme
+    /// Set a front's owner / stage / next_date / type. These live in the theme
     /// facet metadata (new fields) and drive graceful-degradation on the fronts board.
     private func handleDeskFrontMeta(_ request: HTTPRequest) -> HTTPResponse {
         let id = (request.queryParams["id"] ?? "").trimmingCharacters(in: .whitespaces)
@@ -12429,7 +12429,7 @@ extension HTTPServer {
         if let b = request.body, let obj = try? JSONSerialization.jsonObject(with: b) as? [String: Any] {
             bodyFields = obj
         }
-        for key in ["owner", "money", "stage", "next_date", "type", "decision"] {
+        for key in ["owner", "stage", "next_date", "type", "decision"] {
             if let v = (bodyFields[key] as? String) ?? request.queryParams[key] {
                 let t = v.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !t.isEmpty { meta[key] = t }
@@ -12704,7 +12704,7 @@ extension HTTPServer {
             guard let fname = f["name"] as? String else { return false }
             let ft = sigToks(fname)
             return personTitles.contains { !$0.intersection(ft).isEmpty }
-        }.prefix(3).map { ["id": $0["id"] as Any, "name": $0["name"] as Any, "money": $0["money"] as Any, "stage": $0["stage"] as Any] }
+        }.prefix(3).map { ["id": $0["id"] as Any, "name": $0["name"] as Any, "stage": $0["stage"] as Any] }
 
         // Item → dict with a matched front. Context (the real chat) is fetched on demand via
         // /api/desk/item/context, so no synthesized sentence here.

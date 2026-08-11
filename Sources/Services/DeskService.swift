@@ -7,7 +7,7 @@ import Foundation
 ///  - **queue**    who is blocked on you (commitments you owe), ranked by whose clock is
 ///                 running — calendar proximity + counterparty reliability + age/deadline.
 ///  - **fronts**   what the company is running (deal/raise/hire/product), from the
-///                 promoted self-model themes + owner/money/stage metadata.
+///                 promoted self-model themes + owner/stage metadata.
 ///  - **margin**   going-cold relationships + "your week, honestly".
 ///
 /// A poster **first_move** leads with the anticipated next action — never the debt count.
@@ -17,7 +17,7 @@ import Foundation
 /// `build` is pure/synchronous over the singleton stores; the caller supplies the
 /// calendar `schedules` (index 0 = today, up to 7 days) since calendar fetch is async and
 /// lives on the orchestrator. Everything degrades gracefully: no calendar → deadline-ranked
-/// queue only; a front with no Notion money/stage → name + owner + last movement.
+/// queue only; a front with no Notion stage → name + owner + last movement.
 enum DeskService {
 
     /// A commitment I owe, "I Owe" in the tracker's raw type string.
@@ -133,7 +133,6 @@ enum DeskService {
             let inputs = f["inputs_this_week"] as? Int ?? 0
             let ownedByYou = (f["owned_by_you"] as? Bool) ?? true
             let decision = (f["decision"] as? String ?? "").trimmingCharacters(in: .whitespaces)
-            let money = (f["money"] as? String ?? "").trimmingCharacters(in: .whitespaces)
             let pinned = (f["pinned"] as? Bool) == true
             let onCalendar = frontMeetingToday.contains(name)
             let recentAge = frontMinAge[name] ?? 99
@@ -169,8 +168,7 @@ enum DeskService {
 
             // Tenet 5: stakes on the face.
             let stake: String
-            if !money.isEmpty { stake = money + " riding on it" }
-            else if status == "stuck" { stake = shortTheme(name) + " stalls until you move" }
+            if status == "stuck" { stake = shortTheme(name) + " stalls until you move" }
             else { stake = "Keeps " + shortTheme(name) + " alive" }
 
             // Tenet 9: earns the top only with a real why-now AND leverage (yours, or pinned).
@@ -211,7 +209,7 @@ enum DeskService {
 
     // MARK: - Fronts
 
-    /// Promoted self-model themes become fronts. `owner`/`money`/`stage`/`next_date`/`type`
+    /// Promoted self-model themes become fronts. `owner`/`stage`/`next_date`/`type`
     /// live in the theme facet metadata (new fields, set via /api/desk/front/meta); when
     /// absent we degrade to name + state + last movement rather than showing blank cells.
     static func buildFronts() -> [[String: Any]] {
@@ -221,7 +219,7 @@ enum DeskService {
         let doneIds = Set(facets
             .filter { ($0["user_verdict"] as? String) == "done" }
             .compactMap { $0["id"] as? String })
-        // metadata by theme id, for owner/money/stage overrides.
+        // metadata by theme id, for owner/stage overrides.
         var metaById: [String: [String: String]] = [:]
         for f in facets {
             if let id = f["id"] as? String, let m = f["metadata"] as? [String: String] {
@@ -266,7 +264,6 @@ enum DeskService {
                 "top_dismissed": meta["top_dismissed"] == "1",
                 "inputs_this_week": Int(meta["inputs_this_week"] ?? "0") ?? 0
             ]
-            if let money = meta["money"]?.nonEmpty { front["money"] = money }
             if let next = meta["next_date"]?.nonEmpty { front["next_date"] = next }
             if stuckOnYou { front["stuck"] = ["days": daysSince, "on": "you"] }
             out.append(front)

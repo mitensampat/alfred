@@ -571,7 +571,7 @@ class ReflectionStore {
         let sql = """
         SELECT id, source, content_summary, themes_json, theme_classifications_json,
                open_questions_json, mental_model_shifts_json, decisions_json,
-               created_at
+               created_at, item_themes_json
         FROM reflections
         WHERE created_at >= datetime('now', '-\(days) days')
           AND themes_json LIKE ?
@@ -580,6 +580,20 @@ class ReflectionStore {
 
         let pattern = "%\"\(theme)\"%"
         var stmt: OpaquePointer?
+
+        // Accepted moves (Tidy triage): content → to_theme. Read inline (we already hold dbLock).
+        // owner() consults these first so a moved item shows under its new home, not here.
+        var moveOverrides: [String: String] = [:]
+        let ovSql = "SELECT item_content, to_theme FROM reflection_item_overrides WHERE to_theme IS NOT NULL AND to_theme != '' ORDER BY id ASC"
+        var ovStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, ovSql, -1, &ovStmt, nil) == SQLITE_OK {
+            while sqlite3_step(ovStmt) == SQLITE_ROW {
+                let c = (columnText(ovStmt, 0) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let t = (columnText(ovStmt, 1) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !c.isEmpty && !t.isEmpty { moveOverrides[c] = t }
+            }
+        }
+        sqlite3_finalize(ovStmt)
         var timelineItems: [[String: Any]] = []
         var questionCount = 0
         var decisionCount = 0
@@ -611,8 +625,15 @@ class ReflectionStore {
                 // reflection's own themes) it's most about — otherwise it's bleeding in
                 // from a co-tagged topic. Single-theme reflections keep everything.
                 let rowThemes = (columnText(stmt, 3).flatMap { jsonDecode($0) as? [String] }) ?? [theme]
+                let rowItemThemes = (columnText(stmt, 9).flatMap { jsonDecode($0) as? [String: String] }) ?? [:]
+                // The one theme an item is most about — by MEANING: an accepted move wins, then the
+                // extractor's per-item tag, then deterministic best-fit. Same precedence the board
+                // edge and the lineage gate use, so the detail ledger stays consistent with them.
                 func belongsHere(_ text: String) -> Bool {
-                    rowThemes.count < 2 || Self.bestFitTheme(text, among: rowThemes) == theme
+                    let k = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let o = moveOverrides[k], !o.isEmpty { return o == theme }
+                    if let t = rowItemThemes[k], !t.isEmpty { return t == theme }
+                    return rowThemes.count < 2 || Self.bestFitTheme(text, among: rowThemes) == theme
                 }
 
                 // Extract classifications for fallback state
@@ -645,7 +666,8 @@ class ReflectionStore {
                             "type": "question",
                             "date": dateStr,
                             "content": q,
-                            "source": source
+                            "source": source,
+                            "rid": String(rid)
                         ])
                     }
                 }
@@ -1350,13 +1372,28 @@ class ReflectionStore {
         // First, gather theme data from reflections (same approach as getTopThemes but with more detail)
         let sql = """
         SELECT content_summary, themes_json, theme_classifications_json,
-               open_questions_json, relevance_score, created_at, source
+               open_questions_json, relevance_score, created_at, source, item_themes_json
         FROM reflections
         WHERE created_at >= datetime('now', '-\(days) days')
         ORDER BY created_at DESC
         """
 
         var stmt: OpaquePointer?
+
+        // Accepted question-moves: a question re-owned to another workspace (via the Tidy triage)
+        // must stop being its old theme's edge. content → to_theme, latest wins. Read inline (we
+        // already hold dbLock, so calling itemOwnerOverrides() here would deadlock).
+        var questionOverrides: [String: String] = [:]
+        let ovSql = "SELECT item_content, to_theme FROM reflection_item_overrides WHERE to_theme IS NOT NULL AND to_theme != '' ORDER BY id ASC"
+        var ovStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, ovSql, -1, &ovStmt, nil) == SQLITE_OK {
+            while sqlite3_step(ovStmt) == SQLITE_ROW {
+                let c = (columnText(ovStmt, 0) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let t = (columnText(ovStmt, 1) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !c.isEmpty && !t.isEmpty { questionOverrides[c] = t }
+            }
+        }
+        sqlite3_finalize(ovStmt)
 
         // Cutoff for "this week" activity (lexicographic compare works for SQLite's
         // "YYYY-MM-DD HH:MM:SS" UTC timestamp format)
@@ -1401,9 +1438,11 @@ class ReflectionStore {
                 let source = columnText(stmt, 6) ?? "unknown"
                 let isThisWeek = !createdAt.isEmpty && createdAt >= weekCutoff
 
+                let itemThemesJson = columnText(stmt, 7)
                 guard let themes = jsonDecode(themesJson) as? [String] else { continue }
                 let classifications = jsonDecode(classJson) as? [String: String] ?? [:]
                 let questions = jsonDecode(questionsJson) as? [String] ?? []
+                let itemThemesMap = (jsonDecode(itemThemesJson ?? "") as? [String: String]) ?? [:]
 
                 for theme in themes {
                     var agg = themeData[theme] ?? ThemeAgg()
@@ -1420,9 +1459,17 @@ class ReflectionStore {
                         agg.openQuestionCount = questions.count
                         agg.lastActivity = createdAt
                     }
-                    // Freshest open question becomes the "live edge" (rows are DESC)
-                    if agg.edge.isEmpty, let firstQ = questions.first, !firstQ.isEmpty {
-                        agg.edge = firstQ
+                    // Freshest open question OWNED BY THIS THEME becomes the "live edge" (rows are
+                    // DESC). Owner precedence: an accepted move (override) > the extractor's per-
+                    // question tag > deterministic best-fit. This kills the old bug where a co-tagged
+                    // topic's question bled in as the headline (a VN-conduct question on the CCBP front).
+                    if agg.edge.isEmpty {
+                        for q in questions where !q.isEmpty {
+                            let owner = questionOverrides[q]
+                                ?? itemThemesMap[q].flatMap { $0.isEmpty ? nil : $0 }
+                                ?? (themes.count < 2 ? theme : Self.bestFitTheme(q, among: themes))
+                            if owner == theme { agg.edge = q; break }
+                        }
                     }
                     if isThisWeek {
                         agg.inputsThisWeek += 1

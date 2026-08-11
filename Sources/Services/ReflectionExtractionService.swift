@@ -92,12 +92,12 @@ class ReflectionExtractionService {
             "content_summary": "2-3 sentence summary of what this person was focused on",
             "themes": ["specific theme 1", "specific theme 2"],
             "theme_classifications": {"specific theme 1": "researching", "specific theme 2": "deciding"},
-            "open_questions": ["Specific question they seem to be wrestling with"],
+            "open_questions": [{"question": "Specific question they seem to be wrestling with", "theme": "the ONE theme from `themes` this question is most about"}],
             "mental_model_shifts": [{"from": "previous belief", "to": "new understanding", "theme": "the ONE theme from `themes` this shift is most about"}],
             "decisions": [{"decision": "Any conclusion or decision evident in the content", "theme": "the ONE theme from `themes` this decision is most about"}]
         }
 
-        CRITICAL — one owning theme per item: each decision and each mental_model_shift belongs to EXACTLY ONE theme: the single string from `themes` it is most about. People discuss several unrelated topics in one conversation, and each conclusion is about only one of them — do NOT tag an item to every theme in the chat. The `theme` value MUST be one of the exact strings you put in `themes`.
+        CRITICAL — one owning theme per item: each open_question, each decision, and each mental_model_shift belongs to EXACTLY ONE theme: the single string from `themes` it is most about. People discuss several unrelated topics in one conversation, and each question/conclusion is about only one of them — do NOT tag an item to every theme in the chat. Judge by MEANING, not shared words: a question about "how to handle a senior leader's violations" belongs to a people/performance-management theme even if its wording overlaps nothing with that theme's title. The `theme` value MUST be one of the exact strings you put in `themes`.
 
         If there is no meaningful intellectual signal in the content, return:
         {"content_summary": "", "themes": [], "theme_classifications": {}, "open_questions": [], "mental_model_shifts": [], "decisions": []}
@@ -160,9 +160,22 @@ class ReflectionExtractionService {
         let contentSummary = json["content_summary"] as? String ?? ""
         let themes = json["themes"] as? [String] ?? []
         let themeClassifications = json["theme_classifications"] as? [String: String] ?? [:]
-        let openQuestions = json["open_questions"] as? [String] ?? []
         var itemThemes: [String: String] = [:]
         let validThemes = Set(themes)
+
+        // Open questions: accept the new [{question, theme}] shape, or the legacy [String].
+        // The owning theme goes into the side-map keyed by the question text, so the board edge
+        // and stray detector attribute it by MEANING, not by title-word overlap.
+        var openQuestions: [String] = []
+        if let objs = json["open_questions"] as? [[String: Any]] {
+            for o in objs {
+                guard let q = (o["question"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !q.isEmpty else { continue }
+                openQuestions.append(q)
+                if let theme = o["theme"] as? String, validThemes.contains(theme) { itemThemes[q] = theme }
+            }
+        } else {
+            openQuestions = json["open_questions"] as? [String] ?? []
+        }
 
         // Shifts: strip the per-item "theme" out of the shift dict (readers expect {from,to}) into
         // the side-map, keyed by the shift's "to" (belief ids derive from that).

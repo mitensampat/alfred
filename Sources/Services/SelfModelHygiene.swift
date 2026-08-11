@@ -51,12 +51,12 @@ enum SelfModelHygiene {
             struct Item { let idx: Int; let type: String; let content: String; let aux: String?; let rid: Int; let display: String }
             var items: [Item] = []
             for t in timeline {
-                guard let type = t["type"] as? String, type == "decision" || type == "shift",
+                guard let type = t["type"] as? String, type == "decision" || type == "shift" || type == "question",
                       let ridStr = t["rid"] as? String, let rid = Int(ridStr) else { continue }
-                if type == "decision" {
+                if type == "decision" || type == "question" {
                     let c = (t["content"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard c.count >= 20 else { continue }
-                    items.append(Item(idx: items.count + 1, type: "decision", content: c, aux: nil, rid: rid, display: c))
+                    guard c.count >= (type == "question" ? 15 : 20) else { continue }
+                    items.append(Item(idx: items.count + 1, type: type, content: c, aux: nil, rid: rid, display: c))
                 } else {
                     let to = (t["shift_to"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     let from = (t["shift_from"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)

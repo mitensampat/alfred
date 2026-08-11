@@ -248,7 +248,7 @@ class SelfModelStore {
     /// as opposed to the machine keys the synthesizer recomputes each materialize()
     /// (temperature, state, edge, frequency, …). These are carried across a recompute.
     static let userAuthoredMetaKeys: Set<String> = [
-        "owner", "money", "stage", "next_date", "type", "decision",
+        "owner", "stage", "next_date", "type", "decision",
         "pinned", "top_dismissed", "people_json", "people_curated"
     ]
 
@@ -267,7 +267,7 @@ class SelfModelStore {
         evidence: [[String: String]],
         metadata: [String: String],
         origin: String = "emergent",
-        // Front edits (owner/money/stage/pinned/…) live in metadata but are authored by hand;
+        // Front edits (owner/stage/pinned/…) live in metadata but are authored by hand;
         // the daily materialize() recomputes only the machine keys and would drop the rest.
         // Default-on so convergence carries user keys forward; handlers that intentionally
         // REMOVE a user key (unpin, restore) pass false so the removal actually sticks.

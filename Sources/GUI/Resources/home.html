@@ -216,7 +216,6 @@
 
       /* ── fronts board ── */
       .dk-fronts-head{ padding:17px 24px 12px; }
-      .dk-fronts-stake{ font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--dk-n600); white-space:nowrap; }
       .dk-fronts-actions{ display:flex; gap:8px; margin-top:11px; align-items:stretch; }
       .dk-fronts-search{ flex:1; box-sizing:border-box; font-family:inherit; font-size:13px; padding:7px 10px; border:2px solid var(--dk-text); border-radius:0; background:var(--dk-card); color:var(--dk-text); }
       .dk-fronts-actions .dk-btn-sm{ white-space:nowrap; padding:7px 13px; }
@@ -229,8 +228,6 @@
       .dk-front-row{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
       .dk-front-name{ font-weight:800; font-size:26px; line-height:1; letter-spacing:-.02em; }
       .dk-front.delegated .dk-front-name{ color:var(--dk-n700); }
-      .dk-front-money{ font-weight:800; font-size:22px; line-height:1; margin-left:auto; }
-      .dk-front-money small{ font-size:13px; color:var(--dk-n600); font-weight:800; }
       .dk-tag{ display:inline-flex; align-items:center; font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; padding:3px 8px; background:var(--dk-n200); color:var(--dk-n800); }
       .dk-front-meta{ display:flex; gap:18px; flex-wrap:wrap; margin-top:12px; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--dk-n600); }
       .dk-front-meta .hot{ color:var(--dk-hot); }
@@ -250,8 +247,6 @@
       .dk-kicker{ font-size:10px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--dk-n600); }
       .dk-detail-name{ font-weight:800; font-size:38px; line-height:1; letter-spacing:-.03em; margin:8px 0 0; }
       .dk-detail-sub{ font-size:13px; color:var(--dk-n700); margin-top:8px; }
-      .dk-detail-money{ font-weight:800; font-size:30px; line-height:1; }
-      .dk-detail-money small{ font-size:15px; color:var(--dk-n600); font-weight:800; }
       .dk-statstrip{ display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); border-bottom:2px solid var(--dk-text); }
       .dk-stat{ padding:14px 18px; border-right:1px solid var(--dk-divider); }
       .dk-stat:last-child{ border-right:none; }
@@ -10705,20 +10700,6 @@
             const head = String(text || '').split(/[—\-–]/)[0];
             return head.trim().replace(/\.$/, '');
         }
-        function dkParseMoney(s){
-            if (!s) return 0;
-            const m = String(s).replace(/[,$\s]/g,'').match(/([\d.]+)\s*([mMkK]?)/);
-            if (!m) return 0;
-            let n = parseFloat(m[1]) || 0;
-            if (/m/i.test(m[2])) n *= 1e6; else if (/k/i.test(m[2])) n *= 1e3;
-            return n;
-        }
-        function dkFmtMoney(n){
-            if (n >= 1e6) return '$' + (Math.round(n/1e5)/10) + 'M';
-            if (n >= 1e3) return '$' + Math.round(n/1e3) + 'K';
-            return '$' + Math.round(n);
-        }
-
         // ── surface routing (masthead persists; Desk / Model / Chat swap) ──
         function deskShowSurface(which){
             const desk = which === 'desk', model = which === 'model', chat = which === 'chat';
@@ -11212,7 +11193,6 @@
             const BOARD_CAP = 12;
             const fronts = q ? matched : matched.slice(0, BOARD_CAP);
             const hiddenCount = q ? 0 : Math.max(0, matched.length - BOARD_CAP);
-            const stake = allFronts.reduce((s,f) => s + dkParseMoney(f.money), 0);
             const closedReceipt = _deskFrontClosed
                 ? `<div class="dk-top-receipt" style="padding:12px 24px 0;">Closed <strong>${_esc(_deskFrontClosed.name)}</strong> — decided, off the board.
                      <button type="button" class="dk-btn-ghost dk-list-undo" onclick="dkReopenFront('${_esc(_deskFrontClosed.id)}')">Undo</button></div>`
@@ -11221,9 +11201,8 @@
                     <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;">
                         <div>
                             <div class="dk-sec-label">Fronts · ${totalFronts} live</div>
-                            <div class="dk-sec-explain">What the company is running. Money, owner, stage, and the one thing in the way.</div>
+                            <div class="dk-sec-explain">What the company is running. Owner, stage, and the one thing in the way.</div>
                         </div>
-                        ${stake > 0 ? `<span class="dk-fronts-stake">${dkFmtMoney(stake)} at stake</span>` : ''}
                     </div>
                     <div class="dk-fronts-actions">
                         <input class="dk-fronts-search" placeholder="Search fronts…" value="${_esc(_deskFrontsFilter||'')}"
@@ -11236,7 +11215,6 @@
             }
             for (const f of fronts){
                 const status = f.status || 'moving';
-                const money = f.money ? `<span class="dk-front-money">${_esc(f.money)}</span>` : '';
                 const alert = status === 'stuck' ? `<span class="hot">Stuck ${f.days_since}d, on you</span>`
                             : status === 'delegated' ? `<span>Running without you</span>` : `<span>Moving</span>`;
                 const decision = f.decision ? `<span class="dk-front-decision"><strong>${_esc(f.decision)}</strong>${f.moved ? ' ' + _esc(dkFirstSentence(f.moved, 120)) : ''}</span>` : '';
@@ -11246,7 +11224,7 @@
                         <span class="dk-front-row">
                             <span class="dk-front-name">${_esc(f.name)}</span>
                             <span class="dk-tag">${_esc(f.type || 'workspace')}</span>
-                            ${money}${restore}
+                            ${restore}
                         </span>
                         <span class="dk-front-meta">
                             <span>Stage · ${_esc(f.stage || '—')}</span><span>Owner · ${_esc(f.owner || 'you')}</span>${alert}
@@ -11271,7 +11249,7 @@
             } catch(e){ _deskDetail = { error: true }; }
             renderDeskCenter();
         }
-        // Front detail is an EDITABLE artifact: click any dotted field (type/money/stage/
+        // Front detail is an EDITABLE artifact: click any dotted field (type/stage/
         // owner/next date/the decision) to edit; add or remove people from "Who is in it".
         function renderFrontDetail(){
             const d = _deskDetail;
@@ -11298,7 +11276,6 @@
                     <button type="button" class="dk-back" onclick="deskGoFronts()">← Fronts</button>
                     <div class="dk-detail-titrow">
                         <div><div class="dk-kicker">Front · ${ed('type', d.type||'workspace', false, 'type')}</div><h2 class="dk-detail-name">${_esc(d.name)}</h2></div>
-                        <div style="text-align:right;"><div class="dk-detail-money">${ed('money', d.money, false, 'set $')}</div><div class="dk-stat-l">At stake</div></div>
                     </div>
                 </div>
                 <div class="dk-statstrip">
@@ -11512,7 +11489,7 @@
             const youOwe = its.length ? its.map(it => dkItemHtml(it, 'you_owe')).join('')
                 : `<div class="dk-prov" style="margin-top:11px;">Nothing open from you — you're clear with ${_esc(d.first_name || d.name)}.</div>`;
             const theyOwe = their.map(it => dkItemHtml(it, 'they_owe')).join('');
-            const fronts = (d.shared_fronts || []).map(f => `<button type="button" class="dk-person-row" onclick="deskOpenFront('${_esc(f.id)}')"><span class="nm" style="font-size:14.5px;font-weight:700;">${_esc(f.name)}</span><span class="sub">${f.money?_esc(f.money)+' · ':''}${_esc(f.stage||'')} · open front →</span></button>`).join('') || '';
+            const fronts = (d.shared_fronts || []).map(f => `<button type="button" class="dk-person-row" onclick="deskOpenFront('${_esc(f.id)}')"><span class="nm" style="font-size:14.5px;font-weight:700;">${_esc(f.name)}</span><span class="sub">${_esc(f.stage||'')} · open front →</span></button>`).join('') || '';
             return `<div class="dk-detail-head">
                     <button type="button" class="dk-back" onclick="deskGoFronts()">← Fronts</button>
                     <div class="dk-detail-titrow"><div>
