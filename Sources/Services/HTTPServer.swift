@@ -1320,6 +1320,155 @@ class HTTPServer {
         case ("POST", "/api/schedule/tick"):
             await ScheduleService.shared.tick()
             return HTTPResponse(statusCode: 200, body: ["ok": true])
+        case ("GET", "/api/self-model/attach-audit"):
+            // Read-only: how much would the owning-theme gate reduce attachment bleed vs the old
+            // "link to every theme the conversation touched" logic? Does not mutate the model.
+            let refls = ReflectionStore.shared.getRecentReflections(limit: 2000, days: 400)
+            var items = 0, oldEdges = 0, newEdges = 0, withLLMTheme = 0, multiThemeItems = 0, multiThemeReflections = 0
+            for r in refls {
+                let themes = (r["themes"] as? [String]) ?? []
+                let itemThemes = (r["item_themes"] as? [String: String]) ?? [:]
+                if themes.count > 1 { multiThemeReflections += 1 }
+                var texts = ((r["decisions"] as? [String]) ?? []).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { $0.count >= 25 }
+                for s in (r["mental_model_shifts"] as? [[String: String]]) ?? [] { if let to = s["to"], !to.isEmpty { texts.append(to) } }
+                for t in texts {
+                    items += 1
+                    oldEdges += themes.isEmpty ? 0 : themes.count           // old: linked to ALL themes
+                    if themes.count > 1 { multiThemeItems += 1 }
+                    if itemThemes[t] != nil { withLLMTheme += 1 }
+                    if SelfModelSynthesizer.owningTheme(t, itemThemes: itemThemes, among: themes) != nil { newEdges += 1 }
+                }
+            }
+            let reduction = oldEdges > 0 ? Int((100.0 * Double(oldEdges - newEdges) / Double(oldEdges)).rounded()) : 0
+            // B: how many theme names collapse into a canonical workspace (proliferation).
+            let canon = SelfModelSynthesizer.canonicalThemeMap()
+            let distinctNames = canon.keys.count
+            let canonicalWorkspaces = Set(canon.values).count
+            let collapsed = distinctNames - canonicalWorkspaces
+            let prolifReduction = distinctNames > 0 ? Int((100.0 * Double(collapsed) / Double(distinctNames)).rounded()) : 0
+            return HTTPResponse(statusCode: 200, body: [
+                "reflections": refls.count, "multi_theme_reflections": multiThemeReflections,
+                "items": items, "items_in_multi_theme_reflections": multiThemeItems,
+                "old_edges_all_themes": oldEdges, "new_edges_owning_theme": newEdges,
+                "bleed_reduction_pct": reduction, "items_with_llm_theme": withLLMTheme,
+                "theme_names": distinctNames, "canonical_workspaces": canonicalWorkspaces,
+                "workspaces_collapsed": collapsed, "proliferation_reduction_pct": prolifReduction,
+                "note": "items_with_llm_theme is 0 until new extractions run under the gate; old data uses best-fit"])
+        case ("GET", "/api/self-model/rebuild-preview"):
+            // Read-only: which currently-promoted workspaces (fronts) are pure bleed artifacts —
+            // they'd drop from promotion once each item attaches to its one owning theme. Simulates
+            // the gated rebuild's promotion WITHOUT applying anything.
+            let smStore = SelfModelStore.shared
+            let currentPromoted = SelfModelService.promotedThemeIds(store: smStore)
+            var nameById: [String: String] = [:], freqById: [String: Double] = [:], srcById: [String: Int] = [:]
+            for f in smStore.getFacets(kind: "theme", includeArchived: false) {
+                guard let id = f["id"] as? String else { continue }
+                nameById[id] = (f["statement"] as? String) ?? id
+                let m = (f["metadata"] as? [String: String]) ?? [:]
+                freqById[id] = Double(m["frequency"] ?? "0") ?? 0
+                srcById[id] = Int(m["distinct_sources"] ?? "0") ?? 0
+            }
+            let canon = SelfModelSynthesizer.canonicalThemeMap()
+            func tid(_ name: String) -> String { SelfModelSynthesizer.stableId("theme", canon[name] ?? name) }
+            var gDec: [String: Int] = [:], gBel: [String: Int] = [:]
+            for r in ReflectionStore.shared.getRecentReflections(limit: 2000, days: 400) {
+                let themes = (r["themes"] as? [String]) ?? []
+                let itemThemes = (r["item_themes"] as? [String: String]) ?? [:]
+                for d in (r["decisions"] as? [String]) ?? [] {
+                    let t = d.trimmingCharacters(in: .whitespacesAndNewlines); guard t.count >= 25 else { continue }
+                    if let o = SelfModelSynthesizer.owningTheme(t, itemThemes: itemThemes, among: themes) { gDec[tid(o), default: 0] += 1 }
+                }
+                for s in (r["mental_model_shifts"] as? [[String: String]]) ?? [] {
+                    if let to = s["to"], !to.isEmpty, let o = SelfModelSynthesizer.owningTheme(to, itemThemes: itemThemes, among: themes) { gBel[tid(o), default: 0] += 1 }
+                }
+            }
+            let beliefBar = Int(request.queryParams["belief_bar"] ?? "") ?? SelfModelService.promotionBeliefBar
+            let decisionBar = Int(request.queryParams["decision_bar"] ?? "") ?? SelfModelService.promotionDecisionBar
+            func promotedUnder(_ bBar: Int, _ dBar: Int) -> Set<String> {
+                var out = Set<String>()
+                for id in nameById.keys {
+                    if (gBel[id] ?? 0) >= bBar || (gDec[id] ?? 0) >= dBar
+                        || ((freqById[id] ?? 0) >= SelfModelService.promotionFrequencyBar && (srcById[id] ?? 0) >= SelfModelService.promotionSourcesBar) {
+                        out.insert(id)
+                    }
+                }
+                return out
+            }
+            let simPromoted = promotedUnder(beliefBar, decisionBar)
+            // A sweep so the bar can be chosen deliberately, not guessed.
+            let sweep = [1, 2, 3, 4, 5].map { b -> [String: Int] in ["belief_bar": b, "fronts": promotedUnder(b, decisionBar).count] }
+            let dropping = currentPromoted.subtracting(simPromoted).compactMap { nameById[$0] }.sorted()
+            return HTTPResponse(statusCode: 200, body: [
+                "workspaces_total": nameById.count,
+                "belief_bar": beliefBar, "decision_bar": decisionBar,
+                "current_promoted_fronts": currentPromoted.count,
+                "simulated_promoted_fronts": simPromoted.count,
+                "staying_promoted": currentPromoted.intersection(simPromoted).count,
+                "would_drop_from_promotion": dropping.count,
+                "front_count_by_belief_bar": sweep,
+                "dropping_examples": Array(dropping.prefix(50)),
+                "note": "Read-only. Apply with POST /api/self-model/compute after setting the bar."])
+
+        case ("GET", "/api/self-model/strays"):
+            // Pending "this item may belong in another workspace" proposals, grouped by source
+            // workspace for the triage surface. Nothing here has been applied.
+            let pending = ReflectionStore.shared.getItemMoveProposals(status: "pending")
+            var byFront: [String: [[String: Any]]] = [:]
+            for p in pending { byFront[(p["from_theme"] as? String) ?? "", default: []].append(p) }
+            let groups = byFront.map { (front, items) -> [String: Any] in
+                ["from_theme": front, "count": items.count, "items": items]
+            }.sorted { ($0["count"] as? Int ?? 0) > ($1["count"] as? Int ?? 0) }
+            return HTTPResponse(statusCode: 200, body: [
+                "count": pending.count, "workspaces": groups.count, "groups": groups])
+
+        case ("POST", "/api/self-model/strays/detect"):
+            // Run the detector now and queue proposals (the daily cadence also does this). Manual trigger.
+            guard getConfig()?.features?.selfModel ?? false else {
+                return HTTPResponse(statusCode: 200, body: ["enabled": false])
+            }
+            let maxWs = Int(request.queryParams["workspaces"] ?? "") ?? 12
+            let r = await SelfModelHygiene.detectAndQueue(maxWorkspaces: maxWs)
+            return HTTPResponse(statusCode: 200, body: [
+                "found": r.found, "queued": r.queued,
+                "pending_total": ReflectionStore.shared.getItemMoveProposals(status: "pending").count])
+
+        case ("POST", "/api/self-model/strays/resolve"):
+            // Accept a proposed move (writes a durable override the rebuild honours) or reject it.
+            // Body/query: { id, action: "accept" | "reject" }.
+            let bodyJSON = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            let id = ((bodyJSON["id"] as? String) ?? request.queryParams["id"] ?? "").trimmingCharacters(in: .whitespaces)
+            let action = ((bodyJSON["action"] as? String) ?? request.queryParams["action"] ?? "").lowercased()
+            guard !id.isEmpty, action == "accept" || action == "reject" else {
+                return HTTPResponse(statusCode: 400, body: ["error": "id and action (accept|reject) required"])
+            }
+            guard let p = ReflectionStore.shared.getItemMoveProposal(id: id) else {
+                return HTTPResponse(statusCode: 404, body: ["error": "proposal not found"])
+            }
+            if action == "reject" {
+                _ = ReflectionStore.shared.setItemMoveProposalStatus(id: id, status: "rejected")
+                return HTTPResponse(statusCode: 200, body: ["success": true, "action": "rejected", "id": id])
+            }
+            // Accept → record the item override (read layer + durable owning-theme override).
+            let rid = (p["reflection_id"] as? Int) ?? 0
+            let itemType = (p["item_type"] as? String) ?? ""
+            let content = (p["content"] as? String) ?? ""
+            let auxRaw = (p["aux"] as? String) ?? ""
+            let aux = auxRaw.isEmpty ? nil : auxRaw
+            let fromTheme = (p["from_theme"] as? String) ?? ""
+            let toTheme = (p["to_theme"] as? String) ?? ""
+            guard rid > 0, !itemType.isEmpty, !content.isEmpty, !fromTheme.isEmpty, !toTheme.isEmpty else {
+                return HTTPResponse(statusCode: 500, body: ["error": "proposal is malformed"])
+            }
+            let ok = ReflectionStore.shared.setItemOverride(
+                reflectionId: rid, itemType: itemType, content: content, aux: aux,
+                fromTheme: fromTheme, toTheme: toTheme)
+            guard ok else { return HTTPResponse(statusCode: 500, body: ["error": "failed to record move"]) }
+            _ = ReflectionStore.shared.setItemMoveProposalStatus(id: id, status: "accepted")
+            return HTTPResponse(statusCode: 200, body: [
+                "success": true, "action": "moved", "id": id,
+                "from_theme": fromTheme, "to_theme": toTheme,
+                "note": "Move recorded. Takes full effect on the next rebuild (daily, or POST /api/self-model/compute)."])
+
         case ("GET", "/api/schedule/sessions"):
             return HTTPResponse(statusCode: 200, body: ["sessions": ScheduleService.shared.openSessionsForDesk(), "configured": ScheduleService.shared.configured])
         case ("GET", "/api/schedule/manager-selftest"):
@@ -11643,7 +11792,7 @@ extension HTTPServer {
                 themeClassifications: extraction.themeClassifications,
                 openQuestions: extraction.openQuestions,
                 mentalModelShifts: extraction.mentalModelShifts,
-                decisions: extraction.decisions
+                decisions: extraction.decisions, itemThemes: extraction.itemThemes
             )
 
             // Ensure theme state rows exist for each extracted theme

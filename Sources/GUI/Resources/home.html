@@ -3871,6 +3871,10 @@
                         <button type="button" class="dk-nav-seg" id="deskNavPeople" onclick="deskNav('people')">People</button>
                         <button type="button" class="dk-nav-seg" id="deskNavModel" onclick="deskNav('model')">Model</button>
                     </div>
+                    <button type="button" class="dk-icon-btn" id="tidyBtn" onclick="tidyOpen()" title="Items that may belong in another workspace" style="width:auto;padding:0 9px;gap:6px;display:none;">
+                        <span style="font-size:11px;font-weight:700;letter-spacing:.06em;">TIDY</span>
+                        <span id="tidyCount" style="font-size:10px;font-weight:800;background:var(--dk-hot);color:#fff;border-radius:9px;padding:1px 6px;min-width:16px;text-align:center;">0</span>
+                    </button>
                     <button type="button" class="dk-icon-btn" id="waStatusBtn" onclick="waPairOpen()" title="WhatsApp connection" style="width:auto;padding:0 9px;gap:6px;">
                         <span id="waDot" style="width:8px;height:8px;border-radius:50%;background:var(--dk-n400);display:inline-block;"></span>
                         <span style="font-size:11px;font-weight:700;letter-spacing:.06em;">WA</span>
@@ -3889,6 +3893,17 @@
                     <button type="button" class="dk-icon-btn" onclick="waPairClose()" style="width:30px;height:28px;">&#10005;</button>
                 </div>
                 <div id="waPairBody" style="padding:22px;"></div>
+            </div>
+        </div>
+
+        <!-- Workspace triage: items that may belong in another workspace (queued, never auto-moved) -->
+        <div id="tidyOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;font-family:'Archivo',sans-serif;" onclick="if(event.target===this)tidyClose()">
+            <div style="max-width:640px;margin:6vh auto;background:var(--dk-card);border:2px solid var(--dk-text);color:var(--dk-text);max-height:86vh;display:flex;flex-direction:column;">
+                <div style="padding:15px 20px;border-bottom:2px solid var(--dk-text);display:flex;justify-content:space-between;align-items:center;flex:0 0 auto;">
+                    <span style="font-weight:800;font-size:16px;">Tidy &mdash; is this in the right workspace?</span>
+                    <button type="button" class="dk-icon-btn" onclick="tidyClose()" style="width:30px;height:28px;">&#10005;</button>
+                </div>
+                <div id="tidyBody" style="padding:16px 20px;overflow-y:auto;flex:1 1 auto;"></div>
             </div>
         </div>
 
@@ -5044,6 +5059,8 @@
             loadDesk();
             waBridgePoll();
             setInterval(waBridgePoll, 30000);  // keep the WA status dot fresh
+            tidyRefreshBadge();
+            setInterval(tidyRefreshBadge, 120000);  // surface newly-detected strays
             if (isSunday()) loadWeeklyReflection();
             registerPushNotifications();
             checkPostFtuePermissions();
@@ -11838,6 +11855,83 @@
             document.getElementById('waPairOverlay').style.display = 'none';
             if (_waPollTimer){ clearInterval(_waPollTimer); _waPollTimer = null; }
             waBridgePoll();
+        }
+
+        // ═══ TIDY — workspace triage: move mis-filed items to their real home (your yes only) ═══
+        let _tidyGroups = [];
+        async function tidyRefreshBadge(){
+            const btn = document.getElementById('tidyBtn'), badge = document.getElementById('tidyCount');
+            if (!btn || !badge) return;
+            try {
+                const r = await authFetch('/api/self-model/strays');
+                const d = await r.json();
+                const n = d.count || 0;
+                badge.textContent = n;
+                btn.style.display = n > 0 ? 'inline-flex' : 'none';
+            } catch(e){ btn.style.display = 'none'; }
+        }
+        async function tidyOpen(){
+            document.getElementById('tidyOverlay').style.display = 'block';
+            const el = document.getElementById('tidyBody');
+            el.innerHTML = '<div style="color:var(--dk-n600);text-align:center;padding:30px 0;">Loading…</div>';
+            try {
+                const r = await authFetch('/api/self-model/strays');
+                const d = await r.json();
+                _tidyGroups = d.groups || [];
+                tidyRender();
+            } catch(e){ el.innerHTML = '<div style="color:var(--dk-hot);padding:20px 0;">Could not load proposals.</div>'; }
+        }
+        function tidyClose(){ document.getElementById('tidyOverlay').style.display = 'none'; }
+        function tidyRender(){
+            const el = document.getElementById('tidyBody');
+            const total = _tidyGroups.reduce((n,g)=>n+(g.items?g.items.length:0),0);
+            if (!total){
+                el.innerHTML = '<div style="text-align:center;padding:36px 0;"><div style="font-size:26px;color:#2ea043;">&#10003;</div><div style="font-weight:800;font-size:16px;margin-top:8px;">Everything is filed where it belongs.</div><div style="color:var(--dk-n600);font-size:13px;margin-top:6px;">Alfred re-checks daily and will flag new strays here.</div></div>';
+                return;
+            }
+            let html = '<div style="font-size:12.5px;color:var(--dk-n600);line-height:1.5;margin-bottom:14px;">Alfred thinks these items landed in the wrong workspace — usually because one conversation covered several subjects. Nothing moves unless you say so.</div>';
+            for (const g of _tidyGroups){
+                if (!g.items || !g.items.length) continue;
+                html += `<div style="margin-bottom:18px;">
+                    <div style="font-weight:800;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--dk-n700);border-bottom:1px solid var(--dk-divider);padding-bottom:5px;margin-bottom:8px;">In: ${_esc(g.from_theme)} <span style="color:var(--dk-n400);font-weight:600;">· ${g.items.length}</span></div>`;
+                for (const it of g.items){
+                    const conf = (it.confidence||'medium');
+                    const dot = conf==='high' ? 'var(--dk-hot)' : (conf==='low' ? 'var(--dk-n400)' : 'var(--dk-n700)');
+                    html += `<div id="tidy-${it.id}" style="border:1px solid var(--dk-divider);padding:10px 12px;margin-bottom:8px;">
+                        <div style="font-size:13.5px;line-height:1.45;">${_esc(it.content)}</div>
+                        <div style="font-size:12px;color:var(--dk-n600);margin-top:6px;line-height:1.45;">
+                            <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dot};margin-right:5px;vertical-align:middle;"></span>
+                            belongs in <b style="color:var(--dk-text);">${_esc(it.to_theme)}</b>${it.rationale?` — ${_esc(it.rationale)}`:''}
+                        </div>
+                        <div style="display:flex;gap:8px;margin-top:9px;">
+                            <button type="button" class="dk-btn dk-btn-primary dk-btn-sm" onclick="tidyResolve('${it.id}','accept')">Move it</button>
+                            <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="tidyResolve('${it.id}','reject')">Keep here</button>
+                        </div>
+                    </div>`;
+                }
+                html += '</div>';
+            }
+            el.innerHTML = html;
+        }
+        async function tidyResolve(id, action){
+            const card = document.getElementById('tidy-'+id);
+            if (card){ card.style.opacity = '.5'; card.style.pointerEvents = 'none'; }
+            try {
+                const r = await authFetch('/api/self-model/strays/resolve', {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({ id, action })
+                });
+                const d = await r.json();
+                if (!d.success) throw new Error(d.error||'failed');
+                // Drop it from local state and re-render.
+                for (const g of _tidyGroups){ if (g.items) g.items = g.items.filter(x => x.id !== id); }
+                _tidyGroups = _tidyGroups.filter(g => g.items && g.items.length);
+                tidyRender();
+                tidyRefreshBadge();
+            } catch(e){
+                if (card){ card.style.opacity = '1'; card.style.pointerEvents = 'auto'; }
+                alert('Could not '+(action==='accept'?'move':'dismiss')+' that item.');
+            }
         }
 
         // ═══ v3 Now: the 4 workspaces you're in + 1 that needs you ═══

@@ -55,9 +55,15 @@ class CadenceRunner {
             return "Self-model disabled — convergence skipped"
         }
         let (clusters, themeCount) = await SelfModelConvergence.dryRun()
-        guard !clusters.isEmpty else { return "Convergence: \(themeCount) themes, nothing to merge" }
-        let r = SelfModelConvergence.apply(clusters, highOnly: true)
-        return "Convergence: merged \(r.merged) themes into \(r.applied) workspaces (high-confidence) — \(themeCount) themes scanned"
+        var mergeSummary = "Convergence: \(themeCount) themes, nothing to merge"
+        if !clusters.isEmpty {
+            let r = SelfModelConvergence.apply(clusters, highOnly: true)
+            mergeSummary = "Convergence: merged \(r.merged) themes into \(r.applied) workspaces (high-confidence) — \(themeCount) themes scanned"
+        }
+        // Item-level hygiene: flag content sitting in the wrong workspace and QUEUE a proposed move.
+        // Nothing re-files silently — the user accepts or rejects each in the triage surface.
+        let stray = await SelfModelHygiene.detectAndQueue()
+        return "\(mergeSummary). Strays: \(stray.queued) new move proposals queued (\(stray.found) found)"
     }
 
     // MARK: - Individual Runners
@@ -869,7 +875,7 @@ class CadenceRunner {
                         themeClassifications: extraction.themeClassifications,
                         openQuestions: extraction.openQuestions,
                         mentalModelShifts: extraction.mentalModelShifts,
-                        decisions: extraction.decisions
+                        decisions: extraction.decisions, itemThemes: extraction.itemThemes
                     )
                     allNewThemes.formUnion(extraction.themes)
                     summary.append("Chrome: \(clusters.count) clusters → \(extraction.themes.count) themes")
@@ -897,7 +903,7 @@ class CadenceRunner {
                                 themeClassifications: extraction.themeClassifications,
                                 openQuestions: extraction.openQuestions,
                                 mentalModelShifts: extraction.mentalModelShifts,
-                                decisions: extraction.decisions
+                                decisions: extraction.decisions, itemThemes: extraction.itemThemes
                             )
                             allNewThemes.formUnion(extraction.themes)
                             ytProcessed += 1
@@ -941,7 +947,7 @@ class CadenceRunner {
                                 themeClassifications: extraction.themeClassifications,
                                 openQuestions: extraction.openQuestions,
                                 mentalModelShifts: extraction.mentalModelShifts,
-                                decisions: extraction.decisions
+                                decisions: extraction.decisions, itemThemes: extraction.itemThemes
                             )
                             allNewThemes.formUnion(extraction.themes)
                             notionProcessed += 1
@@ -1012,7 +1018,7 @@ class CadenceRunner {
                                 themeClassifications: extraction.themeClassifications,
                                 openQuestions: extraction.openQuestions,
                                 mentalModelShifts: extraction.mentalModelShifts,
-                                decisions: extraction.decisions
+                                decisions: extraction.decisions, itemThemes: extraction.itemThemes
                             )
                             allNewThemes.formUnion(extraction.themes)
                             msgProcessed += 1
@@ -1056,7 +1062,7 @@ class CadenceRunner {
                                 themeClassifications: extraction.themeClassifications,
                                 openQuestions: extraction.openQuestions,
                                 mentalModelShifts: extraction.mentalModelShifts,
-                                decisions: extraction.decisions)
+                                decisions: extraction.decisions, itemThemes: extraction.itemThemes)
                             allNewThemes.formUnion(extraction.themes)
                             msgProcessed += 1
                         }
@@ -1100,7 +1106,7 @@ class CadenceRunner {
                                 themeClassifications: extraction.themeClassifications,
                                 openQuestions: extraction.openQuestions,
                                 mentalModelShifts: extraction.mentalModelShifts,
-                                decisions: extraction.decisions
+                                decisions: extraction.decisions, itemThemes: extraction.itemThemes
                             )
                             allNewThemes.formUnion(extraction.themes)
                             msgProcessed += 1
@@ -1139,7 +1145,7 @@ class CadenceRunner {
                         themeClassifications: extraction.themeClassifications,
                         openQuestions: extraction.openQuestions,
                         mentalModelShifts: extraction.mentalModelShifts,
-                        decisions: extraction.decisions
+                        decisions: extraction.decisions, itemThemes: extraction.itemThemes
                     )
                     allNewThemes.formUnion(extraction.themes)
                 }
