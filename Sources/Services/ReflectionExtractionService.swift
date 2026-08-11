@@ -9,6 +9,9 @@ struct ReflectionExtraction {
     let openQuestions: [String]
     let mentalModelShifts: [[String: String]]   // [{"from": "...", "to": "..."}]
     let decisions: [String]
+    /// The ONE owning theme for each decision / shift, keyed by the item's text (decision text, or
+    /// a shift's "to"). Prevents a multi-topic conversation from raking every item into every theme.
+    let itemThemes: [String: String]
 }
 
 class ReflectionExtractionService {
@@ -90,9 +93,11 @@ class ReflectionExtractionService {
             "themes": ["specific theme 1", "specific theme 2"],
             "theme_classifications": {"specific theme 1": "researching", "specific theme 2": "deciding"},
             "open_questions": ["Specific question they seem to be wrestling with"],
-            "mental_model_shifts": [{"from": "previous belief", "to": "new understanding"}],
-            "decisions": ["Any conclusions or decisions evident in the content"]
+            "mental_model_shifts": [{"from": "previous belief", "to": "new understanding", "theme": "the ONE theme from `themes` this shift is most about"}],
+            "decisions": [{"decision": "Any conclusion or decision evident in the content", "theme": "the ONE theme from `themes` this decision is most about"}]
         }
+
+        CRITICAL — one owning theme per item: each decision and each mental_model_shift belongs to EXACTLY ONE theme: the single string from `themes` it is most about. People discuss several unrelated topics in one conversation, and each conclusion is about only one of them — do NOT tag an item to every theme in the chat. The `theme` value MUST be one of the exact strings you put in `themes`.
 
         If there is no meaningful intellectual signal in the content, return:
         {"content_summary": "", "themes": [], "theme_classifications": {}, "open_questions": [], "mental_model_shifts": [], "decisions": []}
@@ -147,7 +152,8 @@ class ReflectionExtractionService {
                 themeClassifications: [:],
                 openQuestions: [],
                 mentalModelShifts: [],
-                decisions: []
+                decisions: [],
+                itemThemes: [:]
             )
         }
 
@@ -155,8 +161,29 @@ class ReflectionExtractionService {
         let themes = json["themes"] as? [String] ?? []
         let themeClassifications = json["theme_classifications"] as? [String: String] ?? [:]
         let openQuestions = json["open_questions"] as? [String] ?? []
-        let mentalModelShifts = json["mental_model_shifts"] as? [[String: String]] ?? []
-        let decisions = json["decisions"] as? [String] ?? []
+        var itemThemes: [String: String] = [:]
+        let validThemes = Set(themes)
+
+        // Shifts: strip the per-item "theme" out of the shift dict (readers expect {from,to}) into
+        // the side-map, keyed by the shift's "to" (belief ids derive from that).
+        var mentalModelShifts: [[String: String]] = []
+        for var s in (json["mental_model_shifts"] as? [[String: String]] ?? []) {
+            let theme = s.removeValue(forKey: "theme")
+            mentalModelShifts.append(s)
+            if let theme = theme, validThemes.contains(theme), let to = s["to"], !to.isEmpty { itemThemes[to] = theme }
+        }
+
+        // Decisions: accept the new [{decision, theme}] shape, or the legacy [String].
+        var decisions: [String] = []
+        if let objs = json["decisions"] as? [[String: Any]] {
+            for o in objs {
+                guard let d = (o["decision"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !d.isEmpty else { continue }
+                decisions.append(d)
+                if let theme = o["theme"] as? String, validThemes.contains(theme) { itemThemes[d] = theme }
+            }
+        } else {
+            decisions = json["decisions"] as? [String] ?? []
+        }
 
         return ReflectionExtraction(
             contentSummary: contentSummary,
@@ -164,7 +191,8 @@ class ReflectionExtractionService {
             themeClassifications: themeClassifications,
             openQuestions: openQuestions,
             mentalModelShifts: mentalModelShifts,
-            decisions: decisions
+            decisions: decisions,
+            itemThemes: itemThemes
         )
     }
 

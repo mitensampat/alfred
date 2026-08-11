@@ -869,7 +869,7 @@ class CadenceRunner {
                         themeClassifications: extraction.themeClassifications,
                         openQuestions: extraction.openQuestions,
                         mentalModelShifts: extraction.mentalModelShifts,
-                        decisions: extraction.decisions
+                        decisions: extraction.decisions, itemThemes: extraction.itemThemes
                     )
                     allNewThemes.formUnion(extraction.themes)
                     summary.append("Chrome: \(clusters.count) clusters → \(extraction.themes.count) themes")
@@ -897,7 +897,7 @@ class CadenceRunner {
                                 themeClassifications: extraction.themeClassifications,
                                 openQuestions: extraction.openQuestions,
                                 mentalModelShifts: extraction.mentalModelShifts,
-                                decisions: extraction.decisions
+                                decisions: extraction.decisions, itemThemes: extraction.itemThemes
                             )
                             allNewThemes.formUnion(extraction.themes)
                             ytProcessed += 1
@@ -941,7 +941,7 @@ class CadenceRunner {
                                 themeClassifications: extraction.themeClassifications,
                                 openQuestions: extraction.openQuestions,
                                 mentalModelShifts: extraction.mentalModelShifts,
-                                decisions: extraction.decisions
+                                decisions: extraction.decisions, itemThemes: extraction.itemThemes
                             )
                             allNewThemes.formUnion(extraction.themes)
                             notionProcessed += 1
@@ -1012,7 +1012,7 @@ class CadenceRunner {
                                 themeClassifications: extraction.themeClassifications,
                                 openQuestions: extraction.openQuestions,
                                 mentalModelShifts: extraction.mentalModelShifts,
-                                decisions: extraction.decisions
+                                decisions: extraction.decisions, itemThemes: extraction.itemThemes
                             )
                             allNewThemes.formUnion(extraction.themes)
                             msgProcessed += 1
@@ -1056,7 +1056,7 @@ class CadenceRunner {
                                 themeClassifications: extraction.themeClassifications,
                                 openQuestions: extraction.openQuestions,
                                 mentalModelShifts: extraction.mentalModelShifts,
-                                decisions: extraction.decisions)
+                                decisions: extraction.decisions, itemThemes: extraction.itemThemes)
                             allNewThemes.formUnion(extraction.themes)
                             msgProcessed += 1
                         }
@@ -1100,7 +1100,7 @@ class CadenceRunner {
                                 themeClassifications: extraction.themeClassifications,
                                 openQuestions: extraction.openQuestions,
                                 mentalModelShifts: extraction.mentalModelShifts,
-                                decisions: extraction.decisions
+                                decisions: extraction.decisions, itemThemes: extraction.itemThemes
                             )
                             allNewThemes.formUnion(extraction.themes)
                             msgProcessed += 1
@@ -1139,7 +1139,7 @@ class CadenceRunner {
                         themeClassifications: extraction.themeClassifications,
                         openQuestions: extraction.openQuestions,
                         mentalModelShifts: extraction.mentalModelShifts,
-                        decisions: extraction.decisions
+                        decisions: extraction.decisions, itemThemes: extraction.itemThemes
                     )
                     allNewThemes.formUnion(extraction.themes)
                 }

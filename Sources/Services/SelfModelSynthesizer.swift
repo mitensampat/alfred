@@ -164,13 +164,14 @@ enum SelfModelSynthesizer {
         let themeIds = Set(store.getFacets(kind: "theme", includeArchived: true).compactMap { $0["id"] as? String })
 
         var seen = Set<String>()
-        var pending: [(id: String, text: String, date: String, themes: [String])] = []
+        var pending: [(id: String, text: String, date: String, owner: String?)] = []
 
         for r in reflections {
             guard let decisions = r["decisions"] as? [String], !decisions.isEmpty else { continue }
             let created = (r["created_at"] as? String) ?? ""
             let date = created.count >= 10 ? String(created.prefix(10)) : created
             let themes = (r["themes"] as? [String]) ?? []
+            let itemThemes = (r["item_themes"] as? [String: String]) ?? [:]
 
             for raw in decisions {
                 let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -180,7 +181,7 @@ enum SelfModelSynthesizer {
                 let id = stableId("decision", text)
                 guard !seen.contains(id) else { continue }
                 seen.insert(id)
-                pending.append((id: id, text: text, date: date, themes: themes))
+                pending.append((id: id, text: text, date: date, owner: owningTheme(text, itemThemes: itemThemes, among: themes)))
             }
         }
         guard !pending.isEmpty else { return 0 }
@@ -196,13 +197,22 @@ enum SelfModelSynthesizer {
                 metadata: ["decided_on": d.date],
                 origin: "emergent"
             )
-            for t in d.themes {
-                let tid = stableId("theme", t)
+            // Attach to the ONE owning theme, not every theme the conversation touched.
+            if let owner = d.owner {
+                let tid = stableId("theme", owner)
                 if themeIds.contains(tid) { _ = store.linkFacetToTheme(facetId: d.id, themeId: tid) }
             }
         }
         store.endBulk()
         return pending.count
+    }
+
+    /// The single workspace an item belongs to: the LLM's per-item tag if present, else the
+    /// deterministic best-fit among the reflection's own themes. Never "all of them".
+    static func owningTheme(_ text: String, itemThemes: [String: String], among themes: [String]) -> String? {
+        if let t = itemThemes[text], !t.isEmpty { return t }
+        if themes.count <= 1 { return themes.first }
+        return ReflectionStore.bestFitTheme(text, among: themes)
     }
 
     /// Link each belief back to the theme(s) it crystallized from.
@@ -223,16 +233,17 @@ enum SelfModelSynthesizer {
         for r in reflections {
             guard let shifts = r["mental_model_shifts"] as? [[String: String]], !shifts.isEmpty,
                   let themes = r["themes"] as? [String], !themes.isEmpty else { continue }
+            let itemThemes = (r["item_themes"] as? [String: String]) ?? [:]
             for shift in shifts {
                 let to = shift["to"] ?? ""
                 guard !to.isEmpty else { continue }
                 // Belief ids are derived from the shift that opened the chain.
                 let beliefId = stableId("belief", (shift["from"] ?? "") + "|" + to)
                 guard beliefIds.contains(beliefId) else { continue }
-                for theme in themes {
-                    let themeId = stableId("theme", theme)
-                    guard themeIds.contains(themeId) else { continue }
-                    _ = store.linkFacetToTheme(facetId: beliefId, themeId: themeId)
+                // Attach to the ONE owning theme (LLM tag → best-fit), not every reflection theme.
+                if let owner = owningTheme(to, itemThemes: itemThemes, among: themes) {
+                    let themeId = stableId("theme", owner)
+                    if themeIds.contains(themeId) { _ = store.linkFacetToTheme(facetId: beliefId, themeId: themeId) }
                 }
             }
         }

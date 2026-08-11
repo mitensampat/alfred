@@ -1320,6 +1320,32 @@ class HTTPServer {
         case ("POST", "/api/schedule/tick"):
             await ScheduleService.shared.tick()
             return HTTPResponse(statusCode: 200, body: ["ok": true])
+        case ("GET", "/api/self-model/attach-audit"):
+            // Read-only: how much would the owning-theme gate reduce attachment bleed vs the old
+            // "link to every theme the conversation touched" logic? Does not mutate the model.
+            let refls = ReflectionStore.shared.getRecentReflections(limit: 2000, days: 400)
+            var items = 0, oldEdges = 0, newEdges = 0, withLLMTheme = 0, multiThemeItems = 0, multiThemeReflections = 0
+            for r in refls {
+                let themes = (r["themes"] as? [String]) ?? []
+                let itemThemes = (r["item_themes"] as? [String: String]) ?? [:]
+                if themes.count > 1 { multiThemeReflections += 1 }
+                var texts = ((r["decisions"] as? [String]) ?? []).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { $0.count >= 25 }
+                for s in (r["mental_model_shifts"] as? [[String: String]]) ?? [] { if let to = s["to"], !to.isEmpty { texts.append(to) } }
+                for t in texts {
+                    items += 1
+                    oldEdges += themes.isEmpty ? 0 : themes.count           // old: linked to ALL themes
+                    if themes.count > 1 { multiThemeItems += 1 }
+                    if itemThemes[t] != nil { withLLMTheme += 1 }
+                    if SelfModelSynthesizer.owningTheme(t, itemThemes: itemThemes, among: themes) != nil { newEdges += 1 }
+                }
+            }
+            let reduction = oldEdges > 0 ? Int((100.0 * Double(oldEdges - newEdges) / Double(oldEdges)).rounded()) : 0
+            return HTTPResponse(statusCode: 200, body: [
+                "reflections": refls.count, "multi_theme_reflections": multiThemeReflections,
+                "items": items, "items_in_multi_theme_reflections": multiThemeItems,
+                "old_edges_all_themes": oldEdges, "new_edges_owning_theme": newEdges,
+                "bleed_reduction_pct": reduction, "items_with_llm_theme": withLLMTheme,
+                "note": "items_with_llm_theme is 0 until new extractions run under the gate; old data uses best-fit"])
         case ("GET", "/api/schedule/sessions"):
             return HTTPResponse(statusCode: 200, body: ["sessions": ScheduleService.shared.openSessionsForDesk(), "configured": ScheduleService.shared.configured])
         case ("GET", "/api/schedule/manager-selftest"):
@@ -11643,7 +11669,7 @@ extension HTTPServer {
                 themeClassifications: extraction.themeClassifications,
                 openQuestions: extraction.openQuestions,
                 mentalModelShifts: extraction.mentalModelShifts,
-                decisions: extraction.decisions
+                decisions: extraction.decisions, itemThemes: extraction.itemThemes
             )
 
             // Ensure theme state rows exist for each extracted theme

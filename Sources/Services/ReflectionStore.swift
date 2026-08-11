@@ -65,6 +65,9 @@ class ReflectionStore {
                 sqlite3_free(errMsg)
             }
         }
+        // Migration: per-item owning theme (decision text / shift "to" → the ONE theme it's about),
+        // so the synthesizer attaches each item to a single workspace instead of all of them.
+        sqlite3_exec(db, "ALTER TABLE reflections ADD COLUMN item_themes_json TEXT", nil, nil, nil)
 
         let createThemeStates = """
         CREATE TABLE IF NOT EXISTS theme_states (
@@ -142,7 +145,8 @@ class ReflectionStore {
         themeClassifications: [String: String],
         openQuestions: [String],
         mentalModelShifts: [[String: String]],
-        decisions: [String]
+        decisions: [String],
+        itemThemes: [String: String] = [:]
     ) {
         dbLock.lock()
         defer { dbLock.unlock() }
@@ -153,10 +157,11 @@ class ReflectionStore {
         let questionsJson = jsonEncode(openQuestions)
         let shiftsJson = jsonEncode(mentalModelShifts)
         let decisionsJson = jsonEncode(decisions)
+        let itemThemesJson = jsonEncode(itemThemes)
 
         let sql = """
-        INSERT INTO reflections (source, source_id, content_summary, themes_json, theme_classifications_json, open_questions_json, mental_model_shifts_json, decisions_json, relevance_score)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1.0)
+        INSERT INTO reflections (source, source_id, content_summary, themes_json, theme_classifications_json, open_questions_json, mental_model_shifts_json, decisions_json, item_themes_json, relevance_score)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1.0)
         ON CONFLICT(source, source_id) DO UPDATE SET
             content_summary = excluded.content_summary,
             themes_json = excluded.themes_json,
@@ -164,6 +169,7 @@ class ReflectionStore {
             open_questions_json = excluded.open_questions_json,
             mental_model_shifts_json = excluded.mental_model_shifts_json,
             decisions_json = excluded.decisions_json,
+            item_themes_json = excluded.item_themes_json,
             relevance_score = 1.0
         """
 
@@ -177,6 +183,7 @@ class ReflectionStore {
             sqlite3_bind_text(stmt, 6, (questionsJson as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
             sqlite3_bind_text(stmt, 7, (shiftsJson as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
             sqlite3_bind_text(stmt, 8, (decisionsJson as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            sqlite3_bind_text(stmt, 9, (itemThemesJson as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
 
             if sqlite3_step(stmt) != SQLITE_DONE {
                 print("❌ ReflectionStore: Failed to insert reflection")
@@ -211,7 +218,7 @@ class ReflectionStore {
         var sql = """
         SELECT id, source, source_id, content_summary, themes_json, theme_classifications_json,
                open_questions_json, mental_model_shifts_json, decisions_json,
-               relevance_score, created_at
+               relevance_score, created_at, item_themes_json
         FROM reflections
         WHERE created_at >= datetime('now', '-\(days) days')
         """
@@ -241,6 +248,7 @@ class ReflectionStore {
                 row["decisions"] = jsonDecode(columnText(stmt, 8)) ?? []
                 row["relevance_score"] = sqlite3_column_double(stmt, 9)
                 row["created_at"] = columnText(stmt, 10)
+                row["item_themes"] = jsonDecode(columnText(stmt, 11)) ?? [:]
                 results.append(row)
             }
         }
