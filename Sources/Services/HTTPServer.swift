@@ -1635,6 +1635,12 @@ class HTTPServer {
             return await handleDeskPerson(request)
         case ("GET", "/api/desk/item/context"):
             return await handleDeskItemContext(request)
+        case ("POST", "/api/desk/item/edit"):
+            return handleDeskItemEdit(request)
+        case ("POST", "/api/desk/item/snooze"):
+            return handleDeskItemSnooze(request)
+        case ("POST", "/api/desk/item/to-task"):
+            return await handleDeskItemToTask(request)
         case ("GET", "/api/wa-bridge/status"):
             return await handleWaBridgeStatus(request)
 
@@ -12686,6 +12692,70 @@ extension HTTPServer {
         out["people_curated"] = peopleCurated
         out["provenance"] = "Read from your threads, the calendar and Notion. Nothing typed by hand."
         return HTTPResponse(statusCode: 200, body: out)
+    }
+
+    /// Edit a commitment item's wording — a non-destructive display-title override (the hash, and
+    /// therefore auto-closure, stay tied to the original). Body/query: { id, title }.
+    private func handleDeskItemEdit(_ request: HTTPRequest) -> HTTPResponse {
+        let body = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        let id = ((body["id"] as? String) ?? request.queryParams["id"] ?? "").trimmingCharacters(in: .whitespaces)
+        let title = ((body["title"] as? String) ?? request.queryParams["title"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty, !title.isEmpty else {
+            return HTTPResponse(statusCode: 400, body: ["error": "id and title required"])
+        }
+        let ok = CommitmentScanTracker.shared.setCommitmentTitle(hash: id, title: title)
+        return HTTPResponse(statusCode: ok ? 200 : 500, body: ["success": ok, "title": title])
+    }
+
+    /// Snooze an item off the desk for N days (it reappears on its own). Body/query: { id, days }.
+    private func handleDeskItemSnooze(_ request: HTTPRequest) -> HTTPResponse {
+        let body = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        let id = ((body["id"] as? String) ?? request.queryParams["id"] ?? "").trimmingCharacters(in: .whitespaces)
+        let days = (body["days"] as? Int) ?? Int(request.queryParams["days"] ?? "") ?? 0
+        guard !id.isEmpty, days > 0 else {
+            return HTTPResponse(statusCode: 400, body: ["error": "id and days (>0) required"])
+        }
+        let until = Calendar.current.date(byAdding: .day, value: days, to: Date())
+        let ok = CommitmentScanTracker.shared.snoozeCommitment(hash: id, until: until)
+        return HTTPResponse(statusCode: ok ? 200 : 500, body: ["success": ok, "snoozed_days": days])
+    }
+
+    /// Hand a commitment to Notion as a tracked task (optionally with a due date N days out), then
+    /// close it off the desk. Body/query: { id, due_days? }.
+    private func handleDeskItemToTask(_ request: HTTPRequest) async -> HTTPResponse {
+        let body = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        let id = ((body["id"] as? String) ?? request.queryParams["id"] ?? "").trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty else { return HTTPResponse(statusCode: 400, body: ["error": "id required"]) }
+        guard let orchestrator = alfredService.orchestrator else {
+            return HTTPResponse(statusCode: 503, body: ["error": "Notion service not available"])
+        }
+        guard let c = CommitmentScanTracker.shared.getAllOpenCommitments().first(where: { $0.hash == id }) else {
+            return HTTPResponse(statusCode: 404, body: ["error": "item not found"])
+        }
+        let dueDays = (body["due_days"] as? Int) ?? Int(request.queryParams["due_days"] ?? "")
+        let due: Date? = dueDays.flatMap { Calendar.current.date(byAdding: .day, value: $0, to: Date()) }
+        let dir: TaskItem.CommitmentDirection = c.type == "I Owe" ? .iOwe : .theyOweMe
+        let task = TaskItem(
+            notionId: "", title: c.title, type: .commitment, status: .notStarted,
+            description: c.title, dueDate: due, priority: nil, assignee: nil,
+            commitmentDirection: dir,
+            committedBy: dir == .theyOweMe ? c.counterparty : "you",
+            committedTo: dir == .iOwe ? c.counterparty : "you",
+            originalContext: nil, sourcePlatform: nil, sourceThread: c.counterparty, sourceThreadId: c.threadId,
+            tags: ["from-desk"], followUpDate: nil, uniqueHash: c.hash, notes: nil,
+            createdDate: Date(), lastUpdated: Date())
+        do {
+            let notionId = try await orchestrator.notionServicePublic.createTask(task)
+            CommitmentScanTracker.shared.markCommitmentClosed(hash: c.hash, closureMethod: "notion_task")
+            return HTTPResponse(statusCode: 200, body: ["success": true, "notion_id": notionId])
+        } catch {
+            let msg = "\(error)"
+            if msg.lowercased().contains("duplicate") {   // already tracked in Notion — still take it off the desk
+                CommitmentScanTracker.shared.markCommitmentClosed(hash: c.hash, closureMethod: "notion_task")
+                return HTTPResponse(statusCode: 200, body: ["success": true, "note": "Already in Notion"])
+            }
+            return HTTPResponse(statusCode: 500, body: ["error": "Could not create Notion task", "detail": msg])
+        }
     }
 
     /// Counterparties on open items whose text maps to this front.

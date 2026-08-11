@@ -88,6 +88,11 @@ class CommitmentScanTracker {
         sqlite3_exec(db, createExtractionLogTable, nil, nil, &errMsg)
         sqlite3_exec(db, createClosureLogTable, nil, nil, &errMsg)
 
+        // Per-item user affordances (non-destructive): a display-title override (the commitment_hash
+        // stays the identity, so auto-closure/dedup keep working) and a snooze-until timestamp.
+        sqlite3_exec(db, "ALTER TABLE commitment_extractions ADD COLUMN user_title TEXT", nil, nil, nil)
+        sqlite3_exec(db, "ALTER TABLE commitment_extractions ADD COLUMN snooze_until DATETIME", nil, nil, nil)
+
         // Performance indexes
         sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_ce_thread_open ON commitment_extractions(thread_id, was_closed)", nil, nil, nil)
         sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_ce_was_closed ON commitment_extractions(was_closed)", nil, nil, nil)
@@ -309,10 +314,12 @@ class CommitmentScanTracker {
         dbLock.lock()
         defer { dbLock.unlock() }
 
+        // Display the user's edited title when present; hide items snoozed to a future time.
         let query = """
-        SELECT commitment_hash, title, commitment_type, counterparty, extracted_at, thread_id, confidence
+        SELECT commitment_hash, COALESCE(NULLIF(user_title,''), title), commitment_type, counterparty, extracted_at, thread_id, confidence
         FROM commitment_extractions
         WHERE was_closed = 0
+          AND (snooze_until IS NULL OR snooze_until <= CURRENT_TIMESTAMP)
         """
 
         var stmt: OpaquePointer?
@@ -332,6 +339,43 @@ class CommitmentScanTracker {
         }
 
         return results
+    }
+
+    // MARK: - Per-item affordances (edit / snooze)
+
+    /// Non-destructive rename: stores a display-title override. The commitment_hash — and therefore
+    /// auto-closure and dedup — stay tied to the original text. Empty string clears the override.
+    @discardableResult
+    func setCommitmentTitle(hash: String, title: String) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        let sql = "UPDATE commitment_extractions SET user_title = ? WHERE commitment_hash = ?"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(stmt) }
+        bindText(stmt, 1, title)
+        bindText(stmt, 2, hash)
+        return sqlite3_step(stmt) == SQLITE_DONE
+    }
+
+    /// Snooze an item off the desk until `until` (nil un-snoozes). Snoozed items are excluded from
+    /// getAllOpenCommitments until the time passes, then reappear on their own.
+    @discardableResult
+    func snoozeCommitment(hash: String, until: Date?) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        let sql = "UPDATE commitment_extractions SET snooze_until = ? WHERE commitment_hash = ?"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(stmt) }
+        if let until = until {
+            let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH:mm:ss"; f.timeZone = TimeZone(identifier: "UTC")
+            bindText(stmt, 1, f.string(from: until))
+        } else {
+            sqlite3_bind_null(stmt, 1)
+        }
+        bindText(stmt, 2, hash)
+        return sqlite3_step(stmt) == SQLITE_DONE
     }
 
     // MARK: - Closure Detection

@@ -349,6 +349,11 @@
       .dk-item-actions{ display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; align-items:center; }
       .dk-item-ctx-btn{ border:none; background:none; color:var(--dk-a700); font-family:inherit; font-size:12px; font-weight:700; cursor:pointer; padding:6px 6px; margin-left:auto; }
       .dk-item-ctx-btn:hover{ text-decoration:underline; }
+      .dk-item-affs{ display:flex; gap:2px; align-items:center; margin-left:auto; flex-wrap:wrap; }
+      .dk-item-affs .dk-item-ctx-btn{ margin-left:0; }
+      .dk-item-aff{ border:none; background:none; color:var(--dk-n600); font-family:inherit; font-size:11.5px; font-weight:700; letter-spacing:.02em; cursor:pointer; padding:6px 6px; }
+      .dk-item-aff:hover{ color:var(--dk-text); text-decoration:underline; }
+      .dk-item-editin{ font-family:inherit; font-size:14px; padding:5px 8px; border:1px solid var(--dk-text); background:var(--dk-card); color:var(--dk-text); min-width:min(360px,58vw); margin-right:6px; }
       .dk-item-ctx{ margin-top:10px; padding:10px 13px; background:var(--dk-n100); border-left:3px solid var(--dk-n400); font-size:12.5px; line-height:1.5; color:var(--dk-n700); }
       .dk-ctx-label{ font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--dk-n600); margin-bottom:8px; }
       .dk-ctx-chat{ display:flex; flex-direction:column; gap:7px; }
@@ -11536,18 +11541,21 @@
                         <button type="button" class="dk-btn-ghost" style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dk-n600);" onclick="deskItemUndo('${id}')">Undo</button></div>
                     <div class="dk-item-ctx" style="display:block;background:var(--dk-a100);border-left-color:var(--dk-accent);"><strong>${_esc(_deskItemCleared[id])}</strong></div></div>`;
             }
-            const actions = (mode === 'they_owe')
+            const primary = (mode === 'they_owe')
                 ? `<button type="button" class="dk-btn dk-btn-ink dk-btn-sm" onclick="deskItemReply('${id}',true)">Chase</button>
                    <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskItemClose('${id}','done')">Got it</button>
-                   <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskItemClose('${id}','dismissed')">Dismiss</button>
-                   <button type="button" class="dk-item-ctx-btn" onclick="deskItemContext('${id}')">Context</button>`
+                   <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskItemClose('${id}','dismissed')">Dismiss</button>`
                 : `<button type="button" class="dk-btn dk-btn-ink dk-btn-sm" onclick="deskItemReply('${id}',false)">Reply</button>
                    <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskItemClose('${id}','done')">Done</button>
-                   <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskItemClose('${id}','dismissed')">Dismiss</button>
+                   <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskItemClose('${id}','dismissed')">Dismiss</button>`;
+            // Secondary affordances: sharpen the wording, defer it, or hand it to Notion.
+            const affs = `<button type="button" class="dk-item-aff" onclick="dkItemEdit('${id}')">Edit</button>
+                   <button type="button" class="dk-item-aff" onclick="dkItemSnooze('${id}')">Snooze</button>
+                   <button type="button" class="dk-item-aff" onclick="dkItemToTask('${id}')">→ Task</button>
                    <button type="button" class="dk-item-ctx-btn" onclick="deskItemContext('${id}')">Context</button>`;
             return `<div class="dk-item" id="dkitem-${id}">
-                    <div class="dk-item-top"><span class="dk-item-text">${_esc(it.text)}</span><span class="dk-item-age ${it.age_days>=7?'hot':''}">${it.age_days}d</span></div>
-                    <div class="dk-item-actions">${actions}</div>
+                    <div class="dk-item-top"><span class="dk-item-text" id="dkitemtext-${id}">${_esc(it.text)}</span><span class="dk-item-age ${it.age_days>=7?'hot':''}">${it.age_days}d</span></div>
+                    <div class="dk-item-actions">${primary}<span class="dk-item-affs">${affs}</span></div>
                     <div class="dk-item-ctx" id="dkctx-${id}" style="display:none;"></div>
                     <div class="dk-compose" id="dkcompose-${id}" style="display:none;"></div>
                 </div>`;
@@ -11680,6 +11688,57 @@
                 const r = await res.json();
                 if (r && typeof r.desk_count === 'number'){ _deskCount = r.desk_count; _deskOver = r.over_week; if (r.receipt) _deskItemCleared[id] = r.receipt; renderDeskCenter(); renderDeskBand(); refreshPeopleMargin(); }
             } catch(e){ console.error('[Desk] item close failed', e); }
+        }
+        // Re-fetch the current person and re-render — restates the whole page after edit/snooze/task.
+        async function deskReloadPerson(){
+            const id = _deskDetail && _deskDetail.name; if (!id) return;
+            try { const r = await authFetch('/api/desk/person?id=' + encodeURIComponent(id)); _deskDetail = await r.json(); } catch(e){}
+            renderDeskCenter();
+            authFetch('/api/desk').then(r => r.json()).then(d => { _deskData = d; }).catch(()=>{});
+        }
+        // Edit an item's wording inline (non-destructive display-title override).
+        function dkItemEdit(id){
+            const span = document.getElementById('dkitemtext-' + id); if (!span) return;
+            const cur = span.textContent || '';
+            span.innerHTML = `<input class="dk-item-editin" id="dkedit-${id}" value="${_esc(cur)}" onkeydown="if(event.key==='Enter')dkItemEditSave('${id}');if(event.key==='Escape')deskReloadPerson();">
+                <button type="button" class="dk-btn dk-btn-ink dk-btn-sm" onclick="dkItemEditSave('${id}')">Save</button>
+                <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskReloadPerson()">Cancel</button>`;
+            const inp = document.getElementById('dkedit-' + id);
+            if (inp){ inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+        }
+        async function dkItemEditSave(id){
+            const inp = document.getElementById('dkedit-' + id); if (!inp) return;
+            const title = inp.value.trim(); if (!title){ deskReloadPerson(); return; }
+            try {
+                const r = await authFetch('/api/desk/item/edit', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id, title }) });
+                if (!(await r.json()).success) throw new Error('failed');
+            } catch(e){ alert('Could not save the edit.'); return; }
+            deskReloadPerson();
+        }
+        // Snooze an item off the desk for a while (it comes back on its own).
+        function dkItemSnooze(id){
+            const el = document.getElementById('dkctx-' + id); if (!el) return;
+            el.style.display = 'block';
+            el.innerHTML = `<span style="font-size:12px;color:var(--dk-n600);margin-right:6px;">Snooze for</span>` +
+                [['3 days',3],['1 week',7],['2 weeks',14],['1 month',30]].map(([lbl,d]) =>
+                    `<button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="dkItemSnoozeDo('${id}',${d})">${lbl}</button>`).join(' ');
+        }
+        async function dkItemSnoozeDo(id, days){
+            try {
+                const r = await authFetch('/api/desk/item/snooze', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id, days }) });
+                if (!(await r.json()).success) throw new Error('failed');
+            } catch(e){ alert('Could not snooze.'); return; }
+            deskReloadPerson();
+        }
+        // Hand an item to Notion as a tracked task, then take it off the desk.
+        async function dkItemToTask(id){
+            if (!confirm('Create a Notion task from this and take it off the desk?')) return;
+            try {
+                const r = await authFetch('/api/desk/item/to-task', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
+                const d = await r.json();
+                if (!d.success) throw new Error(d.error || 'failed');
+            } catch(e){ alert('Could not create the Notion task. Is Notion connected in Settings?'); return; }
+            deskReloadPerson();
         }
         async function deskItemUndo(id){
             delete _deskItemCleared[id];
