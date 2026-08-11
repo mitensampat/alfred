@@ -272,6 +272,9 @@
       .dk-person-row .sub{ display:block; font-size:11.5px; color:var(--dk-n600); margin-top:3px; }
       .dk-ledger{ display:grid; grid-template-columns:54px 1fr; gap:12px; border-top:1px solid var(--dk-divider); padding:10px 0 9px; font-size:13.5px; line-height:1.4; }
       .dk-ledger .dt{ font-size:11.5px; color:var(--dk-n600); }
+      .dk-ledger-x{ display:inline-block; margin-left:8px; border:none; background:none; padding:0; font:inherit; font-size:10px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--dk-n400); cursor:pointer; white-space:nowrap; opacity:0; transition:opacity .12s; }
+      .dk-ledger:hover .dk-ledger-x{ opacity:1; }
+      .dk-ledger-x:hover{ color:var(--dk-hot); }
       .dk-prov{ font-size:11.5px; line-height:1.5; color:var(--dk-n600); margin-top:10px; }
       .dk-draft-box{ border:2px solid var(--dk-text); background:var(--dk-card); padding:14px; margin-top:11px; }
       .dk-draft-box p{ margin:0; font-size:14px; line-height:1.55; }
@@ -11290,7 +11293,11 @@
                 return `<span class="dk-ed" data-fid="${id}" data-key="${key}" data-ml="${ml?1:0}" data-editor="${editor||'text'}" data-val="${_esc(val||'')}" onclick="dkStartEdit(this)" title="Click to edit">${shown}</span>`;
             };
             const stuck = d.stuck ? `<div class="dk-stat hot"><div class="dk-stat-num">${d.stuck.days}d</div><div class="dk-stat-l">Stuck, on you</div></div>` : '';
-            const ledger = (d.ledger || []).map(l => `<div class="dk-ledger"><span class="dt">${_esc(l.date)}</span><span>${_esc(l.content)}</span></div>`).join('') || `<div class="dk-prov">Nothing recorded on this front yet.</div>`;
+            const ledger = (d.ledger || []).map((l, i) => {
+                const canFlag = l.rid && (l.type === 'question' || l.type === 'decision' || l.type === 'shift');
+                const x = canFlag ? `<button type="button" class="dk-ledger-x" title="Not relevant to this front — remove and recompute" onclick="dkNotRelevant(${i})">not relevant ✕</button>` : '';
+                return `<div class="dk-ledger"><span class="dt">${_esc(l.date)}</span><span>${_esc(l.content)}${x}</span></div>`;
+            }).join('') || `<div class="dk-prov">Nothing recorded on this front yet.</div>`;
             const people = (d.people || []).map(p => {
                 const bd = p.direction === 'you_owe' ? `<span class="bd hot">you owe →</span>`
                         : p.direction === 'they_owe' ? `<span class="bd">they owe you</span>`
@@ -11441,6 +11448,23 @@
             catch(e){ _deskDetail = { error: true }; }
             _deskView = 'front'; _deskSel = fid; renderDeskCenter();
             authFetch('/api/desk').then(r => r.json()).then(dd => { _deskData = dd; }).catch(()=>{});
+        }
+
+        // ── "Not relevant" on a ledger atom → exclude it from this front, then re-run the front's
+        //    compute so the whole card (one-decision + ledger) restates. ──
+        async function dkNotRelevant(i){
+            const d = _deskDetail; if (!d || !d.ledger || !d.ledger[i]) return;
+            const l = d.ledger[i];
+            const content = (l.type === 'shift') ? (l.shift_to || l.content) : l.content;
+            const aux = (l.type === 'shift') ? (l.shift_from || '') : '';
+            const body = { reflection_id: parseInt(l.rid, 10), item_type: l.type, content: content, from_theme: d.name, to_theme: '' };
+            if (aux) body.from = aux;
+            try {
+                const r = await authFetch('/api/reflect/item/move', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+                const j = await r.json();
+                if (!j.success) throw new Error(j.error||'failed');
+            } catch(e){ alert('Could not remove that item.'); return; }
+            dkReloadFront(d.id);   // re-run the front's underlying compute and re-render everything
         }
 
         // ── Mark done → archive (stage=done drops it off the board; restorable from Archive) ──

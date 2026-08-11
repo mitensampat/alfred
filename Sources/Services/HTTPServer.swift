@@ -12643,11 +12643,18 @@ extension HTTPServer {
         // Ledger: dated timeline rows ("what has actually happened").
         let timeline = (detail["timeline"] as? [[String: Any]]) ?? []
         let ledger: [[String: Any]] = timeline.prefix(8).map { item in
-            [
+            var row: [String: Any] = [
                 "date": item["date"] as? String ?? "",
                 "content": item["content"] as? String ?? "",
                 "type": item["type"] as? String ?? "reflection"
             ]
+            // Carry the identity so the card can mark a specific atom "not relevant" (excludes it
+            // from this front and re-runs the front's compute). Reflection-summary rows are the
+            // container, not an atom, so they get no rid and no control.
+            if let rid = item["rid"] as? String { row["rid"] = rid }
+            if let sf = item["shift_from"] as? String { row["shift_from"] = sf }
+            if let st = item["shift_to"] as? String { row["shift_to"] = st }
+            return row
         }
         // Who is in it: the user's curated list (people_json in facet metadata) if they've
         // edited it, else auto-derived from commitments that map to this front.
@@ -13166,8 +13173,8 @@ extension HTTPServer {
               !itemType.isEmpty, !content.isEmpty, !fromTheme.isEmpty else {
             return HTTPResponse(statusCode: 400, body: ["error": "Missing reflection_id / item_type / content / from_theme"])
         }
-        guard itemType == "shift" || itemType == "decision" else {
-            return HTTPResponse(statusCode: 400, body: ["error": "item_type must be 'shift' or 'decision'"])
+        guard itemType == "shift" || itemType == "decision" || itemType == "question" else {
+            return HTTPResponse(statusCode: 400, body: ["error": "item_type must be 'shift', 'decision', or 'question'"])
         }
         let aux = (json["from"] as? String)   // shift "from" belief; nil for decisions
         let toTheme = (json["to_theme"] as? String)?.trimmingCharacters(in: .whitespaces)

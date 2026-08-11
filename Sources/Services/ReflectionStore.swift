@@ -594,6 +594,19 @@ class ReflectionStore {
             }
         }
         sqlite3_finalize(ovStmt)
+
+        // Items the user marked "not relevant" to THIS front (pure exclude, to_theme null).
+        var excludedHere = Set<String>()
+        let exSql = "SELECT item_content FROM reflection_item_overrides WHERE from_theme = ? AND (to_theme IS NULL OR to_theme = '')"
+        var exStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, exSql, -1, &exStmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(exStmt, 1, (theme as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            while sqlite3_step(exStmt) == SQLITE_ROW {
+                let c = (columnText(exStmt, 0) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !c.isEmpty { excludedHere.insert(c) }
+            }
+        }
+        sqlite3_finalize(exStmt)
         var timelineItems: [[String: Any]] = []
         var questionCount = 0
         var decisionCount = 0
@@ -631,6 +644,7 @@ class ReflectionStore {
                 // edge and the lineage gate use, so the detail ledger stays consistent with them.
                 func belongsHere(_ text: String) -> Bool {
                     let k = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if excludedHere.contains(k) { return false }          // "not relevant" to this front
                     if let o = moveOverrides[k], !o.isEmpty { return o == theme }
                     if let t = rowItemThemes[k], !t.isEmpty { return t == theme }
                     return rowThemes.count < 2 || Self.bestFitTheme(text, among: rowThemes) == theme
@@ -1395,6 +1409,20 @@ class ReflectionStore {
         }
         sqlite3_finalize(ovStmt)
 
+        // "Not relevant" excludes (to_theme null), by source theme — an excluded question can't be
+        // that theme's edge.
+        var excludedByTheme: [String: Set<String>] = [:]
+        let exSql = "SELECT from_theme, item_content FROM reflection_item_overrides WHERE to_theme IS NULL OR to_theme = ''"
+        var exStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, exSql, -1, &exStmt, nil) == SQLITE_OK {
+            while sqlite3_step(exStmt) == SQLITE_ROW {
+                let ft = (columnText(exStmt, 0) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let c = (columnText(exStmt, 1) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !ft.isEmpty && !c.isEmpty { excludedByTheme[ft, default: []].insert(c) }
+            }
+        }
+        sqlite3_finalize(exStmt)
+
         // Cutoff for "this week" activity (lexicographic compare works for SQLite's
         // "YYYY-MM-DD HH:MM:SS" UTC timestamp format)
         let weekCutoff: String = {
@@ -1465,6 +1493,7 @@ class ReflectionStore {
                     // topic's question bled in as the headline (a VN-conduct question on the CCBP front).
                     if agg.edge.isEmpty {
                         for q in questions where !q.isEmpty {
+                            if excludedByTheme[theme]?.contains(q.trimmingCharacters(in: .whitespacesAndNewlines)) == true { continue }
                             let owner = questionOverrides[q]
                                 ?? itemThemesMap[q].flatMap { $0.isEmpty ? nil : $0 }
                                 ?? (themes.count < 2 ? theme : Self.bestFitTheme(q, among: themes))
