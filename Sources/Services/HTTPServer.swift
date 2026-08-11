@@ -1641,6 +1641,8 @@ class HTTPServer {
             return handleDeskItemSnooze(request)
         case ("POST", "/api/desk/item/to-task"):
             return await handleDeskItemToTask(request)
+        case ("POST", "/api/tasks/create-db"):
+            return await handleCreateTasksDb(request)
         case ("GET", "/api/wa-bridge/status"):
             return await handleWaBridgeStatus(request)
 
@@ -12692,6 +12694,26 @@ extension HTTPServer {
         out["people_curated"] = peopleCurated
         out["provenance"] = "Read from your threads, the calendar and Notion. Nothing typed by hand."
         return HTTPResponse(statusCode: 200, body: out)
+    }
+
+    /// Create a fresh Notion tasks database (the on-demand "Alfred tasks" destination) under a parent
+    /// page the integration can write to. Returns its id; caller repoints config.tasks_database_id.
+    /// Body/query: { title?, parent (page id) }.
+    private func handleCreateTasksDb(_ request: HTTPRequest) async -> HTTPResponse {
+        let body = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        let title = ((body["title"] as? String) ?? request.queryParams["title"] ?? "Alfred tasks").trimmingCharacters(in: .whitespaces)
+        let parent = ((body["parent"] as? String) ?? request.queryParams["parent"] ?? "").trimmingCharacters(in: .whitespaces)
+        guard let orchestrator = alfredService.orchestrator else {
+            return HTTPResponse(statusCode: 503, body: ["error": "Notion service not available"])
+        }
+        do {
+            let dbId = try await orchestrator.notionServicePublic.createTasksDatabase(title: title, parentPageId: parent.isEmpty ? nil : parent)
+            return HTTPResponse(statusCode: 200, body: [
+                "success": true, "database_id": dbId, "title": title,
+                "note": "Set notion.tasks_database_id to this id (and restart) to route → Task here."])
+        } catch {
+            return HTTPResponse(statusCode: 500, body: ["error": "Could not create the database", "detail": "\(error)"])
+        }
     }
 
     /// Edit a commitment item's wording — a non-destructive display-title override (the hash, and

@@ -15,7 +15,7 @@ extension NotionService {
     }
 
     /// Create the unified Tasks database (simplified for easy manual use)
-    func createTasksDatabase(parentPageId: String? = nil) async throws -> String {
+    func createTasksDatabase(title: String = "Tasks", parentPageId: String? = nil) async throws -> String {
         let url = URL(string: "https://api.notion.com/v1/databases")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -64,7 +64,7 @@ extension NotionService {
             "title": [
                 [
                     "type": "text",
-                    "text": ["content": "Tasks"]
+                    "text": ["content": title]
                 ]
             ],
             "properties": properties

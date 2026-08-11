@@ -11730,11 +11730,18 @@
             } catch(e){ alert('Could not snooze.'); return; }
             deskReloadPerson();
         }
-        // Hand an item to Notion as a tracked task, then take it off the desk.
-        async function dkItemToTask(id){
-            if (!confirm('Create a Notion task from this and take it off the desk?')) return;
+        // Hand an item to Notion as a tracked task (choose a due date first), then take it off the desk.
+        function dkItemToTask(id){
+            const el = document.getElementById('dkctx-' + id); if (!el) return;
+            el.style.display = 'block';
+            el.innerHTML = `<span style="font-size:12px;color:var(--dk-n600);margin-right:6px;">→ Alfred tasks, due</span>` +
+                [['no date',0],['in 3 days',3],['in 1 week',7],['in 2 weeks',14]].map(([lbl,d]) =>
+                    `<button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="dkItemToTaskDo('${id}',${d})">${lbl}</button>`).join(' ');
+        }
+        async function dkItemToTaskDo(id, dueDays){
+            const bodyObj = { id }; if (dueDays > 0) bodyObj.due_days = dueDays;
             try {
-                const r = await authFetch('/api/desk/item/to-task', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
+                const r = await authFetch('/api/desk/item/to-task', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(bodyObj) });
                 const d = await r.json();
                 if (!d.success) throw new Error(d.error || 'failed');
             } catch(e){ alert('Could not create the Notion task. Is Notion connected in Settings?'); return; }
