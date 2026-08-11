@@ -1408,6 +1408,67 @@ class HTTPServer {
                 "front_count_by_belief_bar": sweep,
                 "dropping_examples": Array(dropping.prefix(50)),
                 "note": "Read-only. Apply with POST /api/self-model/compute after setting the bar."])
+
+        case ("GET", "/api/self-model/strays"):
+            // Pending "this item may belong in another workspace" proposals, grouped by source
+            // workspace for the triage surface. Nothing here has been applied.
+            let pending = ReflectionStore.shared.getItemMoveProposals(status: "pending")
+            var byFront: [String: [[String: Any]]] = [:]
+            for p in pending { byFront[(p["from_theme"] as? String) ?? "", default: []].append(p) }
+            let groups = byFront.map { (front, items) -> [String: Any] in
+                ["from_theme": front, "count": items.count, "items": items]
+            }.sorted { ($0["count"] as? Int ?? 0) > ($1["count"] as? Int ?? 0) }
+            return HTTPResponse(statusCode: 200, body: [
+                "count": pending.count, "workspaces": groups.count, "groups": groups])
+
+        case ("POST", "/api/self-model/strays/detect"):
+            // Run the detector now and queue proposals (the daily cadence also does this). Manual trigger.
+            guard getConfig()?.features?.selfModel ?? false else {
+                return HTTPResponse(statusCode: 200, body: ["enabled": false])
+            }
+            let maxWs = Int(request.queryParams["workspaces"] ?? "") ?? 12
+            let r = await SelfModelHygiene.detectAndQueue(maxWorkspaces: maxWs)
+            return HTTPResponse(statusCode: 200, body: [
+                "found": r.found, "queued": r.queued,
+                "pending_total": ReflectionStore.shared.getItemMoveProposals(status: "pending").count])
+
+        case ("POST", "/api/self-model/strays/resolve"):
+            // Accept a proposed move (writes a durable override the rebuild honours) or reject it.
+            // Body/query: { id, action: "accept" | "reject" }.
+            let bodyJSON = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            let id = ((bodyJSON["id"] as? String) ?? request.queryParams["id"] ?? "").trimmingCharacters(in: .whitespaces)
+            let action = ((bodyJSON["action"] as? String) ?? request.queryParams["action"] ?? "").lowercased()
+            guard !id.isEmpty, action == "accept" || action == "reject" else {
+                return HTTPResponse(statusCode: 400, body: ["error": "id and action (accept|reject) required"])
+            }
+            guard let p = ReflectionStore.shared.getItemMoveProposal(id: id) else {
+                return HTTPResponse(statusCode: 404, body: ["error": "proposal not found"])
+            }
+            if action == "reject" {
+                _ = ReflectionStore.shared.setItemMoveProposalStatus(id: id, status: "rejected")
+                return HTTPResponse(statusCode: 200, body: ["success": true, "action": "rejected", "id": id])
+            }
+            // Accept → record the item override (read layer + durable owning-theme override).
+            let rid = (p["reflection_id"] as? Int) ?? 0
+            let itemType = (p["item_type"] as? String) ?? ""
+            let content = (p["content"] as? String) ?? ""
+            let auxRaw = (p["aux"] as? String) ?? ""
+            let aux = auxRaw.isEmpty ? nil : auxRaw
+            let fromTheme = (p["from_theme"] as? String) ?? ""
+            let toTheme = (p["to_theme"] as? String) ?? ""
+            guard rid > 0, !itemType.isEmpty, !content.isEmpty, !fromTheme.isEmpty, !toTheme.isEmpty else {
+                return HTTPResponse(statusCode: 500, body: ["error": "proposal is malformed"])
+            }
+            let ok = ReflectionStore.shared.setItemOverride(
+                reflectionId: rid, itemType: itemType, content: content, aux: aux,
+                fromTheme: fromTheme, toTheme: toTheme)
+            guard ok else { return HTTPResponse(statusCode: 500, body: ["error": "failed to record move"]) }
+            _ = ReflectionStore.shared.setItemMoveProposalStatus(id: id, status: "accepted")
+            return HTTPResponse(statusCode: 200, body: [
+                "success": true, "action": "moved", "id": id,
+                "from_theme": fromTheme, "to_theme": toTheme,
+                "note": "Move recorded. Takes full effect on the next rebuild (daily, or POST /api/self-model/compute)."])
+
         case ("GET", "/api/schedule/sessions"):
             return HTTPResponse(statusCode: 200, body: ["sessions": ScheduleService.shared.openSessionsForDesk(), "configured": ScheduleService.shared.configured])
         case ("GET", "/api/schedule/manager-selftest"):

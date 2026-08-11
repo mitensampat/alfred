@@ -118,6 +118,35 @@ class ReflectionStore {
             }
         }
 
+        // Pending stray-move proposals (Phase C). The daily hygiene pass detects items sitting in
+        // the wrong workspace and QUEUES a proposed move here — nothing re-files silently. The user
+        // accepts (→ writes a reflection_item_override, which owningTheme() honours on the next
+        // rebuild) or rejects. id is a stable hash so re-running the detector never duplicates or
+        // re-proposes a resolved move.
+        let createMoveProposals = """
+        CREATE TABLE IF NOT EXISTS item_move_proposal (
+            id TEXT PRIMARY KEY,
+            reflection_id INTEGER NOT NULL,
+            item_type TEXT NOT NULL,
+            content TEXT NOT NULL,
+            aux TEXT,
+            from_theme TEXT NOT NULL,
+            to_theme TEXT NOT NULL,
+            rationale TEXT,
+            confidence TEXT DEFAULT 'medium',
+            status TEXT DEFAULT 'pending',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_move_proposal_status ON item_move_proposal(status);
+        CREATE INDEX IF NOT EXISTS idx_move_proposal_from ON item_move_proposal(from_theme);
+        """
+        if sqlite3_exec(db, createMoveProposals, nil, nil, &errMsg) != SQLITE_OK {
+            if let err = errMsg {
+                print("❌ ReflectionStore: SQL error creating item_move_proposal: \(String(cString: err))")
+                sqlite3_free(errMsg)
+            }
+        }
+
         print("✅ ReflectionStore database initialized")
     }
 
@@ -879,6 +908,129 @@ class ReflectionStore {
         }
         let ok = sqlite3_step(insStmt) == SQLITE_DONE
         sqlite3_finalize(insStmt)
+        return ok
+    }
+
+    // MARK: - Stray-move proposals (Phase C hygiene queue)
+
+    /// The durable item→workspace map the rebuild honours: every item the user has MOVED
+    /// (an override with a non-null to_theme), keyed by the item's content text (decision text,
+    /// or a shift's "to"). Latest override wins. `SelfModelSynthesizer.owningTheme()` consults
+    /// this first, so an accepted move survives every re-materialize.
+    func itemOwnerOverrides() -> [String: String] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return [:] }
+        var out: [String: String] = [:]
+        let sql = "SELECT item_content, to_theme FROM reflection_item_overrides WHERE to_theme IS NOT NULL AND to_theme != '' ORDER BY id ASC"
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let content = (columnText(stmt, 0) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let to = (columnText(stmt, 1) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !content.isEmpty && !to.isEmpty { out[content] = to }   // later row overwrites → latest wins
+            }
+        }
+        sqlite3_finalize(stmt)
+        return out
+    }
+
+    /// Queue a proposed stray move. INSERT OR IGNORE on the stable id: re-running the detector
+    /// never duplicates a live proposal nor resurrects one the user already resolved.
+    @discardableResult
+    func addItemMoveProposal(id: String, reflectionId: Int, itemType: String, content: String,
+                             aux: String?, fromTheme: String, toTheme: String,
+                             rationale: String, confidence: String) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+        let sql = "INSERT OR IGNORE INTO item_move_proposal (id, reflection_id, item_type, content, aux, from_theme, to_theme, rationale, confidence, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        let T = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1, T)
+        sqlite3_bind_int64(stmt, 2, Int64(reflectionId))
+        sqlite3_bind_text(stmt, 3, (itemType as NSString).utf8String, -1, T)
+        sqlite3_bind_text(stmt, 4, (content as NSString).utf8String, -1, T)
+        if let aux = aux { sqlite3_bind_text(stmt, 5, (aux as NSString).utf8String, -1, T) } else { sqlite3_bind_null(stmt, 5) }
+        sqlite3_bind_text(stmt, 6, (fromTheme as NSString).utf8String, -1, T)
+        sqlite3_bind_text(stmt, 7, (toTheme as NSString).utf8String, -1, T)
+        sqlite3_bind_text(stmt, 8, (rationale as NSString).utf8String, -1, T)
+        sqlite3_bind_text(stmt, 9, (confidence as NSString).utf8String, -1, T)
+        let ok = sqlite3_step(stmt) == SQLITE_DONE
+        sqlite3_finalize(stmt)
+        return ok
+    }
+
+    func getItemMoveProposals(status: String = "pending") -> [[String: Any]] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return [] }
+        var out: [[String: Any]] = []
+        let sql = "SELECT id, reflection_id, item_type, content, aux, from_theme, to_theme, rationale, confidence, created_at FROM item_move_proposal WHERE status = ? ORDER BY from_theme ASC, created_at DESC"
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (status as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                out.append([
+                    "id": columnText(stmt, 0) ?? "",
+                    "reflection_id": Int(sqlite3_column_int64(stmt, 1)),
+                    "item_type": columnText(stmt, 2) ?? "",
+                    "content": columnText(stmt, 3) ?? "",
+                    "aux": columnText(stmt, 4) ?? "",
+                    "from_theme": columnText(stmt, 5) ?? "",
+                    "to_theme": columnText(stmt, 6) ?? "",
+                    "rationale": columnText(stmt, 7) ?? "",
+                    "confidence": columnText(stmt, 8) ?? "medium",
+                    "created_at": columnText(stmt, 9) ?? ""
+                ])
+            }
+        }
+        sqlite3_finalize(stmt)
+        return out
+    }
+
+    /// Fetch one proposal by id (any status), for the resolve handler.
+    func getItemMoveProposal(id: String) -> [String: Any]? {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return nil }
+        let sql = "SELECT id, reflection_id, item_type, content, aux, from_theme, to_theme, rationale, confidence, status FROM item_move_proposal WHERE id = ?"
+        var stmt: OpaquePointer?
+        var out: [String: Any]?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            if sqlite3_step(stmt) == SQLITE_ROW {
+                out = [
+                    "id": columnText(stmt, 0) ?? "",
+                    "reflection_id": Int(sqlite3_column_int64(stmt, 1)),
+                    "item_type": columnText(stmt, 2) ?? "",
+                    "content": columnText(stmt, 3) ?? "",
+                    "aux": columnText(stmt, 4) ?? "",
+                    "from_theme": columnText(stmt, 5) ?? "",
+                    "to_theme": columnText(stmt, 6) ?? "",
+                    "rationale": columnText(stmt, 7) ?? "",
+                    "confidence": columnText(stmt, 8) ?? "medium",
+                    "status": columnText(stmt, 9) ?? "pending"
+                ]
+            }
+        }
+        sqlite3_finalize(stmt)
+        return out
+    }
+
+    @discardableResult
+    func setItemMoveProposalStatus(id: String, status: String) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+        let sql = "UPDATE item_move_proposal SET status = ? WHERE id = ?"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, (status as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 2, (id as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        let ok = sqlite3_step(stmt) == SQLITE_DONE
+        sqlite3_finalize(stmt)
         return ok
     }
 

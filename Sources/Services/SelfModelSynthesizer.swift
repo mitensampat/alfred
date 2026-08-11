@@ -173,6 +173,7 @@ enum SelfModelSynthesizer {
         let themeIds = Set(store.getFacets(kind: "theme", includeArchived: true).compactMap { $0["id"] as? String })
 
         let canon = canonicalThemeMap()
+        let overrides = ReflectionStore.shared.itemOwnerOverrides()   // accepted moves win
         var seen = Set<String>()
         var pending: [(id: String, text: String, date: String, owner: String?)] = []
 
@@ -191,7 +192,7 @@ enum SelfModelSynthesizer {
                 let id = stableId("decision", text)
                 guard !seen.contains(id) else { continue }
                 seen.insert(id)
-                let owner = owningTheme(text, itemThemes: itemThemes, among: themes).map { canon[$0] ?? $0 }
+                let owner = owningTheme(text, itemThemes: itemThemes, among: themes, overrides: overrides).map { canon[$0] ?? $0 }
                 pending.append((id: id, text: text, date: date, owner: owner))
             }
         }
@@ -219,9 +220,15 @@ enum SelfModelSynthesizer {
         return pending.count
     }
 
-    /// The single workspace an item belongs to: the LLM's per-item tag if present, else the
-    /// deterministic best-fit among the reflection's own themes. Never "all of them".
-    static func owningTheme(_ text: String, itemThemes: [String: String], among themes: [String]) -> String? {
+    /// The single workspace an item belongs to. Precedence:
+    ///   1. `overrides` — a move the user explicitly accepted (durable; wins over everything,
+    ///      and deliberately may name a workspace the conversation never tagged).
+    ///   2. the extractor's per-item LLM tag.
+    ///   3. deterministic best-fit among the reflection's own themes. Never "all of them".
+    static func owningTheme(_ text: String, itemThemes: [String: String], among themes: [String],
+                            overrides: [String: String] = [:]) -> String? {
+        let key = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let ov = overrides[key], !ov.isEmpty { return ov }
         if let t = itemThemes[text], !t.isEmpty { return t }
         if themes.count <= 1 { return themes.first }
         return ReflectionStore.bestFitTheme(text, among: themes)
@@ -270,6 +277,7 @@ enum SelfModelSynthesizer {
         // Wide window — lineage is historical, not recent-only.
         let reflections = ReflectionStore.shared.getRecentReflections(limit: 2000, days: 400)
         let canon = canonicalThemeMap()
+        let overrides = ReflectionStore.shared.itemOwnerOverrides()   // accepted moves win
         store.clearLineage(facetKind: "belief")   // rebuild belief→theme edges under the gate
         for r in reflections {
             guard let shifts = r["mental_model_shifts"] as? [[String: String]], !shifts.isEmpty,
@@ -283,7 +291,7 @@ enum SelfModelSynthesizer {
                 guard beliefIds.contains(beliefId) else { continue }
                 // Attach to the ONE owning theme (LLM tag → best-fit), canonicalized so a collapsed
                 // near-dup workspace never orphans the belief.
-                if let owner = owningTheme(to, itemThemes: itemThemes, among: themes).map({ canon[$0] ?? $0 }) {
+                if let owner = owningTheme(to, itemThemes: itemThemes, among: themes, overrides: overrides).map({ canon[$0] ?? $0 }) {
                     let themeId = stableId("theme", owner)
                     if themeIds.contains(themeId) { _ = store.linkFacetToTheme(facetId: beliefId, themeId: themeId) }
                 }
