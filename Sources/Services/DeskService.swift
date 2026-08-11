@@ -194,6 +194,7 @@ enum DeskService {
             "first_move": firstMove,
             "top_fronts": topFronts,
             "queue": queue,
+            "people": buildPeople(),
             "fronts": frontsForBoard,
             "fronts_total": fronts.count,
             "going_cold": goingCold,
@@ -321,7 +322,10 @@ enum DeskService {
         "founders", "treasury", "strategy", "revenue", "team", "group", "leads", "directs",
         "updates", "channel", "board", "ops", "desk", "fund", "cohort", "sync", "standup",
         "room", "announcements", "broadcast", "circle", "council", "committee", "guild",
-        "members", "core", "cards", "squad", "crew", "chapter", "club", "musketeers"
+        "members", "core", "cards", "squad", "crew", "chapter", "club", "musketeers",
+        // topic / company / placeholder tells that were slipping through as "people"
+        "issues", "buyback", "home", "name", "unknown", "notes", "review", "draft",
+        "support", "sales", "finance", "admin", "org", "inc", "ltd", "pvt", "company"
     ]
     /// True only for something that reads as a person's name (tenet 1). The desk is thick with
     /// company/room names ("CRED: Card Core", "FACE Members", "3 Musketeers", "Nash CRED"), so
@@ -329,8 +333,8 @@ enum DeskService {
     static func isRelationshipName(_ raw: String) -> Bool {
         let s = raw.trimmingCharacters(in: .whitespaces)
         guard !s.isEmpty, !s.hasPrefix("+") else { return false }        // empty / raw phone
-        if let first = s.first, first.isNumber { return false }          // "3 Musketeers"
-        if s.contains(":") { return false }                              // "CRED: Card Core"
+        if s.contains(where: { $0.isNumber }) { return false }           // "Grade 5C", "Team 2"
+        if s.contains(":") || s.contains(".") { return false }           // "CRED: Card Core", "Fintechorg.in"
         let letterCount = s.unicodeScalars.filter { CharacterSet.letters.contains($0) }.count
         guard letterCount >= 2 else { return false }                     // needs real letters
         if s.range(of: "^[0-9a-fA-F]{16,}$", options: .regularExpression) != nil { return false }  // hex JID/id
@@ -349,6 +353,68 @@ enum DeskService {
         if !tokens.isDisjoint(with: roomWords) { return false }          // topic/room, not a person
         return true
     }
+    /// Everyone in your world as a card: people you owe / who owe you (from commitments) UNIONED
+    /// with everyone you're actually in a 1:1 thread with (ContactLearner) — so the People tab
+    /// reflects the real relationship graph, not just the handful with a tracked open item. Ranked
+    /// by whose clock is running (people you owe, oldest first), then by recency of contact.
+    static func buildPeople() -> [[String: Any]] {
+        let reliability = Dictionary(
+            TaskLifecycleTracker.shared.getStatsByCounterparty().map { ($0.name.lowercased(), $0) },
+            uniquingKeysWith: { a, _ in a })
+        func norm(_ s: String) -> String {
+            s.lowercased().trimmingCharacters(in: .whitespaces).split(separator: " ").joined(separator: " ")
+        }
+        struct Agg { var name: String; var owe = 0; var owed = 0; var oldest = 0; var lastSeen = Int.max }
+        var by: [String: Agg] = [:]
+
+        // 1. Commitments → owe / owed + oldest owed age.
+        for c in CommitmentScanTracker.shared.getAllOpenCommitments()
+        where !isGroupThread(c.threadId) && isQualityCommitment(c.title) && isRelationshipName(c.counterparty) {
+            let key = norm(c.counterparty); guard !key.isEmpty else { continue }
+            var a = by[key] ?? Agg(name: c.counterparty)
+            if a.name.isEmpty { a.name = c.counterparty }
+            if c.type == iOweType { a.owe += 1; a.oldest = max(a.oldest, daysSince(c.extractedAt)) }
+            else { a.owed += 1 }
+            by[key] = a
+        }
+        // 2. Threads → the rest of the graph + recency.
+        for t in ContactLearner.shared.getAllThreads() where !t.isGroup {
+            let name = t.threadName.trimmingCharacters(in: .whitespaces)
+            guard isRelationshipName(name) else { continue }
+            let key = norm(name); guard !key.isEmpty else { continue }
+            var a = by[key] ?? Agg(name: name)
+            if a.name.isEmpty { a.name = name }
+            a.lastSeen = min(a.lastSeen, daysSince(t.lastSeen))
+            by[key] = a
+        }
+
+        var rows = by.values.map { a -> [String: Any] in
+            let stats = reliability[a.name.lowercased()]
+            let onTime: String
+            if let s = stats, s.completedTasks > 0 {
+                let onT = s.completedTasks - Int((s.overdueRate * Double(s.completedTasks)).rounded())
+                onTime = s.completedTasks <= 20 ? "\(onT)/\(s.completedTasks)" : "\(Int((1 - s.overdueRate) * 100))%"
+            } else { onTime = "" }
+            var row: [String: Any] = [
+                "name": a.name, "contact_id": a.name,
+                "you_owe": a.owe, "they_owe": a.owed,
+                "oldest_age": a.oldest, "hot": a.oldest >= hotAgeDays,
+                "on_time": onTime
+            ]
+            if a.lastSeen != Int.max { row["last_seen_days"] = a.lastSeen }
+            return row
+        }
+        rows.sort {
+            let aw = ($0["you_owe"] as? Int ?? 0) > 0, bw = ($1["you_owe"] as? Int ?? 0) > 0
+            if aw != bw { return aw }                                   // people you owe first
+            let ao = $0["oldest_age"] as? Int ?? 0, bo = $1["oldest_age"] as? Int ?? 0
+            if ao != bo { return ao > bo }                              // oldest clock first
+            let al = $0["last_seen_days"] as? Int ?? 99999, bl = $1["last_seen_days"] as? Int ?? 99999
+            return al < bl                                              // then most recent contact
+        }
+        return rows
+    }
+
     static func buildGoingCold(reliability: [String: CounterpartyStats], onDesk: Set<String>) -> [[String: Any]] {
         let threads = ContactLearner.shared.getAllThreads().filter { !$0.isGroup }
         var rows: [(row: [String: Any], days: Int)] = []

@@ -238,6 +238,15 @@
       .dk-plive:hover{ background:color-mix(in srgb,var(--dk-text) 4%,transparent); }
       .dk-plive-name{ font-weight:800; font-size:15px; line-height:1.2; letter-spacing:-.01em; }
       .dk-plive-q{ font-size:12.5px; line-height:1.4; color:var(--dk-n700); }
+      .dk-people-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; padding:14px 24px 20px; }
+      .dk-pcard{ display:flex; flex-direction:column; align-items:flex-start; gap:5px; text-align:left; border:1px solid var(--dk-divider); border-left:2px solid var(--dk-n400); background:transparent; padding:12px 13px; cursor:pointer; font-family:inherit; width:100%; }
+      .dk-pcard:hover{ background:color-mix(in srgb,var(--dk-text) 4%,transparent); }
+      .dk-pcard.hot{ border-left-color:var(--dk-hot); }
+      .dk-pcard-name{ font-weight:800; font-size:16px; line-height:1.15; letter-spacing:-.01em; }
+      .dk-pcard-meta{ font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--dk-n600); }
+      .dk-pcard-clock{ color:var(--dk-n700); }
+      .dk-pcard-clock.hot{ color:var(--dk-hot); }
+      .dk-pcard-quiet{ color:var(--dk-n400); }
       .dk-front-decision{ display:block; font-size:15.5px; line-height:1.45; margin-top:12px; padding-top:12px; border-top:1px solid var(--dk-divider); }
       .dk-front.delegated .dk-front-decision{ color:var(--dk-n700); }
       .dk-open-link{ display:inline-block; margin-top:12px; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--dk-a700); }
@@ -10970,14 +10979,12 @@
                 </div>`;
         }
         function renderPeopleBand(){
-            const top = deskPeopleTop();
-            const countLine = `<div class="dk-band-count-line"><strong>${_deskCount}</strong> on you · ${_deskOver} over a week</div>`;
-            if (!top.length){
-                document.getElementById('deskBand').innerHTML = `<div class="dk-band-empty">No one has a real clock on you right now — protect the block you've got.</div>${countLine}`;
-                return;
-            }
-            const cards = top.map(renderTopPerson).join('');
-            document.getElementById('deskBand').innerHTML = `<div class="dk-topfronts">${cards}</div>${countLine}`;
+            // People are now a card grid below; the band is just the headline count (the old
+            // "Reply to X" cards were redundant with the grid).
+            const all = (_deskData && _deskData.people) || [];
+            const waiting = all.filter(p => (p.you_owe || 0) > 0).length;
+            document.getElementById('deskBand').innerHTML =
+                `<div class="dk-band-count-line"><strong>${waiting}</strong> waiting on you · ${all.length} people · ${_deskOver} over a week</div>`;
         }
         async function deskPinFront(id, pin){
             try { await authFetch('/api/desk/front/pin?id=' + encodeURIComponent(id) + '&pinned=' + (pin ? '1' : '0'), { method: 'POST' }); }
@@ -11061,61 +11068,34 @@
             return people;
         }
         function renderPeopleColumn(){
-            const all = deskPeopleGrouped();
+            const all = (_deskData && _deskData.people) || [];
             const q = (_deskPeopleFilter || '').toLowerCase().trim();
-            const people = q ? all.filter(p => (p.name + ' ' + p.full).toLowerCase().includes(q)) : all;
-            const CAP = q ? 60 : 16;
+            const people = q ? all.filter(p => (p.name || '').toLowerCase().includes(q)) : all;
+            const CAP = q ? 400 : 60;
             const shown = people.slice(0, CAP);
+            const waiting = all.filter(p => (p.you_owe || 0) > 0).length;
             let html = `<div class="dk-sec-head">
-                    <div class="dk-sec-label">People · ${all.length} on you</div>
-                    <div class="dk-sec-explain">One line per person. Open them to reply, close or dismiss each item.</div>
+                    <div class="dk-sec-label">People · ${all.length}</div>
+                    <div class="dk-sec-explain">${waiting} waiting on you. Open a card to reply, close or dismiss.</div>
                     <input class="dk-people-search" placeholder="Search people…" value="${_esc(_deskPeopleFilter || '')}"
                         oninput="_deskPeopleFilter=this.value; const el=document.getElementById('deskColMain'); if(el){el.innerHTML=renderPeopleColumn(); const s=el.querySelector('.dk-people-search'); if(s){s.focus(); s.setSelectionRange(s.value.length,s.value.length);}}">
                 </div>
-                <div class="dk-queue"><div class="dk-rule2"></div>`;
-            // Receipts for items just acted on from this list (survive the re-render; Undo).
-            for (const [rid, rc] of Object.entries(_deskListReceipts)){
-                html += `<div class="dk-prow dk-prow-done">
-                    <span class="dk-q-top"><span class="dk-q-name" style="color:var(--dk-n600);">${_esc(rc.name)}</span>
-                        <button type="button" class="dk-btn-ghost dk-list-undo" onclick="deskListUndo('${_esc(rid)}')">Undo</button></span>
-                    <span class="dk-q-desc" style="display:block;color:var(--dk-n600);">${_esc(rc.text)}</span>
-                </div>`;
-            }
+                <div class="dk-people-grid">`;
             for (const p of shown){
-                const ageCls = p.hot ? 'dk-q-age hot' : 'dk-q-age';
-                const n = p.items.length;
-                const single = n === 1 ? p.items[0] : null;
-                const id = single ? _esc(String(single.id)) : '';
-                const sub = n === 1 ? _esc(p.items[0].text) : `${n} open items`;
-                // Single-item people are actionable in place — Reply/Done without opening L2.
-                // Multi-item people still open the L2 page (Done is ambiguous across items).
-                const acts = single
-                    ? `<span class="dk-prow-acts">
-                        <button type="button" class="dk-btn dk-btn-ink dk-btn-sm" onclick="event.stopPropagation();deskListReply('${id}')">Reply</button>
-                        <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="event.stopPropagation();deskListClose('${id}')">Done</button>
-                       </span>`
-                    : '';
-                html += `<div class="dk-prow"${single?` id="dkprow-${id}"`:''}>
-                    <div class="dk-prow-main" onclick="deskOpenPerson('${_esc(p.contact_id)}',true)">
-                        <span class="dk-q-top">
-                            <span class="dk-q-name" style="cursor:pointer;">${_esc(p.name)}</span>
-                            <span class="${ageCls}">${p.oldest}d</span>
-                        </span>
-                        <span class="dk-q-desc" style="display:block;">${sub}${n>1?` <span class="dk-pcount">${n}</span>`:''}</span>
-                    </div>
-                    ${acts}
-                    ${single?`<div class="dk-compose dk-list-compose" id="dklcompose-${id}" style="display:none;"></div>`:''}
-                </div>`;
+                const owe = p.you_owe || 0, owed = p.they_owe || 0;
+                let clock;
+                if (owe > 0) clock = `<span class="dk-pcard-clock ${p.hot?'hot':''}">${p.oldest_age}d · you owe ${owe}</span>`;
+                else if (owed > 0) clock = `<span class="dk-pcard-clock">they owe you ${owed}</span>`;
+                else if (p.last_seen_days != null) clock = `<span class="dk-pcard-quiet">${p.last_seen_days}d quiet</span>`;
+                else clock = `<span class="dk-pcard-quiet">no open items</span>`;
+                const ot = p.on_time ? ` · ${_esc(p.on_time)} on time` : '';
+                html += `<button type="button" class="dk-pcard ${owe>0&&p.hot?'hot':''}" onclick="deskOpenPerson('${_esc(p.contact_id)}',true)">
+                        <span class="dk-pcard-name">${_esc(p.name)}</span>
+                        <span class="dk-pcard-meta">${clock}${ot}</span>
+                    </button>`;
             }
-            if (people.length > CAP) html += `<div class="dk-more">+ ${people.length - CAP} more people waiting.</div>`;
             html += `</div>`;
-            // why this order
-            const why = (_deskData && _deskData.why_this_order) || {};
-            const pat = why.pattern;
-            html += `<div class="dk-why-wrap"><div class="dk-why">
-                    <strong>Why this order.</strong> ${_esc(why.text || 'Ranked by whose clock is running.')}
-                    ${pat ? `<span class="dk-why-pat">Ranked with: <em>${_esc(pat.statement)}</em>${pat.reinforced ? ' · '+pat.reinforced+'× reinforced' : ''}</span>` : ''}
-                </div></div>`;
+            if (people.length > CAP) html += `<div class="dk-more">+ ${people.length - CAP} more — search to find them.</div>`;
             return html;
         }
 
