@@ -11571,7 +11571,7 @@
                     <span class="dk-open-link">Open front →</span>
                 </button>`).join('');
             return `<div class="dk-detail-head">
-                    <button type="button" class="dk-back" onclick="deskGoFronts()">← Fronts</button>
+                    <button type="button" class="dk-back" onclick="deskGoPeople()">← People</button>
                     <div class="dk-detail-titrow"><div>
                         <div class="dk-kicker">Person · external</div>
                         <h2 class="dk-detail-name">${_esc(d.name)}</h2>
@@ -11808,6 +11808,7 @@
         function deskTopDone(id, contactId){ deskTopAct('person', contactId, 'act'); deskListClose(id); }
 
         function deskGoFronts(){ deskNav('fronts'); }
+        function deskGoPeople(){ deskNav('people'); }
 
         // ── mutations ──
         async function deskClear(id, how, fromBand){
