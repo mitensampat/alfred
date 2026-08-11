@@ -1340,11 +1340,19 @@ class HTTPServer {
                 }
             }
             let reduction = oldEdges > 0 ? Int((100.0 * Double(oldEdges - newEdges) / Double(oldEdges)).rounded()) : 0
+            // B: how many theme names collapse into a canonical workspace (proliferation).
+            let canon = SelfModelSynthesizer.canonicalThemeMap()
+            let distinctNames = canon.keys.count
+            let canonicalWorkspaces = Set(canon.values).count
+            let collapsed = distinctNames - canonicalWorkspaces
+            let prolifReduction = distinctNames > 0 ? Int((100.0 * Double(collapsed) / Double(distinctNames)).rounded()) : 0
             return HTTPResponse(statusCode: 200, body: [
                 "reflections": refls.count, "multi_theme_reflections": multiThemeReflections,
                 "items": items, "items_in_multi_theme_reflections": multiThemeItems,
                 "old_edges_all_themes": oldEdges, "new_edges_owning_theme": newEdges,
                 "bleed_reduction_pct": reduction, "items_with_llm_theme": withLLMTheme,
+                "theme_names": distinctNames, "canonical_workspaces": canonicalWorkspaces,
+                "workspaces_collapsed": collapsed, "proliferation_reduction_pct": prolifReduction,
                 "note": "items_with_llm_theme is 0 until new extractions run under the gate; old data uses best-fit"])
         case ("GET", "/api/schedule/sessions"):
             return HTTPResponse(statusCode: 200, body: ["sessions": ScheduleService.shared.openSessionsForDesk(), "configured": ScheduleService.shared.configured])

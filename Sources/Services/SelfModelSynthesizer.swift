@@ -70,10 +70,19 @@ enum SelfModelSynthesizer {
         // ---- Themes ----
         // Materialize broadly (the store is the substrate); the read path curates what's
         // shown. A wide theme layer is also what gives belief lineage something to attach to.
-        for t in store.getThemesWithState(days: 180, limit: 250) {
-            guard let name = t["theme"] as? String, !name.isEmpty else { continue }
+        // Collapse lexical near-duplicates into one canonical workspace at creation. Iterate
+        // dominant-first so the canonical facet inherits the strongest variant's metadata.
+        let canon = canonicalThemeMap()
+        var madeThemes = Set<String>()
+        let themeRows = store.getThemesWithState(days: 180, limit: 250)
+            .sorted { (($0["frequency"] as? Double) ?? 0) > (($1["frequency"] as? Double) ?? 0) }
+        for t in themeRows {
+            guard let rawName = (t["theme"] as? String)?.trimmingCharacters(in: .whitespaces), !rawName.isEmpty else { continue }
+            let name = canon[rawName] ?? rawName          // the canonical workspace
             let state = t["state"] as? String ?? "researching"
             if state == "archived" { continue }
+            if madeThemes.contains(name) { continue }      // a near-dup already made this workspace
+            madeThemes.insert(name)
             let temp = t["temperature"] as? String ?? "cooling"
             let conf = temp == "hot" ? 0.9 : (temp == "warming" ? 0.7 : 0.5)
             _ = facets.upsertFacet(
@@ -163,6 +172,7 @@ enum SelfModelSynthesizer {
         let reflections = ReflectionStore.shared.getRecentReflections(limit: 2000, days: 400)
         let themeIds = Set(store.getFacets(kind: "theme", includeArchived: true).compactMap { $0["id"] as? String })
 
+        let canon = canonicalThemeMap()
         var seen = Set<String>()
         var pending: [(id: String, text: String, date: String, owner: String?)] = []
 
@@ -181,7 +191,8 @@ enum SelfModelSynthesizer {
                 let id = stableId("decision", text)
                 guard !seen.contains(id) else { continue }
                 seen.insert(id)
-                pending.append((id: id, text: text, date: date, owner: owningTheme(text, itemThemes: itemThemes, among: themes)))
+                let owner = owningTheme(text, itemThemes: itemThemes, among: themes).map { canon[$0] ?? $0 }
+                pending.append((id: id, text: text, date: date, owner: owner))
             }
         }
         guard !pending.isEmpty else { return 0 }
@@ -215,6 +226,33 @@ enum SelfModelSynthesizer {
         return ReflectionStore.bestFitTheme(text, among: themes)
     }
 
+    /// Adjacency gate at creation: map every candidate theme name to its CANONICAL workspace, so
+    /// lexical near-duplicates ("CRED card growth" / "CRED card growth economics") collapse into one
+    /// instead of proliferating. The most-established variant (highest frequency, then recurrence)
+    /// wins as canonical. Deterministic — recomputed identically by the theme loop and the item
+    /// attach loops so a collapsed name never orphans its items. The semantic-but-not-lexical dups
+    /// are left to the daily convergence merge (which is LLM-based).
+    static func canonicalThemeMap() -> [String: String] {
+        let rows = ReflectionStore.shared.getThemesWithState(days: 180, limit: 250)
+        let ordered = rows.compactMap { r -> (name: String, freq: Double, rec: Int)? in
+            guard let n = (r["theme"] as? String)?.trimmingCharacters(in: .whitespaces), !n.isEmpty else { return nil }
+            return (n, (r["frequency"] as? Double) ?? 0, (r["recurrence"] as? Int) ?? 0)
+        }.sorted { a, b in
+            a.freq != b.freq ? a.freq > b.freq : (a.rec != b.rec ? a.rec > b.rec : a.name < b.name)
+        }
+        var canonicals: [String] = []
+        var map: [String: String] = [:]
+        for item in ordered where map[item.name] == nil {
+            if let hit = canonicals.first(where: { $0.lowercased() == item.name.lowercased() || SelfModelService.workspacesSimilar($0, item.name) }) {
+                map[item.name] = hit
+            } else {
+                canonicals.append(item.name)
+                map[item.name] = item.name
+            }
+        }
+        return map
+    }
+
     /// Link each belief back to the theme(s) it crystallized from.
     ///
     /// A reflection carries BOTH its themes and its mental-model shifts, so a belief
@@ -230,6 +268,7 @@ enum SelfModelSynthesizer {
 
         // Wide window — lineage is historical, not recent-only.
         let reflections = ReflectionStore.shared.getRecentReflections(limit: 2000, days: 400)
+        let canon = canonicalThemeMap()
         for r in reflections {
             guard let shifts = r["mental_model_shifts"] as? [[String: String]], !shifts.isEmpty,
                   let themes = r["themes"] as? [String], !themes.isEmpty else { continue }
@@ -240,8 +279,9 @@ enum SelfModelSynthesizer {
                 // Belief ids are derived from the shift that opened the chain.
                 let beliefId = stableId("belief", (shift["from"] ?? "") + "|" + to)
                 guard beliefIds.contains(beliefId) else { continue }
-                // Attach to the ONE owning theme (LLM tag → best-fit), not every reflection theme.
-                if let owner = owningTheme(to, itemThemes: itemThemes, among: themes) {
+                // Attach to the ONE owning theme (LLM tag → best-fit), canonicalized so a collapsed
+                // near-dup workspace never orphans the belief.
+                if let owner = owningTheme(to, itemThemes: itemThemes, among: themes).map({ canon[$0] ?? $0 }) {
                     let themeId = stableId("theme", owner)
                     if themeIds.contains(themeId) { _ = store.linkFacetToTheme(facetId: beliefId, themeId: themeId) }
                 }
