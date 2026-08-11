@@ -1354,6 +1354,51 @@ class HTTPServer {
                 "theme_names": distinctNames, "canonical_workspaces": canonicalWorkspaces,
                 "workspaces_collapsed": collapsed, "proliferation_reduction_pct": prolifReduction,
                 "note": "items_with_llm_theme is 0 until new extractions run under the gate; old data uses best-fit"])
+        case ("GET", "/api/self-model/rebuild-preview"):
+            // Read-only: which currently-promoted workspaces (fronts) are pure bleed artifacts —
+            // they'd drop from promotion once each item attaches to its one owning theme. Simulates
+            // the gated rebuild's promotion WITHOUT applying anything.
+            let smStore = SelfModelStore.shared
+            let currentPromoted = SelfModelService.promotedThemeIds(store: smStore)
+            var nameById: [String: String] = [:], freqById: [String: Double] = [:], srcById: [String: Int] = [:]
+            for f in smStore.getFacets(kind: "theme", includeArchived: false) {
+                guard let id = f["id"] as? String else { continue }
+                nameById[id] = (f["statement"] as? String) ?? id
+                let m = (f["metadata"] as? [String: String]) ?? [:]
+                freqById[id] = Double(m["frequency"] ?? "0") ?? 0
+                srcById[id] = Int(m["distinct_sources"] ?? "0") ?? 0
+            }
+            let canon = SelfModelSynthesizer.canonicalThemeMap()
+            func tid(_ name: String) -> String { SelfModelSynthesizer.stableId("theme", canon[name] ?? name) }
+            var gDec: [String: Int] = [:], gBel: [String: Int] = [:]
+            for r in ReflectionStore.shared.getRecentReflections(limit: 2000, days: 400) {
+                let themes = (r["themes"] as? [String]) ?? []
+                let itemThemes = (r["item_themes"] as? [String: String]) ?? [:]
+                for d in (r["decisions"] as? [String]) ?? [] {
+                    let t = d.trimmingCharacters(in: .whitespacesAndNewlines); guard t.count >= 25 else { continue }
+                    if let o = SelfModelSynthesizer.owningTheme(t, itemThemes: itemThemes, among: themes) { gDec[tid(o), default: 0] += 1 }
+                }
+                for s in (r["mental_model_shifts"] as? [[String: String]]) ?? [] {
+                    if let to = s["to"], !to.isEmpty, let o = SelfModelSynthesizer.owningTheme(to, itemThemes: itemThemes, among: themes) { gBel[tid(o), default: 0] += 1 }
+                }
+            }
+            var simPromoted = Set<String>()
+            for id in nameById.keys {
+                if (gBel[id] ?? 0) >= SelfModelService.promotionBeliefBar
+                    || (gDec[id] ?? 0) >= SelfModelService.promotionDecisionBar
+                    || ((freqById[id] ?? 0) >= SelfModelService.promotionFrequencyBar && (srcById[id] ?? 0) >= SelfModelService.promotionSourcesBar) {
+                    simPromoted.insert(id)
+                }
+            }
+            let dropping = currentPromoted.subtracting(simPromoted).compactMap { nameById[$0] }.sorted()
+            return HTTPResponse(statusCode: 200, body: [
+                "workspaces_total": nameById.count,
+                "current_promoted_fronts": currentPromoted.count,
+                "simulated_promoted_fronts": simPromoted.count,
+                "staying_promoted": currentPromoted.intersection(simPromoted).count,
+                "would_drop_from_promotion": dropping.count,
+                "dropping_examples": Array(dropping.prefix(50)),
+                "note": "Read-only simulation. Apply with POST /api/self-model/compute (materialize under the gate)."])
         case ("GET", "/api/schedule/sessions"):
             return HTTPResponse(statusCode: 200, body: ["sessions": ScheduleService.shared.openSessionsForDesk(), "configured": ScheduleService.shared.configured])
         case ("GET", "/api/schedule/manager-selftest"):
