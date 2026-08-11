@@ -1382,23 +1382,32 @@ class HTTPServer {
                     if let to = s["to"], !to.isEmpty, let o = SelfModelSynthesizer.owningTheme(to, itemThemes: itemThemes, among: themes) { gBel[tid(o), default: 0] += 1 }
                 }
             }
-            var simPromoted = Set<String>()
-            for id in nameById.keys {
-                if (gBel[id] ?? 0) >= SelfModelService.promotionBeliefBar
-                    || (gDec[id] ?? 0) >= SelfModelService.promotionDecisionBar
-                    || ((freqById[id] ?? 0) >= SelfModelService.promotionFrequencyBar && (srcById[id] ?? 0) >= SelfModelService.promotionSourcesBar) {
-                    simPromoted.insert(id)
+            let beliefBar = Int(request.queryParams["belief_bar"] ?? "") ?? SelfModelService.promotionBeliefBar
+            let decisionBar = Int(request.queryParams["decision_bar"] ?? "") ?? SelfModelService.promotionDecisionBar
+            func promotedUnder(_ bBar: Int, _ dBar: Int) -> Set<String> {
+                var out = Set<String>()
+                for id in nameById.keys {
+                    if (gBel[id] ?? 0) >= bBar || (gDec[id] ?? 0) >= dBar
+                        || ((freqById[id] ?? 0) >= SelfModelService.promotionFrequencyBar && (srcById[id] ?? 0) >= SelfModelService.promotionSourcesBar) {
+                        out.insert(id)
+                    }
                 }
+                return out
             }
+            let simPromoted = promotedUnder(beliefBar, decisionBar)
+            // A sweep so the bar can be chosen deliberately, not guessed.
+            let sweep = [1, 2, 3, 4, 5].map { b -> [String: Int] in ["belief_bar": b, "fronts": promotedUnder(b, decisionBar).count] }
             let dropping = currentPromoted.subtracting(simPromoted).compactMap { nameById[$0] }.sorted()
             return HTTPResponse(statusCode: 200, body: [
                 "workspaces_total": nameById.count,
+                "belief_bar": beliefBar, "decision_bar": decisionBar,
                 "current_promoted_fronts": currentPromoted.count,
                 "simulated_promoted_fronts": simPromoted.count,
                 "staying_promoted": currentPromoted.intersection(simPromoted).count,
                 "would_drop_from_promotion": dropping.count,
+                "front_count_by_belief_bar": sweep,
                 "dropping_examples": Array(dropping.prefix(50)),
-                "note": "Read-only simulation. Apply with POST /api/self-model/compute (materialize under the gate)."])
+                "note": "Read-only. Apply with POST /api/self-model/compute after setting the bar."])
         case ("GET", "/api/schedule/sessions"):
             return HTTPResponse(statusCode: 200, body: ["sessions": ScheduleService.shared.openSessionsForDesk(), "configured": ScheduleService.shared.configured])
         case ("GET", "/api/schedule/manager-selftest"):

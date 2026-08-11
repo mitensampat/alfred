@@ -249,7 +249,10 @@ enum SelfModelService {
     /// A theme is a WORKSPACE (earned) if it produced a graduated belief or sustained
     /// decision-making. Everything else is a TOPIC — the cheap substrate. A user
     /// override always wins. This is the theme→workspace boundary.
-    static let promotionBeliefBar = 1
+    // 3, not 1: with the attachment gate, one belief no longer bleeds onto many workspaces, so the
+    // bar can mean what it should — a front needs a few OWNED beliefs (or 8 decisions, or strong
+    // recurrence). Swept on real data: bar 1→92, 2→55, 3→47 (knee), 4+→45 fronts.
+    static let promotionBeliefBar = 3
     static let promotionDecisionBar = 8
     // Frequency path: a subject you keep coming back to is a workspace even before it has
     // produced 8 decisions — recurrence is a direct signal of importance. Guarded by

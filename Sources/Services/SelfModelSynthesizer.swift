@@ -198,6 +198,7 @@ enum SelfModelSynthesizer {
         guard !pending.isEmpty else { return 0 }
 
         store.beginBulk()
+        store.clearLineage(facetKind: "decision")   // rebuild decision→theme edges under the gate
         for d in pending {
             _ = store.upsertFacet(
                 id: d.id, kind: "decision", statement: d.text,
@@ -269,6 +270,7 @@ enum SelfModelSynthesizer {
         // Wide window — lineage is historical, not recent-only.
         let reflections = ReflectionStore.shared.getRecentReflections(limit: 2000, days: 400)
         let canon = canonicalThemeMap()
+        store.clearLineage(facetKind: "belief")   // rebuild belief→theme edges under the gate
         for r in reflections {
             guard let shifts = r["mental_model_shifts"] as? [[String: String]], !shifts.isEmpty,
                   let themes = r["themes"] as? [String], !themes.isEmpty else { continue }

@@ -667,6 +667,23 @@ class SelfModelStore {
         return ok
     }
 
+    /// Delete every synthesized theme-edge for facets of a given kind, so materialize can REBUILD
+    /// the lineage under the attachment gate instead of only appending to the old bled edges
+    /// (facet_lineage is INSERT OR IGNORE — without this, re-materializing never removes bleed).
+    @discardableResult
+    func clearLineage(facetKind: String) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+        var stmt: OpaquePointer?
+        let sql = "DELETE FROM facet_lineage WHERE facet_id IN (SELECT id FROM self_facet WHERE kind = ?)"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, (facetKind as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        let ok = sqlite3_step(stmt) == SQLITE_DONE
+        sqlite3_finalize(stmt)
+        return ok
+    }
+
     /// All lineage edges as (facet_id, theme_id) pairs.
     func allLineage() -> [(facet: String, theme: String)] {
         dbLock.lock()
