@@ -233,6 +233,11 @@
       .dk-front-meta .hot{ color:var(--dk-hot); }
       .dk-state-chip{ display:inline-flex; align-items:center; gap:6px; font-size:10px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; color:var(--dk-n700); align-self:center; }
       .dk-state-chip i{ width:8px; height:8px; border-radius:50%; display:inline-block; flex:0 0 auto; }
+      .dk-plive-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:10px; margin-top:8px; }
+      .dk-plive{ display:flex; flex-direction:column; align-items:flex-start; gap:6px; text-align:left; border:1px solid var(--dk-divider); border-left:2px solid var(--dk-text); background:transparent; padding:11px 13px; cursor:pointer; font-family:inherit; width:100%; }
+      .dk-plive:hover{ background:color-mix(in srgb,var(--dk-text) 4%,transparent); }
+      .dk-plive-name{ font-weight:800; font-size:15px; line-height:1.2; letter-spacing:-.01em; }
+      .dk-plive-q{ font-size:12.5px; line-height:1.4; color:var(--dk-n700); }
       .dk-front-decision{ display:block; font-size:15.5px; line-height:1.45; margin-top:12px; padding-top:12px; border-top:1px solid var(--dk-divider); }
       .dk-front.delegated .dk-front-decision{ color:var(--dk-n700); }
       .dk-open-link{ display:inline-block; margin-top:12px; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--dk-a700); }
@@ -11576,7 +11581,15 @@
             const youOwe = its.length ? its.map(it => dkItemHtml(it, 'you_owe')).join('')
                 : `<div class="dk-prov" style="margin-top:11px;">Nothing open from you — you're clear with ${_esc(d.first_name || d.name)}.</div>`;
             const theyOwe = their.map(it => dkItemHtml(it, 'they_owe')).join('');
-            const fronts = (d.shared_fronts || []).map(f => `<button type="button" class="dk-person-row" onclick="deskOpenFront('${_esc(f.id)}')"><span class="nm" style="font-size:14.5px;font-weight:700;">${_esc(f.name)}</span><span class="sub">${_esc(f.stage||'')} · open front →</span></button>`).join('') || '';
+            const first = _esc(d.first_name || d.name);
+            // What's live with this person: each shared front as a mini facet card — temperature +
+            // stage chip and the one question that turns on them. Same spine as Fronts/Model.
+            const liveCards = (d.shared_fronts || []).map(f => `<button type="button" class="dk-plive" onclick="deskOpenFront('${_esc(f.id)}')">
+                    <span class="dk-plive-top">${dkStateChip(f)}</span>
+                    <span class="dk-plive-name">${_esc(f.name)}</span>
+                    ${f.decision?`<span class="dk-plive-q">${_esc(f.decision)}</span>`:''}
+                    <span class="dk-open-link">Open front →</span>
+                </button>`).join('');
             return `<div class="dk-detail-head">
                     <button type="button" class="dk-back" onclick="deskGoFronts()">← Fronts</button>
                     <div class="dk-detail-titrow"><div>
@@ -11591,10 +11604,10 @@
                     <div class="dk-stat"><div class="dk-stat-num">${_esc(d.on_time||'—')}</div><div class="dk-stat-l">On time</div></div>
                 </div>
                 <div style="padding:18px 24px 22px;">
-                    <div class="dk-sec-label">You owe them · ${its.length}</div>
+                    ${liveCards ? `<div class="dk-sec-label">What's live with ${first}</div><div class="dk-plive-grid">${liveCards}</div>` : ''}
+                    <div class="dk-sec-label" style="${liveCards?'margin-top:24px;':''}">You owe them · ${its.length}</div>
                     <div style="margin-top:4px;">${youOwe}</div>
                     ${their.length ? `<div class="dk-sec-label" style="margin-top:24px;">They owe you · ${their.length}</div><div style="margin-top:4px;">${theyOwe}</div>` : ''}
-                    ${fronts?`<div class="dk-sec-label" style="margin-top:24px;">Fronts you share</div>${fronts}`:''}
                     <div class="dk-prov" style="margin-top:16px;">Reply / Chase sends a WhatsApp message. Done / Got it closes the item. Dismiss removes it without counting.</div>
                 </div>`;
         }

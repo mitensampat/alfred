@@ -12768,11 +12768,28 @@ extension HTTPServer {
         }
         let allFronts = DeskService.buildFronts()
         let personTitles = (mine + theirs).map { sigToks($0.title) }
+        // Front id → the people curated into it (normalized), so a front counts as "live with this
+        // person" when they're actually in it — not only when a word happens to overlap.
+        var frontPeople: [String: Set<String>] = [:]
+        for f in SelfModelStore.shared.getFacets(kind: "theme") {
+            guard let fid = f["id"] as? String, let meta = f["metadata"] as? [String: String],
+                  let pj = meta["people_json"], let data = pj.data(using: .utf8),
+                  let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { continue }
+            frontPeople[fid] = Set(arr.compactMap { ($0["name"] as? String).map { Self.normalizeCounterparty($0) } })
+        }
+        // Carry the full card spine (temperature + stage + the one question), so the person page
+        // can render each shared front as a mini facet card — the same signal Fronts/Model lead with.
         let sharedFronts = allFronts.filter { f in
-            guard let fname = f["name"] as? String else { return false }
+            guard let fid = f["id"] as? String, let fname = f["name"] as? String else { return false }
+            if frontPeople[fid]?.contains(target) == true { return true }
             let ft = sigToks(fname)
             return personTitles.contains { !$0.intersection(ft).isEmpty }
-        }.prefix(3).map { ["id": $0["id"] as Any, "name": $0["name"] as Any, "stage": $0["stage"] as Any] }
+        }.prefix(5).map { f in [
+            "id": f["id"] as Any, "name": f["name"] as Any, "stage": f["stage"] as Any,
+            "temperature": f["temperature"] as Any, "status": f["status"] as Any,
+            "decision": f["decision"] as Any, "days_since": f["days_since"] as Any,
+            "open_questions_count": f["open_questions_count"] as Any
+        ] }
 
         // Item → dict with a matched front. Context (the real chat) is fetched on demand via
         // /api/desk/item/context, so no synthesized sentence here.
