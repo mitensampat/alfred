@@ -249,32 +249,54 @@ enum DeskService {
             let stuckOnYou = ownedByYou && daysSince >= hotAgeDays
             let status = stuckOnYou ? "stuck" : (ownedByYou ? "moving" : "delegated")
 
+            // Card spine (same signal the Model theme card leads with): temperature dot + stage,
+            // the one live question, and this-week momentum. All already computed by getThemesWithState.
+            let temperature = (t["temperature"] as? String) ?? "cooling"
+            let inputsThisWeek = t["inputs_this_week"] as? Int ?? 0
+            let openQ = t["open_questions_count"] as? Int ?? 0
+
             var front: [String: Any] = [
                 "id": id,
                 "name": name,
                 "type": (meta["type"]?.nonEmpty) ?? "workspace",
                 "owner": owner,
                 "stage": state,
+                "temperature": temperature,
                 "days_since": daysSince,
                 "status": status,
                 "decision": decision,
                 "moved": moved,
+                "open_questions_count": openQ,
                 "owned_by_you": ownedByYou,
                 "pinned": meta["pinned"] == "1",
                 "top_dismissed": meta["top_dismissed"] == "1",
-                "inputs_this_week": Int(meta["inputs_this_week"] ?? "0") ?? 0
+                "inputs_this_week": inputsThisWeek
             ]
             if let next = meta["next_date"]?.nonEmpty { front["next_date"] = next }
             if stuckOnYou { front["stuck"] = ["days": daysSince, "on": "you"] }
             out.append(front)
         }
 
-        // Pinned first; then stuck-on-you, moving, running-without-you; ties by recency.
+        // Pinned first; then by LIVE LEVERAGE — a hot/deciding front you own is the highest-signal
+        // thing on the page (the user's ask: surface active themes up top), so it outranks a
+        // quietly-moving one. Then stuck-on-you > moving > delegated; ties by recency.
         let rank: [String: Int] = ["stuck": 0, "moving": 1, "delegated": 2]
+        func liveScore(_ f: [String: Any]) -> Int {
+            let temp = f["temperature"] as? String ?? "cooling"
+            let stage = (f["stage"] as? String ?? "").lowercased()
+            let ownedByYou = (f["owned_by_you"] as? Bool) ?? true
+            var s = 0
+            if temp == "hot" { s += 4 } else if temp == "warming" { s += 2 }
+            if stage == "deciding" { s += 3 } else if stage == "creating" { s += 1 }
+            if ownedByYou { s += 1 }
+            return s
+        }
         out.sort {
             let pa = (($0["pinned"] as? Bool) == true) ? 0 : 1
             let pb = (($1["pinned"] as? Bool) == true) ? 0 : 1
             if pa != pb { return pa < pb }
+            let la = liveScore($0), lb = liveScore($1)
+            if la != lb { return la > lb }
             let ra = rank[$0["status"] as? String ?? "moving"] ?? 1
             let rb = rank[$1["status"] as? String ?? "moving"] ?? 1
             if ra != rb { return ra < rb }

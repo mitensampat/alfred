@@ -1296,6 +1296,10 @@ class HTTPServer {
             return handleDeskFrontDismiss(request)
         case ("POST", "/api/desk/front/close"):
             return handleDeskFrontClose(request)
+        case ("GET", "/api/desk/archive"):
+            return handleDeskArchive(request)
+        case ("POST", "/api/desk/front/restore"):
+            return handleDeskFrontRestore(request)
         case ("GET", "/api/schedule/parse"):
             // Phase-1 dev check for the @schedule command parser.
             let q = request.queryParams["q"] ?? ""
@@ -12459,7 +12463,64 @@ extension HTTPServer {
             metadata: meta,
             origin: nz(existing?["origin"] as? String, "manual"),
             preserveUserMeta: false)
-        return HTTPResponse(statusCode: 200, body: ["ok": ok, "metadata": meta])
+        // Stage "done" archives the front off the board (buildFronts filters user_verdict=="done").
+        // Setting any other stage on a previously-done front brings it back.
+        if let stg = meta["stage"]?.lowercased() {
+            if stg == "done" || stg == "archived" { _ = store.setVerdict(id: id, verdict: "done") }
+            else if (existing?["user_verdict"] as? String) == "done" { _ = store.setVerdict(id: id, verdict: nil) }
+        }
+        return HTTPResponse(statusCode: 200, body: ["ok": ok, "metadata": meta, "archived": (meta["stage"]?.lowercased() == "done")])
+    }
+
+    /// Archived fronts: themes the user marked done. Listed newest-first for the archive drawer.
+    private func handleDeskArchive(_ request: HTTPRequest) -> HTTPResponse {
+        let store = SelfModelStore.shared
+        let rows: [[String: Any]] = store.getFacets(kind: "theme", includeArchived: true)
+            .filter { ($0["user_verdict"] as? String) == "done" }
+            .map { f in
+                let meta = (f["metadata"] as? [String: String]) ?? [:]
+                func nz(_ v: String?, _ fb: String) -> String {
+                    let t = (v ?? "").trimmingCharacters(in: .whitespaces); return t.isEmpty ? fb : t
+                }
+                return [
+                    "id": f["id"] as? String ?? "",
+                    "name": f["statement"] as? String ?? "",
+                    "type": nz(meta["type"], "workspace"),
+                    "owner": nz(meta["owner"], "you"),
+                    "last_seen": f["last_seen"] as? String ?? ""
+                ]
+            }
+            .sorted { ($0["last_seen"] as? String ?? "") > ($1["last_seen"] as? String ?? "") }
+        return HTTPResponse(statusCode: 200, body: ["count": rows.count, "fronts": rows])
+    }
+
+    /// Restore an archived front to the board: clear the done verdict and reset its stage so it
+    /// isn't immediately re-archived. Body/query: { id }.
+    private func handleDeskFrontRestore(_ request: HTTPRequest) -> HTTPResponse {
+        let bodyJSON = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        let id = ((bodyJSON["id"] as? String) ?? request.queryParams["id"] ?? "").trimmingCharacters(in: .whitespaces)
+        guard !id.isEmpty else { return HTTPResponse(statusCode: 400, body: ["error": "id required"]) }
+        let store = SelfModelStore.shared
+        guard let f = store.getFacets(kind: "theme", includeArchived: true).first(where: { ($0["id"] as? String) == id }) else {
+            return HTTPResponse(statusCode: 404, body: ["error": "front not found"])
+        }
+        _ = store.setVerdict(id: id, verdict: nil)
+        var meta = (f["metadata"] as? [String: String]) ?? [:]
+        if (meta["stage"]?.lowercased() ?? "") == "done" || (meta["stage"]?.lowercased() ?? "") == "archived" {
+            meta["stage"] = "monitoring"
+            let now = ISO8601DateFormatter().string(from: Date())
+            _ = store.upsertFacet(
+                id: id, kind: "theme",
+                statement: (f["statement"] as? String) ?? id,
+                confidence: (f["confidence"] as? Double) ?? 0.8,
+                status: (f["status"] as? String) ?? "active",
+                firstSeen: (f["first_seen"] as? String) ?? now, lastSeen: now,
+                trajectory: (f["trajectory"] as? [[String: String]]) ?? [],
+                evidence: (f["evidence"] as? [[String: String]]) ?? [],
+                metadata: meta, origin: (f["origin"] as? String) ?? "manual",
+                preserveUserMeta: false)
+        }
+        return HTTPResponse(statusCode: 200, body: ["ok": true, "id": id])
     }
 
     /// Pin a front to the top of the desk (or unpin). Only one is pinned at a time, so this
