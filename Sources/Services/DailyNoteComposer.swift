@@ -123,8 +123,17 @@ enum DailyNoteComposer {
     }
 
     private static func shortName(_ s: String) -> String {
-        let head = s.split(separator: " ").prefix(4).joined(separator: " ")
-        return head.count > 42 ? String(head.prefix(41)) + "…" : head
+        let stop: Set<String> = ["in","and","of","the","for","to","vs","with","on","a","an","through","from","as","at","&"]
+        let words = s.split(separator: " ").map(String.init)
+        var out: [String] = []
+        var len = 0
+        for w in words {                        // keep whole words up to ~40 chars
+            if len + w.count + 1 > 40 && !out.isEmpty { break }
+            out.append(w); len += w.count + 1
+        }
+        while let last = out.last, stop.contains(last.lowercased()) { out.removeLast() }   // no dangling "in"/"and"
+        if out.isEmpty { out = Array(words.prefix(3)) }
+        return out.joined(separator: " ")
     }
     private static func firstSentence(_ s: String, _ cap: Int) -> String {
         var t = s.split(whereSeparator: { $0 == "." || $0 == "?" || $0 == "!" }).first.map(String.init) ?? s
