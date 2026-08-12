@@ -712,6 +712,17 @@ class HTTPServer {
         case ("GET", "/api/coaching/opener"):
             return await handleCoachingOpener()
 
+        case ("GET", "/api/wiki"):
+            // The You-Wiki (Step 7) as raw markdown — renders in any markdown/wiki viewer.
+            let md = UserWikiComposer.markdown()
+            UserWikiComposer.write()   // refresh ~/.alfred/user-wiki.md
+            return HTTPResponse(statusCode: 200, headers: ["Content-Type": "text/markdown; charset=utf-8"], htmlBody: md)
+
+        case ("GET", "/api/daily-note"):
+            // The one morning note (Step 6) — dry-run of the plain-text email.
+            let note = await DailyNoteComposer.compose(orchestrator: alfredService.orchestrator)
+            return HTTPResponse(statusCode: 200, body: ["subject": note.subject, "plain": note.plain])
+
         case ("POST", "/api/coaching/note-to-model"):
             // Close the (e) loop: an insight the user affirms persists into the self-model as a
             // belief (a durable thing they've decided is true about how they work) + coaching memory.

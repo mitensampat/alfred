@@ -123,6 +123,12 @@ class NotificationService {
 
     }
 
+    /// The one morning note (Step 6). `body` is already HTML-wrapped plain text.
+    func sendDailyNote(subject: String, body: String, toAddress: String? = nil) async throws {
+        guard config.email.enabled else { return }
+        try await sendEmail(subject: subject, body: body, toAddress: toAddress)
+    }
+
     func sendLearningDigest(subject: String, body: String) async throws {
         if config.email.enabled {
             print("  → Sending learning digest email...")

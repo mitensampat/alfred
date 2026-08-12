@@ -231,7 +231,7 @@ class CadenceService {
                 lastRunTimestamp: lastRuns["attention"],
                 catchUpWindowHours: 3,
                 notifyOnSuccess: true,
-                emailOnSuccess: true
+                emailOnSuccess: false   // retired: the live Desk usurps the 3pm attention email (Step 6)
             ),
             Cadence(
                 id: "builtin-todo-scan",

@@ -63,7 +63,11 @@ class CadenceRunner {
         // Item-level hygiene: flag content sitting in the wrong workspace and QUEUE a proposed move.
         // Nothing re-files silently — the user accepts or rejects each in the triage surface.
         let stray = await SelfModelHygiene.detectAndQueue()
-        return "\(mergeSummary). Strays: \(stray.queued) new move proposals queued (\(stray.found) found)"
+
+        // Regenerate the You-Wiki (Step 7) now that the self-model is fresh.
+        UserWikiComposer.write()
+
+        return "\(mergeSummary). Strays: \(stray.queued) new move proposals queued (\(stray.found) found). You-Wiki refreshed."
     }
 
     // MARK: - Individual Runners
@@ -74,7 +78,9 @@ class CadenceRunner {
         }
         let emailTo = cadence.emailOnSuccess ? loadEmailTo() : nil
         let today = Date()
-        let briefing = try await orchestrator.generateBriefing(for: today, sendNotifications: true, toAddress: emailTo)
+        // Generate the briefing for its SIDE EFFECTS (data, coaching cards) but not its email — the
+        // one morning email is now the tight DailyNoteComposer note (Step 6).
+        let briefing = try await orchestrator.generateBriefing(for: today, sendNotifications: false)
 
         // Pre-generate coaching cards and persist to disk
         await preGenerateCoachingCards()
@@ -82,7 +88,15 @@ class CadenceRunner {
         // Pre-generate coaching opener and persist to disk
         await preGenerateCoachingOpener(briefing: briefing)
 
-        return "Morning briefing generated with \(briefing.actionItems.count) action items"
+        // Send THE one email: a tight, plain-text CEO note.
+        var noteSent = false
+        if let emailTo = emailTo, let config = AppConfig.load() {
+            let note = await DailyNoteComposer.compose(orchestrator: orchestrator)
+            try? await NotificationService(config: config.notifications).sendDailyNote(subject: note.subject, body: note.html, toAddress: emailTo)
+            noteSent = true
+        }
+
+        return "Daily note \(noteSent ? "sent" : "composed") · briefing has \(briefing.actionItems.count) items"
     }
 
     /// Pre-generate coaching cards during the morning briefing cadence and persist to disk.
