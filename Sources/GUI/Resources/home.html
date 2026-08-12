@@ -256,6 +256,12 @@
       .dk-coachcard-dot{ width:9px; height:9px; border-radius:50%; display:inline-block; flex:0 0 auto; }
       .dk-coachcard-label{ font-size:10px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; color:var(--dk-n600); }
       .dk-coachcard-body{ font-size:14.5px; line-height:1.5; color:var(--dk-text); }
+      /* Coach moment — the always-there line on the Desk */
+      .dk-coachline{ display:flex; align-items:center; gap:12px; padding:10px 24px; border-bottom:2px solid var(--dk-text); background:var(--dk-a100); }
+      .dk-coachline-tag{ font-size:10px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; color:var(--dk-a700); flex:0 0 auto; }
+      .dk-coachline-text{ flex:1; color:var(--dk-text); font-size:13.5px; line-height:1.4; }
+      .dk-coachline-link{ flex:0 0 auto; border:none; background:none; font-family:inherit; font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--dk-a700); cursor:pointer; white-space:nowrap; }
+      .dk-coachline-link:hover{ text-decoration:underline; }
       .dk-front-decision{ display:block; font-size:15.5px; line-height:1.45; margin-top:12px; padding-top:12px; border-top:1px solid var(--dk-divider); }
       .dk-front.delegated .dk-front-decision{ color:var(--dk-n700); }
       .dk-open-link{ display:inline-block; margin-top:12px; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--dk-a700); }
@@ -3953,6 +3959,7 @@
                 <div class="dk-frame">
                     <div id="deskFreshRibbon" class="dk-fresh" style="display:none;" onclick="deskFreshDismiss()" title="Dismiss"></div>
                     <div id="deskBand" class="dk-band"></div>
+                    <div id="deskCoachLine" class="dk-coachline" style="display:none;"></div>
                     <div id="deskGrid" class="dk-grid"></div>
                     <div class="dk-ask">
                         <input id="deskAskInput" placeholder="Ask Alfred about the first move&hellip;" onkeydown="if(event.key==='Enter')deskAsk();">
@@ -10804,6 +10811,28 @@
             if (el) el.setAttribute('data-mview', view || 'list');
         }
 
+        // ── Coach MOMENT: the single most salient insight, always on the Fronts board ──
+        let _coachCardsCache = null;
+        async function dkCoachMoment(){
+            const el = document.getElementById('deskCoachLine'); if (!el) return;
+            // Only on the Fronts list — not People, Model, or a detail view.
+            if (!(_deskEntity === 'fronts' && _deskView === 'list')){ el.style.display = 'none'; return; }
+            if (!_coachCardsCache){
+                try { const r = await authFetch('/api/coaching/cards'); const d = await r.json(); _coachCardsCache = Array.isArray(d) ? d : (d.cards || []); }
+                catch(e){ _coachCardsCache = []; }
+            }
+            const salient = (_coachCardsCache || []).filter(c => (c.insight || '') && !/no clear signal/i.test(c.insight || ''));
+            if (!salient.length){ el.style.display = 'none'; return; }
+            // Lead with the sharpest lens: attention → leverage → avoidance → deep work → rest.
+            const rank = t => { t = (t || '').toLowerCase(); if (t.includes('attention')) return 0; if (t.includes('leverage')) return 1; if (t.includes('avoid')) return 2; if (t.includes('deep')) return 3; if (t.includes('relationship')) return 4; return 6; };
+            salient.sort((a,b) => rank(a.type) - rank(b.type));
+            const c = salient[0];
+            el.style.display = '';
+            el.innerHTML = `<span class="dk-coachline-tag">&#9670; Coach</span>
+                <span class="dk-coachline-text">${_esc(dkFirstSentence(c.insight, 160))}</span>
+                <button type="button" class="dk-coachline-link" onclick="deskNav('coach')">Open Coach &rarr;</button>`;
+        }
+
         // ── Coach surface: the reconnected coaching insights (skills → cards) ──
         let _coachLoaded = false;
         function coachDot(type){
@@ -11097,10 +11126,12 @@
             document.getElementById('deskGrid').innerHTML =
                 `<div class="dk-col-main" id="deskColMain">${renderDeskCenterHTML()}</div>` +
                 `<div class="dk-col-side" id="deskColMargin">${renderMarginColumn()}</div>`;
+            dkCoachMoment();
         }
         function renderDeskCenter(){
             const el = document.getElementById('deskColMain');
             if (el) el.innerHTML = renderDeskCenterHTML();
+            dkCoachMoment();
         }
         // Re-render the main environment (list or detail) + the side rail together.
         function refreshPeopleMargin(){

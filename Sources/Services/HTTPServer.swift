@@ -712,6 +712,20 @@ class HTTPServer {
         case ("GET", "/api/coaching/opener"):
             return await handleCoachingOpener()
 
+        case ("GET", "/api/coaching/nudge"):
+            // Dry-run of the proactive push content (what would we tell you tonight about tomorrow).
+            let window = (request.queryParams["window"] ?? "evening").lowercased()
+            guard let orch = alfredService.orchestrator else {
+                return HTTPResponse(statusCode: 503, body: ["error": "orchestrator not available"])
+            }
+            if window == "evening" {
+                if let c = await CoachingPushService.shared.eveningNudgeContent(orchestrator: orch) {
+                    return HTTPResponse(statusCode: 200, body: ["would_push": true, "window": "evening", "title": c.title, "body": c.body])
+                }
+                return HTTPResponse(statusCode: 200, body: ["would_push": false, "window": "evening", "reason": "tomorrow is light enough to skip"])
+            }
+            return HTTPResponse(statusCode: 400, body: ["error": "unknown window (try evening)"])
+
         case ("GET", "/api/coaching/debug"):
             return await handleCoachingDebug(request)
 

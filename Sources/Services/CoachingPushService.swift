@@ -12,6 +12,7 @@ class CoachingPushService {
 
     // Persisted to disk so restarts mid-window still deliver
     private var morningNudgeSentDate: String? = nil   // "YYYY-MM-DD"
+    private var eveningNudgeSentDate: String? = nil   // "YYYY-MM-DD" — 9pm "tomorrow, honestly" nudge
     private let nudgeStatePath: String
 
     // Minimum interval between any two push notifications (prevents rapid-fire)
@@ -102,6 +103,12 @@ class CoachingPushService {
                 config: config, publicKey: publicKey, privateKey: privateKey, subject: subject
             )
         }
+
+        // Evening nudge — "tomorrow, honestly" if tomorrow's calendar is heavy (fires ~9pm).
+        await checkEveningNudge(
+            now: now, orchestrator: orchestrator,
+            config: config, publicKey: publicKey, privateKey: privateKey, subject: subject
+        )
     }
 
     // MARK: - Post-Meeting Capture
@@ -296,6 +303,7 @@ class CoachingPushService {
 
     private struct NudgeState: Codable {
         let morningNudgeSentDate: String?
+        let eveningNudgeSentDate: String?
     }
 
     private func loadNudgeState() {
@@ -305,12 +313,96 @@ class CoachingPushService {
             return
         }
         morningNudgeSentDate = state.morningNudgeSentDate
+        eveningNudgeSentDate = state.eveningNudgeSentDate
     }
 
     private func saveNudgeState() {
-        let state = NudgeState(morningNudgeSentDate: morningNudgeSentDate)
+        let state = NudgeState(morningNudgeSentDate: morningNudgeSentDate, eveningNudgeSentDate: eveningNudgeSentDate)
         if let data = try? JSONEncoder().encode(state) {
             try? data.write(to: URL(fileURLWithPath: nudgeStatePath))
         }
+    }
+
+    // MARK: - Evening Nudge ("tell me tonight about tomorrow")
+
+    /// What Alfred would tell you tonight about tomorrow — or nil if tomorrow is light enough that a
+    /// push isn't warranted. Pure/idempotent; drives both the 9pm push trigger and the
+    /// GET /api/coaching/nudge dry-run so the content is verifiable without waiting for the window.
+    func eveningNudgeContent(orchestrator: BriefingOrchestrator?) async -> (title: String, body: String)? {
+        guard let orch = orchestrator, let config = AppConfig.load() else { return nil }
+        let cal = Calendar.current
+        guard let tomorrow = cal.date(byAdding: .day, value: 1, to: Date()) else { return nil }
+        let events: [CalendarEvent]
+        do {
+            let sched = try await orch.calendarServicePublic.fetchEventsFromAllCalendars(for: tomorrow, userSettings: config.user)
+            events = sched.events.filter { !$0.isAllDay }
+        } catch { return nil }
+        guard !events.isEmpty else { return nil }
+
+        let count = events.count
+        let hours = events.reduce(0.0) { $0 + $1.endTime.timeIntervalSince($1.startTime) } / 3600.0
+        // Only worth interrupting your evening when tomorrow is genuinely heavy.
+        guard hours >= 5.0 || count >= 6 else { return nil }
+
+        // Largest open block inside the 9–18 workday, so the nudge is actionable ("guard this").
+        let dayStart = cal.date(bySettingHour: 9, minute: 0, second: 0, of: tomorrow) ?? tomorrow
+        let dayEnd = cal.date(bySettingHour: 18, minute: 0, second: 0, of: tomorrow) ?? tomorrow
+        let sorted = events.sorted { $0.startTime < $1.startTime }
+        var cursor = dayStart, bestGap = 0.0, bestStart = dayStart
+        for e in sorted {
+            if e.startTime > cursor {
+                let gap = e.startTime.timeIntervalSince(cursor)
+                if gap > bestGap { bestGap = gap; bestStart = cursor }
+            }
+            if e.endTime > cursor { cursor = e.endTime }
+        }
+        if dayEnd > cursor {
+            let gap = dayEnd.timeIntervalSince(cursor)
+            if gap > bestGap { bestGap = gap; bestStart = cursor }
+        }
+
+        let hf = DateFormatter(); hf.dateFormat = "h:mm a"
+        let hoursStr = hours.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(hours))h" : String(format: "%.1fh", hours)
+        var body = "Tomorrow's heavy: \(count) meetings, \(hoursStr) booked."
+        if bestGap >= 45 * 60 {
+            let m = Int(bestGap / 60)
+            let gapStr = m >= 60 ? "\(m/60)h\(m % 60 > 0 ? " \(m % 60)m" : "")" : "\(m)m"
+            body += " Biggest open block: \(gapStr) from \(hf.string(from: bestStart)) — guard it, or move something into it tonight."
+        } else {
+            body += " Almost no open time — consider trimming or delegating one before the day starts."
+        }
+        return (title: "Tomorrow, honestly", body: body)
+    }
+
+    private func checkEveningNudge(
+        now: Date, orchestrator: BriefingOrchestrator?,
+        config: AppConfig, publicKey: String, privateKey: String, subject: String
+    ) async {
+        let todayStr = String(ISO8601DateFormatter().string(from: now).prefix(10))
+        guard eveningNudgeSentDate != todayStr else { return }
+        let cal = Calendar.current
+        let mins = cal.component(.hour, from: now) * 60 + cal.component(.minute, from: now)
+        // Fire once in the 21:00–21:20 window (resilient to timer drift/restarts).
+        guard mins >= 21 * 60 && mins <= 21 * 60 + 20 else { return }
+        guard PushBudgetService.shared.canPush() else { return }
+        guard now.timeIntervalSince(lastPushSentAt) >= minPushIntervalSeconds else { return }
+
+        // Mark sent regardless of whether there's content, so a light tomorrow doesn't re-check all night.
+        guard let content = await eveningNudgeContent(orchestrator: orchestrator) else {
+            eveningNudgeSentDate = todayStr; saveNudgeState(); return
+        }
+        eveningNudgeSentDate = todayStr; saveNudgeState()
+
+        let payload = WebPushService.PushPayload(
+            title: content.title, body: content.body, tag: "evening-nudge", url: "/home.html", type: "evening",
+            actions: [
+                WebPushService.PushPayload.PushAction(action: "open", title: "Open Alfred"),
+                WebPushService.PushPayload.PushAction(action: "dismiss", title: "Got it")
+            ]
+        )
+        print("📱 [CoachingPush] Evening nudge sent")
+        lastPushSentAt = Date()
+        await WebPushService.shared.sendToAll(payload, vapidPublicKey: publicKey, vapidPrivateKey: privateKey, vapidSubject: subject)
+        PushBudgetService.shared.recordPush()
     }
 }
