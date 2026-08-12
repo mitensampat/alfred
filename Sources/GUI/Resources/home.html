@@ -238,8 +238,8 @@
       .dk-plive:hover{ background:color-mix(in srgb,var(--dk-text) 4%,transparent); }
       .dk-plive-name{ font-weight:800; font-size:15px; line-height:1.2; letter-spacing:-.01em; }
       .dk-plive-q{ font-size:12.5px; line-height:1.4; color:var(--dk-n700); }
-      .dk-people-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; padding:14px 24px 20px; }
-      .dk-pcard{ display:flex; flex-direction:column; align-items:flex-start; gap:5px; text-align:left; border:1px solid var(--dk-divider); border-left:2px solid var(--dk-n400); background:transparent; padding:12px 13px; cursor:pointer; font-family:inherit; width:100%; }
+      .dk-people-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(248px,1fr)); gap:14px; padding:18px 24px 24px; }
+      .dk-pcard{ display:flex; flex-direction:column; align-items:flex-start; gap:7px; text-align:left; border:1px solid var(--dk-divider); border-left:2px solid var(--dk-n400); background:transparent; padding:15px 16px; cursor:pointer; font-family:inherit; width:100%; }
       .dk-pcard:hover{ background:color-mix(in srgb,var(--dk-text) 4%,transparent); }
       .dk-pcard.hot{ border-left-color:var(--dk-hot); }
       .dk-pcard-name{ font-weight:800; font-size:16px; line-height:1.15; letter-spacing:-.01em; }
@@ -256,15 +256,33 @@
       .dk-coachcard-dot{ width:9px; height:9px; border-radius:50%; display:inline-block; flex:0 0 auto; }
       .dk-coachcard-label{ font-size:10px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; color:var(--dk-n600); }
       .dk-coachcard-body{ font-size:14.5px; line-height:1.5; color:var(--dk-text); }
-      .dk-coachcard-keep{ margin-top:11px; border:1px solid var(--dk-n300); background:transparent; font-family:inherit; font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--dk-a700); padding:6px 10px; cursor:pointer; }
+      .dk-coachcard-acts{ display:flex; gap:6px; flex-wrap:wrap; margin-top:12px; align-items:center; }
+      .dk-coachcard-keep{ border:1px solid var(--dk-n300); background:transparent; font-family:inherit; font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--dk-a700); padding:6px 10px; cursor:pointer; }
       .dk-coachcard-keep:hover{ background:var(--dk-a100); }
       .dk-coachcard-keep:disabled{ color:var(--dk-n500); border-color:var(--dk-divider); cursor:default; }
-      /* Coach moment — the always-there line on the Desk */
-      .dk-coachline{ display:flex; align-items:center; gap:12px; padding:10px 24px; border-bottom:2px solid var(--dk-text); background:var(--dk-a100); }
-      .dk-coachline-tag{ font-size:10px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; color:var(--dk-a700); flex:0 0 auto; }
-      .dk-coachline-text{ flex:1; color:var(--dk-text); font-size:13.5px; line-height:1.4; }
-      .dk-coachline-link{ flex:0 0 auto; border:none; background:none; font-family:inherit; font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--dk-a700); cursor:pointer; white-space:nowrap; }
-      .dk-coachline-link:hover{ text-decoration:underline; }
+      .dk-coachcard-act{ border:none; background:none; font-family:inherit; font-size:11px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:var(--dk-n600); padding:6px 6px; cursor:pointer; }
+      .dk-coachcard-act:hover{ color:var(--dk-text); text-decoration:underline; }
+      /* Command palette + the masthead "+" */
+      .dk-plus-btn{ width:30px; height:30px; flex:0 0 auto; border:2px solid var(--dk-text); background:var(--dk-text); color:var(--dk-bg); font-family:inherit; font-size:20px; font-weight:800; line-height:1; cursor:pointer; display:grid; place-items:center; }
+      .dk-plus-btn:hover{ background:var(--dk-accent); border-color:var(--dk-accent); color:#fff; }
+      .dk-palette{ max-width:560px; width:92%; margin:12vh auto 0; background:var(--dk-card); border:2px solid var(--dk-text); box-shadow:8px 8px 0 rgba(0,0,0,.14); color:var(--dk-text); }
+      .dk-palette-in{ display:flex; align-items:center; gap:11px; padding:15px 17px; border-bottom:2px solid var(--dk-text); }
+      .dk-palette-plus{ font-size:20px; font-weight:800; color:var(--dk-accent); }
+      .dk-palette-in input{ flex:1; border:none; outline:none; background:transparent; font-family:inherit; font-size:17px; font-weight:600; color:var(--dk-text); }
+      .dk-palette-hint{ padding:16px 18px; font-size:13px; color:var(--dk-n600); line-height:1.5; }
+      .dk-palette-rows{ padding:6px 0 8px; }
+      .dk-palette-row{ display:flex; align-items:center; gap:12px; width:100%; text-align:left; border:none; background:transparent; font-family:inherit; padding:11px 18px; cursor:pointer; color:var(--dk-text); }
+      .dk-palette-row.sel, .dk-palette-row:hover{ background:var(--dk-a100); }
+      .dk-palette-row .ic{ width:26px; text-align:center; font-size:15px; }
+      .dk-palette-row .m{ font-size:14.5px; font-weight:700; }
+      .dk-palette-row .m small{ display:block; font-weight:400; font-size:12px; color:var(--dk-n600); margin-top:1px; }
+      .dk-palette-row .kbd{ margin-left:auto; font-size:12px; font-weight:700; color:var(--dk-n500); border:1px solid var(--dk-n300); padding:1px 7px; }
+      /* Coach moment — leads the Fronts side rail */
+      .dk-coach-rail:empty{ display:none; }
+      .dk-coach-rail{ border:2px solid var(--dk-text); border-left:6px solid var(--dk-accent); background:var(--dk-a100); padding:13px 15px; margin-bottom:22px; }
+      .dk-coach-rail-body{ font-size:14px; line-height:1.5; color:var(--dk-text); margin-top:7px; }
+      .dk-coach-rail-link{ display:inline-block; margin-top:11px; border:none; background:none; font-family:inherit; font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--dk-a700); cursor:pointer; padding:0; }
+      .dk-coach-rail-link:hover{ text-decoration:underline; }
       .dk-front-decision{ display:block; font-size:15.5px; line-height:1.45; margin-top:12px; padding-top:12px; border-top:1px solid var(--dk-divider); }
       .dk-front.delegated .dk-front-decision{ color:var(--dk-n700); }
       .dk-open-link{ display:inline-block; margin-top:12px; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--dk-a700); }
@@ -3903,6 +3921,7 @@
                     <span class="dk-date" id="deskDateLabel">&mdash;</span>
                 </div>
                 <div class="dk-mast-right">
+                    <button type="button" class="dk-plus-btn" id="deskPlusBtn" onclick="capOpen()" title="Quick capture — log, schedule, or ask (⌘K)">+</button>
                     <div class="dk-nav">
                         <button type="button" class="dk-nav-seg active" id="deskNavFronts" onclick="deskNav('fronts')">Fronts</button>
                         <button type="button" class="dk-nav-seg" id="deskNavPeople" onclick="deskNav('people')">People</button>
@@ -3945,6 +3964,17 @@
             </div>
         </div>
 
+        <!-- Command palette — quick capture / schedule / ask (the masthead +) -->
+        <div id="paletteOverlay" style="display:none;position:fixed;inset:0;background:rgba(20,23,28,.42);z-index:2100;font-family:'Archivo',sans-serif;" onclick="if(event.target===this)capClose()">
+            <div class="dk-palette">
+                <div class="dk-palette-in">
+                    <span class="dk-palette-plus">+</span>
+                    <input id="paletteInput" autocomplete="off" placeholder="Capture a thought, @schedule a meeting, or ask&hellip;" oninput="capRender()" onkeydown="capKey(event)">
+                </div>
+                <div id="paletteRows" class="dk-palette-rows"></div>
+            </div>
+        </div>
+
         <!-- Archived fronts (marked done) -->
         <div id="archiveOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;font-family:'Archivo',sans-serif;" onclick="if(event.target===this)dkArchiveClose()">
             <div style="max-width:560px;margin:8vh auto;background:var(--dk-card);border:2px solid var(--dk-text);color:var(--dk-text);max-height:82vh;display:flex;flex-direction:column;">
@@ -3962,7 +3992,6 @@
                 <div class="dk-frame">
                     <div id="deskFreshRibbon" class="dk-fresh" style="display:none;" onclick="deskFreshDismiss()" title="Dismiss"></div>
                     <div id="deskBand" class="dk-band"></div>
-                    <div id="deskCoachLine" class="dk-coachline" style="display:none;"></div>
                     <div id="deskGrid" class="dk-grid"></div>
                     <div class="dk-ask">
                         <input id="deskAskInput" placeholder="Ask Alfred about the first move&hellip;" onkeydown="if(event.key==='Enter')deskAsk();">
@@ -10831,20 +10860,17 @@
             if (t.includes('deep')) return 5;
             return 7;
         }
-        // ── Coach MOMENT: the single most salient insight, always on the Fronts board ──
+        // ── Coach MOMENT: the single most salient insight — leads the Fronts side rail ──
         async function dkCoachMoment(){
-            const el = document.getElementById('deskCoachLine'); if (!el) return;
-            // Only on the Fronts list — not People, Model, or a detail view.
-            if (!(_deskEntity === 'fronts' && _deskView === 'list')){ el.style.display = 'none'; return; }
+            const el = document.getElementById('deskCoachRail'); if (!el) return;   // only rendered on the Fronts list
             if (!_coachCardsCache){ _coachCardsCache = await fetchCoachInsights(); }
             const salient = (_coachCardsCache || []).filter(c => (c.insight || '') && !/no clear signal/i.test(c.insight || ''));
-            if (!salient.length){ el.style.display = 'none'; return; }
+            if (!salient.length){ el.innerHTML = ''; return; }
             salient.sort((a,b) => coachRank(a.type) - coachRank(b.type));
             const c = salient[0];
-            el.style.display = '';
-            el.innerHTML = `<span class="dk-coachline-tag">&#9670; Coach</span>
-                <span class="dk-coachline-text">${_esc(dkFirstSentence(c.insight, 160))}</span>
-                <button type="button" class="dk-coachline-link" onclick="deskNav('coach')">Open Coach &rarr;</button>`;
+            el.innerHTML = `<div class="dk-sec-label" style="color:var(--dk-a700);">&#9670; Coach</div>
+                <div class="dk-coach-rail-body">${_esc(dkFirstSentence(c.insight, 220))}</div>
+                <button type="button" class="dk-coach-rail-link" onclick="deskNav('coach')">Open Coach &rarr;</button>`;
         }
 
         // ── Coach surface: the reconnected coaching insights (skills → cards) ──
@@ -10862,16 +10888,35 @@
                 el.innerHTML = `<div class="dk-prov" style="grid-column:1/-1;">No coaching signals right now. Enable more skills under <b>Skills &amp; tenets</b>, or check back once Alfred has read a few more days.</div>`;
                 return;
             }
-            el.innerHTML = cards.map((c,i) => {
+            const shown = cards.filter(c => !_coachDismissed.has(c.insight || c.body || ''));
+            el.innerHTML = shown.map((c,i) => {
                 const insight = c.insight || c.body || '';
                 const keepable = insight && !/no clear signal/i.test(insight);
                 return `<div class="dk-coachcard" id="dkcoach-${i}">
                     <div class="dk-coachcard-top"><span class="dk-coachcard-dot" style="background:${coachDot(c.type)}"></span><span class="dk-coachcard-label">${_esc(c.label || c.type || 'Insight')}</span></div>
                     <div class="dk-coachcard-body">${_esc(insight)}</div>
-                    ${keepable ? `<button type="button" class="dk-coachcard-keep" onclick='dkCoachKeep(${i}, this)'>Keep &rarr; Model</button>` : ''}
+                    ${keepable ? `<div class="dk-coachcard-acts">
+                        <button type="button" class="dk-coachcard-keep" onclick='dkCoachKeep(${i}, this)'>Keep &rarr; Model</button>
+                        <button type="button" class="dk-coachcard-act" onclick='dkCoachAsk(${i})'>Ask Alfred</button>
+                        <button type="button" class="dk-coachcard-act" onclick='dkCoachDismiss(${i}, this)'>Dismiss</button>
+                    </div>` : ''}
                 </div>`;
-            }).join('');
-            window._coachRendered = cards;
+            }).join('') || `<div class="dk-prov" style="grid-column:1/-1;">All clear — nothing Alfred wants to raise right now.</div>`;
+            window._coachRendered = shown;
+        }
+        let _coachDismissed = new Set();
+        function dkCoachAsk(i){
+            const c = (window._coachRendered || [])[i]; if (!c) return;
+            const insight = c.insight || c.body || '';
+            deskShowSurface('chat');
+            const inp = document.getElementById('chatInput');
+            if (inp){ inp.value = 'Help me act on this: ' + insight; inp.focus(); try { handleInput({target: inp}); } catch(e){} }
+        }
+        function dkCoachDismiss(i, btn){
+            const c = (window._coachRendered || [])[i]; if (!c) return;
+            _coachDismissed.add(c.insight || c.body || '');
+            const card = btn && btn.closest('.dk-coachcard'); if (card) card.remove();
+            _coachCardsCache = (_coachCardsCache || []).filter(x => !_coachDismissed.has(x.insight || x.body || ''));
         }
         async function dkCoachKeep(i, btn){
             const c = (window._coachRendered || [])[i]; if (!c) return;
@@ -11053,12 +11098,8 @@
                 ? `<div class="dk-top-receipt">Dropped <strong>${_esc(_deskTopReceipt.name)}</strong> from the top — still in Fronts below.
                      <button type="button" class="dk-btn-ghost dk-list-undo" onclick="deskRestoreTopFront('${_esc(_deskTopReceipt.id)}')">Undo</button></div>`
                 : '';
-            // Search finds any front and renders it as a top card (pin it to make it stick).
-            const search = `<div class="dk-top-search-wrap">
-                    <input class="dk-top-search" placeholder="Search fronts to bring one up top&hellip;" value="${_esc(q)}"
-                        oninput="_deskTopSearch=this.value; renderDeskBand(); const el=document.querySelector('.dk-top-search'); if(el){el.focus(); el.setSelectionRange(el.value.length,el.value.length);}">
-                    ${q ? `<button type="button" class="dk-top-search-x" onclick="_deskTopSearch=''; renderDeskBand();">Clear</button>` : ''}
-                </div>`;
+            // Top-band search removed (redundant with the "Search fronts…" box on the board below).
+            const search = '';
             if (!top.length){
                 const empty = q
                     ? `<div class="dk-band-empty">No fronts match &ldquo;${_esc(q)}&rdquo;.</div>`
@@ -11305,7 +11346,8 @@
                         <span class="${ageCls}">${c.days}d</span></div>
                     <div class="dk-cold-reason">${_esc(c.reason)}</div></div>`;
             }).join('') || `<div class="dk-cold-reason" style="margin-top:11px;">No fronts stalling right now.</div>`;
-            return `<div class="dk-cold"><div class="dk-sec-label">Fronts going cold</div>${cr}</div>
+            return `<div id="deskCoachRail" class="dk-coach-rail"></div>
+                <div class="dk-cold"><div class="dk-sec-label">Fronts going cold</div>${cr}</div>
                 <div class="dk-week"><div class="dk-sec-label">Fronts health</div>
                     <div class="dk-week-stat"><span class="dk-week-num">${w.unattended_fronts||0}</span><span class="dk-week-l">front${(w.unattended_fronts===1)?'':'s'} running without you</span></div>
                     <div class="dk-week-stat"><span class="dk-week-num">${w.handed_off||0}</span><span class="dk-week-l">handed off, not done by you</span></div>
@@ -12110,6 +12152,57 @@
             if (_waPollTimer){ clearInterval(_waPollTimer); _waPollTimer = null; }
             waBridgePoll();
         }
+
+        // ═══ CAPTURE PALETTE — quick capture (the masthead +): log · schedule · ask ═══
+        function capOpen(){
+            document.getElementById('paletteOverlay').style.display = 'block';
+            const inp = document.getElementById('paletteInput'); inp.value = '';
+            setTimeout(() => inp.focus(), 0); capRender();
+        }
+        function capClose(){ document.getElementById('paletteOverlay').style.display = 'none'; }
+        function capIntent(text){
+            const t = (text || '').trim();
+            if (/^@?schedule\b/i.test(t) || /\b(schedule|book|set up)\b.*\b(meeting|call|sync|catch up|\d+\s*(m|min|h|hour)|tomorrow|next week|monday|tuesday|wednesday|thursday|friday)\b/i.test(t)) return 'schedule';
+            if (t.endsWith('?')) return 'ask';
+            return 'log';
+        }
+        function capRender(){
+            const t = document.getElementById('paletteInput').value.trim();
+            const rows = document.getElementById('paletteRows');
+            if (!t){ rows.innerHTML = `<div class="dk-palette-hint">Type to <b>log</b> a thought. Start with <b>@schedule</b> to book a meeting, end with <b>?</b> to ask Alfred.</div>`; return; }
+            const intent = capIntent(t);
+            const opts = [
+                { k:'log', ic:'&#9998;', t:'Log it', sub:'&ldquo;' + _esc(t) + '&rdquo;' },
+                { k:'schedule', ic:'&#128197;', t:'Schedule', sub:'Alfred proposes times &amp; sends the ask' },
+                { k:'ask', ic:'&#128172;', t:'Ask Alfred', sub:'Open chat seeded with this' }
+            ].sort((a,b) => (b.k === intent ? 1 : 0) - (a.k === intent ? 1 : 0));
+            rows.innerHTML = opts.map((o,i) => `<button type="button" class="dk-palette-row ${i===0?'sel':''}" onclick="capRun('${o.k}')">
+                    <span class="ic">${o.ic}</span><span class="m">${o.t}<small>${o.sub}</small></span>${i===0?'<span class="kbd">&crarr;</span>':''}</button>`).join('');
+        }
+        function capKey(e){
+            if (e.key === 'Enter'){ e.preventDefault(); capRun(capIntent(document.getElementById('paletteInput').value)); }
+            if (e.key === 'Escape'){ capClose(); }
+        }
+        async function capRun(kind){
+            const t = document.getElementById('paletteInput').value.trim(); if (!t) return;
+            if (kind === 'ask'){
+                capClose(); deskShowSurface('chat');
+                const inp = document.getElementById('chatInput'); if (inp){ inp.value = t; inp.focus(); try { handleInput({target: inp}); } catch(e){} }
+                return;
+            }
+            if (kind === 'schedule'){
+                capClose();
+                const cmd = /^@?schedule/i.test(t) ? t.replace(/^@?schedule\s*/i, '@schedule ') : '@schedule ' + t;
+                deskSchedSay(cmd); showToast('Scheduling — Alfred is finding times…');
+                return;
+            }
+            try { await authFetch('/api/now/capture?kind=note&text=' + encodeURIComponent(t), { method:'POST' }); showToast('Logged.'); }
+            catch(e){ showToast('Could not log that.', 'error'); }
+            capClose();
+        }
+        document.addEventListener('keydown', (e) => {
+            if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')){ e.preventDefault(); capOpen(); }
+        });
 
         // ═══ TIDY — workspace triage: move mis-filed items to their real home (your yes only) ═══
         let _tidyGroups = [];
