@@ -256,6 +256,9 @@
       .dk-coachcard-dot{ width:9px; height:9px; border-radius:50%; display:inline-block; flex:0 0 auto; }
       .dk-coachcard-label{ font-size:10px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; color:var(--dk-n600); }
       .dk-coachcard-body{ font-size:14.5px; line-height:1.5; color:var(--dk-text); }
+      .dk-coachcard-keep{ margin-top:11px; border:1px solid var(--dk-n300); background:transparent; font-family:inherit; font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--dk-a700); padding:6px 10px; cursor:pointer; }
+      .dk-coachcard-keep:hover{ background:var(--dk-a100); }
+      .dk-coachcard-keep:disabled{ color:var(--dk-n500); border-color:var(--dk-divider); cursor:default; }
       /* Coach moment — the always-there line on the Desk */
       .dk-coachline{ display:flex; align-items:center; gap:12px; padding:10px 24px; border-bottom:2px solid var(--dk-text); background:var(--dk-a100); }
       .dk-coachline-tag{ font-size:10px; font-weight:800; letter-spacing:.09em; text-transform:uppercase; color:var(--dk-a700); flex:0 0 auto; }
@@ -10811,21 +10814,32 @@
             if (el) el.setAttribute('data-mview', view || 'list');
         }
 
-        // ── Coach MOMENT: the single most salient insight, always on the Fronts board ──
+        // ── Coach insights: skill cards + deterministic signals (front-neglect, relationship) ──
         let _coachCardsCache = null;
+        async function fetchCoachInsights(){
+            let cards = [], signals = [];
+            try { const r = await authFetch('/api/coaching/cards'); const d = await r.json(); cards = Array.isArray(d) ? d : (d.cards || []); } catch(e){}
+            try { const r = await authFetch('/api/coaching/signals'); const d = await r.json(); signals = d.signals || []; } catch(e){}
+            return signals.concat(cards);   // deterministic "right now" signals lead
+        }
+        function coachRank(t){ t = (t || '').toLowerCase();
+            if (t.includes('front-neglect')) return 0;
+            if (t.includes('attention')) return 1;
+            if (t.includes('relationship')) return 2;
+            if (t.includes('leverage')) return 3;
+            if (t.includes('avoid')) return 4;
+            if (t.includes('deep')) return 5;
+            return 7;
+        }
+        // ── Coach MOMENT: the single most salient insight, always on the Fronts board ──
         async function dkCoachMoment(){
             const el = document.getElementById('deskCoachLine'); if (!el) return;
             // Only on the Fronts list — not People, Model, or a detail view.
             if (!(_deskEntity === 'fronts' && _deskView === 'list')){ el.style.display = 'none'; return; }
-            if (!_coachCardsCache){
-                try { const r = await authFetch('/api/coaching/cards'); const d = await r.json(); _coachCardsCache = Array.isArray(d) ? d : (d.cards || []); }
-                catch(e){ _coachCardsCache = []; }
-            }
+            if (!_coachCardsCache){ _coachCardsCache = await fetchCoachInsights(); }
             const salient = (_coachCardsCache || []).filter(c => (c.insight || '') && !/no clear signal/i.test(c.insight || ''));
             if (!salient.length){ el.style.display = 'none'; return; }
-            // Lead with the sharpest lens: attention → leverage → avoidance → deep work → rest.
-            const rank = t => { t = (t || '').toLowerCase(); if (t.includes('attention')) return 0; if (t.includes('leverage')) return 1; if (t.includes('avoid')) return 2; if (t.includes('deep')) return 3; if (t.includes('relationship')) return 4; return 6; };
-            salient.sort((a,b) => rank(a.type) - rank(b.type));
+            salient.sort((a,b) => coachRank(a.type) - coachRank(b.type));
             const c = salient[0];
             el.style.display = '';
             el.innerHTML = `<span class="dk-coachline-tag">&#9670; Coach</span>
@@ -10848,10 +10862,26 @@
                 el.innerHTML = `<div class="dk-prov" style="grid-column:1/-1;">No coaching signals right now. Enable more skills under <b>Skills &amp; tenets</b>, or check back once Alfred has read a few more days.</div>`;
                 return;
             }
-            el.innerHTML = cards.map(c => `<div class="dk-coachcard">
+            el.innerHTML = cards.map((c,i) => {
+                const insight = c.insight || c.body || '';
+                const keepable = insight && !/no clear signal/i.test(insight);
+                return `<div class="dk-coachcard" id="dkcoach-${i}">
                     <div class="dk-coachcard-top"><span class="dk-coachcard-dot" style="background:${coachDot(c.type)}"></span><span class="dk-coachcard-label">${_esc(c.label || c.type || 'Insight')}</span></div>
-                    <div class="dk-coachcard-body">${_esc(c.insight || c.body || '')}</div>
-                </div>`).join('');
+                    <div class="dk-coachcard-body">${_esc(insight)}</div>
+                    ${keepable ? `<button type="button" class="dk-coachcard-keep" onclick='dkCoachKeep(${i}, this)'>Keep &rarr; Model</button>` : ''}
+                </div>`;
+            }).join('');
+            window._coachRendered = cards;
+        }
+        async function dkCoachKeep(i, btn){
+            const c = (window._coachRendered || [])[i]; if (!c) return;
+            const insight = c.insight || c.body || '';
+            if (btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
+            try {
+                const r = await authFetch('/api/coaching/note-to-model', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ insight, label: c.label || c.type || 'Coaching insight' }) });
+                if (!(await r.json()).success) throw new Error('failed');
+                if (btn){ btn.textContent = '✓ In your Model'; }
+            } catch(e){ if (btn){ btn.disabled = false; btn.textContent = 'Keep → Model'; } alert('Could not save to Model.'); }
         }
         async function loadCoach(force){
             const el = document.getElementById('coachBody'); if (!el) return;
@@ -10860,11 +10890,11 @@
             const btn = document.getElementById('coachRefreshBtn'); if (btn && force) btn.textContent = 'Refreshing…';
             try {
                 if (force){ try { await authFetch('/api/coaching/debug/refresh', { method:'POST' }); } catch(e){} }
-                const r = await authFetch('/api/coaching/cards');
-                const d = await r.json();
-                const cards = Array.isArray(d) ? d : (d.cards || []);
+                const insights = await fetchCoachInsights();
+                _coachCardsCache = insights;
                 _coachLoaded = true;
-                renderCoach(cards);
+                const sorted = insights.slice().sort((a,b) => coachRank(a.type) - coachRank(b.type));
+                renderCoach(sorted);
             } catch(e){ el.innerHTML = `<div class="dk-prov" style="grid-column:1/-1;color:var(--dk-hot);">Could not load coaching cards.</div>`; }
             if (btn) btn.textContent = 'Refresh';
         }

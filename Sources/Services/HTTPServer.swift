@@ -712,6 +712,53 @@ class HTTPServer {
         case ("GET", "/api/coaching/opener"):
             return await handleCoachingOpener()
 
+        case ("POST", "/api/coaching/note-to-model"):
+            // Close the (e) loop: an insight the user affirms persists into the self-model as a
+            // belief (a durable thing they've decided is true about how they work) + coaching memory.
+            let body = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            let insight = ((body["insight"] as? String) ?? request.queryParams["insight"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard insight.count >= 8 else {
+                return HTTPResponse(statusCode: 400, body: ["error": "insight required"])
+            }
+            let label = ((body["label"] as? String) ?? request.queryParams["label"] ?? "Coaching insight").trimmingCharacters(in: .whitespaces)
+            let nowStr = ISO8601DateFormatter().string(from: Date())
+            let fid = SelfModelSynthesizer.stableId("belief", insight)
+            let ok = SelfModelStore.shared.upsertFacet(
+                id: fid, kind: "belief", statement: insight, confidence: 1.0, status: "active",
+                firstSeen: nowStr, lastSeen: nowStr, trajectory: [],
+                evidence: [["source_type": "coaching", "snippet": insight, "ts": nowStr]],
+                metadata: ["origin_label": label], origin: "coaching", preserveUserMeta: true)
+            _ = SelfModelStore.shared.setVerdict(id: fid, verdict: "kept")   // user-affirmed, protect from convergence
+            CoachingMemoryService.shared.updatePattern(category: "affirmed", observation: insight)
+            return HTTPResponse(statusCode: ok ? 200 : 500, body: ["success": ok, "id": fid])
+
+        case ("GET", "/api/coaching/signals"):
+            // Deterministic coach signals (no LLM): front-neglect + relationship-pattern. These
+            // merge into the Coach surface + the Desk "◆ Coach" moment alongside the skill cards.
+            var signals: [[String: Any]] = []
+            let fronts = DeskService.buildFronts()
+            let neglectedFronts = fronts
+                .filter { (($0["owned_by_you"] as? Bool) ?? true) && (($0["days_since"] as? Int) ?? 0) >= 14 }
+                .sorted { (($0["days_since"] as? Int) ?? 0) > (($1["days_since"] as? Int) ?? 0) }
+            if let f = neglectedFronts.first {
+                let name = f["name"] as? String ?? "a front"
+                let d = f["days_since"] as? Int ?? 0
+                signals.append([
+                    "type": "front-neglect", "label": "🕰 Losing touch",
+                    "insight": "You haven't moved \(name) in \(d) days — it's yours and going quiet. A short push now keeps it from stalling."])
+            }
+            let reliability = Dictionary(
+                TaskLifecycleTracker.shared.getStatsByCounterparty().map { ($0.name.lowercased(), $0) },
+                uniquingKeysWith: { a, _ in a })
+            if let c = DeskService.buildGoingCold(reliability: reliability, onDesk: Set()).first {
+                let who = c["name"] as? String ?? "someone"
+                let reason = c["reason"] as? String ?? "has gone quiet."
+                signals.append([
+                    "type": "relationship", "label": "👥 Relationship",
+                    "insight": "\(who): \(reason)"])
+            }
+            return HTTPResponse(statusCode: 200, body: ["signals": signals])
+
         case ("GET", "/api/coaching/nudge"):
             // Dry-run of the proactive push content (what would we tell you tonight about tomorrow).
             let window = (request.queryParams["window"] ?? "evening").lowercased()
