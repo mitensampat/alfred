@@ -5,6 +5,60 @@ All notable changes to Alfred will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.0] - 2026-08-13
+
+### Added
+- **@schedule, end-to-end** — propose → send → watch the thread → book on a firm yes,
+  each step a one-tap action in the People rail with plain-English stage labels. Works
+  identically from the command palette, `⌘K`, and the WhatsApp self-chat; the rail
+  auto-refreshes so replies surface on their own.
+- **Direct block** — `block 30m with X at 4pm tomorrow topic Sync x@email` creates the
+  event and sends the invite in one instruction, video link attached.
+- **The You-Wiki, rendered** — a Slate-styled reader at `/wiki` for the nightly portrait
+  (fronts, durable beliefs, working theses, people, coaching signals).
+
+### Changed
+- **Belief durability** — every self-model belief is classified `durable | tactical |
+  fact | action`. Facts and one-off actions are archived out of the active set; durable
+  principles and live theses stay, so the model keeps the right set over time.
+- **Insight → Model** no longer promotes coaching *actions* into beliefs.
+- **You-Wiki curation** — "What you believe" holds durable principles only; a new
+  "Working theses" section holds tactical reads; coaching observations are curated
+  recurring lens signals rather than a raw context dump.
+- README rewritten to the current product (Desk + Coach, self-model, @schedule, You-Wiki).
+
+## [5.0.0] - 2026-08-12
+
+### Added
+- **The Desk + Coach** — the primary surface rebuilt around three objects: the queue
+  (who is blocked on you, ranked by leverage), Fronts (what you're running, each with
+  owner/stage/one-decision), and the margin (relationships going cold + your week).
+- **Coaching, reconnected** — skills, tenets, and analysis lenses are createable,
+  toggleable, and editable from the interface; the Coach shows up on the Desk, as an
+  evening nudge, and in a single tight morning email.
+- **Alfred tasks** — an on-demand Notion task database; tasks stream in when you choose,
+  each with a due date.
+- **Web push (VAPID)** — coaching nudges delivered as browser push.
+
+### Changed
+- Removed the "$ at stake" front metric; tightened related-concept modeling.
+
+## [3.1.0] - 2026-07-27
+
+### Added
+- **Signal, without Full Disk Access** — a message source read via an isolated decrypt
+  helper, no FDA required.
+- **WhatsApp network bridge** — sends and ingests over the protocol (no WhatsApp Desktop,
+  no FDA once paired), with a local-DB fallback.
+
+## [3.0.0] - 2026-07-26
+
+### Added
+- **The Self-Model** — Now / You / Model surfaces; facets (themes, beliefs, questions,
+  decisions) as callable objects; convergence intelligence (frequency → importance,
+  attach-at-source); a portable operating model. Refined in 3.0.1 (convergence) and
+  3.0.2 (easier setup).
+
 ## [2.3.1] - 2026-05-16
 
 ### Changed
