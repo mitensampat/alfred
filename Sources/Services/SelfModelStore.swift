@@ -249,7 +249,10 @@ class SelfModelStore {
     /// (temperature, state, edge, frequency, …). These are carried across a recompute.
     static let userAuthoredMetaKeys: Set<String> = [
         "owner", "stage", "next_date", "type", "decision",
-        "pinned", "top_dismissed", "people_json", "people_curated"
+        "pinned", "top_dismissed", "people_json", "people_curated",
+        // Machine-computed but expensive to recompute — carry forward so the nightly
+        // materialize() doesn't drop the durability tag and force a re-classification.
+        "durability", "durability_hash"
     ]
 
     /// Insert a facet, or replace it if the id already exists.
@@ -1000,6 +1003,34 @@ class SelfModelStore {
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
         sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        let ok = sqlite3_step(stmt) == SQLITE_DONE
+        sqlite3_finalize(stmt)
+        return ok
+    }
+
+    /// Merge a few keys into a facet's metadata_json without disturbing the rest of the row.
+    /// Used by the belief-durability pass to stamp its tag onto existing facets.
+    @discardableResult
+    func mergeFacetMetadata(id: String, _ keys: [String: String]) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db, !keys.isEmpty else { return false }
+
+        var existingJson: String? = nil
+        var readStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "SELECT metadata_json FROM self_facet WHERE id = ?", -1, &readStmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(readStmt, 1, (id as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            if sqlite3_step(readStmt) == SQLITE_ROW { existingJson = columnText(readStmt, 0) }
+        }
+        sqlite3_finalize(readStmt)
+
+        var meta = (jsonDecode(existingJson) as? [String: String]) ?? [:]
+        for (k, v) in keys { meta[k] = v }
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "UPDATE self_facet SET metadata_json = ? WHERE id = ?", -1, &stmt, nil) == SQLITE_OK else { return false }
+        sqlite3_bind_text(stmt, 1, (jsonEncode(meta) as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 2, (id as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         let ok = sqlite3_step(stmt) == SQLITE_DONE
         sqlite3_finalize(stmt)
         return ok

@@ -64,10 +64,14 @@ class CadenceRunner {
         // Nothing re-files silently — the user accepts or rejects each in the triage surface.
         let stray = await SelfModelHygiene.detectAndQueue()
 
-        // Regenerate the You-Wiki (Step 7) now that the self-model is fresh.
+        // Belief retention: tag each belief by durability and archive the non-beliefs (bare facts,
+        // action items) so the Model keeps principles + live theses, not situational silt.
+        let dur = await SelfModelSynthesizer.tagBeliefDurability()
+
+        // Regenerate the You-Wiki (Step 7) now that the self-model is fresh + curated.
         UserWikiComposer.write()
 
-        return "\(mergeSummary). Strays: \(stray.queued) new move proposals queued (\(stray.found) found). You-Wiki refreshed."
+        return "\(mergeSummary). Strays: \(stray.queued) new move proposals queued (\(stray.found) found). Beliefs: \(dur.tagged) tagged, \(dur.archived) archived. You-Wiki refreshed."
     }
 
     // MARK: - Individual Runners

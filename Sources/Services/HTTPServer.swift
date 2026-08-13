@@ -718,10 +718,27 @@ class HTTPServer {
             UserWikiComposer.write()   // refresh ~/.alfred/user-wiki.md
             return HTTPResponse(statusCode: 200, headers: ["Content-Type": "text/markdown; charset=utf-8"], htmlBody: md)
 
+        case ("GET", "/wiki"), ("GET", "/wiki.html"):
+            // A readable, self-contained rendered view of the You-Wiki — so "how do I see it" is
+            // just: open /wiki. Slate palette, print-friendly, no external assets. The markdown is
+            // embedded verbatim and rendered client-side by a tiny parser.
+            UserWikiComposer.write()
+            let mdRaw = UserWikiComposer.markdown()
+            let mdJSON = String(data: (try? JSONSerialization.data(withJSONObject: [mdRaw])) ?? Data("[\"\"]".utf8), encoding: .utf8) ?? "[\"\"]"
+            let page = HTTPServer.wikiViewerHTML(embeddedMarkdownArrayJSON: mdJSON)
+            return HTTPResponse(statusCode: 200, headers: ["Content-Type": "text/html; charset=utf-8"], htmlBody: page)
+
         case ("GET", "/api/daily-note"):
             // The one morning note (Step 6) — dry-run of the plain-text email.
             let note = await DailyNoteComposer.compose(orchestrator: alfredService.orchestrator)
             return HTTPResponse(statusCode: 200, body: ["subject": note.subject, "plain": note.plain])
+
+        case ("POST", "/api/model/tag-durability"):
+            // On-demand belief-durability pass (also runs nightly): tag durable/tactical/fact/action
+            // and archive the non-beliefs, then regenerate the Wiki off the curated set.
+            let r = await SelfModelSynthesizer.tagBeliefDurability()
+            UserWikiComposer.write()
+            return HTTPResponse(statusCode: 200, body: ["tagged": r.tagged, "archived": r.archived])
 
         case ("POST", "/api/coaching/note-to-model"):
             // Close the (e) loop: an insight the user affirms persists into the self-model as a
@@ -733,15 +750,28 @@ class HTTPServer {
             }
             let label = ((body["label"] as? String) ?? request.queryParams["label"] ?? "Coaching insight").trimmingCharacters(in: .whitespaces)
             let nowStr = ISO8601DateFormatter().string(from: Date())
+            // Always record the acted-on insight in coaching memory — that's the durable trace of
+            // what the user affirmed. But only promote it to a *belief* if it reads like one. A
+            // coaching nudge ("mute the group, set read-only hours") is an action, not a belief;
+            // storing it as one is exactly what silted up "what you believe". Gate on durability.
+            CoachingMemoryService.shared.updatePattern(category: "affirmed", observation: insight)
+            let dur = BeliefDurability.heuristic(insight)
+            if dur == .action || dur == .fact {
+                return HTTPResponse(statusCode: 200, body: [
+                    "success": true, "promoted": false, "kind": dur!.rawValue,
+                    "note": "Noted in coaching memory — kept out of beliefs (it reads as \(dur == .action ? "an action" : "a fact"), not a belief)."])
+            }
             let fid = SelfModelSynthesizer.stableId("belief", insight)
             let ok = SelfModelStore.shared.upsertFacet(
                 id: fid, kind: "belief", statement: insight, confidence: 1.0, status: "active",
                 firstSeen: nowStr, lastSeen: nowStr, trajectory: [],
                 evidence: [["source_type": "coaching", "snippet": insight, "ts": nowStr]],
-                metadata: ["origin_label": label], origin: "coaching", preserveUserMeta: true)
+                metadata: ["origin_label": label,
+                           "durability": (dur ?? .durable).rawValue,
+                           "durability_hash": BeliefDurability.hash(insight)],
+                origin: "coaching", preserveUserMeta: true)
             _ = SelfModelStore.shared.setVerdict(id: fid, verdict: "kept")   // user-affirmed, protect from convergence
-            CoachingMemoryService.shared.updatePattern(category: "affirmed", observation: insight)
-            return HTTPResponse(statusCode: ok ? 200 : 500, body: ["success": ok, "id": fid])
+            return HTTPResponse(statusCode: ok ? 200 : 500, body: ["success": ok, "promoted": true, "id": fid])
 
         case ("GET", "/api/coaching/signals"):
             // Deterministic coach signals (no LLM): front-neglect + relationship-pattern. These
@@ -1393,6 +1423,17 @@ class HTTPServer {
             }
             await ScheduleService.shared.handle(text)
             return HTTPResponse(statusCode: 200, body: ["ok": true])
+        case ("GET", "/api/schedule/parse-block"):
+            // Dry-run of @schedule direct-block: LLM-parse the instruction into a plan WITHOUT booking.
+            let text = request.queryParams["text"] ?? ""
+            guard !text.isEmpty else { return HTTPResponse(statusCode: 400, body: ["error": "text required"]) }
+            if let p = await ScheduleService.shared.parseDirectBlock(text) {
+                let iso = ISO8601DateFormatter()
+                return HTTPResponse(statusCode: 200, body: [
+                    "parsed": true, "title": p.title, "start": iso.string(from: p.start), "end": iso.string(from: p.end),
+                    "attendee_name": p.name as Any, "attendee_email": p.email as Any])
+            }
+            return HTTPResponse(statusCode: 200, body: ["parsed": false, "reason": "no concrete time found"])
         case ("POST", "/api/schedule/tick"):
             await ScheduleService.shared.tick()
             return HTTPResponse(statusCode: 200, body: ["ok": true])
@@ -9064,6 +9105,59 @@ class ClientSocket {
 
 // MARK: - Formatting Helpers for API Responses
 extension HTTPServer {
+
+    /// A self-contained, Slate-styled reader for the You-Wiki. The markdown is embedded verbatim
+    /// (as a JSON array's first element, so quoting is safe) and rendered by a tiny inline parser —
+    /// no external assets, prints cleanly, matches the Desk palette.
+    static func wikiViewerHTML(embeddedMarkdownArrayJSON: String) -> String {
+        return """
+        <!doctype html><html lang="en"><head><meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>A working portrait</title>
+        <style>
+          :root{ --bg:#fafbfc; --surface:#fff; --ink:#14171c; --n700:#3b4048; --n500:#6b7280; --n300:#c9ced6; --divider:#e5e8ec; --accent:#1d4ed8; --wash:#f3f5f8; }
+          @media (prefers-color-scheme:dark){ :root{ --bg:#0f1216; --surface:#151920; --ink:#eef1f5; --n700:#c3c9d2; --n500:#9aa2ae; --n300:#4a515c; --divider:#242a33; --accent:#6f9bff; --wash:#1a1f27; } }
+          *{ box-sizing:border-box; } html,body{ margin:0; background:var(--bg); color:var(--ink); }
+          body{ font-family:'Archivo',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; line-height:1.5; -webkit-font-smoothing:antialiased; }
+          .wrap{ max-width:760px; margin:0 auto; padding:56px 28px 96px; }
+          #md h1{ font-size:34px; font-weight:800; letter-spacing:-.02em; margin:0 0 4px; }
+          #md h2{ font-size:13px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); margin:44px 0 6px; padding-top:18px; border-top:2px solid var(--ink); }
+          #md blockquote{ margin:0 0 16px; padding:0; color:var(--n500); font-size:14px; font-style:italic; }
+          #md em.meta{ font-style:normal; color:var(--n500); }
+          #md ul{ margin:0 0 8px; padding:0; list-style:none; }
+          #md li{ position:relative; padding:7px 0 7px 18px; border-bottom:1px solid var(--divider); font-size:15px; color:var(--n700); }
+          #md li:before{ content:""; position:absolute; left:0; top:15px; width:6px; height:6px; background:var(--n300); }
+          #md li strong{ color:var(--ink); font-weight:700; }
+          #md p.sub{ color:var(--n500); font-size:14px; margin:2px 0 20px; }
+          #md em{ color:var(--n500); font-style:italic; }
+          .foot{ margin-top:40px; color:var(--n300); font-size:12px; }
+        </style></head><body><div class="wrap"><div id="md"></div>
+        <div class="foot">Regenerated nightly · read-only view</div></div>
+        <script>
+          const MD = (\(embeddedMarkdownArrayJSON))[0] || "";
+          function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+          function inline(s){ return esc(s)
+            .replace(/\\*\\*([^*]+)\\*\\*/g,'<strong>$1</strong>')
+            .replace(/_\\(([^)]+)\\)_/g,'<em class="meta">($1)</em>')
+            .replace(/_([^_]+)_/g,'<em>$1</em>'); }
+          function render(md){
+            const lines = md.split(/\\r?\\n/); let html=''; let inList=false; let sub=false;
+            const closeList=()=>{ if(inList){ html+='</ul>'; inList=false; } };
+            for(let raw of lines){
+              const line=raw.replace(/\\s+$/,'');
+              if(!line.trim()){ closeList(); continue; }
+              if(line.startsWith('## ')){ closeList(); html+='<h2>'+inline(line.slice(3))+'</h2>'; sub=true; continue; }
+              if(line.startsWith('# ')){ closeList(); html+='<h1>'+inline(line.slice(2))+'</h1>'; continue; }
+              if(line.startsWith('> ')){ closeList(); html+='<blockquote>'+inline(line.slice(2))+'</blockquote>'; continue; }
+              if(line.startsWith('- ')){ if(!inList){ html+='<ul>'; inList=true; } html+='<li>'+inline(line.slice(2))+'</li>'; continue; }
+              closeList(); html+='<p'+(sub?' class="sub"':'')+'>'+inline(line)+'</p>'; sub=false;
+            }
+            closeList(); return html;
+          }
+          document.getElementById('md').innerHTML = render(MD);
+        </script></body></html>
+        """
+    }
 
     /// Format Attention Check report in Notion-inspired clean layout
     private func formatAttentionCheckReport(_ report: AttentionDefenseReport, favorites: Favorites) -> String {

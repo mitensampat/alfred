@@ -262,6 +262,17 @@
       .dk-coachcard-keep:disabled{ color:var(--dk-n500); border-color:var(--dk-divider); cursor:default; }
       .dk-coachcard-act{ border:none; background:none; font-family:inherit; font-size:11px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:var(--dk-n600); padding:6px 6px; cursor:pointer; }
       .dk-coachcard-act:hover{ color:var(--dk-text); text-decoration:underline; }
+      /* Scheduling cards (People rail) — the full @schedule flow in the UI */
+      .dk-sched-card{ border:1px solid var(--dk-divider); border-left:2px solid var(--dk-accent); padding:11px 13px; margin-top:12px; }
+      .dk-sched-name{ font-weight:800; font-size:14.5px; }
+      .dk-sched-stage{ font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--dk-n600); margin-top:3px; }
+      .dk-sched-stage.go{ color:var(--dk-accent); }
+      .dk-sched-draft{ font-size:12.5px; line-height:1.45; color:var(--dk-n700); background:var(--dk-wash); border:1px solid var(--dk-divider); padding:8px 10px; margin-top:8px; white-space:pre-wrap; max-height:140px; overflow:auto; }
+      .dk-sched-slots{ font-size:12px; line-height:1.5; color:var(--dk-n700); margin-top:7px; white-space:pre-wrap; }
+      .dk-sched-link{ display:inline-block; margin-top:8px; font-size:12px; font-weight:800; color:var(--dk-accent); }
+      .dk-sched-acts{ display:flex; gap:5px; flex-wrap:wrap; margin-top:9px; align-items:center; }
+      .dk-sched-row{ display:flex; gap:5px; flex-wrap:wrap; margin-top:8px; }
+      .dk-sched-wait{ font-size:11.5px; color:var(--dk-n500); font-style:italic; }
       /* Command palette + the masthead "+" */
       .dk-plus-btn{ width:30px; height:30px; flex:0 0 auto; border:2px solid var(--dk-text); background:var(--dk-text); color:var(--dk-bg); font-family:inherit; font-size:20px; font-weight:800; line-height:1; cursor:pointer; display:grid; place-items:center; }
       .dk-plus-btn:hover{ background:var(--dk-accent); border-color:var(--dk-accent); color:#fff; }
@@ -10790,6 +10801,7 @@
         let _deskTopSearch = '';      // top-stack search query (find any front to pin up top)
         let _deskFrontClosed = null;  // {id, name}: last front closed via "decided — close", for Undo
         let _deskSched = [];          // open @schedule sessions (for the People rail scheduling panel)
+        let _schedPoll = null;        // background poll while a scheduling session is live (surfaces replies)
         let _deskDetail = null;   // fetched front/person detail for the center view
         const _esc = (s) => escapeHtml(String(s == null ? '' : s));
 
@@ -11279,20 +11291,38 @@
         function renderSchedulingBlock(){
             const ss = _deskSched || [];
             let html = `<div class="dk-cold" style="margin-bottom:22px;"><div class="dk-sec-label">Scheduling</div>
-                <div class="dk-sec-explain" style="margin-bottom:8px;">Alfred proposes times, sends the ask, and books on a firm yes. Follow-ups also work from your WhatsApp self-chat.</div>
+                <div class="dk-sec-explain" style="margin-bottom:8px;">Alfred proposes times, sends the ask, and books on a firm yes — the whole flow runs here. Or book directly: <b>@schedule block 30m with X at 4pm tomorrow x@email</b>.</div>
                 <button type="button" class="dk-btn dk-btn-ink dk-btn-sm" onclick="deskSchedNew()">+ Schedule a meeting</button>`;
             if (!ss.length){ html += `<div class="dk-cold-reason" style="margin-top:10px;">No live scheduling sessions.</div>`; }
             for (const s of ss){
-                const st = String(s.state||'').replace(/_/g,' ');
-                html += `<div class="dk-cold-row"><div class="dk-cold-top">
-                        <span class="dk-cold-name">${_esc(s.contact_name)}</span><span class="dk-cold-age">${_esc(st)}</span></div>`;
-                if (s.prompt){ html += `<div class="dk-cold-reason" style="white-space:pre-wrap;max-height:150px;overflow:auto;margin-top:4px;">${_esc(s.prompt)}</div>`; }
-                html += `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px;">
-                        <button type="button" class="dk-btn dk-btn-accent dk-btn-sm" onclick="deskSchedSay('propose')">Propose</button>
-                        <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskSchedSay('yes')">Yes</button>
+                const state = s.state || '';
+                const first = _esc(String(s.contact_name||'').split(' ')[0] || 'them');
+                html += `<div class="dk-sched-card">
+                    <div class="dk-sched-name">${_esc(s.contact_name)}</div>
+                    <div class="dk-sched-stage ${state==='reply_surfaced'||state==='held'?'go':''}">${_esc(s.stage_label || state.replace(/_/g,' '))}</div>`;
+                if (state === 'resolving' && Array.isArray(s.candidates)){
+                    html += `<div class="dk-sched-row">` + s.candidates.map((c,i) => `<button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskSchedSay('${i+1}')">${i+1}. ${_esc(c)}</button>`).join('') + `</div>`;
+                }
+                if (s.draft && state === 'slots_proposed'){ html += `<div class="dk-sched-draft">${_esc(s.draft)}</div>`; }
+                if (s.options && (state==='slots_proposed'||state==='reply_surfaced'||state==='held')){ html += `<div class="dk-sched-slots">${_esc(s.options)}</div>`; }
+                if (s.booked_link){ html += `<a class="dk-sched-link" href="${_esc(s.booked_link)}" target="_blank" rel="noopener">Booked ✓ — open event →</a>`; }
+                let acts = '';
+                if (state === 'slots_proposed'){
+                    acts = `<button type="button" class="dk-btn dk-btn-accent dk-btn-sm" onclick="deskSchedSay('propose')">Send to ${first}</button>
                         <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskSchedEdit()">Edit…</button>
-                        <button type="button" class="dk-btn dk-btn-ghost dk-btn-sm" onclick="deskSchedSay('leave it')">Leave</button>
-                    </div></div>`;
+                        <button type="button" class="dk-btn dk-btn-ghost dk-btn-sm" onclick="deskSchedSay('leave it')">Leave</button>`;
+                } else if (state === 'reply_surfaced' || state === 'held'){
+                    acts = `<button type="button" class="dk-btn dk-btn-accent dk-btn-sm" onclick="deskSchedSay('yes')">Book it</button>
+                        <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskSchedEdit()">Edit…</button>
+                        <button type="button" class="dk-btn dk-btn-ghost dk-btn-sm" onclick="deskSchedSay('leave it')">Leave</button>`;
+                } else if (state === 'awaiting_reply'){
+                    acts = `<span class="dk-sched-wait">Watching ${first}'s thread…</span>
+                        <button type="button" class="dk-btn dk-btn-ghost dk-btn-sm" onclick="deskSchedSay('leave it')">Leave</button>`;
+                } else if (state === 'resolving'){
+                    acts = `<button type="button" class="dk-btn dk-btn-ghost dk-btn-sm" onclick="deskSchedSay('leave it')">Leave</button>`;
+                }
+                if (acts) html += `<div class="dk-sched-acts">${acts}</div>`;
+                html += `</div>`;
             }
             html += `</div>`;
             return html;
@@ -11300,6 +11330,15 @@
         async function deskSchedRefresh(){
             try { const r = await authFetch('/api/schedule/sessions'); const d = await r.json(); _deskSched = d.sessions || [];
                 if (_deskEntity === 'people'){ const m = document.getElementById('deskColMargin'); if (m) m.innerHTML = renderMarginColumn(); } } catch(e){}
+            _schedManagePoll();
+        }
+        // Poll while a session is live + People is open, so a counterpart's reply (which the
+        // backend picks up off the WhatsApp thread) surfaces here on its own — no reload.
+        function _schedManagePoll(){
+            const live = (_deskSched||[]).some(s => ['resolving','slots_proposed','awaiting_reply','reply_surfaced','held'].includes(s.state));
+            const want = live && _deskEntity === 'people';
+            if (want && !_schedPoll){ _schedPoll = setInterval(deskSchedRefresh, 25000); }
+            else if (!want && _schedPoll){ clearInterval(_schedPoll); _schedPoll = null; }
         }
         async function deskSchedSay(text){
             if (!text) return;
@@ -11307,7 +11346,7 @@
             setTimeout(deskSchedRefresh, 1200);
         }
         function deskSchedNew(){
-            const who = prompt('Schedule a meeting — who? (e.g. "Kunal 30m tomorrow" or "Priya 1h video next week")');
+            const who = prompt('Schedule a meeting.\n• Find times: "Kunal 30m tomorrow" or "Priya 1h video next week"\n• Book directly: "block 30m with Kunal at 4pm tomorrow topic Sync kunal@acme.com"');
             if (who && who.trim()) deskSchedSay('@schedule ' + who.trim());
         }
         function deskSchedEdit(){
@@ -12162,14 +12201,14 @@
         function capClose(){ document.getElementById('paletteOverlay').style.display = 'none'; }
         function capIntent(text){
             const t = (text || '').trim();
-            if (/^@?schedule\b/i.test(t) || /\b(schedule|book|set up)\b.*\b(meeting|call|sync|catch up|\d+\s*(m|min|h|hour)|tomorrow|next week|monday|tuesday|wednesday|thursday|friday)\b/i.test(t)) return 'schedule';
+            if (/^@?(schedule|block)\b/i.test(t) || /\b(schedule|book|set up)\b.*\b(meeting|call|sync|catch up|\d+\s*(m|min|h|hour)|tomorrow|next week|monday|tuesday|wednesday|thursday|friday)\b/i.test(t)) return 'schedule';
             if (t.endsWith('?')) return 'ask';
             return 'log';
         }
         function capRender(){
             const t = document.getElementById('paletteInput').value.trim();
             const rows = document.getElementById('paletteRows');
-            if (!t){ rows.innerHTML = `<div class="dk-palette-hint">Type to <b>log</b> a thought. Start with <b>@schedule</b> to book a meeting, end with <b>?</b> to ask Alfred.</div>`; return; }
+            if (!t){ rows.innerHTML = `<div class="dk-palette-hint">Type to <b>log</b> a thought. <b>@schedule</b> to find times, <b>block 30m with X at 4pm x@email</b> to book directly, end with <b>?</b> to ask Alfred.</div>`; return; }
             const intent = capIntent(t);
             const opts = [
                 { k:'log', ic:'&#9998;', t:'Log it', sub:'&ldquo;' + _esc(t) + '&rdquo;' },

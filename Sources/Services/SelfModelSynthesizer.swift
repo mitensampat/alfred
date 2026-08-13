@@ -161,6 +161,59 @@ enum SelfModelSynthesizer {
         return lastCounts
     }
 
+    /// Tag each active belief by durability and prune the non-beliefs. The belief set is
+    /// extracted loosely (thread-level shifts → "beliefs"), so it silts up with situational
+    /// reads, past events, and the occasional coaching nudge. This pass keeps the Model holding
+    /// the right set: durable principles + current theses stay; bare facts and action items are
+    /// archived out. Idempotent — only re-classifies beliefs whose text changed since last time,
+    /// so the nightly Haiku cost is bounded to genuinely new beliefs.
+    @discardableResult
+    static func tagBeliefDurability() async -> (tagged: Int, archived: Int) {
+        let store = SelfModelStore.shared
+        let beliefs = store.getFacets(kind: "belief")   // active only
+
+        // Which beliefs still need classifying (new or edited since we last tagged one)?
+        var pending: [(id: String, statement: String, verdict: String?)] = []
+        for f in beliefs {
+            guard let id = f["id"] as? String,
+                  let stmt = (f["statement"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  stmt.count > 4 else { continue }
+            let meta = (f["metadata"] as? [String: String]) ?? [:]
+            let curHash = BeliefDurability.hash(stmt)
+            if let tag = meta["durability"], !tag.isEmpty,
+               meta["durability_hash"] == curHash {
+                continue   // already tagged, unchanged
+            }
+            pending.append((id, stmt, f["user_verdict"] as? String))
+        }
+        guard !pending.isEmpty else { return (0, 0) }
+
+        // Classify in bounded chunks so no single prompt gets unwieldy.
+        var verdictByStatement: [String: BeliefDurability] = [:]
+        for chunk in stride(from: 0, to: pending.count, by: 30).map({ Array(pending[$0..<min($0+30, pending.count)]) }) {
+            let classified = await BeliefDurability.classify(chunk.map { $0.statement })
+            for (k, v) in classified { verdictByStatement[k] = v }
+        }
+
+        var tagged = 0, archived = 0
+        for p in pending {
+            let cls = verdictByStatement[p.statement] ?? .durable
+            store.mergeFacetMetadata(id: p.id, [
+                "durability": cls.rawValue,
+                "durability_hash": BeliefDurability.hash(p.statement)
+            ])
+            tagged += 1
+            // A fact or an action isn't a belief. Archive it out of the active set — unless the
+            // user explicitly affirmed it (verdict=kept), where we respect the affirmation and let
+            // the Wiki's durability filter keep it out of "what you believe" instead.
+            if !cls.isBelief, p.verdict != "kept" {
+                store.archiveFacet(id: p.id)
+                archived += 1
+            }
+        }
+        return (tagged, archived)
+    }
+
     /// Promote extracted decisions into first-class facets.
     ///
     /// A decision is a conclusion reached inside a workspace — dated, final, and the

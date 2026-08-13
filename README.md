@@ -1,233 +1,132 @@
 # Coach Alfred
 
-**Your AI coach for consequential work.** Alfred embeds into the way you operate — your messages, calendar, notes, and commitments — watches patiently with a keen lens of excellence, and pushes you toward the 10x version of yourself. Not a dashboard. Not an assistant. A coach.
+**Your Desk and your Coach for consequential work.** Alfred embeds into the way you operate — your messages, calendar, notes, and commitments — holds the state of everything you're running, and coaches you toward the 10x version of yourself. Not a dashboard. Not an assistant. A desk that keeps the work, and a coach that keeps you honest.
 
 ![macOS](https://img.shields.io/badge/macOS-13%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9%2B-orange)
-![Version](https://img.shields.io/badge/version-2.3.0-green)
+![Version](https://img.shields.io/badge/version-5.1.0-green)
 
 ---
 
 ## The idea
 
-Most productivity tools make you do the organizing. Alfred flips that. It runs continuously on your Mac — embedded in your messages, calendar, tasks, and notes — then coaches you across five surfaces:
+Most productivity tools make you do the organizing. Alfred flips that. It runs continuously on your Mac — embedded in your messages, calendar, tasks, and notes — and gives you two things:
 
-1. **A conversation-first chat** you can talk to naturally — it understands every capability and acts on it
-2. **A home dashboard** with live coaching cards, your pinned focus, and at-a-glance state
-3. **A morning briefing email** from Coach Alfred that opens with coaching — not noise
-4. **Push notifications** that nudge you after meetings, flag overdue commitments, and protect your focus time
-5. **A reflection layer** that tracks what you're thinking about — not just what you're doing
+**The Desk** — your primary surface. The unit isn't a thought, it's *a person with a clock* and *a front that's moving*. Three objects hold the screen:
+- **The queue** — who is blocked on you, ranked by leverage, not by age
+- **Fronts** — what you're actually running (a deal, a raise, a hire, a launch), each with its owner, stage, and the one decision it's waiting on
+- **The margin** — relationships going cold, and your week, honestly
 
-The coaching voice draws on two complementary methods:
-- **Relational** — warm, team-first, asks "what's the one thing?" before every meeting
-- **Direct** — ruthlessly tactical, names avoidance patterns and relationship debt out loud
+**The Coach** — surfaces the right thing at the right time. Tomorrow's calendar is about to overwhelm you → it tells you tonight, while you can still act. You're losing touch with important work, or a pattern is showing up on a relationship thread → it says so, proactively. Coaching runs on modular **skills** and **analysis lenses** you can turn on, off, and author yourself.
 
-Alfred doesn't just know these methods — it learns *you*. Over weeks and months, it builds a trust relationship, remembers your patterns, and adjusts its coaching voice from gentle observation to direct challenge.
+Underneath both sits **the self-model** — a durable, portable portrait of how *you* operate: your fronts, the principles you actually run on, the people in your world, and the patterns Alfred has noticed. It gets sharper the longer Alfred watches, and you can read the whole thing as a living **You-Wiki**.
 
 ---
 
-## What's new in v2.3.0
+## What's new in v5.1.0
 
-### First Public Release — Signed, notarized, and ready to install
+### @schedule — the full booking flow, in Alfred or from WhatsApp
 
-v2.3.0 is the first public DMG — signed with Developer ID and notarized by Apple. Download from [Releases](https://github.com/mitensampat/alfred/releases), drag to Applications, and launch.
+Scheduling now runs end-to-end without leaving the Desk:
+- **Propose → send → book** — Alfred finds times, drafts the ask, sends it, watches the counterpart's thread for a reply, and books on a firm yes. Every step is a one-tap action in the People rail with a plain-English stage label ("waiting on them", "they replied — confirm to book").
+- **Direct block** — say `block 30m with X at 4pm tomorrow topic Sync x@email` to create the event and send the invite in one shot, with a video link attached.
+- **Parity everywhere** — the exact same flow works from the command palette, from `⌘K`, and from your WhatsApp self-chat. The rail auto-refreshes so replies surface on their own.
 
-### Cadence Control (v2.2.2) — Full visibility and control over your automation
+### The self-model keeps the right set
 
-Alfred's cadence system is the engine that runs your daily briefings, commitment scans, pattern learning, and more. This release gives you complete control over what was previously invisible.
+Alfred's belief set used to silt up with situational reads and stray facts. Now every belief is classified by **durability** — durable principles vs. current theses vs. bare facts vs. action items — and the model keeps only what belongs. Facts and one-off actions are archived out automatically; principles and live theses stay.
 
-**Grouped layout** — cadences organized by frequency (Daily / Weekly / Recurring) so you can see the shape of your automation at a glance.
+### The You-Wiki — a living portrait you can read
 
-**Inline toggles** — pause or resume any cadence with a single tap. No popover needed for the most common operation.
+Alfred writes a nightly markdown compendium of what's most alive with you: the fronts you're running, what you believe (durable principles only), your working theses, the people in your world, and the recurring signals its coaching lenses have noticed. Open it as a clean rendered page at **`/wiki`**, or read the raw markdown in any editor.
 
-**Parameter editing** — configure tool-specific settings directly in the UI. Add groups to Auto Summary, change lookback days for Todo Scan, set scan modes for Commitment Scan — all from the edit popover instead of hand-editing JSON.
+### Coaching, reconnected
 
-**Active hours** — interval cadences now expose start/end hour controls so you can prevent scans from running at 3am.
-
-**Run output previews** — tap any last-run timestamp to see what the cadence actually produced. Summaries are now persisted and surfaced ("Morning briefing generated with 4 action items", "Todo scan: found 3, created 2, dupes 1").
-
-**Status indicators** — green (success), red (failure), pulsing yellow (cooldown), gray (disabled/never ran). At a glance, you know what's healthy and what needs attention.
-
-**Tool descriptions** — one-line summaries under each cadence name so you know what "Pattern Learning" or "Attention Check" actually does.
-
-**New built-in cadences** — Coaching Sync (weekly Notion sync of coaching context) and Task Lifecycle Scan (daily scan for task state changes) are now visible and configurable.
-
-**Smarter create flow** — selecting a tool auto-fills its description, default schedule, and parameter fields with sensible defaults.
+- **The one email** — a single, tight, plain-text morning note written like a high-quality CEO memo, not a wall of cards.
+- **Evening nudge** — if tomorrow is heavy, Alfred tells you the night before.
+- **Skills & lenses, fully editable** — create, toggle, and tune coaching skills and analysis lenses from the interface.
+- **Insight → Model** — when you act on a coaching insight, it can persist into your self-model (and coaching *actions* are kept out of your beliefs, where they don't belong).
 
 ### Previous highlights
 
-**Enhanced Chat Experience (v2.2.1)** — Alfred Chat understands and acts on every capability. 14 new chat capabilities wired: Focus Pins, Reflection Themes, Open Questions, Memory & Learning, Cadences, Favorites, Meeting Briefs, Calendar Availability, Contact Analysis, Conversation History, Active Skills, Todo CRUD, Pending Closures, Forget/Unlearn. Smarter Notion task search with progressive 3-tier strategy. Coaching posture routing keeps coaching on-topic per intent.
-
-**Reflection Mode (v2.1.0)** — Alfred as thinking partner. Ingests Chrome history, YouTube transcripts, Notion Second Brain, Claude exports, and manual captures to build a living map of your intellectual landscape. Extracts active themes, open questions, mental model shifts, and decisions. Themes decay at 5% per day unless reinforced.
-
-**Memory Notion Sync (v2.1.0)** — "What Alfred Knows About You" published as a read-only Notion page, updated during daily pattern computation.
-
-**Unified Memory Index (v2.1.0)** — All of Alfred's knowledge consolidated into a single queryable layer: learned patterns, coaching themes, user rules, and reflection context.
+- **The Desk + Coach (v5.0.0)** — the primary surface rebuilt around the queue, fronts, and the margin, with a self-model that ranks by leverage.
+- **Signal, without Full Disk Access (v3.1.0)** — a message source that reads without FDA, plus a WhatsApp network bridge that sends and ingests over the protocol.
+- **The Self-Model (v3.0.0)** — Now / You / Model surfaces, facets as callable objects, convergence intelligence, and a portable operating model.
 
 ---
 
 ## How it works
 
-### Chat-first interface
+### The Desk
 
-Alfred's primary surface is a conversation. No dashboards, no tabs — you talk to Alfred and it talks back with full context.
+The Desk is the home surface. It reads your real state and lays it out as work, not data:
 
-- **Natural language** — Ask anything: "What do I owe Steve?", "Prep me for my 3pm", "What am I avoiding?"
-- **Slash commands** — `/calendar`, `/commitments`, `/messages`, `/todos`, `/1on1`, `/roast` with inline parameter forms
-- **Suggestion chips** — Contextual prompts that appear based on time of day and state
-- **Streaming responses** — SSE-powered real-time chat with tool execution indicators
-- **Multi-turn context** — Alfred remembers the last 3 turns per session
-- **Focus card** — Your top task pinned at the top with Done/Change affordances
+- **Queue** — open commitments where the ball is in your court, ranked by leverage and asymmetry (who's blocked, what's time-critical, whose reliability data says this will slip). Clearing a row closes the commitment and stages a reply draft, with Undo. Sending stays an explicit confirm.
+- **Fronts** — the things you're running, each as a card with owner, stage, and the single decision it's waiting on. Mark a front done and it moves to an archive. Fronts running without you are flagged.
+- **People** — the people in your world as cards, not lines: what you owe, what they owe, on-time reliability, and a ready-to-send draft.
+- **Command palette** — a `+` on the masthead (and `⌘K`) to log a thought, start a schedule, or ask Alfred — from anywhere on the Desk.
 
-### Coaching Skills library
+### The Coach
 
-Alfred's coaching is driven by **skills** — modular coaching programs that each have their own data sources, tenets, and prompts. Skills are Markdown files, fully readable and editable.
+Coaching is driven by two composable primitives, both plain Markdown and fully editable:
 
-**5 built-in skills** ship with Alfred:
+- **Skills** — modular coaching programs with their own data sources, tenets, and prompts. Ship enabled or author your own. Tenet-only skills inject principles into every conversation without generating their own cards.
+- **Analysis lenses** — passive detectors that run over your data and emit signals (meeting overload, relationship debt, avoidance, attention drain, leverage, calendar pressure, energy pattern). Their recurring signals feed the Coach surface and the You-Wiki.
 
-| Skill | Frequency | What it surfaces |
-|-------|-----------|-----------------|
-| **Leverage** | Daily | The single highest-impact action right now |
-| **Relationship** | Daily | Who needs your attention — based on message and commitment data |
-| **Avoidance** | Daily | What you're putting off, and why it matters |
-| **Attention** | Daily | Where your attention is actually going vs. where it should be |
-| **Weekly Review** | Weekly | End-of-week assessment with direct-method framing |
+The Coach shows up in three places: on the Desk as a "Coach moment", as an evening push when tomorrow is heavy, and in the one morning email.
 
-**Skill anatomy** (each `.md` file):
-```markdown
----
-Name: Leverage
-Description: Identifies highest-leverage action
-Icon: 🎯
-Author: Relational Method
-Version: 1.0
-Frequency: daily
-Data Sources: tasks, calendar, commitments
-Fallback: Focus on the one thing that makes everything else easier.
----
+### The self-model
 
-## Tenets
-- Never suggest more than one action
-- Weight by deadline proximity and relationship importance
+A durable, portable model of how you operate, stored locally in `self_model.db`:
 
-## Prompt
-Given the user's active tasks, today's calendar, and open commitments...
-```
+- **Facets** — themes (your fronts), beliefs (how you operate), questions (what you're holding open), and decisions (dated judgements).
+- **Belief durability** — every belief is tagged `durable | tactical | fact | action`. Durable principles and live theses stay; bare facts and action items are archived out, so the model retains the right set over time.
+- **Convergence** — related facets merge; stray items in the wrong workspace get flagged for a one-tap move (nothing re-files silently).
 
-**Two tiers:**
-- **Installed skills** (`~/.alfred/skills/installed/`) — Coach-authored, read-only. Users toggle on/off.
-- **User skills** (`~/.alfred/skills/user/`) — Create your own coaching programs with custom data sources and prompts.
+### @schedule
 
-Tenet-only skills (frequency: `none`) inject coaching principles into every conversation without generating their own cards.
-
-### Trust progression
-
-Alfred's coaching voice evolves as it learns you:
-
-| Level | Threshold | Coaching style |
-|-------|-----------|---------------|
-| **New** | < 5 sessions | Observational questions, light suggestions |
-| **Developing** | 5+ sessions, 7+ days, 1+ resolved theme | Pattern recognition, specific nudges |
-| **Established** | 20+ sessions, 30+ days, 3+ resolved themes | Direct recommendations, calling out avoidance |
-| **Deep** | 50+ sessions, 90+ days, 5+ resolved themes | Blunt challenge, high-context accountability |
-
-Trust never demotes — but if you're inactive for 60+ days, it caps at Established until you're back in rhythm.
+A consent-based scheduling state machine (resolving → slots proposed → awaiting reply → reply surfaced → held → booked). It proposes times, sends the ask, watches the thread, and books on a firm yes — driven identically from the Desk rail, the command palette, or your WhatsApp self-chat. A direct-block path books a specific slot and sends the invite in one instruction.
 
 ### Self-improving learning
 
-Alfred gets sharper the longer it watches you. Five learning systems run continuously:
+Alfred gets sharper the longer it watches you. Learning runs continuously:
 
-**1. Commitment closure accuracy**
-When Alfred detects a commitment was completed, it scores confidence:
-- ≥ 0.85 → auto-closes the commitment
-- 0.60–0.84 → asks you to confirm
-- < 0.60 → ignores
+- **Commitment closure accuracy** — when Alfred detects a commitment was completed, it scores confidence (≥0.85 auto-closes, 0.60–0.84 asks, <0.60 ignores). Your confirm/reject feedback trains it.
+- **Thread quality** — learns which contacts and groups yield signal vs. noise, and scans low-signal threads less aggressively.
+- **Counterparty reliability** — tracks who completes commitments on time; this feeds the Desk ranking and relationship coaching.
+- **Workflow + communication patterns** — computes your productive days, completion rates, and communication style, and injects them into coaching so Alfred coaches with *your* data.
 
-Your confirm/reject feedback trains the model over time.
-
-**2. Thread quality scoring**
-Alfred learns which contacts and groups yield high-quality extractions vs. noise. Low-signal threads get scanned less aggressively.
-
-**3. Counterparty reliability**
-Tracks who completes commitments on time and who doesn't. This data feeds into relationship coaching.
-
-**4. Workflow patterns**
-Computes your most productive days, task completion rates by type, and triage patterns. Injected into coaching prompts so Alfred coaches with *your* data, not generic advice.
-
-**5. Reflection context** *(v2.1.0)*
-Builds an evolving understanding of your intellectual landscape — what you're researching, deciding, creating, and monitoring — and weaves it into every coaching interaction. Alfred doesn't just know what's on your calendar; it knows what's on your mind.
-
-All learning is stored in `workflow_learning.db` and `reflection.db`. Computed patterns are refreshed on cadence.
-
-### Morning briefing email
-
-Sent automatically at your configured time from **Coach Alfred**:
-- Coaching cards generated by your active skills (Leverage, Relationship, Avoidance)
-- Today's schedule with AI-generated prep notes for external meetings
-- Message analysis across WhatsApp, iMessage, Signal
-- Prioritized action items with due dates and context
-- Commitment reminders — what you owe, what's owed to you
+Direct instructions ("always do X", "never do Y") become permanent immediately; softer signals graduate into patterns over time.
 
 ### Commitment tracking
 
-Scans your WhatsApp, iMessage, and Signal conversations for commitments — things you've promised ("I'll send that over") and things owed to you ("Let me get back to you"). The system:
+Scans your WhatsApp, iMessage, and Signal conversations for commitments — things you've promised and things owed to you:
 
-- Detects participation level (active vs. observer) to filter noise in group chats
+- Detects participation level (active vs. observer) to filter group-chat noise
 - Tracks both directions: `i_owe` and `they_owe`
-- Creates Notion tasks automatically for each commitment
-- Runs closure detection against recent messages
-- Self-improves confidence thresholds based on your feedback
+- Creates Notion tasks on demand, with a due date on every task
+- Runs closure detection against recent messages and syncs bidirectionally with Notion
 - Dashboard shows open, pending-closure, and recently-closed commitments by counterparty
 
-### Notion integration
+### Notion integration (optional)
 
-Alfred treats Notion as your operational backbone:
+Notion is a first-class backbone but genuinely optional — Alfred runs without it:
 
-- **Tasks database** — Reads active tasks for briefings, creates new tasks from chat and commitment scans
-- **Commitments database** — Auto-created if missing, tracks both directions with source thread, platform, due date, and priority
-- **Second Brain** — Pulls context from your notes databases for meeting prep and coaching
-- **Coaching sync** — Persistent coaching memory (themes, patterns, follow-ups) syncs to a Notion page
-- **Memory sync** — "What Alfred Knows About You" published as a read-only Notion page *(v2.1.0)*
-- **Reflections** — Weekly reflection narratives saved to a dedicated Notion database *(v2.1.0)*
-- **Playbook sync** — Procedures and playbooks stored in Notion, referenced during coaching
+- **Tasks** — reads active tasks for the Desk and briefings; streams new tasks on demand into a dedicated "Alfred tasks" database (never automated — you choose what goes in)
+- **Commitments** — auto-created, tracks both directions with source thread, platform, due date, and priority
+- **Second Brain** — pulls context from your notes for meeting prep and coaching
+- **Coaching + reflection sync** — coaching memory and weekly reflections persist to Notion pages
 
-### Intent recognition
+### Message sources
 
-When you talk to Alfred, it first recognizes your **intent** using a fast classifier, then routes to the right tool:
+- **WhatsApp** — via a network bridge (send + ingest over the protocol, no Full Disk Access needed once paired) with a local-DB fallback
+- **Signal** — read without Full Disk Access via an isolated decrypt helper
+- **iMessage** — read directly from the local database (requires Full Disk Access)
 
-| Target | Actions | What Alfred does |
-|--------|---------|-----------------|
-| `calendar` | list, check, create, update, delete | Fetches schedule, checks availability, manages events |
-| `commitments` | list, scan, check | Shows dashboard, scans for specific person, tracks closures |
-| `messages` | find, summarize, analyze | Summarizes threads, analyzes groups, extracts action items |
-| `thread` | find, analyze | Deep-dives into specific contact conversations |
-| `tasks` | list, find, update, create, delete | Full Notion task CRUD — search, status changes, priority |
-| `todos` | list, update, delete | Message-extracted todo management |
-| `meeting` | generate | AI-powered meeting brief with attendee context |
-| `briefing` | generate, summarize | Morning briefing with coaching cards |
-| `focus` | list, generate, create, delete | Pin/unpin top goal, suggest focus from active tasks |
-| `reflections` | list, analyze, summarize | Themes, open questions, theme deep-dives |
-| `memory` | list, create, delete | View learned patterns, teach rules, forget |
-| `cadences` | list, scan | Show cadence status, trigger manual runs |
-| `favorites` | list, create, delete | Manage favorite contacts and groups |
-| `contacts` | analyze | Contact participation analysis |
-| `conversations` | list | Recent conversation history |
-| `skills` | list | Active coaching skills and their descriptions |
-| `attention` | check | Mid-day focus defense with prioritization |
-| `drafts` | generate | AI-drafted responses with communication coaching |
+### Attention defense & agent memory
 
-The intent router also detects **person mentions** and **commitment keywords** in your messages, automatically injecting the relevant commitment ledger and recent message excerpts into the coaching context. Each intent maps to a **coaching posture** (reflection, prioritization, accountability, planning, deep reflection, or operational) so Alfred's follow-up coaching stays on-topic.
-
-### Attention defense
-
-A 3PM check-in that asks: given what's left today, what must get done and what can wait? Sent via email with coaching framing.
-
-### Agent memory
-
-Alfred maintains three layers of persistent memory:
-- **Coaching memory** (`~/.alfred/coaching_context.md`) — Active themes, resolved themes, session log, personality notes, open follow-ups. Compounds across sessions.
-- **User-taught rules** — Explicit preferences you teach Alfred ("always be brief with Bob", "don't flag messages from the family group"). Stored as transparent, editable markdown files.
-- **Reflection memory** (`~/.alfred/reflection.db`) — Themes, open questions, mental model shifts, and decisions extracted from your browsing, watching, reading, and thinking. Decays and reinforces over time. *(v2.1.0)*
+- A mid-day check-in that asks: given what's left today, what must get done and what can wait?
+- Persistent, transparent memory: coaching memory (themes, patterns, follow-ups), user-taught rules (editable markdown), and the reflection/self-model layer — all compounding across sessions.
 
 ---
 
@@ -237,83 +136,44 @@ Alfred is a single Swift binary that runs as a macOS LaunchAgent. One process, o
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                      Coach Alfred v2.2.2                         │
-│                                                                  │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────────┐  │
-│  │ Coaching  │  │  Skills  │  │  Trust   │  │   Learning     │  │
-│  │  Engine   │  │  Loader  │  │ Service  │  │    Engine      │  │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └───────┬────────┘  │
-│       │              │             │                 │            │
-│  ┌────▼──────────────▼─────────────▼─────────────────▼────────┐  │
-│  │                    Unified Memory Index                      │  │
-│  │  coaching themes + user rules + reflections + patterns      │  │
-│  └─────────────────────────┬──────────────────────────────────┘  │
-│                             │                                    │
-│  ┌──────────────────────────▼─────────────────────────────────┐  │
-│  │                    Intent Router + Chat                     │  │
-│  │       (recognizes intent → executes tool → overlays coach)  │  │
-│  └─────────────────────────┬──────────────────────────────────┘  │
-│                             │                                    │
-│  ┌──────────────────────────▼─────────────────────────────────┐  │
-│  │                     HTTP API Server                         │  │
-│  │                      (Port 8080)                            │  │
-│  │   /api/chat  /api/briefing  /api/reflect  /api/memory      │  │
-│  └──────────────────────────┬─────────────────────────────────┘  │
-│                              │                                   │
-│  ┌────────┬────────┬─────────┼─────────┬────────┬────────┐      │
-│  │ Google │ iMsg   │WhatsApp │ Notion  │ Claude │  SMTP  │      │
-│  │  Cal   │        │ Signal  │  API    │   AI   │ Email  │      │
-│  └────────┴────────┴─────────┴─────────┴────────┴────────┘      │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐    │
-│  │  Reflection Ingestion (Chrome, YouTube, Notion, imports) │    │
-│  └──────────────────────────────────────────────────────────┘    │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐    │
-│  │  Cadence Scheduler (60s tick, catch-up, dedup, retry)    │    │
-│  └──────────────────────────────────────────────────────────┘    │
+│                      Coach Alfred v5.1.0                          │
+│                                                                    │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────────┐    │
+│  │   Desk    │  │  Coach   │  │  Self-   │  │   Learning     │    │
+│  │  Service  │  │ (skills+ │  │  Model   │  │    Engine      │    │
+│  │           │  │  lenses) │  │  Store   │  │                │    │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └───────┬────────┘    │
+│       │              │             │                 │             │
+│  ┌────▼──────────────▼─────────────▼─────────────────▼────────┐   │
+│  │              Unified Memory + Self-Model Index               │  │
+│  │   facets (themes/beliefs/questions/decisions) + patterns    │  │
+│  └─────────────────────────┬───────────────────────────────────┘  │
+│                             │                                      │
+│  ┌──────────────────────────▼──────────────────────────────────┐  │
+│  │            Intent Router + Chat + @schedule                  │  │
+│  │      (recognizes intent → executes tool → overlays coach)    │  │
+│  └─────────────────────────┬───────────────────────────────────┘  │
+│                             │                                      │
+│  ┌──────────────────────────▼──────────────────────────────────┐  │
+│  │                     HTTP API Server (Port 8080)              │  │
+│  │   /api/desk  /api/schedule  /api/wiki  /api/model  /api/chat │  │
+│  └──────────────────────────┬───────────────────────────────────┘  │
+│                              │                                     │
+│  ┌────────┬────────┬─────────┼─────────┬────────┬────────┐        │
+│  │ Google │ iMsg   │WhatsApp │ Notion  │ Claude │  SMTP  │        │
+│  │  Cal   │        │ Signal  │  API    │   AI   │ + Push │        │
+│  └────────┴────────┴─────────┴─────────┴────────┴────────┘        │
+│                                                                    │
+│  ┌──────────────────────────────────────────────────────────┐     │
+│  │  Cadence Scheduler (60s tick, catch-up, dedup, retry)     │     │
+│  └──────────────────────────────────────────────────────────┘     │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-**Data flow:**
-1. Cadence scheduler evaluates all enabled cadences every 60 seconds
-2. When a cadence fires, the Runner dispatches to the appropriate tool
-3. Tools fetch data from integrations (messages, calendar, tasks) in parallel
-4. Reflection ingestion pulls from Chrome, YouTube, Notion, and import folder
-5. Skills generate coaching cards using their configured data sources and prompts
-6. Claude AI analyzes context — including reflection themes — coaches with trust-calibrated voice, and streams responses
-7. Learning engine records feedback, computes accuracy patterns, and updates the Unified Memory Index
-8. Results are delivered via email, chat UI, and notifications
-
 **Privacy model:**
-- All message processing happens locally on your Mac
-- Message databases (iMessage, WhatsApp) are read directly from disk — no cloud sync, no forwarding
-- Chrome history and YouTube data are read locally — never uploaded
-- Only Claude API calls leave the machine, and only with the context needed for that specific request
-
----
-
-## Cadences — 13 configurable automations
-
-Every recurring action in Alfred is a **cadence** — a scheduled tool with its own timing, parameters, and notification preferences:
-
-| Cadence | Default | What it does |
-|---------|---------|-------------|
-| Morning Briefing | 08:15 daily | Coaching cards + calendar + messages → email |
-| Attention Check | 15:00 daily | Mid-day focus defense alert |
-| Todo Scan | Every 3 hours | Extract action items from messages |
-| Commitment Scan | 17:00 daily | Track promises + detect closures |
-| Auto Summary | 18:00 daily | Summarize high-volume groups |
-| Pattern Learning | Thursday 18:00 | Compute workflow patterns from feedback |
-| Reflection Ingestion | Daily | Ingest browsing, videos, notes → reflection themes *(v2.1.0)* |
-| Group Analysis | Monday 09:00 | Analyze group chat health |
-| Weekly Review | Friday 17:00 | Direct-method weekly assessment |
-| Message Summary | On-demand | Per-thread deep summary |
-| Playbook Sync | On-demand | Sync playbooks from Notion |
-| Coaching Sync | On-demand | Sync coaching context to Notion |
-| Task Lifecycle | On-demand | Track task state changes |
-
-All cadences are fully editable. Create unlimited custom ones via the API or Settings UI.
+- All message processing happens locally on your Mac — no cloud sync, no forwarding
+- WhatsApp/Signal/iMessage are read on-device; Signal and the WhatsApp bridge need no Full Disk Access
+- Only Claude API calls (and any email/push you enable) leave the machine, scoped to the minimum context per request
 
 ---
 
@@ -328,6 +188,10 @@ All cadences are fully editable. Create unlimited custom ones via the API or Set
 
 ### Install
 
+The easiest path is the signed, notarized DMG from [Releases](https://github.com/mitensampat/alfred/releases) — drag to Applications and launch.
+
+To build from source:
+
 ```bash
 git clone https://github.com/mitensampat/alfred.git
 cd alfred
@@ -336,7 +200,7 @@ cd alfred
 swift build -c release
 
 # Install
-cp .build/release/Alfred /Applications/Alfred.app/Contents/MacOS/Alfred
+cp .build/release/alfred /Applications/Alfred.app/Contents/MacOS/Alfred
 codesign --force --sign - --identifier com.msfoundry.alfred \
   /Applications/Alfred.app/Contents/MacOS/Alfred
 
@@ -344,17 +208,18 @@ codesign --force --sign - --identifier com.msfoundry.alfred \
 launchctl load ~/Library/LaunchAgents/com.msfoundry.alfred.plist
 ```
 
-**Important:** After every build, re-grant Full Disk Access to `/Applications/Alfred.app` in System Settings → Privacy & Security, then restart via `launchctl unload/load`.
-
 ### First run
 
-Open `http://localhost:8080` — the FTUE wizard walks you through 8 steps: Claude API → Notion → Google Calendar → Profile → Message Sources → Permissions → Launch. Takes about 5 minutes.
+Open `http://localhost:8080` — the setup wizard walks you through Claude API → Google Calendar → Profile → Message Sources → Permissions → Launch in about five minutes. Notion is optional and can be added later. WhatsApp pairs by scanning a QR from the masthead.
 
 ### Access
 
 ```
-# Chat UI
+# Desk + Coach UI
 http://localhost:8080/home.html?passcode=YOUR_PASSCODE
+
+# Your You-Wiki
+http://localhost:8080/wiki?passcode=YOUR_PASSCODE
 
 # Health check
 curl "http://localhost:8080/api/health?passcode=YOUR_PASSCODE"
@@ -379,42 +244,20 @@ See [SETUP.md](SETUP.md) for the full guide.
 
 | Integration | What it enables |
 |-------------|----------------|
-| **Notion** | Tasks, commitments, Second Brain, coaching sync, memory sync, reflections |
-| **Gmail** | Email threads in briefings |
-| **SMTP** | Morning briefing email from Coach Alfred |
-| **Signal** | Signal message scanning |
-
-### Reflection Mode configuration
-
-```json
-{
-  "reflection": {
-    "enabled": true,
-    "chromeEnabled": true,
-    "notionEnabled": true,
-    "youtubeTranscripts": true,
-    "importFolderEnabled": true,
-    "chromeProfilePath": "Default",
-    "noiseDomains": ["google.com", "github.com"],
-    "dwellTimeSeconds": 30
-  }
-}
-```
-
-Drop Claude conversation exports, articles, or notes into `~/.alfred/imports/` — Alfred will ingest them automatically.
+| **Notion** | Tasks, commitments, Second Brain, coaching + reflection sync |
+| **SMTP** | The one morning email from Coach Alfred |
+| **Web Push (VAPID)** | Coaching nudges delivered as browser push |
+| **Signal** | Signal message scanning (no Full Disk Access) |
 
 ---
 
 ## Security & privacy
 
-- **Privacy-first**: All message processing happens locally — your conversations never leave your Mac
-- Message databases (iMessage, WhatsApp, Signal) are read directly from disk — no cloud APIs, no forwarding
-- Chrome history and YouTube data are read from local databases — never uploaded to third parties
-- Only Claude API calls leave the machine, scoped to the minimum context needed
-- Passcode-protected API and web interface
-- Full Disk Access required for message database reading (gated by macOS TCC)
-- Config file contains credentials and is git-ignored
-- Codesign with stable bundle identifier preserves TCC permissions across builds
+- **Privacy-first**: message processing happens locally — your conversations never leave your Mac
+- WhatsApp (bridge), Signal, and iMessage are read on-device; no cloud APIs, no forwarding
+- Only Claude API calls (plus any email/push you enable) leave the machine, scoped to the minimum context needed
+- Passcode-protected API and web interface; config holds credentials and is git-ignored
+- Codesign with a stable bundle identifier preserves TCC permissions across builds
 - Graceful SIGTERM/SIGINT shutdown with startup retry for crash resilience
 
 ---
@@ -422,9 +265,10 @@ Drop Claude conversation exports, articles, or notes into `~/.alfred/imports/` �
 ## Built with
 
 - [Swift](https://swift.org/) — single binary, no runtime dependencies
-- [Anthropic Claude](https://www.anthropic.com/) — coaching, analysis, intent recognition, and reflection extraction
+- [Anthropic Claude](https://www.anthropic.com/) — coaching, analysis, intent recognition, and self-model synthesis
 - [Google Calendar API](https://developers.google.com/calendar) — schedule data + event creation
-- [Notion API](https://developers.notion.com/) — tasks, commitments, knowledge management, and reflection storage
+- [Notion API](https://developers.notion.com/) — tasks, commitments, and knowledge management
+- [whatsmeow](https://github.com/tulir/whatsmeow) — the WhatsApp network bridge
 
 ---
 

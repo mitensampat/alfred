@@ -82,8 +82,82 @@ final class ScheduleService {
 
     /// Feed one self-chat line to the manager (used by the Desk / API trigger).
     func handle(_ text: String) async {
+        if let body = directBlockBody(text) { await runDirectBlock(body); return }   // "@schedule block …" → immediate create + invite
         guard let m = manager() else { return }
         _ = await m.handleSelfChat(text: text, msgID: "api_\(Int(Date().timeIntervalSince1970))", ts: Date())
+    }
+
+    // MARK: - Direct block ("@schedule block <dur> with <person> at <time> topic <t> <email>")
+
+    /// The instruction body if `text` is a direct-block ("@schedule block …" or bare "block …"), else nil.
+    private func directBlockBody(_ text: String) -> String? {
+        var t = text.trimmingCharacters(in: .whitespaces)
+        if t.lowercased().hasPrefix("@schedule") { t = String(t.dropFirst("@schedule".count)).trimmingCharacters(in: .whitespaces) }
+        return t.lowercased().hasPrefix("block") ? t : nil
+    }
+
+    struct DirectBlockPlan { let title: String; let start: Date; let end: Date; let email: String?; let name: String? }
+
+    /// LLM-parse the instruction into a concrete plan (no side effects). Used by both the live
+    /// booking and the /api/schedule/parse-block dry-run.
+    func parseDirectBlock(_ instruction: String) async -> DirectBlockPlan? {
+        guard let config = AppConfig.load() else { return nil }
+        let ai = ClaudeAIService(config: config.ai)
+        let tz = ScheduleSlots.Prefs().timezone
+        let iso = ISO8601DateFormatter(); iso.timeZone = tz
+        let prompt = """
+        Extract a single calendar event from this instruction. "Now" is \(iso.string(from: Date())) (timezone \(tz.identifier)).
+        Instruction: "\(instruction)"
+        Return ONLY JSON: {"title":"<topic/title>","start":"<RFC3339 datetime>","duration_min":<int>,"attendee_name":"<name or empty>","attendee_email":"<email or empty>"}
+        Resolve relative dates/times (tomorrow, 4pm) to absolute RFC3339 in that timezone. duration_min default 30. Use "" for unknown fields; if no clear start time set start to "".
+        """
+        guard let raw = try? await ai.generateText(prompt: prompt, maxTokens: 300),
+              let jd = ScheduleInterpreter.extractJSON(raw).data(using: .utf8),
+              let o = try? JSONSerialization.jsonObject(with: jd) as? [String: Any],
+              let startStr = o["start"] as? String, !startStr.isEmpty,
+              let start = ScheduleInterpreter.parseRFC3339(startStr) else { return nil }
+        let dur = (o["duration_min"] as? Int) ?? Int("\(o["duration_min"] ?? "30")") ?? 30
+        let title = (o["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Meeting"
+        let email = (o["attendee_email"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        let name = (o["attendee_name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        return DirectBlockPlan(title: title, start: start, end: start.addingTimeInterval(Double(max(5, dur)) * 60), email: email, name: name)
+    }
+
+    /// Parse the instruction with the LLM and create the event + invite immediately — no negotiation.
+    func runDirectBlock(_ instruction: String) async {
+        guard let config = AppConfig.load(), let gc = config.calendar.google.first else { return }
+        let selfJID = await resolveSelfJID()
+        func say(_ s: String) async { recordPrompt(s); await sendBridge(selfJID, s) }
+        await say("on it — blocking that time…")
+
+        guard let plan = await parseDirectBlock(instruction) else {
+            await say("I couldn't read a specific time. Try: @schedule block 30m with Priya at 4pm tomorrow topic Sync priya@x.com")
+            return
+        }
+        let title = plan.title, start = plan.start, end = plan.end, email = plan.email, name = plan.name
+        let tz = ScheduleSlots.Prefs().timezone
+
+        let gcal = GoogleCalendarService(config: gc, accountName: "primary")
+        do {
+            let ev = try await gcal.createEvent(title: title, startTime: start, endTime: end,
+                                                location: nil, description: name.map { "With \($0)" } ?? "",
+                                                attendees: email.map { [$0] }, withMeet: true)
+            let f = DateFormatter(); f.timeZone = tz; f.dateFormat = "EEE d MMM, h:mm a"
+            var msg = "✅ Booked: \(title) — \(f.string(from: start))."
+            if let email = email { msg += "\nInvite sent to \(email)." }
+            if let meet = ev.meetLink { msg += "\n\(meet)" }
+            await say(msg)
+        } catch {
+            await say("Couldn't book that: \(error.localizedDescription)")
+        }
+    }
+
+    private func sendBridge(_ jid: String, _ text: String) async {
+        guard !jid.isEmpty, let url = URL(string: bridgeBase() + "/send") else { return }
+        var req = URLRequest(url: url); req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["jid": jid, "message": text])
+        _ = try? await URLSession.shared.data(for: req)
     }
 
     /// Poll the self-chat for typed follow-ups + open sessions' counterpart threads, then expire.
@@ -100,6 +174,7 @@ final class ScheduleService {
                 for msg in msgs where msg.fromMe {
                     if let t = msg.time { if t <= wm { continue }; if t > newWM { newWM = t } }
                     if isOwnPrompt(msg.text) { continue }   // skip Alfred's own prompts
+                    if let body = directBlockBody(msg.text) { await runDirectBlock(body); continue }   // "@schedule block …"
                     _ = await m.handleSelfChat(text: msg.text, msgID: "poll_\(Int((msg.time ?? Date()).timeIntervalSince1970))", ts: msg.time ?? Date())
                 }
                 selfWatermark = newWM
@@ -119,14 +194,32 @@ final class ScheduleService {
         await m.runExpirySweep(Date())
     }
 
-    /// Open sessions for the Desk surface: contact, state, the current prompt, options.
+    /// Open sessions for the Desk surface: contact, state, the current prompt, options — plus a
+    /// human stage label, the disambiguation candidates, and the booked link, so the rail can run
+    /// the whole flow without the WhatsApp self-chat.
     func openSessionsForDesk() -> [[String: Any]] {
         ScheduleStore.shared.allOpenSessions().map { s in
-            [
+            var d: [String: Any] = [
                 "id": s.id, "contact_jid": s.contactJID, "contact_name": s.contactName,
-                "state": s.state.rawValue, "prompt": s.lastPromptText, "draft": s.draft,
+                "state": s.state.rawValue, "stage_label": Self.stageLabel(s.state, s.contactName),
+                "prompt": s.lastPromptText, "draft": s.draft,
                 "options": ScheduleFmt.slotList(s.slots, .current)
             ]
+            if !s.bookedLink.isEmpty { d["booked_link"] = s.bookedLink }
+            if s.state == .resolving && !s.candidates.isEmpty { d["candidates"] = s.candidates.map { $0.name } }
+            return d
+        }
+    }
+
+    static func stageLabel(_ st: ScheduleState, _ name: String) -> String {
+        switch st {
+        case .resolving:      return "Who did you mean?"
+        case .slotsProposed:  return "Draft ready — review, then send"
+        case .awaitingReply:  return "Sent — waiting on \(name)"
+        case .replySurfaced:  return "\(name) replied — confirm to book"
+        case .held:           return "Soft yes from \(name) — confirm to lock it"
+        case .confirmCancel:  return "Confirm the cancellation"
+        case .closed:         return "Done"
         }
     }
 
