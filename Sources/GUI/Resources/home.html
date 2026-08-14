@@ -11342,8 +11342,33 @@
         }
         async function deskSchedSay(text){
             if (!text) return;
+            const blk = _blockBody(text);
+            if (blk) { return deskDirectBlock(blk); }   // direct-block books synchronously + toasts
             try { await authFetch('/api/schedule/say?text=' + encodeURIComponent(text), { method: 'POST' }); } catch(e){}
             setTimeout(deskSchedRefresh, 1200);
+        }
+        // The instruction body if this is a direct-block ("block …" or "@schedule block …"), else null.
+        function _blockBody(t){
+            let s = (t||'').trim();
+            if (/^@?schedule\b/i.test(s)) s = s.replace(/^@?schedule\s*/i, '');
+            return /^block\b/i.test(s) ? s : null;
+        }
+        // Book a specific slot + invite in one shot, and show the actual outcome (title · when · place).
+        async function deskDirectBlock(text){
+            showToast('Booking that slot…');
+            try {
+                const r = await authFetch('/api/schedule/direct-block?text=' + encodeURIComponent(text), { method: 'POST' });
+                const d = await r.json();
+                if (d && d.booked) {
+                    let m = '✅ Booked: ' + (d.title || '') + (d.when ? ' — ' + d.when : '');
+                    if (d.location) m += ' · ' + d.location;
+                    if (d.attendee) m += ' · invite sent';
+                    showToast(m);
+                } else {
+                    showToast(d && d.error ? ('Couldn’t book: ' + d.error) : 'Couldn’t book that — try adding a clear time.', 'error');
+                }
+            } catch(e){ showToast('Couldn’t reach the scheduler.', 'error'); }
+            setTimeout(deskSchedRefresh, 800);
         }
         function deskSchedNew(){
             const who = prompt('Schedule a meeting.\n• Find times: "Kunal 30m tomorrow" or "Priya 1h video next week"\n• Book directly: "block 30m with Kunal at 4pm tomorrow topic Sync kunal@acme.com"');
@@ -12231,6 +12256,8 @@
             }
             if (kind === 'schedule'){
                 capClose();
+                const blk = _blockBody(t);
+                if (blk){ deskDirectBlock(blk); return; }   // owns its own toast (book + outcome)
                 const cmd = /^@?schedule/i.test(t) ? t.replace(/^@?schedule\s*/i, '@schedule ') : '@schedule ' + t;
                 deskSchedSay(cmd); showToast('Scheduling — Alfred is finding times…');
                 return;

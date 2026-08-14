@@ -1431,9 +1431,19 @@ class HTTPServer {
                 let iso = ISO8601DateFormatter()
                 return HTTPResponse(statusCode: 200, body: [
                     "parsed": true, "title": p.title, "start": iso.string(from: p.start), "end": iso.string(from: p.end),
-                    "attendee_name": p.name as Any, "attendee_email": p.email as Any])
+                    "attendee_name": p.name as Any, "attendee_email": p.email as Any, "location": p.location as Any])
             }
             return HTTPResponse(statusCode: 200, body: ["parsed": false, "reason": "no concrete time found"])
+        case ("POST", "/api/schedule/direct-block"):
+            // Book a specific slot + send the invite in one shot, and RETURN the result so the UI can
+            // confirm inline (title, when, location, attendee, meet link) instead of going silent.
+            let text = request.queryParams["text"] ?? ""
+            guard !text.isEmpty else { return HTTPResponse(statusCode: 400, body: ["error": "text required"]) }
+            guard ScheduleService.shared.configured else {
+                return HTTPResponse(statusCode: 200, body: ["booked": false, "error": "Google Calendar not configured"])
+            }
+            let result = await ScheduleService.shared.runDirectBlockReturning(text, announce: false)
+            return HTTPResponse(statusCode: 200, body: result)
         case ("POST", "/api/schedule/tick"):
             await ScheduleService.shared.tick()
             return HTTPResponse(statusCode: 200, body: ["ok": true])

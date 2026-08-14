@@ -96,7 +96,7 @@ final class ScheduleService {
         return t.lowercased().hasPrefix("block") ? t : nil
     }
 
-    struct DirectBlockPlan { let title: String; let start: Date; let end: Date; let email: String?; let name: String? }
+    struct DirectBlockPlan { let title: String; let start: Date; let end: Date; let email: String?; let name: String?; let location: String? }
 
     /// LLM-parse the instruction into a concrete plan (no side effects). Used by both the live
     /// booking and the /api/schedule/parse-block dry-run.
@@ -105,11 +105,21 @@ final class ScheduleService {
         let ai = ClaudeAIService(config: config.ai)
         let tz = ScheduleSlots.Prefs().timezone
         let iso = ISO8601DateFormatter(); iso.timeZone = tz
+        // The instruction is a "block" command: block <duration> with <person> at <time>
+        // [topic <topic>] [location <place>] [<email>]. The command scaffolding ("block", the
+        // duration, "with <person>") must NEVER become the title — only an explicit topic does.
         let prompt = """
-        Extract a single calendar event from this instruction. "Now" is \(iso.string(from: Date())) (timezone \(tz.identifier)).
+        Extract a single calendar event from this scheduling instruction. "Now" is \(iso.string(from: Date())) (timezone \(tz.identifier)).
         Instruction: "\(instruction)"
-        Return ONLY JSON: {"title":"<topic/title>","start":"<RFC3339 datetime>","duration_min":<int>,"attendee_name":"<name or empty>","attendee_email":"<email or empty>"}
-        Resolve relative dates/times (tomorrow, 4pm) to absolute RFC3339 in that timezone. duration_min default 30. Use "" for unknown fields; if no clear start time set start to "".
+
+        The instruction has the shape: block <duration> with <person> at <time> [topic <topic>] [location/at <place>] [<email>]
+
+        Rules:
+        - topic: ONLY the explicit subject, given after "topic", "about", "re", or "on". If none is stated, return "" — do NOT invent one and do NOT use the words "block", the duration, or "with <person>".
+        - location: a physical place or room, given after "location", "in", "at <place>", or "@". A clock time (e.g. "4pm", "11:30") is NOT a location. If none, return "".
+        - start: resolve relative dates/times (tomorrow, 4pm) to absolute RFC3339 in that timezone; if no clear start time, return "".
+
+        Return ONLY JSON: {"topic":"<explicit topic or empty>","start":"<RFC3339 or empty>","duration_min":<int, default 30>,"attendee_name":"<name or empty>","attendee_email":"<email or empty>","location":"<place or empty>"}
         """
         guard let raw = try? await ai.generateText(prompt: prompt, maxTokens: 300),
               let jd = ScheduleInterpreter.extractJSON(raw).data(using: .utf8),
@@ -117,38 +127,70 @@ final class ScheduleService {
               let startStr = o["start"] as? String, !startStr.isEmpty,
               let start = ScheduleInterpreter.parseRFC3339(startStr) else { return nil }
         let dur = (o["duration_min"] as? Int) ?? Int("\(o["duration_min"] ?? "30")") ?? 30
-        let title = (o["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Meeting"
         let email = (o["attendee_email"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-        let name = (o["attendee_name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-        return DirectBlockPlan(title: title, start: start, end: start.addingTimeInterval(Double(max(5, dur)) * 60), email: email, name: name)
+        let name = (o["attendee_name"] as? String).flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0.trimmingCharacters(in: .whitespaces) }
+        let location = (o["location"] as? String).flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0.trimmingCharacters(in: .whitespaces) }
+        // Title = explicit topic; otherwise a clean default ("<Person> <> <Me>"), never the raw command.
+        var topic = (o["topic"] as? String)?.trimmingCharacters(in: .whitespaces) ?? ""
+        if topic.lowercased().hasPrefix("block ") || topic.lowercased().contains(" with ") { topic = "" }  // guard against echo
+        let title: String
+        if !topic.isEmpty {
+            title = topic
+        } else if let n = name {
+            let me = (config.user.name.split(separator: " ").first).map(String.init) ?? ""
+            title = me.isEmpty ? n : "\(n) <> \(me)"
+        } else {
+            title = "Hold"
+        }
+        return DirectBlockPlan(title: title, start: start, end: start.addingTimeInterval(Double(max(5, dur)) * 60), email: email, name: name, location: location)
     }
 
     /// Parse the instruction with the LLM and create the event + invite immediately — no negotiation.
+    /// The WhatsApp-initiated path announces progress + result to the self-chat.
     func runDirectBlock(_ instruction: String) async {
-        guard let config = AppConfig.load(), let gc = config.calendar.google.first else { return }
-        let selfJID = await resolveSelfJID()
-        func say(_ s: String) async { recordPrompt(s); await sendBridge(selfJID, s) }
+        _ = await runDirectBlockReturning(instruction, announce: true)
+    }
+
+    /// The bookable core. Returns a result dict the UI can render synchronously
+    /// ({booked,title,when,location,attendee,meet} or {booked:false,error}). When `announce` is
+    /// true it also narrates progress + confirmation to the WhatsApp self-chat.
+    @discardableResult
+    func runDirectBlockReturning(_ instruction: String, announce: Bool) async -> [String: Any] {
+        guard let config = AppConfig.load(), let gc = config.calendar.google.first else {
+            return ["booked": false, "error": "Google Calendar not configured"]
+        }
+        let selfJID = announce ? await resolveSelfJID() : ""
+        func say(_ s: String) async { if announce { recordPrompt(s); await sendBridge(selfJID, s) } }
         await say("on it — blocking that time…")
 
         guard let plan = await parseDirectBlock(instruction) else {
-            await say("I couldn't read a specific time. Try: @schedule block 30m with Priya at 4pm tomorrow topic Sync priya@x.com")
-            return
+            let hint = "I couldn't read a specific time. Try: block 30m with Priya at 4pm tomorrow topic Sync location CRED One priya@x.com"
+            await say(hint)
+            return ["booked": false, "error": "no concrete time found", "hint": hint]
         }
-        let title = plan.title, start = plan.start, end = plan.end, email = plan.email, name = plan.name
+        let title = plan.title, start = plan.start, end = plan.end, email = plan.email, name = plan.name, location = plan.location
         let tz = ScheduleSlots.Prefs().timezone
 
         let gcal = GoogleCalendarService(config: gc, accountName: "primary")
         do {
             let ev = try await gcal.createEvent(title: title, startTime: start, endTime: end,
-                                                location: nil, description: name.map { "With \($0)" } ?? "",
+                                                location: location, description: name.map { "With \($0)" } ?? "",
                                                 attendees: email.map { [$0] }, withMeet: true)
             let f = DateFormatter(); f.timeZone = tz; f.dateFormat = "EEE d MMM, h:mm a"
-            var msg = "✅ Booked: \(title) — \(f.string(from: start))."
+            let when = f.string(from: start)
+            var msg = "✅ Booked: \(title) — \(when)."
+            if let location = location { msg += "\n📍 \(location)" }
             if let email = email { msg += "\nInvite sent to \(email)." }
             if let meet = ev.meetLink { msg += "\n\(meet)" }
             await say(msg)
+            var out: [String: Any] = ["booked": true, "title": title, "when": when, "start": ISO8601DateFormatter().string(from: start)]
+            if let location = location { out["location"] = location }
+            if let email = email { out["attendee"] = email }
+            if let meet = ev.meetLink { out["meet"] = meet }
+            return out
         } catch {
             await say("Couldn't book that: \(error.localizedDescription)")
+            return ["booked": false, "error": error.localizedDescription]
         }
     }
 
