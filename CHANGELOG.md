@@ -5,6 +5,18 @@ All notable changes to Alfred will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.1.1] - 2026-08-14
+
+### Fixed
+- **@schedule direct-block titles** — a `block …` command with no explicit topic no longer
+  echoes the raw command as the event title; it uses the stated topic, or falls back to a
+  clean `Person <> You` default.
+- **Location capture** — direct-block now parses a `location` (`location`/`in`/`@ <place>`,
+  and won't mistake a clock time for a place) and writes it onto the calendar event.
+- **Inline booking confirmation** — booking from the command palette now returns and shows the
+  actual outcome (title · time · location · invite sent), or a clear error, instead of going
+  silent.
+
 ## [5.1.0] - 2026-08-13
 
 ### Added
