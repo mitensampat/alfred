@@ -7,7 +7,7 @@
 <meta name="description" content="alfred is your Desk and your Coach. It holds the work you're carrying — who's blocked on you, the fronts you're running, your week — and coaches you on what matters, when it matters. Runs locally on your Mac." />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Archivo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root {
     --serif: "Newsreader", "Iowan Old Style", "Georgia", serif;
@@ -277,11 +277,10 @@
   .see-it-header { max-width: 52ch; margin-bottom: 48px; }
   .stage {
     position: relative;
-    display: grid;
-    grid-template-columns: 1fr 1.6fr 1fr;
-    gap: 28px;
+    display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-items: center;
+    gap: 16px;
   }
 
   .phone {
@@ -325,13 +324,93 @@
 
   .desktop {
     width: 100%;
-    max-width: 520px;
+    max-width: 960px;
     background: #0a0908;
     border: 1px solid var(--device-border);
     border-radius: 12px;
     padding: 10px 10px 12px;
     box-shadow: var(--shadow-lift);
   }
+  .stage-tabs { display: flex; gap: 8px; }
+  .stage-tab {
+    font-family: var(--sans); font-size: 12px; letter-spacing: 0.02em;
+    padding: 5px 14px; border: 1px solid var(--line); color: var(--ink-3);
+    background: transparent; cursor: pointer; border-radius: 999px; transition: .2s;
+  }
+  .stage-tab.on { color: var(--canvas); background: var(--ink); border-color: var(--ink); }
+  .desktop-screen.rd-shell { background: #fafbfc; }
+  .rd-fade { animation: rdFade .5s ease; }
+  @keyframes rdFade { from { opacity: .35; } to { opacity: 1; } }
+
+  /* ===== Faithful Alfred Desk (real app design, placeholder data) ===== */
+  .rd-app {
+    --bg:#fafbfc; --ink:#14171c; --n700:#3b4048; --n500:#6b7280; --n300:#c9ced6;
+    --divider:#e4e7eb; --accent:#1d4ed8; --accent-bg:#eef2ff; --accent-line:#dbe2fb;
+    --band:#f4f6f9; --hot:#c2410c;
+    background: var(--bg); color: var(--ink);
+    font-family: "Archivo", system-ui, sans-serif; font-size: 12px; line-height: 1.4;
+    text-align: left;
+  }
+  .rd-mast { display:flex; align-items:center; justify-content:space-between; padding:11px 16px; border-bottom:2px solid var(--ink); }
+  .rd-mast-l { display:flex; align-items:baseline; }
+  .rd-brand { font-weight:800; font-size:16px; letter-spacing:-0.02em; color:var(--ink); }
+  .rd-date { font-size:10px; color:var(--n500); letter-spacing:0.1em; margin-left:10px; }
+  .rd-mast-r { display:flex; align-items:center; }
+  .rd-plus { width:24px; height:22px; background:var(--ink); color:#fff; display:inline-flex; align-items:center; justify-content:center; font-weight:700; margin-right:10px; }
+  .rd-nav { display:flex; border:1px solid var(--ink); }
+  .rd-seg { font-size:11px; font-weight:700; letter-spacing:0.04em; padding:5px 12px; color:var(--n700); border-left:1px solid var(--divider); }
+  .rd-seg:first-child { border-left:0; }
+  .rd-seg.on { background:var(--ink); color:#fff; }
+  .rd-pill { font-size:10px; font-weight:700; border:1px solid var(--divider); padding:4px 8px; margin-left:6px; color:var(--n700); }
+  .rd-pill .g { color:var(--accent); }
+
+  .rd-band { display:flex; gap:14px; padding:16px; background:var(--band); border-bottom:2px solid var(--ink); }
+  .rd-tf { flex:1; background:#fff; border:1px solid var(--divider); border-left:3px solid var(--accent); padding:12px 14px; }
+  .rd-tf-eye { font-size:9px; font-weight:800; letter-spacing:0.1em; text-transform:uppercase; color:var(--accent); }
+  .rd-tf-head { font-weight:700; font-size:15px; margin:7px 0 6px; line-height:1.25; color:var(--ink); }
+  .rd-tf-sub { font-size:11px; color:var(--n500); margin-bottom:11px; }
+  .rd-btn { background:var(--accent); color:#fff; font-weight:700; font-size:11px; padding:5px 13px; display:inline-block; }
+  .rd-band-count { font-size:11px; color:var(--n500); white-space:nowrap; align-self:flex-start; text-align:right; line-height:1.5; }
+  .rd-band-count b { color:var(--ink); font-weight:800; }
+
+  .rd-grid { display:grid; grid-template-columns:1fr 264px; }
+  .rd-main { padding:16px 18px; border-right:2px solid var(--ink); }
+  .rd-margin { padding:16px; }
+  .rd-seclabel { font-size:11px; font-weight:800; letter-spacing:0.06em; text-transform:uppercase; color:var(--ink); }
+  .rd-explain { font-size:11px; color:var(--n500); margin:3px 0 12px; }
+  .rd-search { border:1px solid var(--divider); padding:8px 10px; font-size:11px; color:var(--n500); margin-bottom:6px; }
+
+  .rd-front { padding:13px 0; border-top:1px solid var(--divider); }
+  .rd-front:first-of-type { border-top:0; }
+  .rd-front-eye { font-size:9px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:var(--hot); }
+  .rd-front-eye .g { color:var(--n500); }
+  .rd-front-head { font-weight:700; font-size:17px; margin:5px 0; color:var(--ink); letter-spacing:-0.01em; }
+  .rd-tag { font-size:8px; font-weight:800; letter-spacing:0.08em; border:1px solid var(--divider); padding:2px 5px; color:var(--n500); vertical-align:middle; margin-left:6px; }
+  .rd-front-meta { font-size:9px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:var(--n500); }
+  .rd-front-body { font-size:11.5px; color:var(--n700); margin:7px 0; line-height:1.45; }
+  .rd-open { font-size:10px; font-weight:700; color:var(--accent); text-transform:uppercase; letter-spacing:0.06em; }
+
+  .rd-coach { background:var(--accent-bg); border:1px solid var(--accent-line); padding:12px; margin-bottom:16px; }
+  .rd-coach-eye { font-size:9px; font-weight:800; letter-spacing:0.1em; text-transform:uppercase; color:var(--accent); }
+  .rd-coach-body { font-size:11.5px; color:var(--n700); margin:6px 0 8px; line-height:1.45; }
+  .rd-cold-row { display:flex; justify-content:space-between; align-items:baseline; padding:8px 0; border-top:1px solid var(--divider); }
+  .rd-cold-row:first-of-type { border-top:0; }
+  .rd-cold-name { font-size:11.5px; color:var(--ink); }
+  .rd-cold-sub { font-size:10px; color:var(--n500); }
+  .rd-cold-age { font-size:11px; color:var(--hot); font-weight:800; }
+  .rd-health { margin-top:18px; }
+  .rd-health-row { display:flex; align-items:baseline; gap:10px; padding:6px 0; }
+  .rd-stat { font-weight:800; font-size:22px; color:var(--ink); min-width:22px; }
+  .rd-stat.hot { color:var(--hot); }
+  .rd-health-lab { font-size:11px; color:var(--n500); }
+
+  .rd-people { display:grid; grid-template-columns:1fr 1fr 1fr; }
+  .rd-person { border:1px solid var(--divider); border-left:3px solid var(--hot); padding:11px 13px; margin:0 -0.5px -0.5px 0; }
+  .rd-person.quiet { border-left-color:var(--n300); }
+  .rd-person-name { font-weight:700; font-size:13px; color:var(--ink); }
+  .rd-person-meta { font-size:8.5px; font-weight:800; letter-spacing:0.05em; text-transform:uppercase; color:var(--hot); margin-top:4px; }
+  .rd-person.quiet .rd-person-meta { color:var(--n300); }
+  @media (max-width:720px){ .rd-grid{ grid-template-columns:1fr; } .rd-margin{ display:none; } .rd-people{ grid-template-columns:1fr 1fr; } .rd-band-count{ display:none; } }
   .desktop-chrome {
     display: flex; gap: 6px;
     padding: 4px 4px 10px;
@@ -845,21 +924,14 @@
       </div>
 
       <div class="stage">
-        <div class="phone side" aria-hidden="true">
-          <div class="phone-screen">
-            <div class="phone-track" data-track="a" data-order="desk,fronts,coach,schedule,wiki"></div>
-          </div>
+        <div class="stage-tabs" id="stageTabs">
+          <button class="stage-tab on" data-view="fronts">Fronts</button>
+          <button class="stage-tab" data-view="people">People</button>
+          <button class="stage-tab" data-view="coach">Coach</button>
         </div>
-
         <div class="desktop">
           <div class="desktop-chrome"><span></span><span></span><span></span></div>
-          <div class="desktop-screen" data-screen="desktop"></div>
-        </div>
-
-        <div class="phone lag">
-          <div class="phone-screen">
-            <div class="phone-track" data-track="b" data-order="wiki,coach,desk,schedule,fronts"></div>
-          </div>
+          <div class="desktop-screen rd-shell" id="deskScreen"></div>
         </div>
       </div>
     </div>
@@ -1068,6 +1140,156 @@
       });
     }, 3400);
   })();
+
+  // ===== Faithful Alfred Desk — the real app design, placeholder data =====
+  const RD_DATE = 'SAT 15 AUG';
+  function mast(active){
+    const seg = n => `<span class="rd-seg${active===n?' on':''}">${n.toUpperCase()}</span>`;
+    return `<div class="rd-mast">
+      <div class="rd-mast-l"><span class="rd-brand">ALFRED</span><span class="rd-date">${RD_DATE}</span></div>
+      <div class="rd-mast-r">
+        <span class="rd-plus">+</span>
+        <span class="rd-nav">${seg('fronts')}${seg('people')}${seg('coach')}${seg('model')}</span>
+        <span class="rd-pill"><span class="g">●</span> WA</span>
+      </div>
+    </div>`;
+  }
+  function front(hot, stage, name, meta, body){
+    const eye = hot ? `${hot} · <span class="g">${stage}</span>` : `<span class="g">${stage}</span>`;
+    return `<div class="rd-front">
+      <div class="rd-front-eye">${eye}</div>
+      <div class="rd-front-head">${name}<span class="rd-tag">WORKSPACE</span></div>
+      <div class="rd-front-meta">${meta}</div>
+      <div class="rd-front-body">${body}</div>
+      <div class="rd-open">Open front →</div>
+    </div>`;
+  }
+  function person(name, meta, quiet){
+    return `<div class="rd-person${quiet?' quiet':''}"><div class="rd-person-name">${name}</div><div class="rd-person-meta">${meta}</div></div>`;
+  }
+  function coldList(title, rows){
+    return `<div class="rd-seclabel">${title}</div>` + rows.map(r =>
+      `<div class="rd-cold-row"><span><div class="rd-cold-name">${r[0]}</div><div class="rd-cold-sub">${r[2]}</div></span><span class="rd-cold-age">${r[1]}</span></div>`).join('');
+  }
+  const coachCard = `<div class="rd-coach"><div class="rd-coach-eye">◆ Coach</div><div class="rd-coach-body">You haven't moved the Head of Eng hire in 8 days — it's yours and going quiet.</div><div class="rd-open">Open coach →</div></div>`;
+  const health = `<div class="rd-health"><div class="rd-seclabel">Fronts health</div>
+    <div class="rd-health-row"><span class="rd-stat">0</span><span class="rd-health-lab">fronts running without you</span></div>
+    <div class="rd-health-row"><span class="rd-stat">1</span><span class="rd-health-lab">handed off, not done by you</span></div>
+    <div class="rd-health-row"><span class="rd-stat hot">3</span><span class="rd-health-lab">stalled over 2 weeks</span></div></div>`;
+
+  const VIEWS = {
+    fronts: mast('fronts') + `
+      <div class="rd-band">
+        <div class="rd-tf">
+          <div class="rd-tf-eye">Came up 6× this week</div>
+          <div class="rd-tf-head">Decide: sign or walk on the Northwind partnership</div>
+          <div class="rd-tf-sub">Keeps the Q3 distribution plan alive</div>
+          <span class="rd-btn">Decide →</span>
+        </div>
+        <div class="rd-tf">
+          <div class="rd-tf-eye">Came up 4× this week</div>
+          <div class="rd-tf-head">Answer Priya on the Q3 plan before Thursday</div>
+          <div class="rd-tf-sub">Two teams are blocked on your call</div>
+          <span class="rd-btn">Reply →</span>
+        </div>
+        <div class="rd-band-count"><b>18</b> on the desk<br>6 over a week</div>
+      </div>
+      <div class="rd-grid">
+        <div class="rd-main">
+          <div class="rd-seclabel">Fronts · 6 live</div>
+          <div class="rd-explain">What the company is running. Owner, stage, and the one thing in the way.</div>
+          <div class="rd-search">Search fronts…</div>
+          ${front('● Hot','Deciding','Northwind partnership','Owner · You&nbsp;&nbsp;·&nbsp;&nbsp;2 open questions&nbsp;&nbsp;·&nbsp;&nbsp;Moving','Sign or walk? Distribution terms are agreed — the exclusivity clause is the last open point.')}
+          ${front('● Hot','Running','Series B raise','Owner · You&nbsp;&nbsp;·&nbsp;&nbsp;1 open question&nbsp;&nbsp;·&nbsp;&nbsp;Moving','Term sheet lands Friday. Decide the board-seat ask before the partner call.')}
+          ${front('','Stuck 8d','Head of Engineering hire','Owner · You&nbsp;&nbsp;·&nbsp;&nbsp;Waiting on the panel','No movement in eight days. Nudge the panel or the offer slips into next quarter.')}
+          ${front('','Running','Pricing v2 rollout','Owner · Sam&nbsp;&nbsp;·&nbsp;&nbsp;Running without you','Shipping to 90% of accounts. Nothing needs you — watch the churn read next week.')}
+        </div>
+        <div class="rd-margin">${coachCard}${coldList('Fronts going cold',[['Head of Eng hire','8d',"it's yours to restart."],['Pricing v2 retro','12d','no movement.'],['Board deck v3','15d','waiting on you.'],['Vendor consolidation','21d','stalled.']])}${health}</div>
+      </div>`,
+
+    people: mast('people') + `
+      <div class="rd-band">
+        <div class="rd-tf">
+          <div class="rd-tf-eye">8 waiting on you</div>
+          <div class="rd-tf-head">Priya, Marcus and six others are blocked on a reply</div>
+          <div class="rd-tf-sub">Open a card to reply, close, or hand off</div>
+          <span class="rd-btn">Open people →</span>
+        </div>
+        <div class="rd-band-count"><b>8</b> waiting on you<br>184 people · 12 over a week</div>
+      </div>
+      <div class="rd-grid">
+        <div class="rd-main">
+          <div class="rd-seclabel">People · 184</div>
+          <div class="rd-explain">8 waiting on you. Open a card to reply, close or dismiss.</div>
+          <div class="rd-search">Search people…</div>
+          <div class="rd-people">
+            ${person('Priya Menon','5d · you owe 4 · 100% on time')}
+            ${person('Marcus Lee','3d · you owe 2 · 100% on time')}
+            ${person('Sam Rivera','9d · you owe 6')}
+            ${person('Dana Cho','2d · you owe 1 · 100% on time')}
+            ${person('Alex Park','12d · you owe 3')}
+            ${person('Nina Alvarez','4d · you owe 2 · 100% on time')}
+            ${person('Jordan Ellis','6d quiet', true)}
+            ${person('Wei Chen','9d quiet', true)}
+            ${person('Omar Haddad','10d quiet', true)}
+          </div>
+        </div>
+        <div class="rd-margin">
+          <div class="rd-coach"><div class="rd-coach-eye">Scheduling</div><div class="rd-coach-body">Alfred proposes times, sends the ask, and books on a firm yes — or blocks a slot and sends the invite.</div><span class="rd-btn" style="background:var(--ink);">+ Schedule a meeting</span></div>
+          ${coldList('People going cold',[['Jordan Ellis','6d','a nudge now beats a reintroduction later.'],['Wei Chen','9d','going quiet.'],['Omar Haddad','10d','going quiet.']])}
+          <div class="rd-health"><div class="rd-seclabel">Your week, honestly</div>
+            <div class="rd-health-row"><span class="rd-stat">29h</span><span class="rd-health-lab">in meetings · 47h focus</span></div>
+            <div class="rd-health-row"><span class="rd-stat hot">12</span><span class="rd-health-lab">people waiting over a week</span></div></div>
+        </div>
+      </div>`,
+
+    coach: mast('coach') + `
+      <div class="rd-band">
+        <div class="rd-tf">
+          <div class="rd-tf-eye">Heads up — tonight</div>
+          <div class="rd-tf-head">Tomorrow is 7 meetings and 190m of free time</div>
+          <div class="rd-tf-sub">Move one of the two 3pm calls now and you get a maker block back</div>
+          <span class="rd-btn">Fix tomorrow →</span>
+        </div>
+        <div class="rd-band-count"><b>3</b> signals<br>today</div>
+      </div>
+      <div class="rd-grid">
+        <div class="rd-main">
+          <div class="rd-seclabel">Coach · this week</div>
+          <div class="rd-explain">The right thing at the right time — drawn from your calendar, threads and commitments.</div>
+          <div class="rd-front"><div class="rd-front-eye" style="color:var(--accent);">◆ Calendar pressure</div><div class="rd-front-body" style="font-size:13px;color:var(--ink);margin-top:6px;">Tomorrow is 7 meetings and only 190m free. Two back-to-back blocks, no maker time.</div><div class="rd-open">Move a call →</div></div>
+          <div class="rd-front"><div class="rd-front-eye" style="color:var(--accent);">◆ Relationship</div><div class="rd-front-body" style="font-size:13px;color:var(--ink);margin-top:6px;">You owe Priya four replies; the last from you was nine days ago. The thread is going cold.</div><div class="rd-open">Draft a reply →</div></div>
+          <div class="rd-front"><div class="rd-front-eye" style="color:var(--accent);">◆ Avoidance</div><div class="rd-front-body" style="font-size:13px;color:var(--ink);margin-top:6px;">The Head of Eng offer has sat eight days with no status change. Past your usual threshold.</div><div class="rd-open">Nudge the panel →</div></div>
+        </div>
+        <div class="rd-margin">
+          <div class="rd-coach"><div class="rd-coach-eye">◆ In your Model</div><div class="rd-coach-body">Frequency drives both retention and revenue — the real lever, not price.</div></div>
+          ${coldList('Skills on',[['Leverage','daily','the one highest-leverage move.'],['Relationships','daily','who needs you, and who is cooling.'],['Avoidance','daily','what you are putting off.'],['Attention','daily','where your time actually goes.']])}
+        </div>
+      </div>`,
+  };
+
+  const deskScreen = document.getElementById('deskScreen');
+  const stageTabs = document.getElementById('stageTabs');
+  function renderView(name){
+    if (!deskScreen || !VIEWS[name]) return;
+    deskScreen.innerHTML = `<div class="rd-app rd-fade">${VIEWS[name]}</div>`;
+    if (stageTabs) stageTabs.querySelectorAll('.stage-tab').forEach(b => b.classList.toggle('on', b.dataset.view === name));
+  }
+  let rdIdx = 0;
+  const rdOrder = ['fronts','people','coach'];
+  let rdTimer = null;
+  function rdStart(){ rdTimer = setInterval(() => { rdIdx = (rdIdx + 1) % rdOrder.length; renderView(rdOrder[rdIdx]); }, 5200); }
+  if (stageTabs){
+    stageTabs.addEventListener('click', (e) => {
+      const b = e.target.closest('.stage-tab'); if (!b) return;
+      clearInterval(rdTimer);
+      rdIdx = rdOrder.indexOf(b.dataset.view);
+      renderView(b.dataset.view);
+      rdStart();
+    });
+  }
+  renderView('fronts');
+  rdStart();
 
 </script>
 </body>
