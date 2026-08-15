@@ -80,7 +80,14 @@ class CadenceRunner {
         if let data = try? JSONSerialization.data(withJSONObject: ["lastPull": now]) {
             try? data.write(to: URL(fileURLWithPath: Self.notionSyncStatePath))
         }
-        return processed > 0 ? "Notion diff: \(processed) page(s) updated since last pull" : "Notion diff: nothing new"
+
+        // Refresh the You-Wiki on the same 4×/day cadence as the pull. It's a cheap deterministic
+        // regenerate (no LLM), so the portrait stays current through the day — reflecting freshly
+        // ingested Notion pages plus whatever else has moved in the model — rather than only at the
+        // nightly convergence.
+        UserWikiComposer.write()
+
+        return processed > 0 ? "Notion diff: \(processed) page(s) updated; You-Wiki refreshed" : "Notion diff: nothing new; You-Wiki refreshed"
     }
 
     /// Query every configured context DB for pages edited since `since`, extract reflections, and
