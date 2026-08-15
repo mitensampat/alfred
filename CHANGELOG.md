@@ -5,6 +5,20 @@ All notable changes to Alfred will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.2.0] - 2026-08-15
+
+### Added
+- **Notion context, 4× a day** — a diff-only pull of the Notion Second Brain at 08:00 / 13:00 /
+  20:00 / 01:00. Each run ingests only pages edited since the last pull (shared watermark), so
+  the self-model stays current through the day instead of only at the nightly ingestion.
+
+### Fixed
+- **Daily cadences now catch up after downtime** — a daily run whose scheduled time passed while
+  the Mac was asleep (or the app was down) now fires on the next wake, against the most recent
+  scheduled occurrence, instead of being silently skipped for the day. No double-runs — the
+  persisted last-run guards it. This makes night-time cadences (evening/overnight pulls, the
+  nightly self-model convergence + You-Wiki refresh) reliable.
+
 ## [5.1.1] - 2026-08-14
 
 ### Fixed
