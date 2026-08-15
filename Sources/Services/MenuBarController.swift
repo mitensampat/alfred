@@ -455,6 +455,17 @@ class MenuBarController: NSObject, NSMenuDelegate {
     /// - Weekly cadences: run on the scheduled day OR within `weeklyCatchUpDays` after.
     ///   If Sunday is missed, Monday/Tuesday still catch up.
     /// - Manual API runs do NOT suppress scheduled runs (tracked separately).
+    /// The latest wall-clock occurrence of "HH:mm" that is at or before `now` — today's if we're
+    /// already past it, otherwise yesterday's. Used so a daily cadence catches up on the next wake
+    /// instead of skipping a run whose time passed while the machine slept.
+    static func mostRecentOccurrence(of time: String, now: Date) -> Date? {
+        let parts = time.split(separator: ":")
+        guard parts.count == 2, let h = Int(parts[0]), let m = Int(parts[1]) else { return nil }
+        let cal = Calendar.current
+        guard let todayAt = cal.date(bySettingHour: h, minute: m, second: 0, of: now) else { return nil }
+        return todayAt <= now ? todayAt : cal.date(byAdding: .day, value: -1, to: todayAt)
+    }
+
     private func shouldRunCadence(_ cadence: Cadence, currentTime: String, todayDate: String, hour: Int, weekday: Int, now: Date, logPath: String) -> Bool {
         // Check failure cooldown
         if let cooldownUntil = cadence.failureCooldownUntil, now < cooldownUntil {
@@ -463,12 +474,19 @@ class MenuBarController: NSObject, NSMenuDelegate {
 
         switch cadence.schedule {
         case .daily(let time):
-            // Already ran today (via scheduler)?
-            guard cadence.lastRunDate != todayDate else { return false }
-            // Must be at or past the scheduled time — rest-of-day catch-up
-            guard currentTime >= time else { return false }
+            // Fire against the MOST RECENT scheduled occurrence, not just "today after the time".
+            // The old rule ("not run today AND now >= time") silently skipped any run whose
+            // window fell while the Mac was asleep — a 22:30 cadence never fired because by the
+            // next morning currentTime < 22:30. Here we compute the latest occurrence of `time`
+            // that is <= now (today's if we're past it, else yesterday's) and fire if we haven't
+            // run since then. That gives on-time firing, same-day catch-up, AND next-wake catch-up
+            // for missed night runs — without ever double-running.
+            guard let occurrence = Self.mostRecentOccurrence(of: time, now: now) else { return false }
+            if let ts = cadence.lastRunTimestamp, let last = ISO8601DateFormatter().date(from: ts), last >= occurrence {
+                return false   // already ran for this occurrence
+            }
             if currentTime != time {
-                logToFile("⏰ [Cadence] Catch-up: Missed \(cadence.name) time (\(time)), running at \(currentTime)", path: logPath)
+                logToFile("⏰ [Cadence] Catch-up: \(cadence.name) missed \(time), running at \(currentTime)", path: logPath)
             }
             return true
 

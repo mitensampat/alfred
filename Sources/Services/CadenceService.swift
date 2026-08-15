@@ -200,7 +200,7 @@ class CadenceService {
 
         let now = Date()
 
-        return [
+        var builtIns: [Cadence] = [
             Cadence(
                 id: "builtin-morning-briefing",
                 name: "Morning Briefing",
@@ -424,5 +424,28 @@ class CadenceService {
                 emailOnSuccess: false
             )
         ]
+        // Notion diff-only pull — four times a day (08:00 / 13:00 / 20:00 / 01:00). Each run grabs
+        // only pages edited since the last pull (shared watermark), so the model stays current
+        // without re-ingesting everything. Night slots (20:00/01:00) rely on the daily catch-up.
+        let notionConfigured = !((config?.notion.contextDatabases ?? []).isEmpty)
+        for (slot, time) in [("0800", "08:00"), ("1300", "13:00"), ("2000", "20:00"), ("0100", "01:00")] {
+            builtIns.append(Cadence(
+                id: "builtin-notion-sync-\(slot)",
+                name: "Notion Sync (\(time))",
+                icon: "📥",
+                actionType: .notionSync,
+                params: [:],
+                schedule: .daily(time: time),
+                enabled: notionConfigured,
+                isBuiltIn: true,
+                createdAt: now,
+                lastRunDate: nil,
+                lastRunTimestamp: nil,
+                catchUpWindowHours: 12,
+                notifyOnSuccess: false,
+                emailOnSuccess: false
+            ))
+        }
+        return builtIns
     }
 }

@@ -44,7 +44,74 @@ class CadenceRunner {
             return try await runReflectionIngestion(cadence: cadence)
         case .themeConvergence:
             return try await runThemeConvergence(cadence: cadence)
+        case .notionSync:
+            return try await runNotionSync(cadence: cadence)
         }
+    }
+
+    // MARK: - Notion diff sync
+
+    private static var notionSyncStatePath: String {
+        (NSHomeDirectory() as NSString).appendingPathComponent(".alfred/notion_sync_state.json")
+    }
+
+    /// Incremental ("diff only") pull of the Notion Second Brain: extract + file only the pages
+    /// edited since the last successful pull. A shared watermark across all four daily runs means
+    /// each run grabs just what changed — and a catch-up run after the Mac wakes is a near-noop.
+    private func runNotionSync(cadence: Cadence) async throws -> String {
+        guard let config = AppConfig.load() else { throw CadenceError.serviceUnavailable("AppConfig") }
+        let dbIds = config.notion.contextDatabases ?? []
+        guard !dbIds.isEmpty else { return "Notion sync skipped — no context databases configured" }
+
+        // Watermark: last successful pull, default to 24h ago on first run.
+        let since: Date = {
+            if let data = FileManager.default.contents(atPath: Self.notionSyncStatePath),
+               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let ts = obj["lastPull"] as? String, let d = ISO8601DateFormatter().date(from: ts) {
+                return d
+            }
+            return Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date()
+        }()
+
+        let processed = try await ingestNotionSince(since, config: config)
+
+        // Advance the watermark only on a clean pull.
+        let now = ISO8601DateFormatter().string(from: Date())
+        if let data = try? JSONSerialization.data(withJSONObject: ["lastPull": now]) {
+            try? data.write(to: URL(fileURLWithPath: Self.notionSyncStatePath))
+        }
+        return processed > 0 ? "Notion diff: \(processed) page(s) updated since last pull" : "Notion diff: nothing new"
+    }
+
+    /// Query every configured context DB for pages edited since `since`, extract reflections, and
+    /// file them. Returns the number of pages that yielded themes. Shared by the diff cadence and
+    /// the nightly reflection ingestion.
+    @discardableResult
+    func ingestNotionSince(_ since: Date, config: AppConfig) async throws -> Int {
+        let notionService = NotionService(config: config.notion)
+        let extractionService = ReflectionExtractionService(config: config.ai)
+        var existingThemes = ReflectionStore.shared.getExistingThemes()
+        var processed = 0
+        for dbId in config.notion.contextDatabases ?? [] {
+            guard let pages = try? await notionService.queryRecentlyEditedPages(databaseId: dbId, since: since) else { continue }
+            for page in pages {
+                let content = page.content ?? page.title
+                guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+                guard let extraction = try? await extractionService.extract(from: content, source: "notion", existingThemes: existingThemes),
+                      !extraction.themes.isEmpty else { continue }
+                ReflectionStore.shared.insertReflection(
+                    source: "notion", sourceId: page.id,
+                    contentSummary: extraction.contentSummary,
+                    themes: extraction.themes,
+                    themeClassifications: extraction.themeClassifications,
+                    openQuestions: extraction.openQuestions,
+                    mentalModelShifts: extraction.mentalModelShifts,
+                    decisions: extraction.decisions, itemThemes: extraction.itemThemes)
+                existingThemes.append(contentsOf: extraction.themes)
+                processed += 1
+            }
+        }
+        return processed
     }
 
     /// Collapse fragmented themes into their true workspaces. Runs after reflection

@@ -18,6 +18,7 @@ enum CadenceActionType: String, Codable, CaseIterable {
     case taskLifecycleScan = "task_lifecycle_scan"
     case reflectionIngestion = "reflection_ingestion"
     case themeConvergence = "theme_convergence"
+    case notionSync = "notion_sync"
 }
 
 // MARK: - Cadence Schedule
