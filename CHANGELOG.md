@@ -5,6 +5,13 @@ All notable changes to Alfred will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.2.1] - 2026-08-15
+
+### Changed
+- **The You-Wiki refreshes 4× a day** — it's now regenerated at the end of each Notion pull
+  (08:00 / 13:00 / 20:00 / 01:00), a cheap deterministic write, so the portrait stays current
+  through the day instead of only at the nightly convergence.
+
 ## [5.2.0] - 2026-08-15
 
 ### Added

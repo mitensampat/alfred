@@ -4,7 +4,7 @@
 
 ![macOS](https://img.shields.io/badge/macOS-13%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9%2B-orange)
-![Version](https://img.shields.io/badge/version-5.2.0-green)
+![Version](https://img.shields.io/badge/version-5.2.1-green)
 
 ---
 
