@@ -2426,7 +2426,12 @@ class HTTPServer {
                 "meetingsToday": meetingsToday,
                 "reliabilityScore": reliabilityScore
             ],
-            "pendingActions": pendingActions
+            "pendingActions": pendingActions,
+            // When this data was actually computed. Stamped before caching, so it travels with
+            // the payload through both cache layers — the client can then report the age of the
+            // DATA rather than the age of its own last request, which is what it was doing
+            // (and which read "synced just now" on top of hours-old cache).
+            "_generated_at": Date().timeIntervalSince1970
         ]
 
         if let goal = topGoal {
