@@ -353,8 +353,19 @@ enum DeskService {
         "members", "core", "cards", "squad", "crew", "chapter", "club", "musketeers",
         // topic / company / placeholder tells that were slipping through as "people"
         "issues", "buyback", "home", "name", "unknown", "notes", "review", "draft",
-        "support", "sales", "finance", "admin", "org", "inc", "ltd", "pvt", "company"
+        "support", "sales", "finance", "admin", "org", "inc", "ltd", "pvt", "company",
+        // topic / meeting / role titles found in the accuracy eval (3-word names surfaced junk)
+        "meeting", "context", "study", "role", "guidance", "practices", "decision", "decison",
+        "strat", "alumni", "residents", "teacher", "service", "filing", "internal", "temp",
+        "official", "debrief", "subscription", "onboarding", "hiring", "marketing", "culture",
+        "brewing", "yoga", "skating", "scrolling", "travel", "credits", "best", "party",
+        "relationship", "context", "debrief"
     ]
+    /// Your own first name — a multi-word title that contains it (not as the leading token) is a
+    /// group/meeting title ("Ankit Sahil Miten", "Nalin Kunal Miten"), not a contact. Computed once.
+    private static let userFirstName: String = {
+        (AppConfig.load()?.user.name.split(separator: " ").first).map { String($0).lowercased() } ?? ""
+    }()
     /// True only for something that reads as a person's name (tenet 1). The desk is thick with
     /// company/room names ("CRED: Card Core", "FACE Members", "3 Musketeers", "Nash CRED"), so
     /// reject the tells: colons, leading digits, ALL-CAPS org acronyms, room words, multi-party.
@@ -380,6 +391,19 @@ enum DeskService {
             let letters = w.filter { $0.isLetter }
             if letters.count >= 3 && letters == letters.uppercased() && letters != letters.lowercased() { return false }
         }
+        // Group / meeting / topic titles that a 3-word allowance let through (from the accuracy eval).
+        let lower = s.lowercased()
+        if s.contains(",") { return false }                              // "Cindy, Miten, Nikolay"
+        if lower.contains(" meet ") || lower.contains(" x ") || s.contains("+") || s.contains("@") { return false }  // "Krish meet Miten", "A x B", "KS + Travel"
+        if s.range(of: "[\\x{1F000}-\\x{1FAFF}\\x{2600}-\\x{27BF}]", options: .regularExpression) != nil { return false }  // emoji ("Benne Cap 🧢")
+        if let c = words.first?.first, c.isLowercase { return false }    // "temp for…", "nothing official…" — a name is Title-Case
+        let phraseStops: Set<String> = ["in", "at", "for", "the", "of", "on", "to", "from", "with"]
+        if words.contains(where: { phraseStops.contains($0.lowercased()) }) { return false }  // "Street in Haridwar"
+        if !userFirstName.isEmpty, words.dropFirst().contains(where: { $0.lowercased() == userFirstName }) { return false }  // "Ankit Sahil Miten"
+        if words.count >= 2, Set(words.map { $0.lowercased() }).count == 1 { return false }   // "Party Party Party"
+        let capPairs = words.filter { $0.count == 2 && $0.allSatisfy { $0.isLetter && $0.isUppercase } }
+        if capPairs.count >= 2 { return false }                          // "GS MS SS", "MS AP SB"
+
         let tokens = Set(s.lowercased().split(whereSeparator: { !$0.isLetter }).map(String.init))
         if !tokens.isDisjoint(with: roomWords) { return false }          // topic/room, not a person
         return true
