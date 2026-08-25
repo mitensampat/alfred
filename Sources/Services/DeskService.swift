@@ -24,6 +24,10 @@ enum DeskService {
     private static let iOweType = "I Owe"
     /// Age in days at which the clock turns hot.
     static let hotAgeDays = 7
+    /// If you've been in contact within this many days, an owed item is NOT "overdue" — you're
+    /// actively engaged, so the card reads "active", not a red clock. This is what stops a stale
+    /// open commitment from flagging someone you talk to every day.
+    static let recentContactDays = 3
 
     // MARK: - Entry point
 
@@ -57,10 +61,16 @@ enum DeskService {
 
             // Ranking: a meeting today is the loudest clock; then a reliable counterparty
             // (your silence lands on them, not on the deal); then raw age.
+            //
+            // `reliabilityKnown` matters as much as the number: with no completed tasks for this
+            // counterparty the 0.5 is a placeholder, not a measurement, and nothing downstream
+            // may narrate it as one.
+            let reliabilityKnown = (stats?.totalTasks ?? 0) > 0
             let reliability = stats?.completionRate ?? 0.5
-            let score = (meetingToday ? 100.0 : 0)
-                + reliability * 30.0
-                + min(Double(age), 30) * 1.5
+            let meetingPoints = meetingToday ? 100.0 : 0
+            let reliabilityPoints = reliability * 30.0
+            let agePoints = min(Double(age), 30) * 1.5
+            let score = meetingPoints + reliabilityPoints + agePoints
 
             scored.append((row: [
                 "id": c.hash,
@@ -75,7 +85,25 @@ enum DeskService {
                 "verbs": verbs(for: c.title),
                 "meeting_today": meetingToday,
                 "reliability": Int((reliability * 100).rounded()),
-                "time_critical": timeCritical(text: c.title, stats: stats)
+                // Distinguishes a measured rate from the 0.5 default, and says how much evidence
+                // is behind it, so the UI can show "no track record yet" instead of a fake 50%.
+                "reliability_known": reliabilityKnown,
+                "reliability_sample": stats?.totalTasks ?? 0,
+                // How sure the extractor was that this is a commitment at all. Already stored per
+                // extraction; surfacing it lets a shaky row be judged rather than just obeyed.
+                "confidence": c.confidence,
+                "time_critical": timeCritical(text: c.title, stats: stats),
+                // The actual arithmetic behind this row's position, so the order is auditable
+                // rather than asserted.
+                "ranking": [
+                    "score": (score * 10).rounded() / 10,
+                    "components": [
+                        ["label": "Meeting today", "points": meetingPoints, "applies": meetingToday],
+                        ["label": reliabilityKnown ? "Counterparty delivers" : "Reliability unknown (assumed average)",
+                         "points": (reliabilityPoints * 10).rounded() / 10, "applies": reliabilityKnown],
+                        ["label": "Age on desk", "points": (agePoints * 10).rounded() / 10, "applies": age > 0]
+                    ]
+                ]
             ], score: score))
         }
         let queue = scored.sorted { $0.score > $1.score }.map { $0.row }
@@ -334,16 +362,19 @@ enum DeskService {
         let s = raw.trimmingCharacters(in: .whitespaces)
         guard !s.isEmpty, !s.hasPrefix("+") else { return false }        // empty / raw phone
         if s.contains(where: { $0.isNumber }) { return false }           // "Grade 5C", "Team 2"
-        if s.contains(":") || s.contains(".") { return false }           // "CRED: Card Core", "Fintechorg.in"
+        if s.contains(":") { return false }                              // "CRED: Card Core"
+        // Reject domain-like names ("Fintechorg.in") but ALLOW initials with periods ("A.K. Sharma").
+        if s.range(of: "\\.(com|in|io|org|net|co|ai|app|dev)\\b", options: [.regularExpression, .caseInsensitive]) != nil { return false }
         let letterCount = s.unicodeScalars.filter { CharacterSet.letters.contains($0) }.count
         guard letterCount >= 2 else { return false }                     // needs real letters
         if s.range(of: "^[0-9a-fA-F]{16,}$", options: .regularExpression) != nil { return false }  // hex JID/id
         if s.contains("<>") || s.contains("|") || s.contains("/") || s.contains(" - ")
             || s.contains(" and ") || s.contains("&") { return false }   // multi-party room titles
         let words = s.split(separator: " ").map(String.init)
-        // Real contacts are overwhelmingly "First Last"; 3+ capitalised tokens is far more often
-        // a group of first names ("Ankit Sahil Miten") than a person. Bias to precision here.
-        if words.count > 2 { return false }
+        // Allow up to three words so real names with a middle name or a "(Acme)" suffix aren't
+        // dropped — the previous 2-word cap silently excluded a lot of legitimate contacts. Four+
+        // tokens is far more often a group of first names than a person, so cap there.
+        if words.count > 3 { return false }
         // An ALL-CAPS token of 3+ letters is an org/acronym (CRED, FACE, HDFC, NBFC), not a name.
         for w in words {
             let letters = w.filter { $0.isLetter }
@@ -395,18 +426,25 @@ enum DeskService {
                 let onT = s.completedTasks - Int((s.overdueRate * Double(s.completedTasks)).rounded())
                 onTime = s.completedTasks <= 20 ? "\(onT)/\(s.completedTasks)" : "\(Int((1 - s.overdueRate) * 100))%"
             } else { onTime = "" }
+            // "Overdue" = you owe them AND the item is old AND you haven't spoken recently.
+            // If you're in active contact (last seen within recentContactDays), it's not overdue —
+            // the promise is live, not rotting — so the card reads "active", not a red clock.
+            let recent = a.lastSeen != Int.max && a.lastSeen <= recentContactDays
+            let overdue = a.owe > 0 && a.oldest >= hotAgeDays && !recent
             var row: [String: Any] = [
                 "name": a.name, "contact_id": a.name,
                 "you_owe": a.owe, "they_owe": a.owed,
-                "oldest_age": a.oldest, "hot": a.oldest >= hotAgeDays,
+                "oldest_age": a.oldest, "hot": overdue, "active": (a.owe > 0 && recent),
                 "on_time": onTime
             ]
             if a.lastSeen != Int.max { row["last_seen_days"] = a.lastSeen }
             return row
         }
         rows.sort {
+            let ah = ($0["hot"] as? Bool ?? false), bh = ($1["hot"] as? Bool ?? false)
+            if ah != bh { return ah }                                   // genuinely overdue first
             let aw = ($0["you_owe"] as? Int ?? 0) > 0, bw = ($1["you_owe"] as? Int ?? 0) > 0
-            if aw != bw { return aw }                                   // people you owe first
+            if aw != bw { return aw }                                   // then anyone you owe
             let ao = $0["oldest_age"] as? Int ?? 0, bo = $1["oldest_age"] as? Int ?? 0
             if ao != bo { return ao > bo }                              // oldest clock first
             let al = $0["last_seen_days"] as? Int ?? 99999, bl = $1["last_seen_days"] as? Int ?? 99999
@@ -579,11 +617,24 @@ enum DeskService {
         }
         let who = top["who"] as? String ?? "This"
         let meeting = (top["meeting_today"] as? Bool) ?? false
+        let known = (top["reliability_known"] as? Bool) ?? false
+        let rate = (top["reliability"] as? Int) ?? 50
+        let age = (top["age_days"] as? Int) ?? 0
+        // Only claim what the data supports. This previously said "because they deliver" for
+        // EVERY top row without a meeting — including counterparties with no track record at all
+        // (the 0.5 default) and ones whose measured completion rate was poor. Stating a fact
+        // about a person that Alfred's own numbers contradict is the fastest way to lose the user.
         let text: String
         if meeting {
             text = "\(who) is first because you see \(pronounObject(who)) today — the cost of your silence lands in the room."
+        } else if known && rate >= 70 {
+            text = "\(who) is first because they deliver — \(rate)% of what they take on lands, so the cost of your silence falls on \(pronounObject(who)), not on the deal."
+        } else if known && rate < 40 {
+            text = "\(who) is first because this one keeps slipping — \(rate)% completion between you. It needs a decision, not another nudge."
+        } else if age > 0 {
+            text = "\(who) is first because it is the oldest thing on your desk — \(age) day\(age == 1 ? "" : "s") with no track record to go on yet."
         } else {
-            text = "\(who) is first because they deliver — the cost of your silence lands on \(pronounObject(who)), not on the deal."
+            text = "\(who) is first because nothing else on the desk has a louder clock."
         }
         // Cite a real self-model pattern when one exists.
         let pattern = topPattern()

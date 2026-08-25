@@ -246,6 +246,7 @@
       .dk-pcard-meta{ font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--dk-n600); }
       .dk-pcard-clock{ color:var(--dk-n700); }
       .dk-pcard-clock.hot{ color:var(--dk-hot); }
+      .dk-pcard-clock.active{ color:var(--dk-accent); }
       .dk-pcard-quiet{ color:var(--dk-n400); }
       /* ── Coach surface ── */
       .dk-coach-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:17px 24px 13px; border-bottom:1px solid var(--dk-divider); }
@@ -4549,23 +4550,57 @@
             return Math.floor(hrs / 24) + 'd ago';
         }
 
-        // Sync indicator: shows how fresh the data is
-        let lastSyncTimestamp = null;
-        function markSynced() {
-            lastSyncTimestamp = Date.now();
+        // Sync indicator: how fresh the DATA is, and whether the last refresh actually worked.
+        //
+        // This used to stamp Date.now() whenever the fetch settled — including when it settled as
+        // a REJECTION — so it read "synced just now" while the screen showed hours-old cache, or
+        // showed nothing new at all. Age now comes from the server's `_generated_at`, which rides
+        // through both cache layers, and a stale-while-revalidate or failed load says so plainly.
+        let lastSyncTimestamp = null;      // when the DATA was computed, per the server
+        let syncState = 'unknown';         // 'live' | 'stale' | 'failed'
+
+        function syncAgeLabel(ts) {
+            const mins = Math.floor((Date.now() - ts) / 60000);
+            if (mins < 1) return 'just now';
+            if (mins < 60) return mins + 'm old';
+            const hrs = Math.floor(mins / 60);
+            return hrs < 24 ? hrs + 'h old' : Math.floor(hrs / 24) + 'd old';
+        }
+
+        function markSynced(payload, ok) {
+            const gen = payload && payload._generated_at;
+            if (gen) lastSyncTimestamp = gen * 1000;
+            else if (ok) lastSyncTimestamp = Date.now();
+            // A failed refresh deliberately leaves lastSyncTimestamp alone: what's on screen is
+            // whatever we already had, and its age must keep counting up rather than reset.
+            if (!ok) syncState = 'failed';
+            else if (payload && payload._stale) syncState = 'stale';
+            else syncState = 'live';
             updateSyncIndicator();
         }
+
         function updateSyncIndicator() {
             const el = document.getElementById('syncIndicator');
             if (!el) return;
-            if (!lastSyncTimestamp) { el.textContent = ''; return; }
-            const age = Date.now() - lastSyncTimestamp;
-            const mins = Math.floor(age / 60000);
-            if (mins < 1) el.textContent = 'synced just now';
-            else if (mins < 60) el.textContent = 'synced ' + mins + 'm ago';
-            else el.textContent = 'synced ' + Math.floor(mins / 60) + 'h ago';
-            // Turn amber if stale (>30 min)
+            if (syncState === 'failed') {
+                el.textContent = lastSyncTimestamp
+                    ? 'refresh failed \u00b7 ' + syncAgeLabel(lastSyncTimestamp)
+                    : 'refresh failed';
+                el.style.color = 'var(--accent-danger, #d9534f)';
+                el.title = 'Could not reach Alfred. Tap to retry.';
+                return;
+            }
+            if (!lastSyncTimestamp) { el.textContent = ''; el.title = 'Tap to refresh'; return; }
+            if (syncState === 'stale') {
+                el.textContent = syncAgeLabel(lastSyncTimestamp) + ' \u00b7 refreshing\u2026';
+                el.style.color = 'var(--accent-warning, #f0a030)';
+                el.title = 'Showing cached data while Alfred refreshes in the background.';
+                return;
+            }
+            const mins = Math.floor((Date.now() - lastSyncTimestamp) / 60000);
+            el.textContent = 'synced ' + syncAgeLabel(lastSyncTimestamp);
             el.style.color = mins > 30 ? 'var(--accent-warning, #f0a030)' : 'var(--ink-faint)';
+            el.title = 'Tap to refresh';
         }
         // Update sync indicator every 30 seconds
         setInterval(updateSyncIndicator, 30000);
@@ -7152,7 +7187,9 @@
             }
 
             updateLastActive();
-            markSynced();
+            // Report what actually happened: the payload's own age, whether the server served it
+            // stale, and whether the fetch failed outright.
+            markSynced(pulseData, pulseResult.status === 'fulfilled');
 
             // Retry on failure after delay
             if (pulseResult.status === 'rejected' && (!cachedPulse || !cachedPulse.data)) {
@@ -11259,7 +11296,7 @@
             const all = (_deskData && _deskData.people) || [];
             const q = (_deskPeopleFilter || '').toLowerCase().trim();
             const people = q ? all.filter(p => (p.name || '').toLowerCase().includes(q)) : all;
-            const CAP = q ? 400 : 60;
+            const CAP = q ? people.length : 200;   // search covers everyone; default shows the top 200
             const shown = people.slice(0, CAP);
             const waiting = all.filter(p => (p.you_owe || 0) > 0).length;
             let html = `<div class="dk-sec-head">
@@ -11272,7 +11309,11 @@
             for (const p of shown){
                 const owe = p.you_owe || 0, owed = p.they_owe || 0;
                 let clock;
-                if (owe > 0) clock = `<span class="dk-pcard-clock ${p.hot?'hot':''}">${p.oldest_age}d · you owe ${owe}</span>`;
+                if (owe > 0) {
+                    if (p.hot) clock = `<span class="dk-pcard-clock hot">${p.oldest_age}d · you owe ${owe}</span>`;        // owed AND gone quiet
+                    else if (p.active) clock = `<span class="dk-pcard-clock active">you owe ${owe} · active</span>`;        // owed but in live contact
+                    else clock = `<span class="dk-pcard-clock">you owe ${owe}</span>`;
+                }
                 else if (owed > 0) clock = `<span class="dk-pcard-clock">they owe you ${owed}</span>`;
                 else if (p.last_seen_days != null) clock = `<span class="dk-pcard-quiet">${p.last_seen_days}d quiet</span>`;
                 else clock = `<span class="dk-pcard-quiet">no open items</span>`;
