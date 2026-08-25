@@ -806,43 +806,69 @@ class NotionService {
         }
     }
 
-    /// Fetch content blocks for a note page
-    private func fetchNoteContent(pageId: String) async throws -> String {
+    /// Fetch content blocks for a note page.
+    ///
+    /// Paginated: a page is not one 50-block request. Stopping at the first block page
+    /// silently truncated long notes, and the truncation was invisible to the caller.
+    /// Fails loud on an API error rather than returning "" — an empty string is
+    /// indistinguishable from a genuinely empty page, and ingestion treats empty pages as
+    /// "nothing to do" and advances its watermark past them.
+    ///
+    /// Note: child blocks nested under toggles/columns are still not followed. That needs a
+    /// recursive walk and is a separate change.
+    private func fetchNoteContent(pageId: String, maxChars: Int = 1500) async throws -> String {
         let formattedId = formatNotionId(pageId)
-        let url = URL(string: "https://api.notion.com/v1/blocks/\(formattedId)/children?page_size=50")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            return ""
-        }
-
-        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        let results = json?["results"] as? [[String: Any]] ?? []
-
         var contentParts: [String] = []
+        var startCursor: String? = nil
+        var pagesFetched = 0
+        let maxBlockPages = 25   // 2,500 blocks — a backstop against a pathological page
 
-        for block in results {
-            guard let blockType = block["type"] as? String else { continue }
+        repeat {
+            var components = "https://api.notion.com/v1/blocks/\(formattedId)/children?page_size=100"
+            if let cursor = startCursor {
+                components += "&start_cursor=\(cursor)"
+            }
+            guard let url = URL(string: components) else { break }
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
 
-            // Extract text from various block types
-            if let blockContent = block[blockType] as? [String: Any],
-               let richText = blockContent["rich_text"] as? [[String: Any]] {
-                let text = richText.compactMap { $0["plain_text"] as? String }.joined()
-                if !text.isEmpty {
-                    contentParts.append(text)
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+                throw NSError(domain: "NotionService", code: 17, userInfo: [
+                    NSLocalizedDescriptionKey: "Failed to fetch blocks for page \(pageId): \(errorBody)"
+                ])
+            }
+
+            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let results = json?["results"] as? [[String: Any]] ?? []
+
+            for block in results {
+                guard let blockType = block["type"] as? String else { continue }
+
+                // Extract text from various block types
+                if let blockContent = block[blockType] as? [String: Any],
+                   let richText = blockContent["rich_text"] as? [[String: Any]] {
+                    let text = richText.compactMap { $0["plain_text"] as? String }.joined()
+                    if !text.isEmpty {
+                        contentParts.append(text)
+                    }
                 }
             }
-        }
 
-        // Return first 1500 characters to keep context manageable
+            pagesFetched += 1
+            let hasMore = json?["has_more"] as? Bool ?? false
+            startCursor = hasMore ? (json?["next_cursor"] as? String) : nil
+        } while startCursor != nil && pagesFetched < maxBlockPages
+
+        // Cap the text so extraction context (and cost) stays bounded. Callers that feed the
+        // self-model pass a larger budget than callers that only need a snippet.
         let fullContent = contentParts.joined(separator: "\n")
-        if fullContent.count > 1500 {
-            return String(fullContent.prefix(1500)) + "..."
+        if fullContent.count > maxChars {
+            return String(fullContent.prefix(maxChars)) + "..."
         }
         return fullContent
     }
@@ -907,51 +933,83 @@ class NotionService {
         }
     }
 
-    /// Query pages edited since a given date (for reflection ingestion)
-    func queryRecentlyEditedPages(databaseId: String, since: Date) async throws -> [NotionNote] {
+    /// Query pages edited since a given date (for reflection ingestion).
+    ///
+    /// Fully paginated and fail-loud. This previously asked for a single `page_size: 20`
+    /// window sorted newest-first and returned `[]` on any API error. Callers advance a sync
+    /// watermark from this result, so on a busy editing day the 21st-newest page was dropped
+    /// and then permanently skipped — the wiki was built on a silently truncated corpus.
+    ///
+    /// - Parameter contentMaxChars: text budget per page handed to extraction.
+    func queryEditedPageBatch(databaseId: String, since: Date, contentMaxChars: Int = 6000) async throws -> NotionEditedPageBatch {
         let formattedId = formatNotionId(databaseId)
         let url = URL(string: "https://api.notion.com/v1/databases/\(formattedId)/query")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         let sinceStr = formatter.string(from: since)
 
-        let body: [String: Any] = [
-            "filter": [
-                "timestamp": "last_edited_time",
-                "last_edited_time": [
-                    "after": sinceStr
-                ]
-            ],
-            "sorts": [
-                [
+        // Ascending: if we ever do stop early, we stop at the NEWEST edits, which the next
+        // run's watermark will still cover — rather than at the oldest, which it would not.
+        var rawPages: [[String: Any]] = []
+        var startCursor: String? = nil
+        var requestCount = 0
+        let maxRequests = 20   // 2,000 pages per database per run
+
+        repeat {
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+            var body: [String: Any] = [
+                "filter": [
                     "timestamp": "last_edited_time",
-                    "direction": "descending"
-                ]
-            ],
-            "page_size": 20
-        ]
+                    "last_edited_time": [
+                        "after": sinceStr
+                    ]
+                ],
+                "sorts": [
+                    [
+                        "timestamp": "last_edited_time",
+                        "direction": "ascending"
+                    ]
+                ],
+                "page_size": 100
+            ]
+            if let cursor = startCursor {
+                body["start_cursor"] = cursor
+            }
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let (data, response) = try await URLSession.shared.data(for: request)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+                throw NSError(domain: "NotionService", code: 18, userInfo: [
+                    NSLocalizedDescriptionKey: "Failed to query edited pages in \(databaseId): \(errorBody)"
+                ])
+            }
 
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            return []
+            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            rawPages.append(contentsOf: json?["results"] as? [[String: Any]] ?? [])
+
+            requestCount += 1
+            let hasMore = json?["has_more"] as? Bool ?? false
+            startCursor = hasMore ? (json?["next_cursor"] as? String) : nil
+        } while startCursor != nil && requestCount < maxRequests
+
+        let truncated = startCursor != nil
+        if truncated {
+            print("⚠️ Notion: hit the \(maxRequests)-request cap for database \(databaseId); more edited pages remain")
         }
 
-        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        let results = json?["results"] as? [[String: Any]] ?? []
-
-        // Parse pages and fetch content in parallel
         var notes: [NotionNote] = []
+        var failedPageIds: [String] = []
+        var firstFailureAt: Date? = nil
 
-        for result in results {
+        for result in rawPages {
             guard let id = result["id"] as? String,
                   let properties = result["properties"] as? [String: Any] else {
                 continue
@@ -975,13 +1033,30 @@ class NotionService {
                 lastEdited = isoFormatter.date(from: lastEditedStr) ?? Date()
             }
 
-            // Fetch actual content
-            let content = (try? await fetchNoteContent(pageId: id)) ?? ""
-
-            notes.append(NotionNote(id: id, title: title, content: content, lastEdited: lastEdited))
+            // A block-fetch failure is recorded, not swallowed and not fatal. Swallowing it
+            // produced an empty page that ingestion skipped and advanced past; making it fatal
+            // would let one permanently-broken page wedge the whole database.
+            do {
+                let content = try await fetchNoteContent(pageId: id, maxChars: contentMaxChars)
+                notes.append(NotionNote(id: id, title: title, content: content, lastEdited: lastEdited))
+            } catch {
+                failedPageIds.append(id)
+                if firstFailureAt == nil || lastEdited < firstFailureAt! { firstFailureAt = lastEdited }
+                print("⚠️ Notion: could not read page \(id) in \(databaseId): \(error.localizedDescription)")
+            }
         }
 
-        return notes
+        return NotionEditedPageBatch(
+            notes: notes,
+            failedPageIds: failedPageIds,
+            firstFailureAt: firstFailureAt,
+            truncated: truncated
+        )
+    }
+
+    /// Compat wrapper for callers that only want the readable pages.
+    func queryRecentlyEditedPages(databaseId: String, since: Date) async throws -> [NotionNote] {
+        try await queryEditedPageBatch(databaseId: databaseId, since: since).notes
     }
 
     /// Rank notes by relevance to search keywords

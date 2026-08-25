@@ -55,31 +55,58 @@ class CadenceRunner {
         (NSHomeDirectory() as NSString).appendingPathComponent(".alfred/notion_sync_state.json")
     }
 
+    /// Per-database sync watermarks, read from disk.
+    ///
+    /// Older state files carried a single shared `lastPull`; it is still honoured as the
+    /// starting point for any database that has no watermark of its own.
+    private static func loadNotionWatermarks(databaseIds: [String]) -> [String: Date] {
+        let iso = ISO8601DateFormatter()
+        let fallback = Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date()
+
+        var shared: Date? = nil
+        var perDatabase: [String: Date] = [:]
+        if let data = FileManager.default.contents(atPath: notionSyncStatePath),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let ts = obj["lastPull"] as? String { shared = iso.date(from: ts) }
+            if let per = obj["perDatabase"] as? [String: String] {
+                for (dbId, ts) in per {
+                    if let d = iso.date(from: ts) { perDatabase[dbId] = d }
+                }
+            }
+        }
+
+        var result: [String: Date] = [:]
+        for dbId in databaseIds {
+            result[dbId] = perDatabase[dbId] ?? shared ?? fallback
+        }
+        return result
+    }
+
+    private static func saveNotionWatermarks(_ watermarks: [String: Date]) {
+        let iso = ISO8601DateFormatter()
+        // `lastPull` is the OLDEST per-database watermark, so a downgrade (or any reader still
+        // using the shared value) re-pulls rather than skipping a database that lagged behind.
+        let payload: [String: Any] = [
+            "lastPull": iso.string(from: watermarks.values.min() ?? Date()),
+            "perDatabase": watermarks.mapValues { iso.string(from: $0) }
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: payload) {
+            try? data.write(to: URL(fileURLWithPath: notionSyncStatePath))
+        }
+    }
+
     /// Incremental ("diff only") pull of the Notion Second Brain: extract + file only the pages
-    /// edited since the last successful pull. A shared watermark across all four daily runs means
-    /// each run grabs just what changed — and a catch-up run after the Mac wakes is a near-noop.
+    /// edited since the last successful pull. A per-database watermark across all four daily runs
+    /// means each run grabs just what changed — and a catch-up run after the Mac wakes is a
+    /// near-noop — without a failure in one database costing pages in another.
     private func runNotionSync(cadence: Cadence) async throws -> String {
         guard let config = AppConfig.load() else { throw CadenceError.serviceUnavailable("AppConfig") }
         let dbIds = config.notion.contextDatabases ?? []
         guard !dbIds.isEmpty else { return "Notion sync skipped — no context databases configured" }
 
-        // Watermark: last successful pull, default to 24h ago on first run.
-        let since: Date = {
-            if let data = FileManager.default.contents(atPath: Self.notionSyncStatePath),
-               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let ts = obj["lastPull"] as? String, let d = ISO8601DateFormatter().date(from: ts) {
-                return d
-            }
-            return Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date()
-        }()
-
-        let processed = try await ingestNotionSince(since, config: config)
-
-        // Advance the watermark only on a clean pull.
-        let now = ISO8601DateFormatter().string(from: Date())
-        if let data = try? JSONSerialization.data(withJSONObject: ["lastPull": now]) {
-            try? data.write(to: URL(fileURLWithPath: Self.notionSyncStatePath))
-        }
+        let watermarks = Self.loadNotionWatermarks(databaseIds: dbIds)
+        let result = await ingestNotion(watermarks: watermarks, config: config)
+        Self.saveNotionWatermarks(result.newWatermarks)
 
         // Refresh the You-Wiki on the same 4×/day cadence as the pull. It's a cheap deterministic
         // regenerate (no LLM), so the portrait stays current through the day — reflecting freshly
@@ -87,38 +114,100 @@ class CadenceRunner {
         // nightly convergence.
         UserWikiComposer.write()
 
-        return processed > 0 ? "Notion diff: \(processed) page(s) updated; You-Wiki refreshed" : "Notion diff: nothing new; You-Wiki refreshed"
+        var parts: [String] = []
+        parts.append(result.processed > 0 ? "Notion diff: \(result.processed) page(s) updated"
+                                          : "Notion diff: nothing new")
+        if !result.problems.isEmpty {
+            parts.append("retrying next run — \(result.problems.joined(separator: "; "))")
+        }
+        parts.append("You-Wiki refreshed")
+        return parts.joined(separator: "; ")
     }
 
-    /// Query every configured context DB for pages edited since `since`, extract reflections, and
-    /// file them. Returns the number of pages that yielded themes. Shared by the diff cadence and
-    /// the nightly reflection ingestion.
-    @discardableResult
-    func ingestNotionSince(_ since: Date, config: AppConfig) async throws -> Int {
+    /// The outcome of one incremental Notion pull.
+    struct NotionIngestOutcome {
+        var processed = 0
+        /// Where each database's watermark should now sit. A database that lost pages keeps a
+        /// watermark behind the loss so the next run re-reads them, instead of skipping forever.
+        var newWatermarks: [String: Date] = [:]
+        /// Human-readable descriptions of anything that did not go cleanly.
+        var problems: [String] = []
+    }
+
+    /// Query each configured context DB for pages edited since ITS OWN watermark, extract
+    /// reflections, and file them.
+    ///
+    /// A watermark advances to "now" only when that database was fully paginated AND every page
+    /// in it was read and extracted. Otherwise it advances only to just before the earliest
+    /// failure, so the failed pages are re-queued next run. This is the difference between
+    /// "nothing new" meaning nothing changed and "nothing new" meaning we lost the changes.
+    func ingestNotion(watermarks: [String: Date], config: AppConfig) async -> NotionIngestOutcome {
         let notionService = NotionService(config: config.notion)
         let extractionService = ReflectionExtractionService(config: config.ai)
         var existingThemes = ReflectionStore.shared.getExistingThemes()
-        var processed = 0
-        for dbId in config.notion.contextDatabases ?? [] {
-            guard let pages = try? await notionService.queryRecentlyEditedPages(databaseId: dbId, since: since) else { continue }
-            for page in pages {
-                let content = page.content ?? page.title
+        var outcome = NotionIngestOutcome()
+        let runStartedAt = Date()
+
+        for (dbId, since) in watermarks {
+            let batch: NotionEditedPageBatch
+            do {
+                batch = try await notionService.queryEditedPageBatch(databaseId: dbId, since: since)
+            } catch {
+                // The whole database is unreadable — hold its watermark exactly where it was.
+                outcome.newWatermarks[dbId] = since
+                outcome.problems.append("database \(dbId.prefix(8))… unreachable (\(error.localizedDescription))")
+                continue
+            }
+
+            // Extraction failures block the watermark the same way read failures do.
+            var extractionFailureAt: Date? = nil
+            for page in batch.notes {
+                let content = page.content.isEmpty ? page.title : page.content
                 guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-                guard let extraction = try? await extractionService.extract(from: content, source: "notion", existingThemes: existingThemes),
-                      !extraction.themes.isEmpty else { continue }
-                ReflectionStore.shared.insertReflection(
-                    source: "notion", sourceId: page.id,
-                    contentSummary: extraction.contentSummary,
-                    themes: extraction.themes,
-                    themeClassifications: extraction.themeClassifications,
-                    openQuestions: extraction.openQuestions,
-                    mentalModelShifts: extraction.mentalModelShifts,
-                    decisions: extraction.decisions, itemThemes: extraction.itemThemes)
-                existingThemes.append(contentsOf: extraction.themes)
-                processed += 1
+                do {
+                    let extraction = try await extractionService.extract(
+                        from: content, source: "notion", existingThemes: existingThemes)
+                    guard !extraction.themes.isEmpty else { continue }
+                    ReflectionStore.shared.insertReflection(
+                        source: "notion", sourceId: page.id,
+                        contentSummary: extraction.contentSummary,
+                        themes: extraction.themes,
+                        themeClassifications: extraction.themeClassifications,
+                        openQuestions: extraction.openQuestions,
+                        mentalModelShifts: extraction.mentalModelShifts,
+                        decisions: extraction.decisions, itemThemes: extraction.itemThemes)
+                    existingThemes.append(contentsOf: extraction.themes)
+                    outcome.processed += 1
+                } catch {
+                    if extractionFailureAt == nil || page.lastEdited < extractionFailureAt! {
+                        extractionFailureAt = page.lastEdited
+                    }
+                    print("⚠️ Notion: extraction failed for page \(page.id): \(error.localizedDescription)")
+                }
+            }
+
+            // The watermark may only reach the earliest thing that went wrong.
+            let blockers = [batch.firstFailureAt, extractionFailureAt].compactMap { $0 }
+            if let earliest = blockers.min() {
+                // One second behind the failed page, so an `after` filter still returns it.
+                outcome.newWatermarks[dbId] = earliest.addingTimeInterval(-1)
+            } else if batch.truncated {
+                // We saw a prefix of the edits; resume from the newest page we actually read.
+                outcome.newWatermarks[dbId] = batch.notes.last?.lastEdited ?? since
+            } else {
+                outcome.newWatermarks[dbId] = runStartedAt
+            }
+
+            var dbProblems: [String] = []
+            if !batch.failedPageIds.isEmpty { dbProblems.append("\(batch.failedPageIds.count) unreadable") }
+            if extractionFailureAt != nil { dbProblems.append("extraction errors") }
+            if batch.truncated { dbProblems.append("more pages remain") }
+            if !dbProblems.isEmpty {
+                outcome.problems.append("database \(dbId.prefix(8))…: \(dbProblems.joined(separator: ", "))")
             }
         }
-        return processed
+
+        return outcome
     }
 
     /// Collapse fragmented themes into their true workspaces. Runs after reflection

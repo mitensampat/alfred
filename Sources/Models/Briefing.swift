@@ -76,6 +76,23 @@ struct NotionNote: Codable {
     let lastEdited: Date
 }
 
+/// The result of one incremental "pages edited since X" pull for a single database.
+///
+/// Carries enough for the caller to decide whether it is safe to advance that database's sync
+/// watermark: a pull that lost pages must not be recorded as a clean pull.
+struct NotionEditedPageBatch {
+    /// Readable pages, ascending by `lastEdited`.
+    let notes: [NotionNote]
+    /// Pages Notion listed but whose content could not be read.
+    let failedPageIds: [String]
+    /// `lastEdited` of the earliest failed page — the point a watermark must not advance past.
+    let firstFailureAt: Date?
+    /// True when the request cap was hit and more edited pages remain unseen.
+    let truncated: Bool
+
+    var isClean: Bool { failedPageIds.isEmpty && !truncated }
+}
+
 struct NotionTask: Codable {
     let id: String
     let title: String
