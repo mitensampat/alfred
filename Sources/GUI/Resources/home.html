@@ -3944,6 +3944,10 @@
                         <span style="font-size:11px;font-weight:700;letter-spacing:.06em;">TIDY</span>
                         <span id="tidyCount" style="font-size:10px;font-weight:800;background:var(--dk-hot);color:#fff;border-radius:9px;padding:1px 6px;min-width:16px;text-align:center;">0</span>
                     </button>
+                    <button type="button" class="dk-icon-btn" id="deskSyncPill" onclick="forceFullRefresh()" title="Data freshness \u2014 tap to refresh" style="width:auto;padding:0 9px;gap:6px;">
+                        <span id="deskSyncDot" style="width:8px;height:8px;border-radius:50%;background:var(--dk-n400);display:inline-block;"></span>
+                        <span id="deskSyncLabel" style="font-size:11px;font-weight:700;letter-spacing:.06em;">\u2014</span>
+                    </button>
                     <button type="button" class="dk-icon-btn" id="waStatusBtn" onclick="waPairOpen()" title="WhatsApp connection" style="width:auto;padding:0 9px;gap:6px;">
                         <span id="waDot" style="width:8px;height:8px;border-radius:50%;background:var(--dk-n400);display:inline-block;"></span>
                         <span style="font-size:11px;font-weight:700;letter-spacing:.06em;">WA</span>
@@ -4579,7 +4583,49 @@
             updateSyncIndicator();
         }
 
+        // The Desk masthead freshness pill. #mainTopBar (which holds #syncIndicator) is set to
+        // display:none at app init and again on every surface switch, and never re-shown — the Desk
+        // rebuild replaced it — and a CSS rule hides #syncIndicator below 780px anyway. So the
+        // corrected indicator is invisible on every surface. This renders the SAME state where the
+        // user can actually see it, from the same variables, so the two cannot drift.
+        //
+        // Named deskSync*, not deskFresh*: deskFreshness() is already a global function for the
+        // "what changed since you last looked" ribbon, which is a different idea entirely.
+        function updateDeskSyncPill() {
+            const dot = document.getElementById('deskSyncDot');
+            const label = document.getElementById('deskSyncLabel');
+            const btn = document.getElementById('deskSyncPill');
+            if (!dot || !label || !btn) return;
+            if (syncState === 'failed') {
+                dot.style.background = 'var(--dk-hot)';
+                label.textContent = 'STALE';
+                btn.title = 'Last refresh failed'
+                    + (lastSyncTimestamp ? ' \u2014 showing data from ' + syncAgeLabel(lastSyncTimestamp) : '')
+                    + '. Tap to retry.';
+                return;
+            }
+            if (!lastSyncTimestamp) {
+                dot.style.background = 'var(--dk-n400)';
+                label.textContent = '\u2014';
+                btn.title = 'Tap to refresh';
+                return;
+            }
+            const mins = Math.floor((Date.now() - lastSyncTimestamp) / 60000);
+            if (syncState === 'stale') {
+                dot.style.background = 'var(--dk-accent)';
+                label.textContent = 'SYNCING';
+                btn.title = 'Showing data from ' + syncAgeLabel(lastSyncTimestamp)
+                    + ' while Alfred refreshes in the background.';
+                return;
+            }
+            // Accent while genuinely current; past 30 minutes it reads as aging.
+            dot.style.background = mins > 30 ? 'var(--dk-hot)' : 'var(--dk-accent)';
+            label.textContent = mins < 1 ? 'LIVE' : (mins < 60 ? mins + 'M' : Math.floor(mins / 60) + 'H');
+            btn.title = 'Data is ' + syncAgeLabel(lastSyncTimestamp) + '. Tap to refresh.';
+        }
+
         function updateSyncIndicator() {
+            updateDeskSyncPill();
             const el = document.getElementById('syncIndicator');
             if (!el) return;
             if (syncState === 'failed') {
