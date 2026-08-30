@@ -341,7 +341,7 @@ class AlfredService: ObservableObject {
                             type: commitment.type.rawValue,
                             title: commitment.title,
                             counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy,
-                            confidence: 0.8
+                            confidence: commitment.confidence
                         )
                         continue
                     }
@@ -355,7 +355,7 @@ class AlfredService: ObservableObject {
                         type: commitment.type.rawValue,
                         title: commitment.title,
                         counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy,
-                        confidence: 0.8
+                        confidence: commitment.confidence
                     )
                 }
 
@@ -600,7 +600,7 @@ class AlfredService: ObservableObject {
                             type: commitment.type.rawValue,
                             title: commitment.title,
                             counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy,
-                            confidence: 0.8
+                            confidence: commitment.confidence
                         )
                         continue
                     }

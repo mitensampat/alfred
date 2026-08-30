@@ -19,6 +19,13 @@ struct Commitment: Codable, Identifiable {
     let followupScheduled: Date?
     var notionId: String?  // Link to Notion page
     var notionTaskId: String?  // Link to related task
+    /// How sure the extractor was that this is a real commitment (0.0-1.0), as returned by the
+    /// model. The extraction prompt asks for this explicitly and grades it (0.6-0.7 vague,
+    /// 0.8+ specific and unambiguous), and the response decoder has always parsed it — but this
+    /// struct had nowhere to put it, so it was dropped here and every persisted row got a
+    /// hard-coded 0.8. Defaulted so callers that genuinely have no model value keep the old
+    /// behaviour rather than inventing a number.
+    let confidence: Double
     let uniqueHash: String
     let createdAt: Date
     var lastUpdated: Date
@@ -66,6 +73,7 @@ struct Commitment: Codable, Identifiable {
         dueDate: Date?,
         priority: UrgencyLevel,
         originalContext: String,
+        confidence: Double = 0.8,
         followupScheduled: Date? = nil,
         notionId: String? = nil,
         notionTaskId: String? = nil,
@@ -84,6 +92,7 @@ struct Commitment: Codable, Identifiable {
         self.dueDate = dueDate
         self.priority = priority
         self.originalContext = originalContext
+        self.confidence = confidence
         self.followupScheduled = followupScheduled
         self.notionId = notionId
         self.notionTaskId = notionTaskId

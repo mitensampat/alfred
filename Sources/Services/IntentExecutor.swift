@@ -379,14 +379,14 @@ class IntentExecutor {
                                 _ = try await orchestrator.notionServicePublic.createCommitmentInTasks(commitment)
                                 totalSaved += 1
 
-                                // Record extraction (use default confidence of 0.8 for AI-detected commitments)
+                                // Record extraction, carrying the model's own confidence for this commitment
                                 tracker.recordExtraction(
                                     hash: commitment.uniqueHash,
                                     threadId: threadId,
                                     type: commitment.type.rawValue,
                                     title: commitment.title,
                                     counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy,
-                                    confidence: 0.8
+                                    confidence: commitment.confidence
                                 )
                             }
                         }
@@ -419,14 +419,14 @@ class IntentExecutor {
                             _ = try await orchestrator.notionServicePublic.createCommitmentInTasks(commitment)
                             totalSaved += 1
 
-                            // Record extraction (use default confidence of 0.8 for AI-detected commitments)
+                            // Record extraction, carrying the model's own confidence for this commitment
                             tracker.recordExtraction(
                                 hash: commitment.uniqueHash,
                                 threadId: threadId,
                                 type: commitment.type.rawValue,
                                 title: commitment.title,
                                 counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy,
-                                confidence: 0.8
+                                confidence: commitment.confidence
                             )
                         }
                     }

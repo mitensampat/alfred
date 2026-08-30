@@ -320,7 +320,7 @@ class AlfredService: ObservableObject {
                             type: commitment.type.rawValue,
                             title: commitment.title,
                             counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy,
-                            confidence: 0.8
+                            confidence: commitment.confidence
                         )
                         print("⏭️  Skipping duplicate (exists in Notion): \(commitment.title)")
                         continue
@@ -336,7 +336,7 @@ class AlfredService: ObservableObject {
                         type: commitment.type.rawValue,
                         title: commitment.title,
                         counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy,
-                        confidence: 0.8
+                        confidence: commitment.confidence
                     )
 
                     // Record commitment creation for workflow learning
@@ -410,11 +410,11 @@ class AlfredService: ObservableObject {
                                 if tracker.hasExtractedCommitment(hash: commitment.uniqueHash) { continue }
                                 let existingCommitment = try await bgOrchestrator.notionServicePublic.findCommitmentByHashInTasks(commitment.uniqueHash)
                                 if existingCommitment != nil {
-                                    tracker.recordExtraction(hash: commitment.uniqueHash, threadId: threadId, type: commitment.type.rawValue, title: commitment.title, counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy, confidence: 0.8)
+                                    tracker.recordExtraction(hash: commitment.uniqueHash, threadId: threadId, type: commitment.type.rawValue, title: commitment.title, counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy, confidence: commitment.confidence)
                                     continue
                                 }
                                 _ = try await bgOrchestrator.notionServicePublic.createCommitmentInTasks(commitment)
-                                tracker.recordExtraction(hash: commitment.uniqueHash, threadId: threadId, type: commitment.type.rawValue, title: commitment.title, counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy, confidence: 0.8)
+                                tracker.recordExtraction(hash: commitment.uniqueHash, threadId: threadId, type: commitment.type.rawValue, title: commitment.title, counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy, confidence: commitment.confidence)
                             }
 
                             let allMsgs = threadMessages.map { $0.message }
@@ -838,7 +838,7 @@ class AlfredService: ObservableObject {
                             type: commitment.type.rawValue,
                             title: commitment.title,
                             counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy,
-                            confidence: 0.8
+                            confidence: commitment.confidence
                         )
                         continue
                     }

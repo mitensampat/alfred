@@ -106,7 +106,9 @@ class CommitmentAnalyzer {
                 sourceThread: threadName,
                 dueDate: dueDate,
                 priority: priority,
-                originalContext: context.isEmpty ? extracted.context : context
+                originalContext: context.isEmpty ? extracted.context : context,
+                // Carry the model's own confidence through instead of dropping it here.
+                confidence: extracted.confidence
             )
         }
 
