@@ -144,8 +144,8 @@ enum ScheduleDryRun {
 
         // 9) A doubled prefix (the palette and the self-chat both let one through) must not land
         //    inside the name.
-        add("a doubled @schedule prefix parses to the bare name",
-            (try? ScheduleCommandParser.parse("@schedule arundhati 30m").name) == "arundhati")
+        let doubled = (try? ScheduleCommandParser.parse("@schedule arundhati 30m"))?.name ?? ""
+        add("a doubled @schedule prefix parses to the bare name", doubled == "arundhati")
 
         return results
     }

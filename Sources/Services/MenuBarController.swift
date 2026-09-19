@@ -41,6 +41,10 @@ class MenuBarController: NSObject, NSMenuDelegate {
     func setup() {
         setupMenuBar()
         startServer()
+        // The @schedule watcher (self-chat poll + counterpart replies + expiry). This is the
+        // production path — the LaunchAgent starts Alfred with no arguments, which lands here — so
+        // it must not sit behind the scheduler's config guard. Guarded itself: one loop per process.
+        ScheduleService.shared.startWatcher()
         startScheduler()
         setupLearningNotifications()
 
@@ -335,10 +339,6 @@ class MenuBarController: NSObject, NSMenuDelegate {
         Task {
             await checkAndRunScheduledTasks()
         }
-
-        // The @schedule watcher (self-chat poll + counterpart replies + expiry). Guarded, so it
-        // runs once even if another entry point already started it.
-        ScheduleService.shared.startWatcher()
     }
 
     private func stopScheduler() {
