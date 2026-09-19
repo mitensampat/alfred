@@ -15,7 +15,7 @@ private final class RecordingSelfSender: ScheduleSender {
 ///   handle(_:)  — feed a self-chat line ("@schedule kunal 30m tomorrow", "propose", "yes", …)
 ///   tick()      — poll the user's self-chat for typed follow-ups AND open sessions' counterpart
 ///                 threads for replies, then run the 48h expiry sweep.
-///   startWatcher() — runs tick() every 60s. Every entry point (server, menu bar, `alfred
+///   startWatcher() — runs tick() every 20s. Every entry point (server, menu bar, `alfred
 ///                 schedule`) calls it; the guard keeps exactly one loop per process.
 final class ScheduleService {
     static let shared = ScheduleService()
@@ -76,11 +76,20 @@ final class ScheduleService {
         // Someone has to be polling: the self-chat is read by nobody otherwise, which is silent by
         // its nature. It may legitimately be another Alfred process — the heartbeat says so.
         let held = readWatcherLock()
-        let someoneIsPolling = running || (held.map { Date().timeIntervalSince1970 - $0.at < 180 } ?? false)
-        if !someoneIsPolling {
+        let me = Int(ProcessInfo.processInfo.processIdentifier)
+        // `running` only says this process built the loop — it stays true while the loop stands
+        // down every tick because another heartbeat holds the turn. Asking it alone let a dead
+        // process's lock read as "somebody is polling", which is precisely the silence this
+        // endpoint exists to catch. Count only a turn actually being taken: either this process
+        // owns it and has ticked, or a *live* other process says so.
+        let heldByLiveOther = held.map {
+            $0.pid != me && pidAlive($0.pid) && Date().timeIntervalSince1970 - $0.at < 180
+        } ?? false
+        let iAmPolling = running && owner && (lastTick.map { Date().timeIntervalSince($0) < 300 } ?? false)
+        if !iAmPolling && !heldByLiveOther {
             blockers.append("Nothing is polling your WhatsApp self-chat, so anything you type there — \"@schedule <name>\", \"propose\", \"yes\" — is read by nobody. Restart Alfred; the watcher starts with the server.")
         } else if owner, let t = lastTick, Date().timeIntervalSince(t) > 300 {
-            blockers.append("The scheduling watcher last polled \(Int(Date().timeIntervalSince(t) / 60)) minutes ago — it should run every minute.")
+            blockers.append("The scheduling watcher last polled \(Int(Date().timeIntervalSince(t) / 60)) minutes ago — it should run every 20 seconds.")
         }
 
         var out: [String: Any] = ["ready": blockers.isEmpty, "blockers": blockers,
@@ -322,15 +331,23 @@ final class ScheduleService {
     /// counterpart reply — it used to hang off the `alfred schedule` Scheduler's timer alone, which
     /// neither `alfred server` nor the menu bar starts, so in the mode Alfred actually runs in the
     /// self-chat was polled by nobody. Safe to call from every entry point: the guard keeps one loop.
-    func startWatcher(intervalSeconds: UInt64 = 60) {
+    func startWatcher(intervalSeconds: UInt64 = 20) {
         lock.lock()
         if watcherRunning { lock.unlock(); return }
         watcherRunning = true
         lock.unlock()
         Task.detached(priority: .utility) {
             while true {
+                let startedAt = Date()
                 await ScheduleService.shared.tick()
-                try? await Task.sleep(nanoseconds: intervalSeconds * 1_000_000_000)
+                // Sleep to a deadline, not for a duration. Sleeping *after* the work made the real
+                // cadence `interval + tick`, so a tick that did LLM work stretched the gap and the
+                // drift compounded across ticks. A tick that overruns the interval starts the next
+                // one immediately rather than falling further behind.
+                let remaining = Double(intervalSeconds) - Date().timeIntervalSince(startedAt)
+                if remaining > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                }
             }
         }
     }
@@ -352,10 +369,21 @@ final class ScheduleService {
     /// up, and two watchers would answer the same self-chat line twice. Ownership is a heartbeat
     /// file: whoever has written it in the last three minutes owns it, and a stale one is taken over
     /// by whichever process ticks next — so no process is special and a crash heals itself.
+    /// Whether a pid names a live process. A heartbeat only means something while its holder is
+    /// running: a restart leaves the previous Alfred's heartbeat on disk and still fresh, so an
+    /// age check alone made the new process stand down and wait out the full staleness window —
+    /// @schedule silently dead for up to three minutes after every deploy, while health still
+    /// reported ready. EPERM means it exists and belongs to somebody else, which still counts.
+    private func pidAlive(_ pid: Int) -> Bool {
+        if pid <= 0 { return false }
+        if kill(pid_t(pid), 0) == 0 { return true }
+        return errno == EPERM
+    }
+
     private func claimWatcherTurn() -> Bool {
         let me = Int(ProcessInfo.processInfo.processIdentifier)
         let now = Date().timeIntervalSince1970
-        if let held = readWatcherLock(), held.pid != me, now - held.at < 180 {
+        if let held = readWatcherLock(), held.pid != me, now - held.at < 180, pidAlive(held.pid) {
             lock.lock(); isWatcherOwner = false; lock.unlock()
             return false
         }
@@ -477,7 +505,7 @@ final class ScheduleService {
         let fromMe = (o["is_from_me"] as? Bool) ?? false
         let ts: Date? = (o["timestamp"] as? Int).map { Date(timeIntervalSince1970: Double($0)) }
             ?? (o["timestamp"] as? Double).map { Date(timeIntervalSince1970: $0) }
-        return ScheduleThreadMsg(fromMe: fromMe, text: text, time: ts)
+        return ScheduleThreadMsg(fromMe: fromMe, text: text, time: ts.map(ScheduleTime.wholeSecond))
     }
 
     /// The bridge returns the newest first (it selects the latest N). Every prompt that reads a

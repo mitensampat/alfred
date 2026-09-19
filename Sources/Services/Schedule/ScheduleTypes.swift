@@ -67,6 +67,19 @@ struct ScheduleSlot: Codable, Equatable {
 }
 
 /// The full engine-level session state, serialized to the store as JSON.
+/// Time normalisation for anything that is compared against a stored watermark.
+///
+/// The session store encodes dates as .iso8601 — whole seconds, no fraction. A timestamp carrying
+/// a fraction comes back from the store *earlier* than it went in, so a `ts <= seen` guard never
+/// holds and the message is read again on every poll: an LLM call per session per minute, and a
+/// prompt the user already answered surfacing a second time. Flooring keeps what we compare and
+/// what we persist at the same precision.
+enum ScheduleTime {
+    static func wholeSecond(_ d: Date) -> Date {
+        Date(timeIntervalSince1970: floor(d.timeIntervalSince1970))
+    }
+}
+
 struct ScheduleSession: Codable {
     var id: String
     var contactJID: String

@@ -201,7 +201,21 @@ actor ScheduleManager {
         case 1 where !guessing:
             await startSession(cmd, cands[0], ts)
         default:
-            var s = ScheduleSession(id: ScheduleStore.newID(), contactJID: "pending:" + cmd.name.lowercased(),
+            // Re-running an ambiguous command renews the disambiguation instead of opening a second
+            // one beside it. startSession() already does this for a resolved contact; without it
+            // here, every retry left another session in `resolving` — and retrying is the natural
+            // thing to do while waiting out the poll interval. They are not harmless: the store
+            // replaces on id, so the twins all persist, `openSession` returns only the newest
+            // (ORDER BY created_at DESC LIMIT 1) and hides the rest, and a bare self-chat reply
+            // ("1", "yes", "leave it") carries no session id — it resolves through
+            // latestPromptedSession(), which can land on a stale twin. Close every open one for
+            // this key, not just the newest, so existing orphans are swept up too.
+            let pendingJID = "pending:" + cmd.name.lowercased()
+            for var old in allOpen() where old.contactJID == pendingJID {
+                old.state = .closed
+                save(old)
+            }
+            var s = ScheduleSession(id: ScheduleStore.newID(), contactJID: pendingJID,
                                     contactName: cmd.name, state: .resolving, intent: cmd.verb)
             s.cmd = cmd; s.candidates = cands; s.createdAt = ts; s.lastActivity = ts
             var text = guessing
@@ -573,7 +587,9 @@ actor ScheduleManager {
 
     // MARK: - Watcher entry point
 
-    func onContactMessage(jid: String, isFromMe: Bool, text: String, ts: Date) async {
+    func onContactMessage(jid: String, isFromMe: Bool, text: String, ts rawTS: Date) async {
+        // Normalised to the precision the store round-trips at; see ScheduleTime.wholeSecond.
+        let ts = ScheduleTime.wholeSecond(rawTS)
         guard var s = openSessionFor(jid), s.state == .awaitingReply || s.state == .replySurfaced || s.state == .held else { return }
         if isFromMe && text.trimmingCharacters(in: .whitespaces) == s.sentDraftOrDraft().trimmingCharacters(in: .whitespaces) { return }
 

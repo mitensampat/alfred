@@ -147,6 +147,20 @@ enum ScheduleDryRun {
         let doubled = (try? ScheduleCommandParser.parse("@schedule arundhati 30m"))?.name ?? ""
         add("a doubled @schedule prefix parses to the bare name", doubled == "arundhati")
 
+        // 10) Re-running an ambiguous command renews the disambiguation instead of stacking a
+        //     second one on the same pending key. Retrying is the natural thing to do while
+        //     waiting out the poll interval, and each orphan left behind stays open — invisible to
+        //     openSession() (it returns only the newest) but still reachable by a bare reply
+        //     through latestPromptedSession(), which is how "yes" lands on the wrong session.
+        let (m6, store6) = build(FakeSender(), FakeInterp(),
+                                 [(jid: jid, names: ["Arundhati B (ex SBI)"]), (jid: jidB, names: ["Arundhati C (Accenture)"])])
+        _ = await m6.handleSelfChat(text: "@schedule arundhati", msgID: "r1", ts: tick())
+        _ = await m6.handleSelfChat(text: "@schedule arundhati", msgID: "r2", ts: tick())
+        _ = await m6.handleSelfChat(text: "@schedule arundhati", msgID: "r3", ts: tick())
+        let pend = store6.allOpenSessions().filter { $0.contactJID == "pending:arundhati" }
+        add("re-running an ambiguous command leaves one pending session",
+            pend.count == 1 && pend.first?.state == .resolving, "open=\(pend.count)")
+
         return results
     }
 }
