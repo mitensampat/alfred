@@ -31,6 +31,7 @@ final class ScheduleService {
     // both are Alfred's own words to the user, so the worst case is one extra line in a toast.
     private var captures: [Int: [String]] = [:]
     private var captureSeq = 0
+    private var selfChatExactWorks = false    // the exact self-chat JID has returned rows at least once
     private var watcherRunning = false        // one 60s watcher per process
     private var isWatcherOwner = false        // and one polling process per machine (see claimWatcherTurn)
     private var lastTickAt: Date?             // when this process last polled; nil = it has never run
@@ -376,9 +377,12 @@ final class ScheduleService {
         let selfJID = await resolveSelfJID()
         if !selfJID.isEmpty {
             if let wm = selfWatermark {
-                let msgs = await ScheduleService.fetchThread(base, selfJID, wm, 30)
+                let msgs = await fetchSelfChat(base, selfJID, wm, 30)
                 var newWM = wm
-                for msg in msgs where msg.fromMe {
+                // Every message in your own self-chat is yours, so the is_from_me flag adds nothing
+                // here but a way to drop a command silently if the bridge ever records it as false
+                // (history-sync rows do). Alfred's own lines are skipped by text below.
+                for msg in msgs {
                     // A line we can't place in time can't be watermarked, so acting on it would mean
                     // acting on it again on every tick — a command re-run once a minute, forever.
                     guard let t = msg.time else { continue }
@@ -390,7 +394,9 @@ final class ScheduleService {
                 }
                 selfWatermark = newWM
             } else {
-                selfWatermark = Date()   // first tick: arm from now, don't replay history
+                // First tick: arm from just before now. Two minutes of grace catches the command
+                // typed in the moment before Alfred came up, without replaying the history.
+                selfWatermark = Date().addingTimeInterval(-120)
             }
         }
 
@@ -453,24 +459,71 @@ final class ScheduleService {
         }
     }
 
-    static func fetchThread(_ base: String, _ jid: String, _ since: Date?, _ limit: Int) async -> [ScheduleThreadMsg] {
+    /// Raw rows from the bridge's /messages. `chat` nil or empty means every chat.
+    private static func fetchRaw(_ base: String, _ chat: String?, _ since: Date?, _ limit: Int) async -> [[String: Any]] {
         guard var comps = URLComponents(string: base + "/messages") else { return [] }
-        var q = [URLQueryItem(name: "chat", value: jid), URLQueryItem(name: "limit", value: String(limit))]
+        var q = [URLQueryItem(name: "limit", value: String(limit))]
+        if let chat = chat, !chat.isEmpty { q.append(URLQueryItem(name: "chat", value: chat)) }
         if let since = since { q.append(URLQueryItem(name: "since", value: String(Int(since.timeIntervalSince1970)))) }
         comps.queryItems = q
         guard let url = comps.url,
               let (data, _) = try? await URLSession.shared.data(from: url),
               let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
-        let msgs: [ScheduleThreadMsg] = arr.compactMap { o in
-            guard let text = o["content"] as? String, !text.isEmpty else { return nil }
-            let fromMe = (o["is_from_me"] as? Bool) ?? false
-            let ts: Date? = (o["timestamp"] as? Int).map { Date(timeIntervalSince1970: Double($0)) }
-                ?? (o["timestamp"] as? Double).map { Date(timeIntervalSince1970: $0) }
-            return ScheduleThreadMsg(fromMe: fromMe, text: text, time: ts)
+        return arr
+    }
+
+    private static func toMsg(_ o: [String: Any]) -> ScheduleThreadMsg? {
+        guard let text = o["content"] as? String, !text.isEmpty else { return nil }
+        let fromMe = (o["is_from_me"] as? Bool) ?? false
+        let ts: Date? = (o["timestamp"] as? Int).map { Date(timeIntervalSince1970: Double($0)) }
+            ?? (o["timestamp"] as? Double).map { Date(timeIntervalSince1970: $0) }
+        return ScheduleThreadMsg(fromMe: fromMe, text: text, time: ts)
+    }
+
+    /// The bridge returns the newest first (it selects the latest N). Every prompt that reads a
+    /// thread is told "oldest first" and decides on the LAST position it sees, so handing it the
+    /// newest first made Alfred act on the message they had already changed their mind about.
+    private static func chronological(_ msgs: [ScheduleThreadMsg]) -> [ScheduleThreadMsg] {
+        msgs.sorted { ($0.time ?? .distantPast) < ($1.time ?? .distantPast) }
+    }
+
+    /// The identifying part of a JID: 919820000000@s.whatsapp.net and 919820000000:12@s.whatsapp.net
+    /// both reduce to 919820000000.
+    static func jidUser(_ jid: String) -> String {
+        let head = jid.split(separator: "@").first.map(String.init) ?? jid
+        return head.split(separator: ":").first.map(String.init) ?? head
+    }
+
+    static func fetchThread(_ base: String, _ jid: String, _ since: Date?, _ limit: Int) async -> [ScheduleThreadMsg] {
+        chronological(await fetchRaw(base, jid, since, limit).compactMap(toMsg))
+    }
+
+    /// Messages in the user's own self-chat — the surface @schedule is actually typed into.
+    ///
+    /// Matching it by an exact chat JID is fragile: the bridge stores whatever form WhatsApp used
+    /// for that chat, which need not be the <number>@s.whatsapp.net that /status reports (a device
+    /// suffix, or a LID-addressed account). A mismatch returns zero rows, forever, and reads exactly
+    /// like the feature being dead. So: try the exact chat, and if it yields nothing, take the
+    /// recent window unfiltered and keep what is genuinely a note to self — the chat is you, or the
+    /// sender and the chat are the same person and it is not a group.
+    func fetchSelfChat(_ base: String, _ selfJID: String, _ since: Date?, _ limit: Int) async -> [ScheduleThreadMsg] {
+        let exact = await ScheduleService.fetchRaw(base, selfJID, since, limit)
+        if !exact.isEmpty {
+            lock.lock(); selfChatExactWorks = true; lock.unlock()
+            return ScheduleService.chronological(exact.compactMap(ScheduleService.toMsg))
         }
-        // The bridge returns the newest first (it selects the latest N). Every prompt that reads a
-        // thread is told "oldest first" and decides on the LAST position it sees, so handing it the
-        // newest first made Alfred act on the message they had already changed their mind about.
-        return msgs.sorted { ($0.time ?? .distantPast) < ($1.time ?? .distantPast) }
+        lock.lock(); let exactKnownGood = selfChatExactWorks; lock.unlock()
+        if exactKnownGood { return [] }   // the exact form works and there is simply nothing new
+
+        let me = ScheduleService.jidUser(selfJID)
+        let wide = await ScheduleService.fetchRaw(base, nil, since, max(limit, 100)).filter { o in
+            if (o["is_group"] as? Bool) == true { return false }
+            let chat = ScheduleService.jidUser((o["chat_jid"] as? String) ?? "")
+            if chat.isEmpty { return false }
+            if !me.isEmpty && chat == me { return true }
+            let sender = ScheduleService.jidUser((o["sender_jid"] as? String) ?? "")
+            return (o["is_from_me"] as? Bool) == true && chat == sender
+        }
+        return ScheduleService.chronological(wide.compactMap(ScheduleService.toMsg))
     }
 }
