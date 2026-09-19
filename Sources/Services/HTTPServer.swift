@@ -1413,6 +1413,14 @@ class HTTPServer {
             } catch {
                 return HTTPResponse(statusCode: 200, body: ["ok": false, "error": "\(error)"])
             }
+        case ("GET", "/api/schedule/preview"):
+            // What the slot finder would propose right now — no session, no message sent. Reports
+            // the busy set and which calendars fed it, so a proposal can be explained.
+            let days = Int(request.queryParams["days"] ?? "7") ?? 7
+            let dur = Int(request.queryParams["duration"] ?? "30") ?? 30
+            let inPerson = (request.queryParams["in_person"] ?? "false") == "true"
+            return HTTPResponse(statusCode: 200,
+                                body: await ScheduleService.shared.previewSlots(days: days, durationMin: dur, inPerson: inPerson))
         case ("POST", "/api/schedule/say"):
             // Drive the scheduler with a self-chat line ("@schedule kunal 30m tomorrow", "propose",
             // "yes", "edit", "leave it"). `session` names the session it acts on (the Desk sends the

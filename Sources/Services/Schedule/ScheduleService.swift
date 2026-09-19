@@ -50,14 +50,58 @@ final class ScheduleService {
         return p
     }
 
+    /// What the slot finder would propose right now, without opening a session or messaging anyone.
+    ///
+    /// The only other way to see a proposal was to run a real @schedule against a real person, which
+    /// makes availability bugs expensive to find and preference tuning impossible. It reports the
+    /// busy set it used and which calendars fed it, so "why did it offer that?" has an answer.
+    func previewSlots(days: Int, durationMin: Int, inPerson: Bool) async -> [String: Any] {
+        guard let config = AppConfig.load(), !config.calendar.google.isEmpty else {
+            return ["ok": false, "error": "No Google Calendar configured."]
+        }
+        let gcals = config.calendar.google.map {
+            (name: $0.name, svc: GoogleCalendarService(config: $0, accountName: $0.name))
+        }
+        let p = Self.prefs()
+        let cal = ScheduleCalendar(cals: gcals, prefs: p)
+        let from = Date()
+        let to = from.addingTimeInterval(Double(max(1, days)) * 86400)
+        let fmt = ISO8601DateFormatter()
+        do {
+            let slots = try await cal.computeSlots(from: from, to: to, durationMin: durationMin, inPerson: inPerson)
+            let busy = try await cal.busyPreview(from: from, to: to)
+            return [
+                "ok": true,
+                "timezone": p.timezone.identifier,
+                "calendars_read": cal.liveCalendars,
+                "meeting_hours": ["start": p.dayStartMin, "end": p.dayEndMin],
+                "duration_min": durationMin, "in_person": inPerson, "days": days,
+                "slots": slots.map { ["start": fmt.string(from: $0.start), "end": fmt.string(from: $0.end),
+                                      "adjacent": $0.adjacent] },
+                "busy": busy.map { ["start": fmt.string(from: $0.start), "end": fmt.string(from: $0.end),
+                                    "calendar": $0.calendar, "title": $0.title] }
+            ]
+        } catch {
+            return ["ok": false, "error": "\(error)"]
+        }
+    }
+
     /// Everything @schedule needs, and which of it is actually there. The whole command path runs
     /// through Google Calendar, the wa-bridge (it is the only directory Alfred has for "who is
     /// Arundhati", and the only way to send the ask) and Claude; when one is missing the command
     /// used to end in silence. The Desk shows this, so a dead scheduler names its own cause.
     func readiness() async -> [String: Any] {
         let config = AppConfig.load()
-        let gc = config?.calendar.google.first
-        let calConnected = gc.map { GoogleCalendarService(config: $0, accountName: "primary").isConnected } ?? false
+        let gcs = config?.calendar.google ?? []
+        let gc = gcs.first
+        // Every configured calendar, checked individually. Availability is their union, so one that
+        // cannot be read is not a degraded search — it is a search that cannot see a whole calendar,
+        // and a meeting Alfred cannot see is indistinguishable from free time.
+        let calStates = gcs.map {
+            (name: $0.name, connected: GoogleCalendarService(config: $0, accountName: $0.name).isConnected)
+        }
+        let calConnected = !calStates.isEmpty && calStates.allSatisfy { $0.connected }
+        let unreadable = calStates.filter { !$0.connected }.map { $0.name }
         let aiOK = !(config?.ai.anthropicApiKey.isEmpty ?? true)
         let selfJID = await resolveSelfJID()
         let base = bridgeBase()
@@ -67,7 +111,13 @@ final class ScheduleService {
         let addr = base.replacingOccurrences(of: "http://", with: "")
         var blockers: [String] = []
         if gc == nil { blockers.append("Google Calendar is not configured — add it in Settings.") }
-        else if !calConnected { blockers.append("Google Calendar is configured but not connected — reconnect it in Settings.") }
+        else if unreadable.count == calStates.count {
+            blockers.append("Google Calendar is configured but not connected — reconnect it in Settings.")
+        } else if !unreadable.isEmpty {
+            // Refuse rather than quietly schedule around a calendar Alfred cannot see. Proposing on
+            // a partial busy set is how you end up booked over a meeting that was there all along.
+            blockers.append("Alfred can't read your \(unreadable.joined(separator: " and ")) calendar, so it can't see those meetings — and it won't propose times while half your calendar is invisible. Reconnect it in Settings.")
+        }
         if !bridgeUp { blockers.append("The WhatsApp bridge at \(addr) is not answering. Scheduling needs it to find who someone is and to send the ask — start it with scripts/wa-bridge.sh run (or install it to keep it up).") }
         else if contacts == 0 { blockers.append("The WhatsApp bridge is up but returned no chats — it is probably not paired. Run scripts/wa-bridge.sh pair and scan the QR once.") }
         else if selfJID.isEmpty { blockers.append("The bridge is up but did not report your own number, so Alfred cannot write to your self-chat.") }
@@ -95,6 +145,7 @@ final class ScheduleService {
         var out: [String: Any] = ["ready": blockers.isEmpty, "blockers": blockers,
                 "watcher_running": running, "watcher_owner": owner,
                 "calendar_configured": gc != nil, "calendar_connected": calConnected,
+                "calendars": calStates.map { ["name": $0.name, "connected": $0.connected] },
                 "bridge_reachable": bridgeUp, "bridge_addr": base, "contacts": contacts,
                 "self_jid": selfJID, "ai_configured": aiOK]
         if let t = lastTick { out["last_tick_at"] = ISO8601DateFormatter().string(from: t) }
@@ -150,15 +201,18 @@ final class ScheduleService {
     func manager() -> ScheduleManager? {
         lock.lock(); defer { lock.unlock() }
         if let m = built { return m }
-        guard let config = AppConfig.load(), let googleConfig = config.calendar.google.first else { return nil }
-        let gcal = GoogleCalendarService(config: googleConfig, accountName: "primary")
+        guard let config = AppConfig.load(), !config.calendar.google.isEmpty else { return nil }
+        // Every configured account, not just the first: availability is the union of them all.
+        let gcals = config.calendar.google.map {
+            (name: $0.name, svc: GoogleCalendarService(config: $0, accountName: $0.name))
+        }
         let prefs = Self.prefs()
         let ai = ClaudeAIService(config: config.ai)
         let base = bridgeBase()
         let bridgeSender = WABridgeSender(selfJIDProvider: { [weak self] in await self?.resolveSelfJID() ?? "" })
         let sender = RecordingSelfSender(bridgeSender) { [weak self] in self?.recordPrompt($0) }
         let deps = ScheduleManager.Deps(
-            cal: ScheduleCalendar(cal: gcal, prefs: prefs),
+            cal: ScheduleCalendar(cals: gcals, prefs: prefs),
             interp: ScheduleInterpreter(ai: ai),
             drafter: LLMDrafter(ai: ai),
             sender: sender,
