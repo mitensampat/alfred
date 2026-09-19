@@ -264,6 +264,8 @@
       .dk-coachcard-act{ border:none; background:none; font-family:inherit; font-size:11px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:var(--dk-n600); padding:6px 6px; cursor:pointer; }
       .dk-coachcard-act:hover{ color:var(--dk-text); text-decoration:underline; }
       /* Scheduling cards (People rail) — the full @schedule flow in the UI */
+      .dk-sched-blocked{ margin-top:10px; padding:10px 12px; border:1px solid var(--dk-hot); font-size:12.5px; line-height:1.55; }
+      .dk-sched-blocked b{ display:block; margin-bottom:4px; }
       .dk-sched-card{ border:1px solid var(--dk-divider); border-left:2px solid var(--dk-accent); padding:11px 13px; margin-top:12px; }
       .dk-sched-name{ font-weight:800; font-size:14.5px; }
       .dk-sched-stage{ font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--dk-n600); margin-top:3px; }
@@ -5623,6 +5625,31 @@
             textEl.innerHTML = html;
         }
 
+        // Run a scheduling command typed into the chat and answer in the thread.
+        async function chatRunSchedule(query){
+            addChatBubble('user', query);
+            const blk = _blockBody(query);
+            try {
+                const path = blk
+                    ? '/api/schedule/direct-block?text=' + encodeURIComponent(blk)
+                    : '/api/schedule/say?text=' + encodeURIComponent(/^@?schedule/i.test(query) ? query.replace(/^@?schedule\s*/i, '@schedule ') : '@schedule ' + query);
+                const r = await authFetch(path, { method: 'POST' });
+                const d = await r.json();
+                let msg;
+                if (blk){
+                    msg = d && d.booked
+                        ? '\u2705 Booked: ' + (d.title || '') + (d.when ? ' \u2014 ' + d.when : '') + (d.location ? ' \u00b7 ' + d.location : '') + (d.meet ? '\n' + d.meet : '')
+                        : ((d && (d.error || d.hint)) || 'Could not book that.');
+                } else if (d && Array.isArray(d.blockers) && d.blockers.length){
+                    msg = 'Scheduling cannot run yet:\n\n' + d.blockers.map(b => '- ' + b).join('\n');
+                } else {
+                    msg = (d && (d.message || d.error)) || 'Nothing came back from the scheduler.';
+                }
+                addChatBubble('assistant', msg + '\n\n_Live sessions are on the Desk, under People._');
+            } catch(e){ addChatBubble('assistant', 'Could not reach the scheduler.'); }
+            try { deskSchedRefresh(); } catch(e){}
+        }
+
         async function sendChatMessage(prefilled) {
             const input = document.getElementById('chatInput');
             const query = prefilled || input.value.trim();
@@ -5630,6 +5657,11 @@
 
             chatHasMessages = true;
             if (!prefilled) { input.value = ''; autoResizeTextarea(input); }
+
+            // "@schedule …" and "block …" are commands, not questions. Typed here they used to go
+            // to the chat model, which cannot schedule anything — so the command appeared to do
+            // nothing. Run them and answer in the thread.
+            if (/^@?schedule\b/i.test(query) || /^block\b/i.test(query)) { await chatRunSchedule(query); return; }
 
             const sendBtn = document.getElementById('sendBtn');
             if (sendBtn) sendBtn.disabled = true;
@@ -10884,6 +10916,7 @@
         let _deskTopSearch = '';      // top-stack search query (find any front to pin up top)
         let _deskFrontClosed = null;  // {id, name}: last front closed via "decided — close", for Undo
         let _deskSched = [];          // open @schedule sessions (for the People rail scheduling panel)
+        let _deskSchedHealth = null;  // /api/schedule/health when nothing is live — names what's missing
         let _schedPoll = null;        // background poll while a scheduling session is live (surfaces replies)
         let _deskDetail = null;   // fetched front/person detail for the center view
         const _esc = (s) => escapeHtml(String(s == null ? '' : s));
@@ -11380,6 +11413,11 @@
             let html = `<div class="dk-cold" style="margin-bottom:22px;"><div class="dk-sec-label">Scheduling</div>
                 <div class="dk-sec-explain" style="margin-bottom:8px;">Alfred proposes times, sends the ask, and books on a firm yes — the whole flow runs here. Or book directly: <b>@schedule block 30m with X at 4pm tomorrow x@email</b>.</div>
                 <button type="button" class="dk-btn dk-btn-ink dk-btn-sm" onclick="deskSchedNew()">+ Schedule a meeting</button>`;
+            const h = _deskSchedHealth;
+            if (h && h.ready === false){
+                html += `<div class="dk-sched-blocked"><b>Scheduling can't run yet.</b>` +
+                    (h.blockers||[]).map(b => `<div>&bull; ${_esc(b)}</div>`).join('') + `</div>`;
+            }
             if (!ss.length){ html += `<div class="dk-cold-reason" style="margin-top:10px;">No live scheduling sessions.</div>`; }
             for (const s of ss){
                 const state = s.state || '';
@@ -11415,8 +11453,13 @@
             return html;
         }
         async function deskSchedRefresh(){
-            try { const r = await authFetch('/api/schedule/sessions'); const d = await r.json(); _deskSched = d.sessions || [];
-                if (_deskEntity === 'people'){ const m = document.getElementById('deskColMargin'); if (m) m.innerHTML = renderMarginColumn(); } } catch(e){}
+            try { const r = await authFetch('/api/schedule/sessions'); const d = await r.json(); _deskSched = d.sessions || []; } catch(e){}
+            // What the scheduler depends on (calendar, WhatsApp bridge, Claude). Checked when there
+            // is nothing live, so a panel showing no sessions says whether that is calm or broken.
+            if (!(_deskSched||[]).length){
+                try { const hr = await authFetch('/api/schedule/health'); _deskSchedHealth = await hr.json(); } catch(e){ _deskSchedHealth = null; }
+            } else { _deskSchedHealth = null; }
+            if (_deskEntity === 'people'){ const m = document.getElementById('deskColMargin'); if (m) m.innerHTML = renderMarginColumn(); }
             _schedManagePoll();
         }
         // Poll while a session is live + People is open, so a counterpart's reply (which the
@@ -11437,7 +11480,7 @@
                 const q = '/api/schedule/say?text=' + encodeURIComponent(text) + (sessionId ? '&session=' + encodeURIComponent(sessionId) : '');
                 const r = await authFetch(q, { method: 'POST' });
                 const d = await r.json();
-                if (d && d.error) showToast(d.error, 'error');
+                if (d && d.error) { showToast(d.error, 'error'); _deskSchedHealth = d.readiness || ((d.blockers||[]).length ? d : null); }
                 else if (d && d.message) showToast(d.message.split('\n')[0]);
             } catch(e){ showToast('Couldn\u2019t reach the scheduler.', 'error'); }
             setTimeout(deskSchedRefresh, 1200);

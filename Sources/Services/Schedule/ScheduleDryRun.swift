@@ -133,6 +133,20 @@ enum ScheduleDryRun {
         await m4.onContactMessage(jid: jid, isFromMe: false, text: "the second one works", ts: replyTS)
         add("a re-fed counterpart message is read once", afterFirst == 1 && counting.replyCalls == 1)
 
+        // 8) A name that matches nobody outright offers the closest saved names to pick from,
+        //    instead of ending the command in silence. A guess is never auto-started.
+        let (m5, store5) = build(FakeSender(), FakeInterp(),
+                                 [(jid: jid, names: ["Arundhati Sampat"]), (jid: jidB, names: ["Priya Nair"])])
+        _ = await m5.handleSelfChat(text: "@schedule arundati", msgID: "n1", ts: tick())
+        let guessed = store5.allOpenSessions().first
+        add("a misspelled name offers the closest match",
+            guessed?.state == .resolving && guessed?.candidates.first?.name == "Arundhati Sampat")
+
+        // 9) A doubled prefix (the palette and the self-chat both let one through) must not land
+        //    inside the name.
+        add("a doubled @schedule prefix parses to the bare name",
+            (try? ScheduleCommandParser.parse("@schedule arundhati 30m").name) == "arundhati")
+
         return results
     }
 }

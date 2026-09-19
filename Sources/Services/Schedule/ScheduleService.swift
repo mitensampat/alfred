@@ -44,6 +44,43 @@ final class ScheduleService {
         return p
     }
 
+    /// Everything @schedule needs, and which of it is actually there. The whole command path runs
+    /// through Google Calendar, the wa-bridge (it is the only directory Alfred has for "who is
+    /// Arundhati", and the only way to send the ask) and Claude; when one is missing the command
+    /// used to end in silence. The Desk shows this, so a dead scheduler names its own cause.
+    func readiness() async -> [String: Any] {
+        let config = AppConfig.load()
+        let gc = config?.calendar.google.first
+        let calConnected = gc.map { GoogleCalendarService(config: $0, accountName: "primary").isConnected } ?? false
+        let aiOK = !(config?.ai.anthropicApiKey.isEmpty ?? true)
+        let selfJID = await resolveSelfJID()
+        let base = bridgeBase()
+        let bridgeUp = await ScheduleService.bridgeReachable(base)
+        let contacts = bridgeUp ? await ScheduleService.fetchContacts(base).count : 0
+
+        let addr = base.replacingOccurrences(of: "http://", with: "")
+        var blockers: [String] = []
+        if gc == nil { blockers.append("Google Calendar is not configured — add it in Settings.") }
+        else if !calConnected { blockers.append("Google Calendar is configured but not connected — reconnect it in Settings.") }
+        if !bridgeUp { blockers.append("The WhatsApp bridge at \(addr) is not answering. Scheduling needs it to find who someone is and to send the ask — start it with scripts/wa-bridge.sh run (or install it to keep it up).") }
+        else if contacts == 0 { blockers.append("The WhatsApp bridge is up but returned no chats — it is probably not paired. Run scripts/wa-bridge.sh pair and scan the QR once.") }
+        else if selfJID.isEmpty { blockers.append("The bridge is up but did not report your own number, so Alfred cannot write to your self-chat.") }
+        if !aiOK { blockers.append("No Anthropic API key configured — Alfred cannot read the thread or write the draft.") }
+
+        return ["ready": blockers.isEmpty, "blockers": blockers,
+                "calendar_configured": gc != nil, "calendar_connected": calConnected,
+                "bridge_reachable": bridgeUp, "bridge_addr": base, "contacts": contacts,
+                "self_jid": selfJID, "ai_configured": aiOK]
+    }
+
+    static func bridgeReachable(_ base: String) async -> Bool {
+        guard let url = URL(string: base + "/status") else { return false }
+        var req = URLRequest(url: url); req.timeoutInterval = 5
+        guard let (_, resp) = try? await URLSession.shared.data(for: req),
+              let http = resp as? HTTPURLResponse else { return false }
+        return (200...299).contains(http.statusCode)
+    }
+
     /// The user's own JID — from the bridge /status (canonical <number>@s.whatsapp.net), env override, else "".
     private func resolveSelfJID() async -> String {
         if let j = ProcessInfo.processInfo.environment["WA_SELF_JID"], !j.isEmpty { return j }
@@ -116,6 +153,17 @@ final class ScheduleService {
         guard let m = manager() else {
             return ["ok": false, "error": "Google Calendar not configured"]
         }
+        // A command that opens a session needs the calendar, the bridge and Claude. If one of them
+        // is missing the command cannot do anything useful, and every message explaining that would
+        // go to a self-chat that is itself unreachable. Say it here, where it was typed.
+        if Self.opensNewSession(text) {
+            let r = await readiness()
+            if (r["ready"] as? Bool) != true {
+                let blockers = (r["blockers"] as? [String]) ?? []
+                return ["ok": false, "error": blockers.first ?? "Scheduling isn't set up yet.",
+                        "blockers": blockers, "readiness": r]
+            }
+        }
         let token = beginCapture()
         let consumed = await m.handleSelfChat(text: text, msgID: "api_\(Int(Date().timeIntervalSince1970))", ts: Date(), sessionID: sessionID)
         let said = endCapture(token)
@@ -126,6 +174,15 @@ final class ScheduleService {
     }
 
     // MARK: - Direct block ("@schedule block <dur> with <person> at <time> topic <t> <email>")
+
+    /// Whether the line is an "@schedule <someone> …" that would open a new session (as opposed to
+    /// consent — "propose" / "yes" / "leave it" — on one that already exists).
+    static func opensNewSession(_ text: String) -> Bool {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard t.lowercased().hasPrefix("@schedule") else { return false }
+        let rest = String(t.dropFirst("@schedule".count)).trimmingCharacters(in: .whitespaces)
+        return !rest.isEmpty && !ScheduleEngine.isConsentText(rest)
+    }
 
     /// The instruction body if `text` is a direct-block ("@schedule block …" or bare "block …"), else nil.
     private func directBlockBody(_ text: String) -> String? {

@@ -1421,7 +1421,11 @@ class HTTPServer {
             let text = request.queryParams["text"] ?? ""
             guard !text.isEmpty else { return HTTPResponse(statusCode: 400, body: ["error": "text required"]) }
             guard ScheduleService.shared.configured else {
-                return HTTPResponse(statusCode: 200, body: ["ok": false, "error": "Google Calendar not configured"])
+                // Name everything that is missing, not just the first thing checked.
+                var body = await ScheduleService.shared.readiness()
+                body["ok"] = false
+                body["error"] = (body["blockers"] as? [String])?.first ?? "Google Calendar not configured"
+                return HTTPResponse(statusCode: 200, body: body)
             }
             let outcome = await ScheduleService.shared.handle(text, sessionID: request.queryParams["session"] ?? "")
             return HTTPResponse(statusCode: 200, body: outcome)
@@ -1600,6 +1604,10 @@ class HTTPServer {
 
         case ("GET", "/api/schedule/sessions"):
             return HTTPResponse(statusCode: 200, body: ["sessions": ScheduleService.shared.openSessionsForDesk(), "configured": ScheduleService.shared.configured])
+        case ("GET", "/api/schedule/health"):
+            // What @schedule depends on and what is actually there (calendar, wa-bridge, Claude).
+            // The Desk shows the blockers, so a scheduler that can't run says why.
+            return HTTPResponse(statusCode: 200, body: await ScheduleService.shared.readiness())
         case ("GET", "/api/schedule/manager-selftest"):
             // Phase-4b dev check: the full @schedule → propose → reply → book flow through the
             // manager with fakes (no WhatsApp / Calendar / Claude).

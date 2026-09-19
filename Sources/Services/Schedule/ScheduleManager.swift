@@ -179,17 +179,34 @@ actor ScheduleManager {
         do { cmd = try ScheduleCommandParser.parse(rest) } catch { await sendSelfPlain("\(error)"); return }
 
         await sendSelfPlain("on it — checking your calendar…")
-        let cands = await resolveContacts(cmd.name)
+
+        // The WhatsApp chat list is the only directory Alfred has for "who is this person". An
+        // empty one means the bridge is down or unpaired, which is a different problem from a name
+        // that does not match — and saying so beats "I couldn't find anyone".
+        let chats = await d.directChats()
+        if chats.isEmpty {
+            await sendSelfPlain("I can't see any WhatsApp chats right now, so I can't tell who \"\(cmd.name)\" is. The bridge isn't answering or isn't paired — start it and try again.")
+            return
+        }
+
+        var cands = resolveContacts(cmd.name, chats)
+        // Nothing matched outright: offer the closest saved names rather than a dead end. A
+        // near match is a guess, so it is always a pick — never an auto-start.
+        let guessing = cands.isEmpty
+        if guessing { cands = Self.nearMatches(cmd.name, chats) }
+
         switch cands.count {
         case 0:
-            await sendSelfPlain("I couldn't find anyone matching \"\(cmd.name)\" in your chats.")
-        case 1:
+            await sendSelfPlain("I couldn't find anyone matching \"\(cmd.name)\" in your \(chats.count) WhatsApp chats. Try the name the way it's saved on your phone.")
+        case 1 where !guessing:
             await startSession(cmd, cands[0], ts)
         default:
             var s = ScheduleSession(id: ScheduleStore.newID(), contactJID: "pending:" + cmd.name.lowercased(),
                                     contactName: cmd.name, state: .resolving, intent: cmd.verb)
             s.cmd = cmd; s.candidates = cands; s.createdAt = ts; s.lastActivity = ts
-            var text = "A few people match \"\(cmd.name)\" — who did you mean?\n"
+            var text = guessing
+                ? "Nobody is saved as \"\(cmd.name)\" — did you mean one of these?\n"
+                : "A few people match \"\(cmd.name)\" — who did you mean?\n"
             for (i, c) in cands.enumerated() { text += "\(i + 1). \(c.name)\n" }
             text += "Reply with a number, or 'leave it'."
             await prompt(&s, text)
@@ -211,8 +228,7 @@ actor ScheduleManager {
         return 40 + matched
     }
 
-    private func resolveContacts(_ name: String) async -> [ScheduleContactCandidate] {
-        let chats = await d.directChats()
+    private func resolveContacts(_ name: String, _ chats: [(jid: String, names: [String])]) -> [ScheduleContactCandidate] {
         let q = normalizeQuery(name); if q.isEmpty { return [] }
         struct Scored { var cand: ScheduleContactCandidate; var score: Int }
         var all: [Scored] = []; var seen = Set<String>()
@@ -229,6 +245,57 @@ actor ScheduleManager {
         var dedup = Set<String>(); var out: [ScheduleContactCandidate] = []
         for s in all where s.score == top { let k = s.cand.name.lowercased(); if !dedup.contains(k) { dedup.insert(k); out.append(s.cand) } }
         return out.sorted { $0.name < $1.name }
+    }
+
+    /// The closest saved names when nothing matches outright. `nameMatchScore` needs a containment
+    /// or a shared word prefix, so a misremembered spelling or a contact saved a little differently
+    /// scored zero and the command died — this offers up to five to pick from instead.
+    static func nearMatches(_ query: String, _ chats: [(jid: String, names: [String])]) -> [ScheduleContactCandidate] {
+        let q = query.lowercased().trimmingCharacters(in: .whitespaces)
+        guard q.count >= 3 else { return [] }
+        let tolerance = max(1, q.count / 4)
+        struct Scored { var cand: ScheduleContactCandidate; var dist: Int }
+        var out: [Scored] = []; var seen = Set<String>()
+        for c in chats {
+            if c.jid.hasSuffix("@g.us") || c.jid.contains("@broadcast") { continue }
+            if seen.contains(c.jid) { continue }
+            var best = Int.max; var bestName = c.names.first ?? c.jid
+            for name in c.names {
+                for word in name.lowercased().split(whereSeparator: { $0 == " " || $0 == "." }).map(String.init) {
+                    if abs(word.count - q.count) > tolerance { continue }
+                    let dist = Self.editDistance(q, word)
+                    if dist < best { best = dist; bestName = name }
+                }
+            }
+            guard best <= tolerance else { continue }
+            seen.insert(c.jid)
+            if let full = c.names.max(by: { $0.count < $1.count }), full.count > bestName.count { bestName = full }
+            out.append(Scored(cand: ScheduleContactCandidate(jid: c.jid, name: bestName), dist: best))
+        }
+        let ranked = out.sorted { $0.dist == $1.dist ? $0.cand.name < $1.cand.name : $0.dist < $1.dist }
+        var dedup = Set<String>(); var picked: [ScheduleContactCandidate] = []
+        for s in ranked where picked.count < 5 {
+            let k = s.cand.name.lowercased()
+            if dedup.contains(k) { continue }
+            dedup.insert(k); picked.append(s.cand)
+        }
+        return picked
+    }
+
+    static func editDistance(_ a: String, _ b: String) -> Int {
+        let x = Array(a), y = Array(b)
+        if x.isEmpty { return y.count }
+        if y.isEmpty { return x.count }
+        var prev = Array(0...y.count)
+        var cur = [Int](repeating: 0, count: y.count + 1)
+        for i in 1...x.count {
+            cur[0] = i
+            for j in 1...y.count {
+                cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (x[i - 1] == y[j - 1] ? 0 : 1))
+            }
+            prev = cur
+        }
+        return prev[y.count]
     }
 
     private func startSession(_ cmd: ScheduleCommand, _ contact: ScheduleContactCandidate, _ ts: Date) async {
