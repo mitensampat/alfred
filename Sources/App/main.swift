@@ -2565,6 +2565,12 @@ struct AlfredApp {
             let server = HTTPServer(port: apiConfig.port, passcode: apiConfig.passcode, alfredService: alfredService)
             try server.start()
 
+            // The @schedule watcher: the WhatsApp self-chat poll (commands and consent typed to
+            // yourself), counterpart replies, and the expiry sweep. It used to hang off the
+            // `alfred schedule` timer alone, which this mode never starts — so anything typed into
+            // the self-chat was read by nobody.
+            ScheduleService.shared.startWatcher()
+
             // Keep the server running indefinitely
             try await Task.sleep(nanoseconds: UInt64.max)
         } catch {
@@ -3364,13 +3370,15 @@ class Scheduler {
         // Pre-warm caches on startup so the UI is ready
         await prewarmCaches()
 
+        // @schedule watcher: the self-chat poll, counterpart replies, expiry sweep. Guarded, so it
+        // runs once however many entry points ask for it.
+        ScheduleService.shared.startWatcher()
+
         // Check every minute if it's time to run tasks
         let timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task {
                 await self?.checkAndRunTasks()
             }
-            // @schedule watcher: poll open sessions' counterpart threads + expiry sweep.
-            Task { await ScheduleService.shared.tick() }
         }
         self.timer = timer
 

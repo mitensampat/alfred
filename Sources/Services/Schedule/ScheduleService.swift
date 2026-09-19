@@ -14,7 +14,9 @@ private final class RecordingSelfSender: ScheduleSender {
 /// Claude, the wa-bridge, and the session store, and drives it. Entry points:
 ///   handle(_:)  — feed a self-chat line ("@schedule kunal 30m tomorrow", "propose", "yes", …)
 ///   tick()      — poll the user's self-chat for typed follow-ups AND open sessions' counterpart
-///                 threads for replies, then run the 48h expiry sweep. Wired to the 60s timer.
+///                 threads for replies, then run the 48h expiry sweep.
+///   startWatcher() — runs tick() every 60s. Every entry point (server, menu bar, `alfred
+///                 schedule`) calls it; the guard keeps exactly one loop per process.
 final class ScheduleService {
     static let shared = ScheduleService()
     private var built: ScheduleManager?
@@ -29,6 +31,9 @@ final class ScheduleService {
     // both are Alfred's own words to the user, so the worst case is one extra line in a toast.
     private var captures: [Int: [String]] = [:]
     private var captureSeq = 0
+    private var watcherRunning = false        // one 60s watcher per process
+    private var isWatcherOwner = false        // and one polling process per machine (see claimWatcherTurn)
+    private var lastTickAt: Date?             // when this process last polled; nil = it has never run
 
     private func bridgeBase() -> String { "http://" + (ProcessInfo.processInfo.environment["WA_BRIDGE_ADDR"] ?? "127.0.0.1:8790") }
 
@@ -66,11 +71,25 @@ final class ScheduleService {
         else if contacts == 0 { blockers.append("The WhatsApp bridge is up but returned no chats — it is probably not paired. Run scripts/wa-bridge.sh pair and scan the QR once.") }
         else if selfJID.isEmpty { blockers.append("The bridge is up but did not report your own number, so Alfred cannot write to your self-chat.") }
         if !aiOK { blockers.append("No Anthropic API key configured — Alfred cannot read the thread or write the draft.") }
+        lock.lock(); let running = watcherRunning; let owner = isWatcherOwner; let lastTick = lastTickAt; lock.unlock()
+        // Someone has to be polling: the self-chat is read by nobody otherwise, which is silent by
+        // its nature. It may legitimately be another Alfred process — the heartbeat says so.
+        let held = readWatcherLock()
+        let someoneIsPolling = running || (held.map { Date().timeIntervalSince1970 - $0.at < 180 } ?? false)
+        if !someoneIsPolling {
+            blockers.append("Nothing is polling your WhatsApp self-chat, so anything you type there — \"@schedule <name>\", \"propose\", \"yes\" — is read by nobody. Restart Alfred; the watcher starts with the server.")
+        } else if owner, let t = lastTick, Date().timeIntervalSince(t) > 300 {
+            blockers.append("The scheduling watcher last polled \(Int(Date().timeIntervalSince(t) / 60)) minutes ago — it should run every minute.")
+        }
 
-        return ["ready": blockers.isEmpty, "blockers": blockers,
+        var out: [String: Any] = ["ready": blockers.isEmpty, "blockers": blockers,
+                "watcher_running": running, "watcher_owner": owner,
                 "calendar_configured": gc != nil, "calendar_connected": calConnected,
                 "bridge_reachable": bridgeUp, "bridge_addr": base, "contacts": contacts,
                 "self_jid": selfJID, "ai_configured": aiOK]
+        if let t = lastTick { out["last_tick_at"] = ISO8601DateFormatter().string(from: t) }
+        if let held = held { out["watcher_pid"] = held.pid }   // never nil-as-Any: it would break JSON encoding
+        return out
     }
 
     static func bridgeReachable(_ base: String) async -> Bool {
@@ -297,8 +316,59 @@ final class ScheduleService {
         _ = try? await URLSession.shared.data(for: req)
     }
 
+    /// Start the 60s watcher, once per process. Everything typed into the WhatsApp self-chat
+    /// ("@schedule Arundhati", "propose", "yes") is only ever read by this loop, and so is every
+    /// counterpart reply — it used to hang off the `alfred schedule` Scheduler's timer alone, which
+    /// neither `alfred server` nor the menu bar starts, so in the mode Alfred actually runs in the
+    /// self-chat was polled by nobody. Safe to call from every entry point: the guard keeps one loop.
+    func startWatcher(intervalSeconds: UInt64 = 60) {
+        lock.lock()
+        if watcherRunning { lock.unlock(); return }
+        watcherRunning = true
+        lock.unlock()
+        Task.detached(priority: .utility) {
+            while true {
+                await ScheduleService.shared.tick()
+                try? await Task.sleep(nanoseconds: intervalSeconds * 1_000_000_000)
+            }
+        }
+    }
+
+    private func watcherLockPath() -> String {
+        let dir = ProcessInfo.processInfo.environment["ALFRED_DIR"] ?? (NSHomeDirectory() + "/.alfred")
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        return dir + "/schedule-watcher.lock"
+    }
+
+    private func readWatcherLock() -> (pid: Int, at: Double)? {
+        guard let data = FileManager.default.contents(atPath: watcherLockPath()),
+              let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let pid = o["pid"] as? Int, let at = o["at"] as? Double else { return nil }
+        return (pid, at)
+    }
+
+    /// Whether this process should be the one polling. `alfred server` and the menu bar can both be
+    /// up, and two watchers would answer the same self-chat line twice. Ownership is a heartbeat
+    /// file: whoever has written it in the last three minutes owns it, and a stale one is taken over
+    /// by whichever process ticks next — so no process is special and a crash heals itself.
+    private func claimWatcherTurn() -> Bool {
+        let me = Int(ProcessInfo.processInfo.processIdentifier)
+        let now = Date().timeIntervalSince1970
+        if let held = readWatcherLock(), held.pid != me, now - held.at < 180 {
+            lock.lock(); isWatcherOwner = false; lock.unlock()
+            return false
+        }
+        if let data = try? JSONSerialization.data(withJSONObject: ["pid": me, "at": now]) {
+            try? data.write(to: URL(fileURLWithPath: watcherLockPath()))
+        }
+        lock.lock(); isWatcherOwner = true; lock.unlock()
+        return true
+    }
+
     /// Poll the self-chat for typed follow-ups + open sessions' counterpart threads, then expire.
     func tick() async {
+        guard claimWatcherTurn() else { return }   // another Alfred process is driving it
+        lock.lock(); lastTickAt = Date(); lock.unlock()
         guard let m = manager() else { return }
         let base = bridgeBase()
 
@@ -391,12 +461,16 @@ final class ScheduleService {
         guard let url = comps.url,
               let (data, _) = try? await URLSession.shared.data(from: url),
               let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return [] }
-        return arr.compactMap { o in
+        let msgs: [ScheduleThreadMsg] = arr.compactMap { o in
             guard let text = o["content"] as? String, !text.isEmpty else { return nil }
             let fromMe = (o["is_from_me"] as? Bool) ?? false
             let ts: Date? = (o["timestamp"] as? Int).map { Date(timeIntervalSince1970: Double($0)) }
                 ?? (o["timestamp"] as? Double).map { Date(timeIntervalSince1970: $0) }
             return ScheduleThreadMsg(fromMe: fromMe, text: text, time: ts)
         }
+        // The bridge returns the newest first (it selects the latest N). Every prompt that reads a
+        // thread is told "oldest first" and decides on the LAST position it sees, so handing it the
+        // newest first made Alfred act on the message they had already changed their mind about.
+        return msgs.sorted { ($0.time ?? .distantPast) < ($1.time ?? .distantPast) }
     }
 }

@@ -335,6 +335,10 @@ class MenuBarController: NSObject, NSMenuDelegate {
         Task {
             await checkAndRunScheduledTasks()
         }
+
+        // The @schedule watcher (self-chat poll + counterpart replies + expiry). Guarded, so it
+        // runs once even if another entry point already started it.
+        ScheduleService.shared.startWatcher()
     }
 
     private func stopScheduler() {
