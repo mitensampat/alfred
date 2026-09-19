@@ -24,10 +24,25 @@ final class ScheduleService {
     private var selfWatermark: Date?          // process self-chat messages after this; nil = not yet armed
     private var sentPrompts: [(text: String, at: Date)] = []   // Alfred's own self-chat sends, to skip
     private var cachedSelfJID: String?
+    // What Alfred said while a synchronous handle() ran, so the caller (the Desk) can show it
+    // instead of guessing from a bare 200. A tick running concurrently can land a line in here too;
+    // both are Alfred's own words to the user, so the worst case is one extra line in a toast.
+    private var captures: [Int: [String]] = [:]
+    private var captureSeq = 0
 
     private func bridgeBase() -> String { "http://" + (ProcessInfo.processInfo.environment["WA_BRIDGE_ADDR"] ?? "127.0.0.1:8790") }
 
     var configured: Bool { AppConfig.load()?.calendar.google.first != nil }
+
+    /// Slot preferences for this user. The configured timezone (config.app.timezone) decides what
+    /// "4pm" means everywhere in the flow — the slots we compute, the draft the counterpart reads,
+    /// the event we book, and the Desk rail — so it must not fall back to the host's zone unless
+    /// nothing is configured.
+    static func prefs() -> ScheduleSlots.Prefs {
+        var p = ScheduleSlots.Prefs()
+        if let name = AppConfig.load()?.app.timezone, let tz = TimeZone(identifier: name) { p.timezone = tz }
+        return p
+    }
 
     /// The user's own JID — from the bridge /status (canonical <number>@s.whatsapp.net), env override, else "".
     private func resolveSelfJID() async -> String {
@@ -43,8 +58,20 @@ final class ScheduleService {
 
     private func recordPrompt(_ text: String) {
         lock.lock(); defer { lock.unlock() }
-        sentPrompts.append((text.trimmingCharacters(in: .whitespacesAndNewlines), Date()))
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        sentPrompts.append((t, Date()))
         if sentPrompts.count > 40 { sentPrompts.removeFirst(sentPrompts.count - 40) }
+        for k in Array(captures.keys) { captures[k]?.append(t) }
+    }
+
+    private func beginCapture() -> Int {
+        lock.lock(); defer { lock.unlock() }
+        captureSeq += 1; captures[captureSeq] = []
+        return captureSeq
+    }
+    private func endCapture(_ token: Int) -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        return captures.removeValue(forKey: token) ?? []
     }
     /// Whether a self-chat line is one Alfred sent recently (so the poll doesn't feed it back).
     private func isOwnPrompt(_ text: String) -> Bool {
@@ -59,7 +86,7 @@ final class ScheduleService {
         if let m = built { return m }
         guard let config = AppConfig.load(), let googleConfig = config.calendar.google.first else { return nil }
         let gcal = GoogleCalendarService(config: googleConfig, accountName: "primary")
-        let prefs = ScheduleSlots.Prefs()
+        let prefs = Self.prefs()
         let ai = ClaudeAIService(config: config.ai)
         let base = bridgeBase()
         let bridgeSender = WABridgeSender(selfJIDProvider: { [weak self] in await self?.resolveSelfJID() ?? "" })
@@ -80,11 +107,22 @@ final class ScheduleService {
         return m
     }
 
-    /// Feed one self-chat line to the manager (used by the Desk / API trigger).
-    func handle(_ text: String) async {
-        if let body = directBlockBody(text) { await runDirectBlock(body); return }   // "@schedule block …" → immediate create + invite
-        guard let m = manager() else { return }
-        _ = await m.handleSelfChat(text: text, msgID: "api_\(Int(Date().timeIntervalSince1970))", ts: Date())
+    /// Feed one self-chat line to the manager (used by the Desk / API trigger). Returns what Alfred
+    /// said back, so a caller with no WhatsApp self-chat in front of it can show the outcome rather
+    /// than a silent 200. `sessionID` targets one session — the Desk's cards are per-session.
+    @discardableResult
+    func handle(_ text: String, sessionID: String = "") async -> [String: Any] {
+        if let body = directBlockBody(text) { return await runDirectBlockReturning(body, announce: true) }   // "@schedule block …" → immediate create + invite
+        guard let m = manager() else {
+            return ["ok": false, "error": "Google Calendar not configured"]
+        }
+        let token = beginCapture()
+        let consumed = await m.handleSelfChat(text: text, msgID: "api_\(Int(Date().timeIntervalSince1970))", ts: Date(), sessionID: sessionID)
+        let said = endCapture(token)
+        var out: [String: Any] = ["ok": true, "consumed": consumed]
+        if !said.isEmpty { out["messages"] = said; out["message"] = said[said.count - 1] }
+        else if !consumed { out["message"] = "Nothing to act on — that didn't match an open scheduling session." }
+        return out
     }
 
     // MARK: - Direct block ("@schedule block <dur> with <person> at <time> topic <t> <email>")
@@ -103,7 +141,7 @@ final class ScheduleService {
     func parseDirectBlock(_ instruction: String) async -> DirectBlockPlan? {
         guard let config = AppConfig.load() else { return nil }
         let ai = ClaudeAIService(config: config.ai)
-        let tz = ScheduleSlots.Prefs().timezone
+        let tz = Self.prefs().timezone
         let iso = ISO8601DateFormatter(); iso.timeZone = tz
         // The instruction is a "block" command: block <duration> with <person> at <time>
         // [topic <topic>] [location <place>] [<email>]. The command scaffolding ("block", the
@@ -169,7 +207,7 @@ final class ScheduleService {
             return ["booked": false, "error": "no concrete time found", "hint": hint]
         }
         let title = plan.title, start = plan.start, end = plan.end, email = plan.email, name = plan.name, location = plan.location
-        let tz = ScheduleSlots.Prefs().timezone
+        let tz = Self.prefs().timezone
 
         let gcal = GoogleCalendarService(config: gc, accountName: "primary")
         do {
@@ -214,10 +252,14 @@ final class ScheduleService {
                 let msgs = await ScheduleService.fetchThread(base, selfJID, wm, 30)
                 var newWM = wm
                 for msg in msgs where msg.fromMe {
-                    if let t = msg.time { if t <= wm { continue }; if t > newWM { newWM = t } }
+                    // A line we can't place in time can't be watermarked, so acting on it would mean
+                    // acting on it again on every tick — a command re-run once a minute, forever.
+                    guard let t = msg.time else { continue }
+                    if t <= wm { continue }
+                    if t > newWM { newWM = t }
                     if isOwnPrompt(msg.text) { continue }   // skip Alfred's own prompts
                     if let body = directBlockBody(msg.text) { await runDirectBlock(body); continue }   // "@schedule block …"
-                    _ = await m.handleSelfChat(text: msg.text, msgID: "poll_\(Int((msg.time ?? Date()).timeIntervalSince1970))", ts: msg.time ?? Date())
+                    _ = await m.handleSelfChat(text: msg.text, msgID: "poll_\(Int(t.timeIntervalSince1970))", ts: t)
                 }
                 selfWatermark = newWM
             } else {
@@ -225,12 +267,16 @@ final class ScheduleService {
             }
         }
 
-        // 2) Counterpart replies on open sessions.
+        // 2) Counterpart replies on open sessions — and the user's own messages in that chat, so a
+        //    meeting they settle by hand makes Alfred stand down instead of booking over them.
+        //    The manager drops anything at or behind the session's watermark, so a message is only
+        //    read once however often we poll.
         for s in ScheduleStore.shared.allOpenSessions() where s.state != .closed {
             let since = s.proposedAt ?? s.lastActivity
             let msgs = await ScheduleService.fetchThread(base, s.contactJID, since, 20)
-            for msg in msgs where !msg.fromMe {
-                await m.onContactMessage(jid: s.contactJID, isFromMe: false, text: msg.text, ts: msg.time ?? Date())
+            for msg in msgs {
+                guard let t = msg.time else { continue }   // unplaceable in time → can't be watermarked
+                await m.onContactMessage(jid: s.contactJID, isFromMe: msg.fromMe, text: msg.text, ts: t)
             }
         }
         await m.runExpirySweep(Date())
@@ -240,12 +286,13 @@ final class ScheduleService {
     /// human stage label, the disambiguation candidates, and the booked link, so the rail can run
     /// the whole flow without the WhatsApp self-chat.
     func openSessionsForDesk() -> [[String: Any]] {
-        ScheduleStore.shared.allOpenSessions().map { s in
+        let tz = Self.prefs().timezone
+        return ScheduleStore.shared.allOpenSessions().map { s in
             var d: [String: Any] = [
                 "id": s.id, "contact_jid": s.contactJID, "contact_name": s.contactName,
                 "state": s.state.rawValue, "stage_label": Self.stageLabel(s.state, s.contactName),
                 "prompt": s.lastPromptText, "draft": s.draft,
-                "options": ScheduleFmt.slotList(s.slots, .current)
+                "options": ScheduleFmt.slotList(s.slots, tz)
             ]
             if !s.bookedLink.isEmpty { d["booked_link"] = s.bookedLink }
             if s.state == .resolving && !s.candidates.isEmpty { d["candidates"] = s.candidates.map { $0.name } }

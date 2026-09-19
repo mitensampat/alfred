@@ -45,17 +45,31 @@ actor ScheduleManager {
     private func sendSelfPlain(_ text: String) async { _ = await d.sender.sendSelf(text: text) }
 
     /// A self-chat message that opens/renews the consent window.
+    ///
+    /// The session is persisted whether or not the WhatsApp send lands. The Desk rail runs the same
+    /// flow off `lastPromptText`, so bailing on a bridge hiccup used to throw away the whole
+    /// session — the options, the draft, and the consent window with it — leaving the user clicking
+    /// buttons against nothing. A failed send costs the WhatsApp copy of the prompt, not the state.
     private func prompt(_ s: inout ScheduleSession, _ text: String) async {
         let (ok, id) = await d.sender.sendSelf(text: text)
-        guard ok else { return }
         ScheduleEngine.markPrompted(&s, Date())
-        s.lastPromptID = id
+        if ok { s.lastPromptID = id }
         s.lastPromptText = text
         save(s)
     }
 
     private func latestPromptedSession() -> ScheduleSession? {
         allOpen().sorted { ($0.lastPromptAt ?? .distantPast) > ($1.lastPromptAt ?? .distantPast) }.first
+    }
+
+    /// The session a self-chat line acts on. The Desk names one explicitly (its cards are
+    /// per-session); the WhatsApp self-chat has no way to, so it falls back to the most recently
+    /// prompted one. A named session that is gone or closed resolves to nothing rather than
+    /// silently acting on somebody else's.
+    private func targetSession(_ id: String) -> ScheduleSession? {
+        guard !id.isEmpty else { return latestPromptedSession() }
+        guard let s = d.store.session(id: id), s.state != .closed else { return nil }
+        return s
     }
 
     // MARK: - Thread + style
@@ -129,15 +143,16 @@ actor ScheduleManager {
 
     // MARK: - Self-chat entry point
 
-    /// Returns true if the scheduler consumed the message.
-    func handleSelfChat(text: String, msgID: String, ts: Date) async -> Bool {
+    /// Returns true if the scheduler consumed the message. `sessionID` names the session the line
+    /// acts on (the Desk passes the card's id); empty means "the most recently prompted one".
+    func handleSelfChat(text: String, msgID: String, ts: Date, sessionID: String = "") async -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = trimmed.lowercased()
 
         if lower.hasPrefix("@schedule") {
             let rest = String(trimmed.dropFirst("@schedule".count)).trimmingCharacters(in: .whitespaces)
             if ScheduleEngine.isConsentText(rest) {
-                if var s = latestPromptedSession() {
+                if var s = targetSession(sessionID) {
                     let dec = ScheduleEngine.handleSelfChat(&s, .init(text: rest, now: ts, forceScoped: true))
                     await executeSelfDecision(&s, dec)
                     return true
@@ -149,7 +164,7 @@ actor ScheduleManager {
             return true
         }
 
-        guard var s = latestPromptedSession() else { return false }
+        guard var s = targetSession(sessionID) else { return false }
         let before = s.state
         let dec = ScheduleEngine.handleSelfChat(&s, .init(text: trimmed, now: ts, isNextAfterPrompt: false))
         if dec.action == .none && before == s.state { return false }
@@ -297,7 +312,10 @@ actor ScheduleManager {
         case .propose:
             if !dec.indices.isEmpty {
                 s.slots = dec.indices.compactMap { $0 >= 1 && $0 <= s.slots.count ? s.slots[$0 - 1] : nil }
-                s.proposedSlots = []
+                // Keep the indices the engine recorded: they are what the user typed, and clearing
+                // them made a repeated "propose 1 3" look new, which is exactly the double-send the
+                // dedup window exists to stop.
+                s.proposedSlots = dec.indices
                 s.draft = await redraft(&s)
             }
             s.sentDraft = s.draft
@@ -492,19 +510,37 @@ actor ScheduleManager {
         guard var s = openSessionFor(jid), s.state == .awaitingReply || s.state == .replySurfaced || s.state == .held else { return }
         if isFromMe && text.trimmingCharacters(in: .whitespaces) == s.sentDraftOrDraft().trimmingCharacters(in: .whitespaces) { return }
 
+        // Only a message we have not already read may trigger a fresh reading. The poller re-fetches
+        // the thread from the proposal every tick, so without this the same reply was re-interpreted
+        // (an LLM call per session per minute) and a wobble in the model's answer re-surfaced a
+        // prompt the user had already seen. The watermark advances before the call, so one bad
+        // reading cannot loop — the message itself stays in the thread the next reading sees.
+        if isFromMe {
+            if let seen = s.lastOwnMsgAt, ts <= seen { return }
+            s.lastOwnMsgAt = ts
+        } else {
+            if let seen = s.lastCounterpartAt, ts <= seen { return }
+            s.lastCounterpartAt = ts
+        }
+
         let rc = ScheduleReplyContext(contactName: s.contactName, slots: s.slots, draft: s.sentDraftOrDraft(),
                                       thread: await threadSince(s.contactJID, s.proposedAt), now: Date(), timezone: tz)
         if isFromMe {
             let finalized = (try? await d.interp.interpretOwnMessage(rc)) ?? false
             let dec = ScheduleEngine.handleOwnMessage(&s, finalized, Date())
-            if dec.action == .standDown { save(s) }
+            if dec.action == .standDown {
+                save(s)
+                await sendSelfPlain("You settled \(s.contactName) yourself in the chat — I've stood down and won't book anything.")
+            } else {
+                save(s)
+            }
             return
         }
         let interp: ScheduleInterpretation
         do { interp = try await d.interp.interpretReply(rc) }
         catch { await prompt(&s, "\(s.contactName) replied but I couldn't read the thread — take a look."); return }
 
-        if (s.state == .replySurfaced || s.state == .held) && interp.sameOutcome(s.surfaced) { return }
+        if (s.state == .replySurfaced || s.state == .held) && interp.sameOutcome(s.surfaced) { save(s); return }
 
         let dec = ScheduleEngine.handleCounterpartReply(&s, interp, ts, Date())
         switch dec.action {

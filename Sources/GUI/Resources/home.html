@@ -11388,25 +11388,25 @@
                     <div class="dk-sched-name">${_esc(s.contact_name)}</div>
                     <div class="dk-sched-stage ${state==='reply_surfaced'||state==='held'?'go':''}">${_esc(s.stage_label || state.replace(/_/g,' '))}</div>`;
                 if (state === 'resolving' && Array.isArray(s.candidates)){
-                    html += `<div class="dk-sched-row">` + s.candidates.map((c,i) => `<button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskSchedSay('${i+1}')">${i+1}. ${_esc(c)}</button>`).join('') + `</div>`;
+                    html += `<div class="dk-sched-row">` + s.candidates.map((c,i) => `<button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskSchedSay('${i+1}','${s.id}')">${i+1}. ${_esc(c)}</button>`).join('') + `</div>`;
                 }
                 if (s.draft && state === 'slots_proposed'){ html += `<div class="dk-sched-draft">${_esc(s.draft)}</div>`; }
                 if (s.options && (state==='slots_proposed'||state==='reply_surfaced'||state==='held')){ html += `<div class="dk-sched-slots">${_esc(s.options)}</div>`; }
                 if (s.booked_link){ html += `<a class="dk-sched-link" href="${_esc(s.booked_link)}" target="_blank" rel="noopener">Booked ✓ — open event →</a>`; }
                 let acts = '';
                 if (state === 'slots_proposed'){
-                    acts = `<button type="button" class="dk-btn dk-btn-accent dk-btn-sm" onclick="deskSchedSay('propose')">Send to ${first}</button>
-                        <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskSchedEdit()">Edit…</button>
-                        <button type="button" class="dk-btn dk-btn-ghost dk-btn-sm" onclick="deskSchedSay('leave it')">Leave</button>`;
+                    acts = `<button type="button" class="dk-btn dk-btn-accent dk-btn-sm" onclick="deskSchedSay('propose','${s.id}')">Send to ${first}</button>
+                        <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskSchedEdit('${s.id}')">Edit…</button>
+                        <button type="button" class="dk-btn dk-btn-ghost dk-btn-sm" onclick="deskSchedSay('leave it','${s.id}')">Leave</button>`;
                 } else if (state === 'reply_surfaced' || state === 'held'){
-                    acts = `<button type="button" class="dk-btn dk-btn-accent dk-btn-sm" onclick="deskSchedSay('yes')">Book it</button>
-                        <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskSchedEdit()">Edit…</button>
-                        <button type="button" class="dk-btn dk-btn-ghost dk-btn-sm" onclick="deskSchedSay('leave it')">Leave</button>`;
+                    acts = `<button type="button" class="dk-btn dk-btn-accent dk-btn-sm" onclick="deskSchedSay('yes','${s.id}')">Book it</button>
+                        <button type="button" class="dk-btn dk-btn-outline dk-btn-sm" onclick="deskSchedEdit('${s.id}')">Edit…</button>
+                        <button type="button" class="dk-btn dk-btn-ghost dk-btn-sm" onclick="deskSchedSay('leave it','${s.id}')">Leave</button>`;
                 } else if (state === 'awaiting_reply'){
                     acts = `<span class="dk-sched-wait">Watching ${first}'s thread…</span>
-                        <button type="button" class="dk-btn dk-btn-ghost dk-btn-sm" onclick="deskSchedSay('leave it')">Leave</button>`;
+                        <button type="button" class="dk-btn dk-btn-ghost dk-btn-sm" onclick="deskSchedSay('leave it','${s.id}')">Leave</button>`;
                 } else if (state === 'resolving'){
-                    acts = `<button type="button" class="dk-btn dk-btn-ghost dk-btn-sm" onclick="deskSchedSay('leave it')">Leave</button>`;
+                    acts = `<button type="button" class="dk-btn dk-btn-ghost dk-btn-sm" onclick="deskSchedSay('leave it','${s.id}')">Leave</button>`;
                 }
                 if (acts) html += `<div class="dk-sched-acts">${acts}</div>`;
                 html += `</div>`;
@@ -11427,11 +11427,19 @@
             if (want && !_schedPoll){ _schedPoll = setInterval(deskSchedRefresh, 25000); }
             else if (!want && _schedPoll){ clearInterval(_schedPoll); _schedPoll = null; }
         }
-        async function deskSchedSay(text){
+        async function deskSchedSay(text, sessionId){
             if (!text) return;
             const blk = _blockBody(text);
             if (blk) { return deskDirectBlock(blk); }   // direct-block books synchronously + toasts
-            try { await authFetch('/api/schedule/say?text=' + encodeURIComponent(text), { method: 'POST' }); } catch(e){}
+            // Alfred's answer goes to the WhatsApp self-chat; show it here too, so the Desk is never
+            // the surface where a scheduling action just silently does nothing.
+            try {
+                const q = '/api/schedule/say?text=' + encodeURIComponent(text) + (sessionId ? '&session=' + encodeURIComponent(sessionId) : '');
+                const r = await authFetch(q, { method: 'POST' });
+                const d = await r.json();
+                if (d && d.error) showToast(d.error, 'error');
+                else if (d && d.message) showToast(d.message.split('\n')[0]);
+            } catch(e){ showToast('Couldn\u2019t reach the scheduler.', 'error'); }
             setTimeout(deskSchedRefresh, 1200);
         }
         // The instruction body if this is a direct-block ("block …" or "@schedule block …"), else null.
@@ -11461,9 +11469,9 @@
             const who = prompt('Schedule a meeting.\n• Find times: "Kunal 30m tomorrow" or "Priya 1h video next week"\n• Book directly: "block 30m with Kunal at 4pm tomorrow topic Sync kunal@acme.com"');
             if (who && who.trim()) deskSchedSay('@schedule ' + who.trim());
         }
-        function deskSchedEdit(){
+        function deskSchedEdit(sessionId){
             const t = prompt('Tell Alfred what to change, or paste the exact message to send:');
-            if (t && t.trim()) deskSchedSay(t.trim());
+            if (t && t.trim()) deskSchedSay(t.trim(), sessionId);
         }
 
         // ── side rail — scoped to the current environment. People: relationships cooling + your

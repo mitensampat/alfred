@@ -1415,14 +1415,16 @@ class HTTPServer {
             }
         case ("POST", "/api/schedule/say"):
             // Drive the scheduler with a self-chat line ("@schedule kunal 30m tomorrow", "propose",
-            // "yes", "edit", "leave it"). The manager's prompts go to the WhatsApp self-chat.
+            // "yes", "edit", "leave it"). `session` names the session it acts on (the Desk sends the
+            // card's id); without it the line lands on the most recently prompted session. Returns
+            // what Alfred said back so the Desk can show it — the same line the WhatsApp self-chat gets.
             let text = request.queryParams["text"] ?? ""
             guard !text.isEmpty else { return HTTPResponse(statusCode: 400, body: ["error": "text required"]) }
             guard ScheduleService.shared.configured else {
                 return HTTPResponse(statusCode: 200, body: ["ok": false, "error": "Google Calendar not configured"])
             }
-            await ScheduleService.shared.handle(text)
-            return HTTPResponse(statusCode: 200, body: ["ok": true])
+            let outcome = await ScheduleService.shared.handle(text, sessionID: request.queryParams["session"] ?? "")
+            return HTTPResponse(statusCode: 200, body: outcome)
         case ("GET", "/api/schedule/parse-block"):
             // Dry-run of @schedule direct-block: LLM-parse the instruction into a plan WITHOUT booking.
             let text = request.queryParams["text"] ?? ""

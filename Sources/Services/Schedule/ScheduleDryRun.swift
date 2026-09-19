@@ -25,13 +25,15 @@ enum ScheduleDryRun {
     final class FakeSender: ScheduleSender {
         var toSelf: [String] = []
         var toContact: [String] = []
-        func sendSelf(text: String) async -> (ok: Bool, msgID: String) { toSelf.append(text); return (true, "self_\(toSelf.count)") }
-        func sendTo(jid: String, text: String) async -> (ok: Bool, msgID: String) { toContact.append(text); return (true, "to_\(toContact.count)") }
+        var ok = true                    // false simulates a down wa-bridge
+        func sendSelf(text: String) async -> (ok: Bool, msgID: String) { toSelf.append(text); return (ok, ok ? "self_\(toSelf.count)" : "") }
+        func sendTo(jid: String, text: String) async -> (ok: Bool, msgID: String) { toContact.append(text); return (ok, ok ? "to_\(toContact.count)" : "") }
     }
 
     final class FakeInterp: ScheduleInterpreting {
         var reply = ScheduleInterpretation(intent: .accept, slotIndex: 2, confidence: "high")
-        func interpretReply(_ rc: ScheduleReplyContext) async throws -> ScheduleInterpretation { reply }
+        var replyCalls = 0
+        func interpretReply(_ rc: ScheduleReplyContext) async throws -> ScheduleInterpretation { replyCalls += 1; return reply }
         func interpretOwnMessage(_ rc: ScheduleReplyContext) async throws -> Bool { false }
         func classifySelfText(_ sc: ScheduleSelfTextContext) async throws -> ScheduleSelfTextClass { ScheduleSelfTextClass(kind: .unclear, confidence: "low") }
     }
@@ -84,6 +86,52 @@ enum ScheduleDryRun {
         add("confirmation sent to the counterpart", sender.toContact.count == 2 && sender.toContact[1].lowercased().contains("it is"))
         add("self-chat gets a Booked receipt with the Meet link", (sender.toSelf.last ?? "").contains("Booked:") && (sender.toSelf.last ?? "").contains("Meet:"))
         add("session closed", store.openSession(contactJID: jid) == nil)
+
+        // A fresh manager over its own store, so each case below starts clean.
+        func build(_ sender: FakeSender, _ interp: FakeInterp,
+                   _ chats: [(jid: String, names: [String])]) -> (ScheduleManager, ScheduleStore) {
+            let st = ScheduleStore(path: NSTemporaryDirectory() + "sched_dryrun_\(UUID().uuidString).db")
+            let m = ScheduleManager(ScheduleManager.Deps(
+                cal: FakeCal(), interp: interp, drafter: FakeDrafter(), sender: sender, store: st,
+                timezone: .current, myStyle: { "" }, directChats: { chats },
+                thread: { _, _, _ in [] }, contactTZOverride: { _ in "" }))
+            return (m, st)
+        }
+
+        // 5) A failed self-chat send must not take the session with it. The Desk runs the same flow
+        //    off the stored prompt; losing the state left the user clicking buttons against nothing.
+        let deadSender = FakeSender(); deadSender.ok = false
+        let (m2, store2) = build(deadSender, FakeInterp(), [(jid: jid, names: ["Kunal Shah", "Kunal"])])
+        _ = await m2.handleSelfChat(text: "@schedule kunal 30m tomorrow", msgID: "d1", ts: tick())
+        let survivor = store2.openSession(contactJID: jid)
+        add("session survives a failed self-chat send",
+            survivor?.state == .slotsProposed && !(survivor?.lastPromptText.isEmpty ?? true) && survivor?.lastPromptAt != nil)
+
+        // 6) Two live sessions: a line naming one acts on THAT one. The Desk's cards are
+        //    per-session, so "leave it" on Kunal's card must not close Priya's.
+        let jidB = "919820000001@s.whatsapp.net"
+        let (m3, store3) = build(FakeSender(), FakeInterp(),
+                                 [(jid: jid, names: ["Kunal Shah"]), (jid: jidB, names: ["Priya Nair"])])
+        _ = await m3.handleSelfChat(text: "@schedule kunal 30m tomorrow", msgID: "t1", ts: tick())
+        _ = await m3.handleSelfChat(text: "@schedule priya 30m tomorrow", msgID: "t2", ts: tick())
+        let kunalID = store3.openSession(contactJID: jid)?.id ?? ""
+        _ = await m3.handleSelfChat(text: "leave it", msgID: "t3", ts: tick(), sessionID: kunalID)
+        add("a targeted line acts on the session it names",
+            !kunalID.isEmpty && store3.openSession(contactJID: jid) == nil
+                && store3.openSession(contactJID: jidB)?.state == .slotsProposed)
+
+        // 7) The poller re-feeds the thread from the proposal on every tick. The same message must
+        //    be read once — re-reading meant an LLM call a minute and a repeat of a prompt the user
+        //    had already answered.
+        let counting = FakeInterp()
+        let (m4, _) = build(FakeSender(), counting, [(jid: jid, names: ["Kunal Shah", "Kunal"])])
+        _ = await m4.handleSelfChat(text: "@schedule kunal 30m tomorrow", msgID: "w1", ts: tick())
+        _ = await m4.handleSelfChat(text: "propose", msgID: "w2", ts: tick())
+        let replyTS = tick()
+        await m4.onContactMessage(jid: jid, isFromMe: false, text: "the second one works", ts: replyTS)
+        let afterFirst = counting.replyCalls
+        await m4.onContactMessage(jid: jid, isFromMe: false, text: "the second one works", ts: replyTS)
+        add("a re-fed counterpart message is read once", afterFirst == 1 && counting.replyCalls == 1)
 
         return results
     }

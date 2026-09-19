@@ -109,6 +109,8 @@ struct ScheduleSession: Codable {
     var surfaced: ScheduleInterpretation?
     var surfacedAtMsgTime: Date?
     var lastActivity: Date?             // drives silent expiry (48h)
+    var lastCounterpartAt: Date?        // newest counterpart message already interpreted
+    var lastOwnMsgAt: Date?             // newest message the user sent in that chat, already read
     var lastMediaSurfacedAt: Date?      // rate-limits "they sent a voice note" nudges
     var toneNote: String = ""           // standing "make it warmer" applied on every redraft
     var candidates: [ScheduleContactCandidate] = []   // pending disambiguation (resolving)

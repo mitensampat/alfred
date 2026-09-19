@@ -37,12 +37,33 @@ enum ScheduleSlots {
         return mergeIntervals(out)
     }
 
+    /// Whether an event title is on the ignore list — matched on whole words, not substrings.
+    /// A bare `contains` treated "Blockchain review" as a *block*, "Stakeholder sync" as a *hold*
+    /// and "Holdings call" likewise, so Alfred read real meetings as free time and offered slots
+    /// straight over them.
     private static func titleIgnored(_ summary: String, _ ignoreTitles: [String]) -> Bool {
-        let s = summary.lowercased()
+        let words = tokens(summary)
+        guard !words.isEmpty else { return false }
         for ig0 in ignoreTitles {
-            let ig = ig0.lowercased().trimmingCharacters(in: .whitespaces)
-            if !ig.isEmpty && s.contains(ig) { return true }
+            let phrase = tokens(ig0)
+            if phrase.isEmpty { continue }
+            if phrase.count == 1 {
+                if words.contains(phrase[0]) { return true }
+            } else if containsPhrase(words, phrase) {
+                return true
+            }
         }
+        return false
+    }
+
+    private static func tokens(_ s: String) -> [String] {
+        s.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+    }
+
+    /// Whether `phrase` appears as a consecutive run of whole words in `words`.
+    private static func containsPhrase(_ words: [String], _ phrase: [String]) -> Bool {
+        guard phrase.count <= words.count else { return false }
+        for i in 0...(words.count - phrase.count) where Array(words[i..<(i + phrase.count)]) == phrase { return true }
         return false
     }
 
