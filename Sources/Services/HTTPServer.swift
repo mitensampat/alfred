@@ -1413,6 +1413,13 @@ class HTTPServer {
             } catch {
                 return HTTPResponse(statusCode: 200, body: ["ok": false, "error": "\(error)"])
             }
+        case ("GET", "/api/schedule/preferences"):
+            return HTTPResponse(statusCode: 200, body: ScheduleService.shared.preferences())
+        case ("POST", "/api/schedule/preferences"):
+            // Plain-prose meeting preferences. Returns how Alfred read them, so a misreading is
+            // visible immediately instead of surfacing as a strange proposal a week later.
+            let text = request.queryParams["text"] ?? String(data: request.body ?? Data(), encoding: .utf8) ?? ""
+            return HTTPResponse(statusCode: 200, body: await ScheduleService.shared.setPreferences(text))
         case ("GET", "/api/schedule/preview"):
             // What the slot finder would propose right now — no session, no message sent. Reports
             // the busy set and which calendars fed it, so a proposal can be explained.
@@ -1687,6 +1694,52 @@ class HTTPServer {
             let busyE = [ScheduleSlots.Interval(start: at(9), end: at(18))]
             let e = ScheduleSlots.computeSlots(busy: busyE, from: from, to: to, dur: dur, prefs: mkPrefs(allDays))
             add("no room → empty", e.isEmpty)
+
+            // F. a hard window is removed outright, not merely ranked down — "I'm at the gym until
+            //    9:30" must never be offered, however empty the rest of the day is.
+            var pF = mkPrefs(allDays)
+            var specF = SchedulePrefSpec()
+            var hardW = SchedulePrefSpec.Window()
+            hardW.startMin = 0; hardW.endMin = 11 * 60; hardW.hard = true; hardW.label = "mornings are mine"
+            specF.windows = [hardW]
+            pF.spec = specF
+            let f = ScheduleSlots.computeSlots(busy: [], from: from, to: to, dur: dur, prefs: pF)
+            add("a hard window is never offered", !f.isEmpty && f.allSatisfy { $0.start >= at(11) }, "\(f.count) slots")
+
+            // G. a preferred window outranks "earlier is better". Without a window the first slot
+            //    is 09:00; a weighted band in the afternoon has to beat that, or the weights do
+            //    nothing and the whole preferences feature is decorative.
+            var pG = mkPrefs(allDays)
+            var specG = SchedulePrefSpec()
+            var prefW = SchedulePrefSpec.Window()
+            prefW.startMin = 16 * 60; prefW.endMin = 18 * 60; prefW.weight = 12; prefW.label = "late afternoon"
+            specG.windows = [prefW]
+            pG.spec = specG
+            let g = ScheduleSlots.computeSlots(busy: [], from: from, to: to, dur: dur, prefs: pG, want: 1)
+            add("a preferred window outranks earliness", g.first.map { $0.start >= at(16) } ?? false,
+                g.first.map { "\($0.start)" } ?? "none")
+
+            // H. deep-work protection prefers the small gap beside a meeting over carving into a
+            //    long free run. Busy 09:00-09:30 and 10:00-18:00 leaves a 30-min gap at 09:30 and
+            //    nothing else; widen it: busy 12:00-12:30 in an otherwise open day means the
+            //    adjacent gap should win over opening the morning block.
+            var pH = mkPrefs(allDays)
+            var specH = SchedulePrefSpec()
+            specH.protectDeepWork = true
+            specH.deepWorkMinBlockMin = 120
+            specH.deepWorkPenalty = 20
+            pH.spec = specH
+            let busyH = [ScheduleSlots.Interval(start: at(12), end: at(12, 30))]
+            let h = ScheduleSlots.computeSlots(busy: busyH, from: from, to: to, dur: dur, prefs: pH, want: 1)
+            add("deep-work protection avoids carving a long block",
+                h.first.map { $0.start >= at(11, 30) && $0.start <= at(13) } ?? false,
+                h.first.map { "\($0.start)" } ?? "none")
+
+            // I. minimum notice removes everything before the cutoff.
+            var pI = mkPrefs(allDays)
+            pI.notBefore = at(14)
+            let i2 = ScheduleSlots.computeSlots(busy: [], from: from, to: to, dur: dur, prefs: pI)
+            add("minimum notice drops earlier slots", !i2.isEmpty && i2.allSatisfy { $0.start >= at(14) })
 
             let allPass = results.allSatisfy { ($0["pass"] as? Bool) == true }
             return HTTPResponse(statusCode: 200, body: ["ok": allPass, "passed": results.filter { ($0["pass"] as? Bool) == true }.count, "total": results.count, "cases": results])

@@ -18,6 +18,12 @@ enum ScheduleSlots {
         var buffer: TimeInterval = 0          // travel buffer around busy blocks (in-person)
         var timezone: TimeZone = .current
         var ignoreTitles: [String] = ["block", "hold", "focus", "ooo", "lunch"]
+        /// The user's compiled prose preferences. Absent = rank on adjacency and earliness alone,
+        /// which is the behaviour before preferences existed.
+        var spec: SchedulePrefSpec?
+        /// Nothing before this instant — honours `min_notice_min` without the slot finder needing
+        /// to know what "now" means.
+        var notBefore: Date?
 
         static let `default` = Prefs()
     }
@@ -129,11 +135,30 @@ enum ScheduleSlots {
                 func addCand(_ s0: Date, _ adjacent: Bool) {
                     let s = roundUpQuarter(s0)
                     if s.addingTimeInterval(dur) > blk.end || s < blk.start { return }
+                    let e = s.addingTimeInterval(dur)
+                    // Minimum notice: a slot two hours out is free on paper and useless in practice.
+                    if let nb = prefs.notBefore, s < nb { return }
+                    // Hard windows are removed, not penalised — "I'm at the gym until 9:30" is not
+                    // a ranking preference, and offering it at all is the wrong answer.
+                    if let sp = prefs.spec, sp.isHardBlocked(s, e, cal) { return }
+
                     var score = 0.0
                     if adjacent { score += 10 }             // adjacency beats splitting a free block
                     score -= s.timeIntervalSince(from) / 3600.0 * 0.1   // earlier is mildly better
+
+                    if let sp = prefs.spec {
+                        // Preferred/avoided bands tilt the ranking.
+                        score += sp.windowScore(s, e, cal).score
+                        // Keep long free runs whole: taking a bite out of a 3-hour block costs more
+                        // than filling a 45-minute gap beside an existing meeting. A penalty, not a
+                        // veto — if the only room is a long block, it is still offered.
+                        if sp.protectDeepWork && blockLen >= Double(sp.deepWorkMinBlockMin) * 60 {
+                            score -= sp.deepWorkPenalty
+                        }
+                    }
+
                     let dayKey = Int(cal.startOfDay(for: s).timeIntervalSince1970)
-                    cands.append(Candidate(slot: ScheduleSlot(start: s, end: s.addingTimeInterval(dur),
+                    cands.append(Candidate(slot: ScheduleSlot(start: s, end: e,
                                                               origin: "computed", adjacent: adjacent),
                                            score: score, dayKey: dayKey))
                 }

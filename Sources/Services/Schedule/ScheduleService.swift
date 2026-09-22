@@ -47,7 +47,121 @@ final class ScheduleService {
     static func prefs() -> ScheduleSlots.Prefs {
         var p = ScheduleSlots.Prefs()
         if let name = AppConfig.load()?.app.timezone, let tz = TimeZone(identifier: name) { p.timezone = tz }
+        // The user's prose preferences, compiled. Absent (nothing written yet, or the compile
+        // failed) leaves the pre-preferences defaults in place rather than an empty schedule.
+        let spec = SchedulePrefStore.shared.spec()
+        p.spec = spec
+        p.dayStartMin = spec.meetingStartMin
+        p.dayEndMin = spec.meetingEndMin
+        p.workdays = Set(spec.workdays)
+        p.ignoreTitles = spec.ignoreTitles
+        if spec.minNoticeMin > 0 { p.notBefore = Date().addingTimeInterval(Double(spec.minNoticeMin) * 60) }
         return p
+    }
+
+    // MARK: - Preferences
+
+    private static func hhmm(_ mins: Int) -> String { String(format: "%02d:%02d", mins / 60, mins % 60) }
+    private static let dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    private static func dayList(_ d: [Int]) -> String {
+        d.isEmpty ? "every day" : d.sorted().map { dayNames[max(0, min(6, $0))] }.joined(separator: ", ")
+    }
+
+    /// How Alfred read the prose, in the user's own terms. The compiled spec is the thing that
+    /// actually runs, so it has to be legible — a preference that was misread is only fixable if
+    /// the user can see it was misread.
+    static func explain(_ s: SchedulePrefSpec) -> [String] {
+        var out: [String] = []
+        out.append("Meetings between \(hhmm(s.meetingStartMin)) and \(hhmm(s.meetingEndMin)) on \(dayList(s.workdays)).")
+        for w in s.windows.sorted(by: { $0.startMin < $1.startMin }) {
+            let when = "\(hhmm(w.startMin))–\(hhmm(w.endMin)) on \(dayList(w.days))"
+            if w.hard {
+                out.append("Never \(when)\(w.label.isEmpty ? "" : " (\(w.label))").")
+            } else if w.weight > 0 {
+                out.append("Prefers \(when)\(w.label.isEmpty ? "" : " — \(w.label)").")
+            } else if w.weight < 0 {
+                // The label usually already carries the "only if nothing else" sense; appending it
+                // unconditionally produced "only if genuinely nothing else unless there is nothing else".
+                out.append(w.label.isEmpty ? "Avoids \(when) unless there is nothing else."
+                                           : "Avoids \(when) — \(w.label).")
+            }
+        }
+        if s.protectDeepWork {
+            out.append("Keeps free stretches of \(s.deepWorkMinBlockMin / 60)h+ whole where it can, preferring gaps next to existing meetings.")
+        }
+        if s.travelBufferMin > 0 { out.append("Leaves \(s.travelBufferMin) minutes either side of in-person meetings.") }
+        if s.minNoticeMin > 0 {
+            let h = s.minNoticeMin / 60
+            out.append("Nothing sooner than \(h >= 24 ? "\(h / 24) day(s)" : "\(h) hour(s)") from now.")
+        }
+        if !s.ignoreTitles.isEmpty {
+            out.append("Treats these calendar titles as soft, and may book over them: \(s.ignoreTitles.joined(separator: ", ")).")
+        }
+        if !s.workCalendar.isEmpty || !s.personalCalendar.isEmpty {
+            out.append("Books work-hours meetings (\(hhmm(s.workHoursStartMin))–\(hhmm(s.workHoursEndMin))) to '\(s.workCalendar)', the rest to '\(s.personalCalendar)'.")
+        }
+        return out
+    }
+
+    /// The current preferences: the prose, how it was read, and anything that could not be encoded.
+    func preferences() -> [String: Any] {
+        let st = SchedulePrefStore.shared.load()
+        let fmt = ISO8601DateFormatter()
+        var out: [String: Any] = [
+            "ok": true,
+            "text": st.text,
+            "suggested_text": SchedulePrefSpec.suggestedText,
+            "using_defaults": st.text.isEmpty || st.compileFailed,
+            "interpretation": Self.explain(st.spec),
+            "notes": st.spec.notes
+        ]
+        if let t = st.compiledAt { out["compiled_at"] = fmt.string(from: t) }
+        if st.compileFailed { out["warning"] = "Alfred couldn't read your last edit, so it's still using the previous settings. Try rephrasing." }
+        return out
+    }
+
+    /// Compile new prose and store it. Returns how it was read so the user can correct a misreading
+    /// immediately, rather than discovering it in a proposal a week later.
+    func setPreferences(_ text: String) async -> [String: Any] {
+        guard let config = AppConfig.load() else { return ["ok": false, "error": "No config."] }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var st = SchedulePrefStore.shared.load()
+
+        if trimmed.isEmpty {
+            // Clearing the text is a real choice: go back to defaults rather than keeping a spec
+            // the prose no longer describes.
+            st = SchedulePrefStore.Stored()
+            SchedulePrefStore.shared.save(st)
+            var out = preferences(); out["cleared"] = true
+            return out
+        }
+        // Same prose, same compiler → nothing to do. A newer compiler recompiles even unchanged
+        // text, so a fix to how preferences are read actually reaches people who already wrote theirs.
+        if trimmed == st.text, !st.compileFailed, st.compilerVersion == SchedulePrefCompiler.version {
+            var out = preferences(); out["unchanged"] = true
+            return out
+        }
+
+        let names = config.calendar.google.map { $0.name }
+        let compiler = SchedulePrefCompiler(ai: ClaudeAIService(config: config.ai))
+        guard let spec = await compiler.compile(trimmed, calendarNames: names) else {
+            // Keep the last good spec. Losing working preferences because one edit confused the
+            // model would be a worse outcome than ignoring the edit.
+            st.compileFailed = true
+            st.text = trimmed
+            SchedulePrefStore.shared.save(st)
+            var out = preferences(); out["ok"] = false
+            out["error"] = "Alfred couldn't turn that into scheduling rules. Your previous preferences are still in force."
+            return out
+        }
+        st.text = trimmed
+        st.textHash = SchedulePrefStore.hash(trimmed)
+        st.spec = spec
+        st.compiledAt = Date()
+        st.compileFailed = false
+        st.compilerVersion = SchedulePrefCompiler.version
+        SchedulePrefStore.shared.save(st)
+        return preferences()
     }
 
     /// What the slot finder would propose right now, without opening a session or messaging anyone.
@@ -198,6 +312,26 @@ final class ScheduleService {
         return sentPrompts.contains { $0.at > cutoff && $0.text == t }
     }
 
+    /// The calendar layer, with the user's travel buffer and their work/personal booking rule
+    /// applied. Availability is read from every calendar; only the write target is chosen here.
+    private func scheduleCalendar(_ gcals: [(name: String, svc: GoogleCalendarService)],
+                                  _ prefs: ScheduleSlots.Prefs) -> ScheduleCalendar {
+        let spec = SchedulePrefStore.shared.spec()
+        let c = ScheduleCalendar(cals: gcals, prefs: prefs, travelBufferMin: spec.travelBufferMin)
+        guard !spec.workCalendar.isEmpty || !spec.personalCalendar.isEmpty else { return c }
+        let tz = prefs.timezone
+        c.bookingTarget = { start in
+            var cal = Calendar(identifier: .gregorian); cal.timeZone = tz
+            let mins = cal.component(.hour, from: start) * 60 + cal.component(.minute, from: start)
+            let weekday = cal.component(.weekday, from: start) - 1
+            let isWorkday = spec.workdays.contains(weekday)
+            let inWorkHours = mins >= spec.workHoursStartMin && mins < spec.workHoursEndMin
+            if isWorkday && inWorkHours, !spec.workCalendar.isEmpty { return spec.workCalendar }
+            return spec.personalCalendar.isEmpty ? nil : spec.personalCalendar
+        }
+        return c
+    }
+
     func manager() -> ScheduleManager? {
         lock.lock(); defer { lock.unlock() }
         if let m = built { return m }
@@ -212,7 +346,7 @@ final class ScheduleService {
         let bridgeSender = WABridgeSender(selfJIDProvider: { [weak self] in await self?.resolveSelfJID() ?? "" })
         let sender = RecordingSelfSender(bridgeSender) { [weak self] in self?.recordPrompt($0) }
         let deps = ScheduleManager.Deps(
-            cal: ScheduleCalendar(cals: gcals, prefs: prefs),
+            cal: scheduleCalendar(gcals, prefs),
             interp: ScheduleInterpreter(ai: ai),
             drafter: LLMDrafter(ai: ai),
             sender: sender,
