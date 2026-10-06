@@ -390,7 +390,7 @@ class AttentionTracker {
         return .uncategorized
     }
 
-    /// Batch-categorize all meetings in a single LLM call for efficiency
+    /// Batch-categorize all meetings through the meeting-category decision
     private func categorizeAllMeetings(_ events: [CalendarEvent]) async -> [String: MeetingCategory] {
         // First, separate events that have user overrides from those needing AI
         var results: [String: MeetingCategory] = [:]
@@ -415,57 +415,16 @@ class AttentionTracker {
         // If no events need AI, return early
         guard !needsAI.isEmpty else { return results }
 
-        // Build a single prompt listing all meetings that need categorization
-        var meetingsList = ""
-        for (i, item) in needsAI.enumerated() {
-            let event = item.event
-            meetingsList += "\(i + 1). \"\(event.title)\" - \(Int(event.duration / 60))min, \(event.attendees.count) attendees, external: \(event.hasExternalAttendees)\n"
+        // Categorize via the `meeting-category` decision (~/.alfred/decisions/), keyed by the
+        // event's original index so an answer can never shift onto a neighbouring meeting.
+        let items = needsAI.map { item in
+            DecisionEngine.Item(
+                key: "\(item.index)",
+                text: "\"\(item.event.title)\" - \(Int(item.event.duration / 60))min, \(item.event.attendees.count) attendees, external: \(item.event.hasExternalAttendees)")
         }
-
-        let prompt = """
-        Categorize each meeting into exactly one category: Strategic, Tactical, Collaborative, Informational, Ceremonial, or Waste.
-
-        - Strategic: High-value, long-term impact
-        - Tactical: Important for execution
-        - Collaborative: Team coordination
-        - Informational: Status updates, FYIs
-        - Ceremonial: Could be async
-        - Waste: Low value
-
-        Meetings:
-        \(meetingsList)
-        Respond with ONLY a JSON object mapping the meeting number to its category. Example: {"1": "Tactical", "2": "Strategic"}
-        """
-
-        do {
-            let response = try await aiService.generateText(prompt: prompt, maxTokens: 512, useModel: "claude-haiku-4-5-20251001")
-
-            // Extract JSON from response
-            if let jsonStart = response.firstIndex(of: "{"),
-               let jsonEnd = response.lastIndex(of: "}") {
-                let jsonString = String(response[jsonStart...jsonEnd])
-                if let jsonData = jsonString.data(using: .utf8),
-                   let parsed = try? JSONSerialization.jsonObject(with: jsonData) as? [String: String] {
-                    for (numberStr, categoryStr) in parsed {
-                        // Map the 1-based number back to the original event index
-                        if let number = Int(numberStr), number >= 1, number <= needsAI.count {
-                            let originalIndex = needsAI[number - 1].index
-                            let cleaned = categoryStr.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                            let category: MeetingCategory
-                            if cleaned.contains("strategic") { category = .strategic }
-                            else if cleaned.contains("tactical") { category = .tactical }
-                            else if cleaned.contains("collaborative") { category = .collaborative }
-                            else if cleaned.contains("informational") { category = .informational }
-                            else if cleaned.contains("ceremonial") { category = .ceremonial }
-                            else if cleaned.contains("waste") { category = .waste }
-                            else { category = .uncategorized }
-                            results["\(originalIndex)"] = category
-                        }
-                    }
-                }
-            }
-        } catch {
-            print("  AI batch categorization failed: \(error)")
+        for (key, decision) in await DecisionEngine.decide("meeting-category", items: items, ai: aiService)
+        where decision.tier != .ask {
+            results[key] = MeetingCategory.fromDecisionLabel(decision.label)
         }
 
         // Fill in any events that weren't categorized (fallback)
@@ -778,5 +737,21 @@ class AttentionTracker {
         }
 
         return conflicts
+    }
+}
+
+extension MeetingCategory {
+    /// Map a `meeting-category` decision label onto the enum. "Waste" is the menu's short form of
+    /// `.waste` ("Potential Waste").
+    static func fromDecisionLabel(_ label: String) -> MeetingCategory {
+        switch label.lowercased() {
+        case "strategic": return .strategic
+        case "tactical": return .tactical
+        case "collaborative": return .collaborative
+        case "informational": return .informational
+        case "ceremonial": return .ceremonial
+        case "waste": return .waste
+        default: return .uncategorized
+        }
     }
 }

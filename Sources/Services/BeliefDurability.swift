@@ -66,62 +66,33 @@ enum BeliefDurability: String {
         return String(h, radix: 16)
     }
 
-    // ── LLM batch classifier ──────────────────────────────────────────────────────
-    /// Classify many statements in one Haiku call. Anything the model can't be coaxed to
-    /// return falls back to the heuristic, and unknowns default to `.durable` (we never silently
-    /// drop a belief — worst case it stays in "what you believe" until the user dismisses it).
+    // ── Model classifier ──────────────────────────────────────────────────────────
+    /// Classify many statements via the `belief-durability` decision (~/.alfred/decisions/).
+    /// Anything the model skips, or answers without enough confidence to act on, defaults to
+    /// `.durable` — we never silently drop a belief; worst case it stays in "what you believe"
+    /// until the user dismisses it.
     static func classify(_ statements: [String]) async -> [String: BeliefDurability] {
         var out: [String: BeliefDurability] = [:]
         guard !statements.isEmpty else { return out }
 
-        // Heuristic pre-pass — free, and shrinks the LLM batch.
-        var needLLM: [String] = []
+        // Heuristic pre-pass — free, and shrinks the model batch.
+        var needModel: [String] = []
         for s in statements {
-            if let h = heuristic(s) { out[s] = h } else { needLLM.append(s) }
+            if let h = heuristic(s) { out[s] = h } else { needModel.append(s) }
         }
-        guard !needLLM.isEmpty else { return out }
+        guard !needModel.isEmpty else { return out }
 
-        let numbered = needLLM.enumerated().map { "\($0.offset): \($0.element)" }.joined(separator: "\n")
-        let prompt = """
-        You are sorting statements from a CEO's self-model. Classify EACH by durability:
-
-        - durable: a general principle about how they operate, decide, or lead — true across situations, people, and quarters (e.g. "CEO should command strategy and detail first, then let the team fill blanks").
-        - tactical: a current thesis or read on a specific business, metric, or market — legitimate now but could flip next quarter (e.g. "Kuvera's right to win is pure distribution").
-        - fact: a past event, status, or arrangement — something that happened or is in place, not a stance (e.g. "Secured 100% bank funding for Q2").
-        - action: an instruction, todo, or nudge that tells someone to do something (e.g. "Mute the group and set read-only hours").
-
-        Statements:
-        \(numbered)
-
-        Return ONLY a JSON array like [{"i":0,"c":"durable"},{"i":1,"c":"fact"}] — one object per statement, no prose.
-        """
-
-        guard let cfg = AppConfig.load() else {
-            for s in needLLM { out[s] = heuristic(s) ?? .durable }
-            return out
-        }
-        do {
-            let resp = try await ClaudeAIService(config: cfg.ai).generateText(prompt: prompt, maxTokens: 1024, useModel: "claude-haiku-4-5-20251001")
-            if let json = extractJSONArray(resp)?.data(using: .utf8),
-               let arr = try? JSONSerialization.jsonObject(with: json) as? [[String: Any]] {
-                for row in arr {
-                    guard let i = (row["i"] as? Int) ?? (row["i"] as? NSNumber)?.intValue,
-                          i >= 0, i < needLLM.count,
-                          let c = (row["c"] as? String)?.lowercased(),
-                          let cls = BeliefDurability(rawValue: c) else { continue }
-                    out[needLLM[i]] = cls
-                }
+        let decided = await DecisionEngine.decide(
+            "belief-durability", items: needModel.map { DecisionEngine.Item(key: $0, text: $0) })
+        for s in needModel {
+            guard let d = decided[s], let cls = BeliefDurability(rawValue: d.label) else {
+                out[s] = .durable
+                continue
             }
-        } catch {
-            // Model unavailable — leave the LLM batch to the default below.
+            // fact/action get archived out of the active set, so only take that call when the
+            // model is confident enough to act; a hedged "fact" stays a belief.
+            out[s] = (cls.isBelief || d.tier == .act) ? cls : .durable
         }
-
-        for s in needLLM where out[s] == nil { out[s] = .durable }   // never drop a belief
         return out
-    }
-
-    private static func extractJSONArray(_ s: String) -> String? {
-        guard let start = s.firstIndex(of: "["), let end = s.lastIndex(of: "]"), start < end else { return nil }
-        return String(s[start...end])
     }
 }

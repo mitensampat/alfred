@@ -716,7 +716,24 @@ class ClaudeAIService {
         return try await sendRequest(prompt: prompt, system: system, maxTokens: maxTokens, useModel: useModel)
     }
 
-    private func sendRequest(prompt: String, system: String? = nil, maxTokens: Int = 4096, useModel: String? = nil) async throws -> String {
+    /// Generate a JSON object constrained to `schema` via structured outputs (`output_config.format`).
+    /// The API guarantees the reply validates against the schema, so callers decode it directly —
+    /// no extractJSON/cleanJSON repair. Throws on refusal or truncation rather than returning a
+    /// partial object. Schema rules: every object needs `additionalProperties: false` + `required`;
+    /// no numeric/string-length constraints (clamp those client-side).
+    func generateStructured(prompt: String, system: String? = nil, schema: [String: Any],
+                            maxTokens: Int = 1024, useModel: String? = nil) async throws -> [String: Any] {
+        let text = try await sendRequest(prompt: prompt, system: system, maxTokens: maxTokens,
+                                         useModel: useModel, outputSchema: schema)
+        guard let data = text.data(using: .utf8),
+              let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw AIError.parsingFailed
+        }
+        return obj
+    }
+
+    private func sendRequest(prompt: String, system: String? = nil, maxTokens: Int = 4096, useModel: String? = nil,
+                             outputSchema: [String: Any]? = nil) async throws -> String {
         let url = URL(string: baseURL)!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -736,6 +753,10 @@ class ClaudeAIService {
 
         if let system = system {
             body["system"] = [["type": "text", "text": system, "cache_control": ["type": "ephemeral"]]]
+        }
+
+        if let outputSchema = outputSchema {
+            body["output_config"] = ["format": ["type": "json_schema", "schema": outputSchema]]
         }
 
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
@@ -760,6 +781,13 @@ class ClaudeAIService {
         // Log if response was cut off
         if let stopReason = apiResponse.stopReason, stopReason == "max_tokens" {
             print("⚠️  WARNING: Response hit max_tokens limit and was truncated")
+        }
+
+        // A schema-constrained reply is only guaranteed valid when the model finished normally;
+        // a refusal or truncation can leave it off-schema, so fail instead of half-parsing.
+        if outputSchema != nil, let stopReason = apiResponse.stopReason,
+           stopReason == "max_tokens" || stopReason == "refusal" {
+            throw AIError.invalidResponse
         }
 
         return apiResponse.content.first?.text ?? ""

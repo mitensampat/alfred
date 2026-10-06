@@ -72,6 +72,7 @@ Coaching is driven by two composable primitives, both plain Markdown and fully e
 
 - **Skills** — modular coaching programs with their own data sources, tenets, and prompts. Ship enabled or author your own. Tenet-only skills inject principles into every conversation without generating their own cards.
 - **Analysis lenses** — passive detectors that run over your data and emit signals (meeting overload, relationship debt, avoidance, attention drain, leverage, calendar pressure, energy pattern). Their recurring signals feed the Coach surface and the You-Wiki.
+- **Decisions** — the fixed-menu judgements Alfred makes (belief durability, meeting category), each a Markdown file in `~/.alfred/decisions/` with its options, confidence thresholds, fallback, and prompt. Every decision returns a confidence that maps to act / propose / ask.
 
 The Coach shows up in three places: on the Desk as a "Coach moment", as an evening push when tomorrow is heavy, and in the one morning email.
 
