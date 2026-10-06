@@ -5,6 +5,24 @@ All notable changes to Alfred will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Decisions as editable definitions** — pick-from-a-menu judgements (belief durability, meeting
+  category) now live as Markdown files in `~/.alfred/decisions/` alongside skills and lenses: the
+  menu, the confidence thresholds, the fallback, and the prompt. User files override the installed
+  defaults; built-in menus stay fixed because code maps them onto enums.
+- **One confidence policy** — every decision returns a confidence, and one rule turns it into a tier:
+  `act` (apply on its own), `propose` (surface for the user), or `ask` (too unsure — fall back).
+
+### Changed
+- **Typed decision output** — decisions use structured outputs (`output_config.format`), so the reply
+  always validates against a schema whose item ids and labels are enums. No more JSON extraction or
+  repair, and an answer can no longer shift onto the wrong item when the model drops one.
+- **Belief durability archives only when confident** — a statement is archived as a fact or action
+  only at the `act` tier; a hedged call keeps it as a belief.
+- **Meeting categories** — low-confidence calls land as Uncategorized instead of a guess.
+
 ## [5.2.1] - 2026-08-15
 
 ### Changed
