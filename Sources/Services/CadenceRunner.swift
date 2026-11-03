@@ -808,8 +808,29 @@ class CadenceRunner {
         guard let orchestrator = orchestrator else {
             throw CadenceError.serviceUnavailable("BriefingOrchestrator")
         }
-        let result = try await TaskLifecycleTracker.shared.scan(notionService: orchestrator.notionServicePublic)
-        return "Task lifecycle scan: \(result.tasksScanned) tasks scanned, \(result.changesDetected) changes detected"
+        let notion = orchestrator.notionServicePublic
+        let result = try await TaskLifecycleTracker.shared.scan(notionService: notion)
+        var summary = "Task lifecycle scan: \(result.tasksScanned) tasks scanned, "
+            + "\(result.changesDetected) changes detected"
+
+        // Then close anything nobody has touched in a month. This runs AFTER the lifecycle scan on
+        // purpose: the scan should see and record the task's real state before the sweep rewrites
+        // it, otherwise every swept task looks to the tracker like a task that was simply completed.
+        //
+        // A sweep failure must not fail the whole cadence — the lifecycle scan above already did
+        // useful work, and burying it behind a Notion write error would put the cadence into a
+        // failure cooldown for something secondary.
+        let staleDays = (cadence.params["stale_task_days"]?.anyValue as? Int) ?? NotionService.staleTaskDays
+        do {
+            let sweep = try await notion.sweepStaleTasks(olderThanDays: staleDays)
+            if sweep.candidates > 0 {
+                summary += "; swept \(sweep.swept) stale (>\(staleDays)d) to Done"
+                if sweep.failed > 0 { summary += " (\(sweep.failed) failed)" }
+            }
+        } catch {
+            summary += "; stale sweep failed: \(error.localizedDescription)"
+        }
+        return summary
     }
 
     // MARK: - Helpers

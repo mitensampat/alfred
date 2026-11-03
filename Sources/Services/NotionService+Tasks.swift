@@ -357,6 +357,122 @@ extension NotionService {
         }
     }
 
+    // MARK: - Stale Task Sweep
+
+    /// How many days an unfinished task may sit untouched before the sweep closes it.
+    static let staleTaskDays = 30
+
+    /// Hard ceiling on a single sweep. A wrong cutoff should fail loudly after a few hundred
+    /// writes, not silently rewrite the whole database.
+    private static let staleTaskSweepCeiling = 400
+
+    /// Close every unfinished task that nobody has touched in `olderThanDays` days.
+    ///
+    /// The rule the user asked for (2026-11-03): a task no one has acted on in a month is not a
+    /// task any more, it is noise, and it should leave the active list without being asked.
+    ///
+    /// It marks them **Done**, which is what was asked for and is not strictly true — these were
+    /// abandoned, not completed, so the honest state is "Cancelled". This workspace's Status
+    /// property does not define that option. If it is ever added, change `desiredStatus` below to
+    /// `.cancelled` and nothing else here needs to move.
+    ///
+    /// Selection is `status is non-terminal AND last_edited_time < cutoff`, which makes the sweep
+    /// idempotent — running it twice in a row finds nothing the second time, because its own write
+    /// both moves the status to terminal and refreshes `last_edited_time`.
+    func sweepStaleTasks(olderThanDays: Int = NotionService.staleTaskDays)
+        async throws -> (swept: Int, failed: Int, candidates: Int)
+    {
+        guard let dbId = tasksDatabaseId else {
+            throw NSError(domain: "NotionService", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Tasks database ID not set"])
+        }
+        // A cutoff of 0 would mean "everything", which is never what this is for.
+        guard olderThanDays >= 1 else { return (0, 0, 0) }
+
+        let desiredStatus = TaskItem.TaskStatus.done
+        guard let resolvedStatus = await resolveStatusName(desiredStatus.rawValue, databaseId: dbId) else {
+            throw NSError(domain: "NotionService", code: 103, userInfo: [NSLocalizedDescriptionKey:
+                "Cannot sweep stale tasks: this database's Status property defines no option "
+                + "matching '\(desiredStatus.rawValue)'."])
+        }
+
+        let cutoff = Calendar.current.date(byAdding: .day, value: -olderThanDays, to: Date()) ?? Date()
+        let cutoffISO = ISO8601DateFormatter().string(from: cutoff)
+
+        var filters: [[String: Any]] = await notFinishedStatusFilters(databaseId: dbId)
+        filters.append(["timestamp": "last_edited_time",
+                        "last_edited_time": ["before": cutoffISO]])
+
+        // Collect first, write second. Paginating while mutating would be reading a result set
+        // the writes are changing underneath us.
+        var pageIds: [String] = []
+        var cursor: String? = nil
+        repeat {
+            var body: [String: Any] = ["filter": ["and": filters], "page_size": 100]
+            if let cursor = cursor { body["start_cursor"] = cursor }
+
+            let url = URL(string: "https://api.notion.com/v1/databases/\(dbId)/query")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                throw NSError(domain: "NotionService", code: 1, userInfo: [NSLocalizedDescriptionKey:
+                    "Failed to query stale tasks"])
+            }
+            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            for page in (json?["results"] as? [[String: Any]]) ?? [] {
+                if let id = page["id"] as? String { pageIds.append(id) }
+            }
+            cursor = (json?["has_more"] as? Bool) == true ? json?["next_cursor"] as? String : nil
+        } while cursor != nil && pageIds.count < NotionService.staleTaskSweepCeiling
+
+        let candidates = pageIds.count
+        // Log BEFORE the early return. A sweep that found nothing is the normal case and must still
+        // say so with its cutoff -- a silent no-op is indistinguishable from a broken filter, which
+        // is how several of this app's other stalls stayed invisible for months.
+        print("🧹 Stale task sweep: \(candidates) candidate(s) older than \(olderThanDays)d "
+              + "(cutoff \(cutoffISO)), target status '\(resolvedStatus)'")
+        guard candidates > 0 else { return (0, 0, 0) }
+        if candidates >= NotionService.staleTaskSweepCeiling {
+            print("⚠️ Stale task sweep hit its \(NotionService.staleTaskSweepCeiling)-page ceiling — "
+                  + "sweeping that many and leaving the rest for the next run.")
+        }
+
+        var swept = 0
+        var failed = 0
+        for pageId in pageIds {
+            let body: [String: Any] = ["properties": ["Status": ["status": ["name": resolvedStatus]]]]
+            let url = URL(string: "https://api.notion.com/v1/pages/\(pageId)")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "PATCH"
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            do {
+                request.httpBody = try JSONSerialization.data(withJSONObject: body)
+                let (_, response) = try await URLSession.shared.data(for: request)
+                if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                    swept += 1
+                } else {
+                    failed += 1
+                }
+            } catch {
+                failed += 1
+            }
+            // Notion allows roughly 3 requests/second; stay under it rather than eating 429s.
+            try? await Task.sleep(nanoseconds: 350_000_000)
+        }
+
+        print("🧹 Stale task sweep: \(swept) set to \(resolvedStatus), \(failed) failed "
+              + "of \(candidates) candidate(s)")
+        return (swept, failed, candidates)
+    }
+
     // MARK: - Task Property Updates (Coach Chat → Notion)
 
     /// Grouped property update request for a single PATCH call
