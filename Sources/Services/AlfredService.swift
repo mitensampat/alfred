@@ -594,8 +594,12 @@ class AlfredService: ObservableObject {
         for hash in openCommitments {
             do {
                 if let result = try await orchestrator.notionServicePublic.findCommitmentWithStatusByHash(hash) {
-                    // Check if Notion status is "Done" but local tracker still shows open
-                    if result.status == "Done" {
+                    // Match the background scan's Phase 1.5 test rather than an exact "Done".
+                    // This path compared case-sensitively against one name, so a task the user
+                    // marked Cancelled -- or any workspace whose option is spelled differently --
+                    // never closed locally and sat on the Desk for good.
+                    let status = result.status.lowercased()
+                    if status == "done" || status == "cancelled" || status == "canceled" {
                         tracker.markCommitmentClosed(hash: hash, closureMethod: "notion-manual")
                         syncedCount += 1
                         print("🔄 Synced from Notion: commitment \(hash.prefix(8))... marked Done")

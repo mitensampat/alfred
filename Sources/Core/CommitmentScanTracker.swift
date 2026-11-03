@@ -454,9 +454,12 @@ class CommitmentScanTracker {
         var commitmentType = ""
         var daysOpen = 0
         var wasOverdue = false
+        // Whether this commitment was ALREADY closed before this call. Closing an already-closed
+        // commitment must be a no-op, not a second completion event -- see the guard below.
+        var alreadyClosed = false
 
         dbLock.lock()
-        let lookupSql = "SELECT counterparty, commitment_type, extracted_at FROM commitment_extractions WHERE commitment_hash = ?"
+        let lookupSql = "SELECT counterparty, commitment_type, extracted_at, was_closed FROM commitment_extractions WHERE commitment_hash = ?"
         var lookupStmt: OpaquePointer?
         if sqlite3_prepare_v2(db, lookupSql, -1, &lookupStmt, nil) == SQLITE_OK {
             bindText(lookupStmt, 1, hash)
@@ -475,6 +478,7 @@ class CommitmentScanTracker {
                         wasOverdue = daysOpen > 14
                     }
                 }
+                alreadyClosed = sqlite3_column_int(lookupStmt, 3) == 1
             }
         }
         sqlite3_finalize(lookupStmt)
@@ -483,7 +487,9 @@ class CommitmentScanTracker {
         let formatter = Self.isoFormatter
         let now = formatter.string(from: Date())
 
-        let sql = "UPDATE commitment_extractions SET was_closed = 1, closed_at = ? WHERE commitment_hash = ?"
+        // `AND was_closed = 0` keeps the ORIGINAL closure time. Without it a second closer
+        // rewrites closed_at to its own clock and the real closure date is lost.
+        let sql = "UPDATE commitment_extractions SET was_closed = 1, closed_at = ? WHERE commitment_hash = ? AND was_closed = 0"
 
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
@@ -498,8 +504,18 @@ class CommitmentScanTracker {
         sqlite3_finalize(stmt)
         dbLock.unlock()
 
-        // Record in learning system (outside lock to avoid deadlock)
-        if !counterparty.isEmpty {
+        // Record in learning system (outside lock to avoid deadlock).
+        //
+        // Only for a commitment that was actually OPEN until this call. Two separate reverse-sync
+        // passes exist -- Phase 1.5 of the background commitment scan and
+        // `syncCommitmentsFromNotion` -- and both ask Notion for the status of every open
+        // commitment and close the ones marked Done. Each takes its own snapshot of the open set,
+        // so when they overlap both close the same commitments and, before this guard, both wrote a
+        // "completed" row: 192 commitments produced 192 `notion-manual` plus 192
+        // `notion-reverse-sync` events on 2026-11-03, inflating every completion count on that path
+        // about twofold. Guarding here fixes the whole class rather than one pair of callers,
+        // because any future duplicate closer is equally harmless.
+        if !counterparty.isEmpty && !alreadyClosed {
             WorkflowLearningService.shared.recordCommitmentCompleted(
                 hash: hash,
                 counterparty: counterparty,
