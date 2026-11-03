@@ -157,13 +157,18 @@ extension NotionService {
                     "text": ["content": displayTitle]
                 ]]
             ],
-            "Status": [
-                "status": ["name": task.status.rawValue]
-            ],
             "Type": [
                 "select": ["name": task.type.rawValue]
             ]
         ]
+
+        // Schema-aware: a status name the database does not define 400s the whole create, so
+        // send only what it actually has and otherwise let Notion apply the column default.
+        if let resolvedStatus = await resolveStatusName(task.status.rawValue, databaseId: dbId) {
+            properties["Status"] = ["status": ["name": resolvedStatus]]
+        } else {
+            print("⚠️ Notion: no option matching status '\(task.status.rawValue)' — creating task without a status")
+        }
 
         if !enhancedDescription.isEmpty {
             properties["Description"] = [
@@ -327,10 +332,17 @@ extension NotionService {
         request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
+        guard let resolvedStatus = await resolveStatusName(status.rawValue, forPage: notionId) else {
+            let available = await statusOptionNamesPublic(forPage: notionId)
+            throw NSError(domain: "NotionService", code: 103, userInfo: [NSLocalizedDescriptionKey:
+                "This Notion database has no status matching '\(status.rawValue)'. It defines: "
+                + "\(available.joined(separator: ", ")). Add the option in Notion, or pick one of those."])
+        }
+
         let body: [String: Any] = [
             "properties": [
                 "Status": [
-                    "status": ["name": status.rawValue]
+                    "status": ["name": resolvedStatus]
                 ]
             ]
         ]
@@ -357,11 +369,26 @@ extension NotionService {
 
     /// Update multiple task properties in a single Notion API call.
     /// For appendDescription, reads the current description first and appends.
-    func updateTaskProperties(notionId: String, updates: TaskPropertyUpdate) async throws {
+    ///
+    /// Returns the names of properties that were SKIPPED because this database cannot accept
+    /// them (currently only "Status", when the schema defines no equivalent option). Callers that
+    /// report success to the user must check this: silently dropping a status is fine for a
+    /// priority tweak, but a "delete" that skips its own Cancelled status has not deleted
+    /// anything and must not claim otherwise.
+    @discardableResult
+    func updateTaskProperties(notionId: String, updates: TaskPropertyUpdate) async throws -> [String] {
         var properties: [String: Any] = [:]
+        var skipped: [String] = []
 
         if let status = updates.status {
-            properties["Status"] = ["status": ["name": status.rawValue]]
+            // Dropping just the status keeps priority/due-date updates in the same call alive;
+            // sending an unknown name would reject every property at once.
+            if let resolvedStatus = await resolveStatusName(status.rawValue, forPage: notionId) {
+                properties["Status"] = ["status": ["name": resolvedStatus]]
+            } else {
+                print("⚠️ Notion: no option matching status '\(status.rawValue)' — leaving status unchanged")
+                skipped.append("Status")
+            }
         }
         if let priority = updates.priority {
             properties["Priority"] = ["select": ["name": priority.rawValue]]
@@ -400,7 +427,7 @@ extension NotionService {
             ]
         }
 
-        guard !properties.isEmpty else { return }
+        guard !properties.isEmpty else { return skipped }
 
         let url = URL(string: "https://api.notion.com/v1/pages/\(notionId)")!
         var request = URLRequest(url: url)
@@ -418,6 +445,7 @@ extension NotionService {
               (200...299).contains(httpResponse.statusCode) else {
             throw NSError(domain: "NotionService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to update task properties"])
         }
+        return skipped
     }
 
     /// Search for active tasks by fuzzy title match (case-insensitive substring)
@@ -724,11 +752,16 @@ extension NotionService {
         request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
+        guard let doneStatus = await resolveStatusName("Done", forPage: pageId) else {
+            throw NSError(domain: "NotionService", code: 103, userInfo: [NSLocalizedDescriptionKey:
+                "This Notion database has no \"Done\"-equivalent status option."])
+        }
+
         let body: [String: Any] = [
             "properties": [
                 "Status": [
                     "status": [
-                        "name": "Done"
+                        "name": doneStatus
                     ]
                 ]
             ]
@@ -764,8 +797,13 @@ extension NotionService {
         request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
+        guard let openStatus = await resolveStatusName("Not Started", forPage: pageId) else {
+            throw NSError(domain: "NotionService", code: 103, userInfo: [NSLocalizedDescriptionKey:
+                "This Notion database has no \"Not started\"-equivalent status option."])
+        }
+
         let body: [String: Any] = [
-            "properties": ["Status": ["status": ["name": "Not started"]]]
+            "properties": ["Status": ["status": ["name": openStatus]]]
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 

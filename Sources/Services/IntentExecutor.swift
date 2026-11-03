@@ -1195,6 +1195,26 @@ class IntentExecutor {
         }
 
         let task = matchingTasks[0]
+
+        // Cancelling IS the delete here, so check the database can express it BEFORE writing
+        // anything. Otherwise the description below gains a "Cancelled by Coach Alfred" note on
+        // a task that is still open, and the reply claims a deletion that did not happen.
+        if await orchestrator.notionServicePublic.resolveStatusName("Cancelled", forPage: task.notionId) == nil {
+            let available = await orchestrator.notionServicePublic.statusOptionNamesPublic(forPage: task.notionId)
+            let options = available.isEmpty ? "" : " It has: \(available.joined(separator: ", "))."
+            print("⚠️ Could not cancel task '\(task.title)' — no Cancelled-equivalent status")
+            return IntentExecutionResult(
+                data: task,
+                conversationalResponse: "I couldn't cancel '\(task.title)' — your Notion Status column has no \"Cancelled\" option.\(options) Add one in Notion and I'll be able to close tasks out, or tell me to mark it Done instead.",
+                structuredData: [
+                    "type": "task_delete",
+                    "taskTitle": task.title,
+                    "notionId": task.notionId,
+                    "success": false
+                ]
+            )
+        }
+
         var updates = NotionService.TaskPropertyUpdate()
         updates.status = .cancelled
 

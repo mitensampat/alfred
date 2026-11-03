@@ -629,6 +629,93 @@ class NotionService {
         return names
     }
 
+    /// Names this workspace (and Notion itself) have used for the same meaning. Notion's built-in
+    /// Status property ships "Not started" / "In progress" / "Done" — lowercase second word —
+    /// while TaskStatus/CommitmentStatus spell them "Not Started" / "In Progress" / "Completed".
+    /// Ordered most-preferred first within each bucket.
+    private static let statusSynonyms: [[String]] = [
+        ["Not Started", "Not started", "To Do", "To-do", "Todo", "Backlog", "Inbox", "Open"],
+        ["In Progress", "In progress", "Doing", "Active", "Started"],
+        ["Done", "Complete", "Completed", "Finished", "Closed"],
+        ["Cancelled", "Canceled", "Dropped", "Won't Do", "Won't do", "Archived"],
+        ["Blocked", "On Hold", "On hold", "Waiting", "Stuck"]
+    ]
+
+    /// Resolve a status name we intend to WRITE into one the database actually defines.
+    ///
+    /// The read path was made schema-aware earlier; writes were not, and they fail harder. Notion
+    /// rejects the ENTIRE page update with a 400 when the status name is not an existing option,
+    /// so a name differing only in case loses the whole write — not just the status. Against this
+    /// workspace's Tasks DB, whose options are exactly {"Not started", "In progress", "Done"},
+    /// every status our enums can produce except "Done" was being rejected.
+    ///
+    /// Tries exact, then case-insensitive, then the synonym bucket. Returns nil when the database
+    /// has no equivalent at all, which callers must treat as "do not send a Status property" —
+    /// omitting it leaves the page's current status alone, where guessing a near-miss (marking a
+    /// cancelled task "Done") would assert something untrue.
+    func resolveStatusName(_ desired: String, databaseId: String) async -> String? {
+        let options = await statusOptionNames(databaseId: databaseId)
+        // Schema unreadable (offline, permissions): behave exactly as before rather than
+        // silently dropping the caller's intent.
+        guard !options.isEmpty else { return desired }
+
+        if options.contains(desired) { return desired }
+        if let insensitive = options.first(where: { $0.caseInsensitiveCompare(desired) == .orderedSame }) {
+            return insensitive
+        }
+        guard let bucket = NotionService.statusSynonyms.first(where: { bucket in
+            bucket.contains { $0.caseInsensitiveCompare(desired) == .orderedSame }
+        }) else { return nil }
+        for alias in bucket {
+            if let hit = options.first(where: { $0.caseInsensitiveCompare(alias) == .orderedSame }) {
+                return hit
+            }
+        }
+        return nil
+    }
+
+    /// The status options a page's database defines — used to make a failed status write say
+    /// what the database DOES accept, instead of just reporting that it refused.
+    func statusOptionNamesPublic(forPage pageId: String) async -> [String] {
+        NotionService.statusOptionsLock.lock()
+        let parentId = NotionService.pageParentCache[pageId]
+        NotionService.statusOptionsLock.unlock()
+        guard let dbId = parentId ?? tasksDatabaseId else { return [] }
+        return await statusOptionNames(databaseId: dbId)
+    }
+
+    /// Same, for a page whose database we do not already know. Resolving against the schema that
+    /// actually governs the page means this stays correct if commitments ever move to their own
+    /// database. Cached per page; falls back to the Tasks DB when the parent cannot be read.
+    private static var pageParentCache: [String: String] = [:]
+
+    func resolveStatusName(_ desired: String, forPage pageId: String) async -> String? {
+        var parentId: String?
+        NotionService.statusOptionsLock.lock()
+        parentId = NotionService.pageParentCache[pageId]
+        NotionService.statusOptionsLock.unlock()
+
+        if parentId == nil,
+           let url = URL(string: "https://api.notion.com/v1/pages/\(formatNotionId(pageId))") {
+            var request = URLRequest(url: url)
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+            if let (data, response) = try? await URLSession.shared.data(for: request),
+               let http = response as? HTTPURLResponse, http.statusCode == 200,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let parent = json["parent"] as? [String: Any],
+               let dbId = parent["database_id"] as? String {
+                parentId = dbId
+                NotionService.statusOptionsLock.lock()
+                NotionService.pageParentCache[pageId] = dbId
+                NotionService.statusOptionsLock.unlock()
+            }
+        }
+
+        guard let resolved = parentId ?? tasksDatabaseId else { return desired }
+        return await resolveStatusName(desired, databaseId: resolved)
+    }
+
     /// `and`-able filter clauses excluding every terminal status the database actually defines.
     /// Returns empty when the schema can't be read — an unfiltered query that returns a few
     /// finished tasks beats a 400 that returns nothing at all.
