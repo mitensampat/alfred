@@ -830,6 +830,14 @@ class CadenceRunner {
         } catch {
             summary += "; stale sweep failed: \(error.localizedDescription)"
         }
+
+        // Same rule on Alfred's own side. The Notion sweep above only reaches commitments that
+        // have a Notion page; the reverse sync then closes those locally. Anything Alfred noticed
+        // but never pushed to Notion would otherwise sit on the Desk forever.
+        let staleCommitments = CommitmentScanTracker.shared.sweepStaleCommitments(olderThanDays: staleDays)
+        if !staleCommitments.isEmpty {
+            summary += "; closed \(staleCommitments.count) stale commitment(s)"
+        }
         return summary
     }
 

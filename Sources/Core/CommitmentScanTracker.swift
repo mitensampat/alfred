@@ -11,6 +11,25 @@ class CommitmentScanTracker {
         return f
     }()
 
+    /// `commitment_extractions` stores timestamps in TWO shapes, and a reader that knows only one
+    /// of them fails silently: `extracted_at` comes from the column's CURRENT_TIMESTAMP default
+    /// ("2026-03-13 11:30:59", UTC, no T and no zone) while `closed_at` is written by
+    /// ISO8601DateFormatter ("2026-03-17T06:50:02Z"). ISO8601DateFormatter returns nil for the
+    /// first shape, so every reader that used it on `extracted_at` silently got nil — which is how
+    /// `markCommitmentClosed` came to report daysOpen = 0 for every commitment it ever closed.
+    private static let currentTimestampFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f
+    }()
+
+    static func parseStoredTimestamp(_ value: String) -> Date? {
+        if let d = isoFormatter.date(from: value) { return d }
+        return currentTimestampFormatter.date(from: value)
+    }
+
     private let dbPath: URL
     private var db: OpaquePointer?
     private let dbLock = NSLock()
@@ -450,8 +469,7 @@ class CommitmentScanTracker {
                 }
                 if let ea = sqlite3_column_text(lookupStmt, 2) {
                     let extractedStr = String(cString: ea)
-                    let formatter = Self.isoFormatter
-                    if let extractedDate = formatter.date(from: extractedStr) {
+                    if let extractedDate = Self.parseStoredTimestamp(extractedStr) {
                         daysOpen = max(0, Calendar.current.dateComponents([.day], from: extractedDate, to: Date()).day ?? 0)
                         // Consider overdue if open more than 14 days
                         wasOverdue = daysOpen > 14
@@ -490,6 +508,113 @@ class CommitmentScanTracker {
                 wasOverdue: wasOverdue,
                 closureMethod: closureMethod
             )
+        }
+    }
+
+    // MARK: - Stale Sweep
+
+    /// How long an open commitment may sit before the sweep closes it.
+    static let staleCommitmentDays = 30
+
+    /// Close every open commitment Alfred first saw more than `olderThanDays` ago.
+    ///
+    /// The age used is `extracted_at`, which is when Alfred first noticed the commitment — the
+    /// same clock the Desk shows as "age_days", so this sweeps exactly what the user sees as old.
+    ///
+    /// It deliberately does NOT go through `markCommitmentClosed`. That reports the closure to
+    /// `WorkflowLearningService` as a *completed* commitment, and a swept commitment was abandoned,
+    /// not completed. Feeding a few hundred abandonments in as "completed after 90 days" would
+    /// teach the learning system the opposite of the truth — and it has only just been revived
+    /// after a four-month stall, so it has little real signal to outweigh them.
+    ///
+    /// Returns the hashes it closed. They are also appended to ~/.alfred/stale_sweep_log.jsonl so
+    /// a sweep can be undone later with `reopenCommitment(hash:)`.
+    @discardableResult
+    func sweepStaleCommitments(olderThanDays: Int = CommitmentScanTracker.staleCommitmentDays)
+        -> [String]
+    {
+        guard olderThanDays >= 1 else { return [] }
+
+        dbLock.lock()
+
+        // Compared with SQLite's own `datetime()` rather than a formatted Swift string, because
+        // this table stores two different shapes: `extracted_at` comes from the column's
+        // CURRENT_TIMESTAMP default ("2026-03-13 11:30:59") while `closed_at` is written by
+        // ISO8601DateFormatter ("2026-03-17T06:50:02Z"). datetime() parses both.
+        let modifier = "-\(olderThanDays) days"
+        var hashes: [String] = []
+        var titles: [String: String] = [:]
+
+        let selectSql = """
+        SELECT commitment_hash, title FROM commitment_extractions
+        WHERE was_closed = 0
+          AND extracted_at IS NOT NULL
+          AND datetime(extracted_at) < datetime('now', ?)
+        """
+        var selStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, selectSql, -1, &selStmt, nil) == SQLITE_OK {
+            bindText(selStmt, 1, modifier)
+            while sqlite3_step(selStmt) == SQLITE_ROW {
+                guard let h = sqlite3_column_text(selStmt, 0) else { continue }
+                let hash = String(cString: h)
+                hashes.append(hash)
+                if let t = sqlite3_column_text(selStmt, 1) {
+                    titles[hash] = String(cString: t)
+                }
+            }
+        }
+        sqlite3_finalize(selStmt)
+
+        guard !hashes.isEmpty else {
+            dbLock.unlock()
+            print("🧹 Stale commitment sweep: 0 open commitments older than \(olderThanDays)d")
+            return []
+        }
+
+        let now = Self.isoFormatter.string(from: Date())
+        let updateSql = """
+        UPDATE commitment_extractions SET was_closed = 1, closed_at = ?
+        WHERE was_closed = 0
+          AND extracted_at IS NOT NULL
+          AND datetime(extracted_at) < datetime('now', ?)
+        """
+        var updStmt: OpaquePointer?
+        var closed = 0
+        if sqlite3_prepare_v2(db, updateSql, -1, &updStmt, nil) == SQLITE_OK {
+            bindText(updStmt, 1, now)
+            bindText(updStmt, 2, modifier)
+            if sqlite3_step(updStmt) == SQLITE_DONE {
+                closed = Int(sqlite3_changes(db))
+            }
+        }
+        sqlite3_finalize(updStmt)
+        dbLock.unlock()
+
+        appendStaleSweepLog(hashes: hashes, titles: titles, olderThanDays: olderThanDays, closedAt: now)
+        print("🧹 Stale commitment sweep: closed \(closed) commitment(s) older than \(olderThanDays)d "
+              + "(selected \(hashes.count)); undo list in ~/.alfred/stale_sweep_log.jsonl")
+        return hashes
+    }
+
+    /// One JSON line per sweep, so what it closed stays recoverable after the fact.
+    private func appendStaleSweepLog(hashes: [String], titles: [String: String],
+                                      olderThanDays: Int, closedAt: String) {
+        let path = (NSHomeDirectory() as NSString).appendingPathComponent(".alfred/stale_sweep_log.jsonl")
+        let entry: [String: Any] = [
+            "swept_at": closedAt,
+            "older_than_days": olderThanDays,
+            "count": hashes.count,
+            "items": hashes.map { ["hash": $0, "title": titles[$0] ?? ""] }
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: entry),
+              var line = String(data: data, encoding: .utf8) else { return }
+        line += "\n"
+        if let handle = FileHandle(forWritingAtPath: path) {
+            handle.seekToEndOfFile()
+            handle.write(Data(line.utf8))
+            try? handle.close()
+        } else {
+            try? line.write(toFile: path, atomically: true, encoding: .utf8)
         }
     }
 
