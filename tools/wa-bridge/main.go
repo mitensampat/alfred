@@ -40,7 +40,6 @@ import (
 	"time"
 
 	"github.com/mdp/qrterminal/v3"
-	"rsc.io/qr"
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -49,6 +48,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
 	_ "modernc.org/sqlite"
+	"rsc.io/qr"
 )
 
 // maxReconnectBackoffSteps caps whatsmeow's reconnect delay. It waits
@@ -129,8 +129,14 @@ func main() {
 	}
 	logger := waLog.Stdout("whatsmeow", level, false)
 
+	// The session store gets the same treatment as the message store (see openStore): WAL so a
+	// reader never blocks the writer, and a busy_timeout so a writer that does hit contention
+	// WAITS instead of failing instantly. Without these it ran in rollback-journal mode with no
+	// timeout, and pairing bursts produced "database is locked (5) (SQLITE_BUSY)" — including on
+	// "get prekey for retry receipt", which fails silently into a message that is never re-requested.
 	container, err := sqlstore.New(ctx, "sqlite",
-		fmt.Sprintf("file:%s?_pragma=foreign_keys(1)", filepath.Join(dir, "whatsmeow.db")), logger.Sub("db"))
+		fmt.Sprintf("file:%s?_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)",
+			filepath.Join(dir, "whatsmeow.db")), logger.Sub("db"))
 	if err != nil {
 		panic(fmt.Sprintf("open session store: %v", err))
 	}
