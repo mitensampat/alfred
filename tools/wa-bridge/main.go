@@ -296,6 +296,31 @@ func (a *app) handleEvent(evt any) {
 		logf("✓  keepalive restored")
 	case *events.Disconnected:
 		a.noteDisconnect("socket disconnected")
+
+	// ── pairing ──
+	// A scan that fails on the phone ("couldn't link device", "check your connection")
+	// produces nothing at all unless these are handled: the QR channel only reports its own
+	// timeouts, so a server-side rejection or an unsupported handshake step is invisible and
+	// looks identical to nobody scanning. Log every one of them.
+	case *events.PairSuccess:
+		logf("✓  pair success: %s (platform %q, business %q)", e.ID, e.Platform, e.BusinessName)
+	case *events.PairError:
+		logf("❌  pair FAILED for %s after the server accepted the scan: %v", e.ID, e.Error)
+	case *events.QRScannedWithoutMultidevice:
+		logf("❌  QR scanned but multi-device is not enabled on the phone — enable it in " +
+			"WhatsApp → Settings → Linked Devices, then scan the same code again")
+	case *events.PairPasskeyRequest:
+		// WhatsApp can require a WebAuthn passkey handshake to link a device. whatsmeow hands
+		// the challenge over and expects Client.SendPasskeyResponse with a response from an
+		// authenticator; this bridge has no authenticator, so pairing cannot complete and the
+		// phone reports a generic connection error. Say so plainly rather than stalling mutely.
+		logf("❌  WhatsApp requires a PASSKEY handshake to link this device, which wa-bridge " +
+			"does not implement — pairing cannot complete, and the phone will show a generic " +
+			"connection error. This needs SendPasskeyResponse backed by a WebAuthn authenticator.")
+	case *events.PairPasskeyError:
+		logf("❌  passkey handshake error (continuation=%v): %v", e.Continuation, e.Error)
+	case *events.PairPasskeyConfirmation:
+		logf("📱  passkey confirmation code %q (skip_handoff=%v)", e.Code, e.SkipHandoffUX)
 	}
 }
 

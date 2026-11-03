@@ -8,6 +8,9 @@
 #   scripts/wa-bridge.sh uninstall # stop + remove the launchd agent
 #   scripts/wa-bridge.sh status    # curl the bridge /status
 #
+# WA_BRIDGE_LOG_LEVEL=DEBUG scripts/wa-bridge.sh install   # full whatsmeow handshake logging
+# (default WARN — raise it when diagnosing a pairing or connection failure, then put it back)
+#
 # One-time: run `pair`, open WhatsApp on your phone → Settings → Linked Devices →
 # Link a Device, scan the QR. The session is saved in ~/.alfred/whatsmeow.db. After that
 # you can `install` it as a background agent (no QR needed again).
@@ -57,6 +60,7 @@ case "${1:-run}" in
     <key>HOME</key><string>$HOME</string>
     <key>WA_BRIDGE_DIR</key><string>$HOME/.alfred</string>
     <key>WA_BRIDGE_ADDR</key><string>127.0.0.1:8790</string>
+    <key>WA_BRIDGE_LOG_LEVEL</key><string>${WA_BRIDGE_LOG_LEVEL:-WARN}</string>
   </dict>
   <key>StandardOutPath</key><string>$HOME/.alfred/wa-bridge.log</string>
   <key>StandardErrorPath</key><string>$HOME/.alfred/wa-bridge.log</string>
