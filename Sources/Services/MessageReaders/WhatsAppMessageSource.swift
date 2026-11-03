@@ -144,13 +144,32 @@ final class WhatsAppBridgeReader: WhatsAppMessageSource {
         }
     }
 
+    /// The bridge answers /messages with `ORDER BY timestamp DESC LIMIT n`, defaulting to 5000.
+    /// Asking without a limit therefore returns the NEWEST 5000 and silently drops the rest — for
+    /// this mailbox that is about 8 days, so every lookback longer than a week was quietly
+    /// truncated to the last week with nothing to show it had happened. A 40-day commitment scan
+    /// saw 5000 of 26516 messages and reported success.
+    ///
+    /// Ask for a bound far above any real window instead, and say so loudly if we ever hit it,
+    /// since hitting it means data was dropped.
+    private static let bridgeFetchLimit = 200_000
+
+    private func fetchBridgeMessages(since: Date) throws -> [BridgeMsg] {
+        let path = "/messages?since=\(Int(since.timeIntervalSince1970))&limit=\(Self.bridgeFetchLimit)"
+        let bs: [BridgeMsg] = try fetch(path)
+        if bs.count >= Self.bridgeFetchLimit {
+            print("⚠️ WhatsApp bridge returned \(bs.count) messages — at the fetch ceiling, so OLDER "
+                  + "messages in this window were dropped. Raise bridgeFetchLimit or page the query.")
+        }
+        return bs
+    }
+
     func fetchMessages(since: Date) throws -> [Message] {
-        let bs: [BridgeMsg] = try fetch("/messages?since=\(Int(since.timeIntervalSince1970))")
-        return toMessages(bs)
+        return toMessages(try fetchBridgeMessages(since: since))
     }
 
     func fetchThreads(since: Date) throws -> [MessageThread] {
-        let bs: [BridgeMsg] = try fetch("/messages?since=\(Int(since.timeIntervalSince1970))")
+        let bs = try fetchBridgeMessages(since: since)
         var names: [String: String] = [:]
         for b in bs where !b.chat_name.isEmpty { names[b.chat_jid] = b.chat_name }
         let msgs = toMessages(bs)
@@ -179,7 +198,7 @@ final class WhatsAppBridgeReader: WhatsAppMessageSource {
         let contacts: [BridgeContact] = (try? fetch("/contacts")) ?? []
         var names = Set(contacts.flatMap { [$0.full_name, $0.push_name, $0.first_name] }.filter { !$0.isEmpty })
         // also fold in recent thread names (groups etc.) from the last ~30 days
-        if let bs: [BridgeMsg] = try? fetch("/messages?since=\(Int(Date().addingTimeInterval(-30*86400).timeIntervalSince1970))") {
+        if let bs: [BridgeMsg] = try? fetch("/messages?since=\(Int(Date().addingTimeInterval(-30*86400).timeIntervalSince1970))&limit=\(Self.bridgeFetchLimit)") {
             for b in bs where !b.chat_name.isEmpty { names.insert(b.chat_name) }
         }
         let words = searchName.lowercased().split(separator: " ").map(String.init)
