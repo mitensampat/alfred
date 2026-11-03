@@ -585,8 +585,12 @@ class NotionService {
     /// Tasks DB's options have drifted ("Cancelled" was deleted; "Complete"/"Completed" never
     /// existed in the current schema), which silently broke every "active tasks" query. So ask
     /// the database which options it actually has and filter only on those.
-    private static var statusOptionsCache: [String: [String]] = [:]
+    /// Cached per database with the time it was read. A permanently-cached schema means a status
+    /// option ADDED in Notion stays invisible until Alfred restarts — which is precisely when it
+    /// matters, since the usual reason to add one is that Alfred just said the option was missing.
+    private static var statusOptionsCache: [String: (names: [String], fetchedAt: Date)] = [:]
     private static let statusOptionsLock = NSLock()
+    private static let statusOptionsTTL: TimeInterval = 10 * 60
 
     /// Terminal statuses we want excluded from "active" queries, across all the names this
     /// workspace has used over time. Only those the database still defines get sent.
@@ -596,13 +600,17 @@ class NotionService {
 
     /// Option names on a database's "Status" property. Fetched once per database, then cached;
     /// a failed probe is not cached so it retries rather than sticking to a bad answer.
-    private func statusOptionNames(databaseId: String) async -> [String] {
+    private func statusOptionNames(databaseId: String, forceRefresh: Bool = false) async -> [String] {
         let dbId = formatNotionId(databaseId)
 
-        NotionService.statusOptionsLock.lock()
-        let cached = NotionService.statusOptionsCache[dbId]
-        NotionService.statusOptionsLock.unlock()
-        if let cached { return cached }
+        if !forceRefresh {
+            NotionService.statusOptionsLock.lock()
+            let cached = NotionService.statusOptionsCache[dbId]
+            NotionService.statusOptionsLock.unlock()
+            if let cached, Date().timeIntervalSince(cached.fetchedAt) < NotionService.statusOptionsTTL {
+                return cached.names
+            }
+        }
 
         guard let url = URL(string: "https://api.notion.com/v1/databases/\(dbId)") else { return [] }
         var request = URLRequest(url: url)
@@ -624,7 +632,7 @@ class NotionService {
         guard !names.isEmpty else { return [] }
 
         NotionService.statusOptionsLock.lock()
-        NotionService.statusOptionsCache[dbId] = names
+        NotionService.statusOptionsCache[dbId] = (names: names, fetchedAt: Date())
         NotionService.statusOptionsLock.unlock()
         return names
     }
@@ -654,7 +662,16 @@ class NotionService {
     /// omitting it leaves the page's current status alone, where guessing a near-miss (marking a
     /// cancelled task "Done") would assert something untrue.
     func resolveStatusName(_ desired: String, databaseId: String) async -> String? {
-        let options = await statusOptionNames(databaseId: databaseId)
+        if let hit = await matchStatus(desired, databaseId: databaseId, forceRefresh: false) {
+            return hit
+        }
+        // About to fail. Re-read the schema once before saying no: the option may have been added
+        // in Notion seconds ago, in response to Alfred reporting it missing.
+        return await matchStatus(desired, databaseId: databaseId, forceRefresh: true)
+    }
+
+    private func matchStatus(_ desired: String, databaseId: String, forceRefresh: Bool) async -> String? {
+        let options = await statusOptionNames(databaseId: databaseId, forceRefresh: forceRefresh)
         // Schema unreadable (offline, permissions): behave exactly as before rather than
         // silently dropping the caller's intent.
         guard !options.isEmpty else { return desired }
