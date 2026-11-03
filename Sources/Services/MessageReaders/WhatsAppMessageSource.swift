@@ -17,7 +17,7 @@ protocol WhatsAppMessageSource: AnyObject {
 /// reachable AND paired, otherwise falls back to the local DB — so pairing the bridge takes
 /// over seamlessly and an unpaired/absent bridge never breaks reading.
 enum WhatsAppSource {
-    private static var _bridgePaired = false
+    private static var _bridgeUsable = false
     private static var _lastCheck = Date.distantPast
     private static let lock = NSLock()
 
@@ -32,7 +32,7 @@ enum WhatsAppSource {
         case "local_db":
             return WhatsAppReader.shared(dbPath: config.messaging.whatsapp.dbPath)
         default: // auto
-            if bridgePaired() { return WhatsAppBridgeReader.shared }
+            if bridgeUsable() { return WhatsAppBridgeReader.shared }
             return WhatsAppReader.shared(dbPath: config.messaging.whatsapp.dbPath)
         }
     }
@@ -42,25 +42,32 @@ enum WhatsAppSource {
         switch config.messaging.whatsapp.readSource {
         case "bridge": return "bridge"
         case "local_db": return "local_db"
-        default: return bridgePaired() ? "bridge" : "local_db"
+        default: return bridgeUsable() ? "bridge" : "local_db"
         }
     }
 
-    /// Cached (60s) check of whether the bridge is reachable AND paired.
-    static func bridgePaired() -> Bool {
+    /// Cached (60s) check of whether the bridge is reachable, paired AND currently connected.
+    ///
+    /// `paired` alone is not enough: a bridge whose WhatsApp session has been invalidated keeps
+    /// reporting `paired: true` from its saved session while ingesting nothing, so routing on
+    /// `paired` pinned `auto` to a dead source and silently froze WhatsApp reads at the last
+    /// message it ever received. `connected` is the honest signal, and falling back to the local
+    /// DB when it is false means a disconnected bridge degrades instead of going dark.
+    static func bridgeUsable() -> Bool {
         lock.lock()
         let fresh = Date().timeIntervalSince(_lastCheck) < 60
-        let cached = _bridgePaired
+        let cached = _bridgeUsable
         lock.unlock()
         if fresh { return cached }
-        let ok = probeBridgePaired()
-        lock.lock(); _bridgePaired = ok; _lastCheck = Date(); lock.unlock()
+        let ok = probeBridgeUsable()
+        lock.lock(); _bridgeUsable = ok; _lastCheck = Date(); lock.unlock()
+        if !ok { print("⚠️ WhatsApp bridge not usable (unpaired or disconnected) — using local DB") }
         return ok
     }
 
-    private static func probeBridgePaired() -> Bool {
+    private static func probeBridgeUsable() -> Bool {
         guard let url = URL(string: "http://\(bridgeAddr)/status") else { return false }
-        var paired = false
+        var usable = false
         let sem = DispatchSemaphore(value: 0)
         var req = URLRequest(url: url)
         req.timeoutInterval = 2
@@ -68,11 +75,11 @@ enum WhatsAppSource {
             defer { sem.signal() }
             if let data = data,
                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                paired = (obj["paired"] as? Bool) == true
+                usable = (obj["paired"] as? Bool) == true && (obj["connected"] as? Bool) == true
             }
         }.resume()
         _ = sem.wait(timeout: .now() + 3)
-        return paired
+        return usable
     }
 }
 

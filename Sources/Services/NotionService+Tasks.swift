@@ -237,10 +237,7 @@ extension NotionService {
         request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        var filters: [[String: Any]] = [
-            ["property": "Status", "status": ["does_not_equal": "Done"]],
-            ["property": "Status", "status": ["does_not_equal": "Cancelled"]]
-        ]
+        var filters: [[String: Any]] = await notFinishedStatusFilters(databaseId: dbId)
 
         if let type = type {
             filters.append(["property": "Type", "select": ["equals": type.rawValue]])
@@ -467,8 +464,7 @@ extension NotionService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         var allFilters: [[String: Any]] = titleFilters
-        allFilters.append(["property": "Status", "status": ["does_not_equal": "Done"]])
-        allFilters.append(["property": "Status", "status": ["does_not_equal": "Cancelled"]])
+        allFilters.append(contentsOf: await notFinishedStatusFilters(databaseId: dbId))
 
         let body: [String: Any] = [
             "filter": ["and": allFilters],
@@ -547,10 +543,7 @@ extension NotionService {
         // Query active tasks with Critical or High priority first, sorted by due date
         let body: [String: Any] = [
             "filter": [
-                "and": [
-                    ["property": "Status", "status": ["does_not_equal": "Done"]],
-                    ["property": "Status", "status": ["does_not_equal": "Cancelled"]]
-                ]
+                "and": await notFinishedStatusFilters(databaseId: dbId)
             ],
             "sorts": [
                 ["property": "Due Date", "direction": "ascending"]
@@ -884,18 +877,10 @@ extension NotionService {
 
             var body: [String: Any] = [
                 "filter": [
-                    "and": [
+                    "and": await notFinishedStatusFilters(databaseId: dbId) + [
                         [
                             "property": "Type",
                             "select": ["equals": "Commitment"]
-                        ],
-                        [
-                            "property": "Status",
-                            "status": ["does_not_equal": "Done"]
-                        ],
-                        [
-                            "property": "Status",
-                            "status": ["does_not_equal": "Cancelled"]
                         ]
                     ]
                 ],

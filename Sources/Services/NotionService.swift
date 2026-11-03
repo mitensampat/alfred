@@ -578,6 +578,67 @@ class NotionService {
         return json?["url"] as? String ?? ""
     }
 
+    // MARK: - Status Filters
+
+    /// Notion rejects an *entire* query with a 400 validation_error when a status filter names
+    /// an option the database no longer defines — it does not simply ignore the clause. The
+    /// Tasks DB's options have drifted ("Cancelled" was deleted; "Complete"/"Completed" never
+    /// existed in the current schema), which silently broke every "active tasks" query. So ask
+    /// the database which options it actually has and filter only on those.
+    private static var statusOptionsCache: [String: [String]] = [:]
+    private static let statusOptionsLock = NSLock()
+
+    /// Terminal statuses we want excluded from "active" queries, across all the names this
+    /// workspace has used over time. Only those the database still defines get sent.
+    private static let terminalStatusNames = [
+        "Done", "Complete", "Completed", "Cancelled", "Canceled", "Archived"
+    ]
+
+    /// Option names on a database's "Status" property. Fetched once per database, then cached;
+    /// a failed probe is not cached so it retries rather than sticking to a bad answer.
+    private func statusOptionNames(databaseId: String) async -> [String] {
+        let dbId = formatNotionId(databaseId)
+
+        NotionService.statusOptionsLock.lock()
+        let cached = NotionService.statusOptionsCache[dbId]
+        NotionService.statusOptionsLock.unlock()
+        if let cached { return cached }
+
+        guard let url = URL(string: "https://api.notion.com/v1/databases/\(dbId)") else { return [] }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
+
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse, http.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let properties = json["properties"] as? [String: Any],
+              let statusProperty = properties["Status"] as? [String: Any],
+              let statusDefinition = statusProperty["status"] as? [String: Any],
+              let options = statusDefinition["options"] as? [[String: Any]] else {
+            print("⚠️ Could not read Status options for \(dbId) — querying without status filters")
+            return []
+        }
+
+        let names = options.compactMap { $0["name"] as? String }
+        guard !names.isEmpty else { return [] }
+
+        NotionService.statusOptionsLock.lock()
+        NotionService.statusOptionsCache[dbId] = names
+        NotionService.statusOptionsLock.unlock()
+        return names
+    }
+
+    /// `and`-able filter clauses excluding every terminal status the database actually defines.
+    /// Returns empty when the schema can't be read — an unfiltered query that returns a few
+    /// finished tasks beats a 400 that returns nothing at all.
+    func notFinishedStatusFilters(databaseId: String) async -> [[String: Any]] {
+        let existing = Set(await statusOptionNames(databaseId: databaseId))
+        return NotionService.terminalStatusNames
+            .filter { existing.contains($0) }
+            .map { ["property": "Status", "status": ["does_not_equal": $0]] }
+    }
+
     // MARK: - Briefing Sources
 
     /// Format Notion ID to include dashes in standard UUID format (8-4-4-4-12)
@@ -1110,26 +1171,7 @@ class NotionService {
         // Query for incomplete tasks
         let body: [String: Any] = [
             "filter": [
-                "and": [
-                    [
-                        "property": "Status",
-                        "status": [
-                            "does_not_equal": "Done"
-                        ]
-                    ],
-                    [
-                        "property": "Status",
-                        "status": [
-                            "does_not_equal": "Complete"
-                        ]
-                    ],
-                    [
-                        "property": "Status",
-                        "status": [
-                            "does_not_equal": "Cancelled"
-                        ]
-                    ]
-                ]
+                "and": await notFinishedStatusFilters(databaseId: databaseId)
             ],
             "sorts": [
                 [
@@ -1422,16 +1464,7 @@ class NotionService {
         request.setValue("2022-06-28", forHTTPHeaderField: "Notion-Version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        var filters: [[String: Any]] = [
-            [
-                "property": "Status",
-                "status": ["does_not_equal": "Completed"]
-            ],
-            [
-                "property": "Status",
-                "status": ["does_not_equal": "Cancelled"]
-            ]
-        ]
+        var filters: [[String: Any]] = await notFinishedStatusFilters(databaseId: databaseId)
 
         if let type = type {
             filters.append([
@@ -1484,15 +1517,7 @@ class NotionService {
 
         let body: [String: Any] = [
             "filter": [
-                "and": [
-                    [
-                        "property": "Status",
-                        "status": ["does_not_equal": "Completed"]
-                    ],
-                    [
-                        "property": "Status",
-                        "status": ["does_not_equal": "Cancelled"]
-                    ],
+                "and": await notFinishedStatusFilters(databaseId: databaseId) + [
                     [
                         "property": "Due Date",
                         "date": ["before": formatter.string(from: today)]
@@ -1540,15 +1565,7 @@ class NotionService {
 
         let body: [String: Any] = [
             "filter": [
-                "and": [
-                    [
-                        "property": "Status",
-                        "status": ["does_not_equal": "Completed"]
-                    ],
-                    [
-                        "property": "Status",
-                        "status": ["does_not_equal": "Cancelled"]
-                    ],
+                "and": await notFinishedStatusFilters(databaseId: databaseId) + [
                     [
                         "property": "Due Date",
                         "date": ["on_or_after": formatter.string(from: now)]
