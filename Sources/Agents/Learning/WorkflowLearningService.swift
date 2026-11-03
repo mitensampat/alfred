@@ -11,7 +11,15 @@ class WorkflowLearningService {
 
     private let dbPath: String
     private var db: OpaquePointer?
-    private let dbLock = NSLock()
+    /// Recursive on purpose. Around thirty methods here take this lock, and several of them
+    /// call each other — `processUserContextFacts` holds it across a loop that calls
+    /// `hasRecurringContextFact`, which takes it again. With a plain NSLock that is a permanent
+    /// self-deadlock on a thread that never releases, which poisons the entire service: every
+    /// reader and writer blocks behind it, so signal collection, pattern reads and the Layer 3
+    /// prompt injection all die together until the process restarts. That is exactly what
+    /// happened — Pattern Learning hung on 2026-07-02 and stayed dead for four months. Making
+    /// re-entry safe turns that whole class of bug into a non-event.
+    private let dbLock = NSRecursiveLock()
     private let fileManager = FileManager.default
     private let queue = DispatchQueue(label: "com.alfred.workflowlearning", qos: .utility)
 

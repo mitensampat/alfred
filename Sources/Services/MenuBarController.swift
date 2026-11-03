@@ -390,6 +390,47 @@ class MenuBarController: NSObject, NSMenuDelegate {
         return formatter.string(from: Date())
     }
 
+    /// How long any one cadence may run before the scheduler stops waiting on it. Generous —
+    /// a briefing or a commitment scan legitimately takes minutes — so this only ever catches
+    /// something genuinely wedged.
+    private static let cadenceTimeout: Double = 15 * 60
+
+    struct CadenceTimedOut: LocalizedError {
+        let name: String
+        let seconds: Double
+        var errorDescription: String? {
+            "timed out after \(Int(seconds / 60))m — still running, but the scheduler stopped waiting on it"
+        }
+    }
+
+    /// Runs a cadence with a ceiling on how long the scheduler will wait for it.
+    ///
+    /// Without this a hung cadence simply vanished: `try await runner.run(...)` never returned,
+    /// so neither the success nor the failure branch ran, nothing appeared in the log after
+    /// "Running …", and the in-flight guard was never released — so that cadence never ran
+    /// again until the process restarted. Pattern Learning disappeared this way for four
+    /// months and nothing reported it.
+    ///
+    /// Swift cannot cancel work blocked on a lock or a synchronous syscall, so the stuck task
+    /// may keep holding its thread. That is not what this fixes. What it fixes is the silence:
+    /// the scheduler gives up, writes a ❌ line naming the cadence, releases the guard, and
+    /// carries on — so the failure is visible and the next tick is not poisoned.
+    private func runCadenceWithTimeout(_ cadence: Cadence, runner: CadenceRunner) async throws -> String {
+        let limit = Self.cadenceTimeout
+        return try await withThrowingTaskGroup(of: String.self) { group in
+            group.addTask { try await runner.run(cadence) }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(limit * 1_000_000_000))
+                throw CadenceTimedOut(name: cadence.name, seconds: limit)
+            }
+            defer { group.cancelAll() }
+            guard let first = try await group.next() else {
+                throw CadenceTimedOut(name: cadence.name, seconds: limit)
+            }
+            return first
+        }
+    }
+
     private func checkAndRunScheduledTasks() async {
         let now = Date()
         let formatter = DateFormatter()
@@ -429,7 +470,7 @@ class MenuBarController: NSObject, NSMenuDelegate {
 
             logToFile("\(cadence.icon) [Cadence] Running \(cadence.name)...", path: logPath)
             do {
-                let summary = try await runner.run(cadence)
+                let summary = try await runCadenceWithTimeout(cadence, runner: runner)
                 let timestamp = ISO8601DateFormatter().string(from: Date())
                 CadenceService.shared.markRunSuccess(id: cadence.id, date: todayDate, timestamp: timestamp, summary: summary)
                 logToFile("✅ [Cadence] \(cadence.name): \(summary)", path: logPath)
