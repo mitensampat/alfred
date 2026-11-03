@@ -90,6 +90,13 @@
       .dk-fresh .dk-fresh-item{ display:inline-flex; align-items:center; gap:5px; }
       .dk-fresh .dk-fresh-sep{ opacity:.4; }
       .dk-fresh .dk-fresh-x{ margin-left:auto; opacity:.6; font-size:13px; line-height:1; }
+      /* Same ribbon as .dk-fresh, in the hot colour: connector outages and overdue cadences.
+         The legacy #healthWarningBanner lives inside the conversation view, which The Desk
+         replaced and which is display:none — warnings rendered only there are never seen. */
+      .dk-health{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--dk-hot); color:#fff; padding:8px 20px; border-bottom:2px solid var(--dk-text); font-family:"Archivo",sans-serif; font-size:11.5px; font-weight:700; letter-spacing:.04em; }
+      .dk-health .dk-health-label{ text-transform:uppercase; letter-spacing:.09em; font-size:10px; opacity:.85; }
+      .dk-health .dk-health-item{ display:inline-flex; align-items:center; gap:5px; }
+      .dk-health .dk-health-sep{ opacity:.45; }
       /* ── top of the desk: 3 EQUAL front cards, one pinnable ── */
       .dk-band{ background:var(--dk-n100); padding:18px 20px; border-bottom:2px solid var(--dk-text); }
       .dk-topfronts{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; align-items:stretch; }
@@ -4008,6 +4015,7 @@
         <div id="deskScreen" style="display:none;">
             <div class="dk-wrap">
                 <div class="dk-frame">
+                    <div id="deskHealthRibbon" class="dk-health" style="display:none;"></div>
                     <div id="deskFreshRibbon" class="dk-fresh" style="display:none;" onclick="deskFreshDismiss()" title="Dismiss"></div>
                     <div id="deskBand" class="dk-band"></div>
                     <div id="deskGrid" class="dk-grid"></div>
@@ -6509,12 +6517,30 @@
                 const response = await authFetch('/api/health/detailed');
                 if (!response.ok) return;
                 const data = await response.json();
+                const warnings = data.warnings || [];
+
+                // Legacy conversation-view banner (kept in case that surface is revived).
                 const banner = document.getElementById('healthWarningBanner');
                 const list = document.getElementById('healthWarningList');
-                if (data.warnings && data.warnings.length > 0) {
-                    list.innerHTML = data.warnings.map(w => `<div>&bull; ${w}</div>`).join('');
-                    banner.classList.remove('hidden');
-                } else { banner.classList.add('hidden'); }
+                if (banner && list) {
+                    if (warnings.length > 0) {
+                        list.innerHTML = warnings.map(w => `<div>&bull; ${escapeHtml(w)}</div>`).join('');
+                        banner.classList.remove('hidden');
+                    } else { banner.classList.add('hidden'); }
+                }
+
+                // The Desk is the live surface, so the warning has to land HERE to be seen at all.
+                const ribbon = document.getElementById('deskHealthRibbon');
+                if (ribbon) {
+                    if (warnings.length > 0) {
+                        ribbon.innerHTML = '<span class="dk-health-label">Needs attention</span>'
+                            + warnings.map(w => `<span class="dk-health-item">${escapeHtml(w)}</span>`)
+                                      .join('<span class="dk-health-sep">/</span>');
+                        ribbon.style.display = 'flex';
+                    } else {
+                        ribbon.style.display = 'none';
+                    }
+                }
             } catch (e) { console.log('Health check skipped:', e.message); }
         }
 
@@ -11092,6 +11118,7 @@
                 });
                 document.getElementById('deskDateLabel').textContent = d.date_label || '';
                 deskFreshness();
+                checkHealthStatus();   // only ran from loadMorningWalk() before, so never on The Desk
                 renderDeskBand();
                 renderDeskGrid();
                 _deskLoaded = true;

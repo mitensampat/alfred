@@ -1937,6 +1937,66 @@ class HTTPServer {
         )
     }
 
+    // MARK: - Health staleness helpers
+    //
+    // /api/health/detailed used to answer only "does this exist" — "Database found", "Token file
+    // found". That is why it reported all nine services ok while WhatsApp had ingested nothing for
+    // five weeks and the Weekly Review cadence had failed ~1,500 times in a row. A health check
+    // that stays green through both of those is worse than no health check, because it is trusted.
+    // These helpers let a check ask the two questions that actually catch a silent outage:
+    // how old is the newest thing here, and did the last run succeed.
+
+    /// Read one numeric scalar (e.g. `MAX(date)`) from a possibly TCC-protected SQLite file.
+    /// Uses sqlite3_open_v2 directly: FileManager.isReadableFile returns false for TCC-protected
+    /// paths even when Full Disk Access IS granted, so it cannot be used to guard this.
+    private func sqliteScalarDouble(path: String, query: String) -> Double? {
+        var db: OpaquePointer?
+        guard sqlite3_open_v2(path, &db, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+            sqlite3_close(db)
+            return nil
+        }
+        defer { sqlite3_close(db) }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, query, -1, &stmt, nil) == SQLITE_OK else {
+            sqlite3_finalize(stmt)
+            return nil
+        }
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_step(stmt) == SQLITE_ROW,
+              sqlite3_column_type(stmt, 0) != SQLITE_NULL else { return nil }
+        return sqlite3_column_double(stmt, 0)
+    }
+
+    /// Compact age, e.g. "40m", "6h", "3d", "36d (5 weeks)".
+    private static func ageText(since date: Date) -> String {
+        let secs = max(0, Date().timeIntervalSince(date))
+        if secs < 3600 { return "\(Int(secs / 60))m" }
+        if secs < 86400 { return "\(Int(secs / 3600))h" }
+        let days = Int(secs / 86400)
+        return days < 14 ? "\(days)d" : "\(days)d (\(days / 7) weeks)"
+    }
+
+    /// Grade a source by the age of its newest item. A nil date means nothing has ever arrived,
+    /// which is a warning in its own right rather than something to report as healthy.
+    private static func stalenessStatus(newest: Date?, warnDays: Double, errorDays: Double)
+        -> (status: String, text: String) {
+        guard let newest else { return ("warning", "no messages found \u{2014} nothing has ever been ingested") }
+        let days = Date().timeIntervalSince(newest) / 86400
+        let text = "newest message \(ageText(since: newest)) old (\(iso8601Formatter.string(from: newest)))"
+        if days >= errorDays { return ("error", text) }
+        if days >= warnDays { return ("warning", text) }
+        return ("ok", text)
+    }
+
+    /// Tolerant ISO8601 parse — stored cadence timestamps may or may not carry fractional seconds.
+    private static func parseISO8601(_ string: String?) -> Date? {
+        guard let string, !string.isEmpty else { return nil }
+        if let date = iso8601Formatter.date(from: string) { return date }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: string)
+    }
+
     private func handleDetailedHealth() async -> HTTPResponse {
         guard let config = alfredService.orchestrator?.config else {
             return HTTPResponse(statusCode: 503, body: [
@@ -2000,8 +2060,19 @@ class HTTPServer {
                     var stmt: OpaquePointer?
                     let queryRc = sqlite3_prepare_v2(testDb, "SELECT COUNT(*) FROM message LIMIT 1", -1, &stmt, nil)
                     if queryRc == SQLITE_OK {
-                        imsgStatus = "ok"
-                        imsgDetail = "chat.db readable (Full Disk Access verified)"
+                        // FDA proven — now the question that matters: is anything still arriving?
+                        // iMessage is a minor source here, so grade it loosely and never let it
+                        // alone flip the overall status. chat.db date is ns since 2001-01-01; the
+                        // double round-trip loses sub-microsecond precision, irrelevant at day scale.
+                        var imsgNewest: Date?
+                        if let raw = sqliteScalarDouble(path: chatDbPath,
+                                                        query: "SELECT MAX(date) FROM message") {
+                            imsgNewest = Date(timeIntervalSinceReferenceDate: raw / 1_000_000_000)
+                        }
+                        let imsgGrade = Self.stalenessStatus(newest: imsgNewest, warnDays: 14, errorDays: 45)
+                        imsgStatus = imsgGrade.status == "ok" ? "ok" : "warning"
+                        imsgDetail = "chat.db readable (Full Disk Access verified) · \(imsgGrade.text)"
+                        if imsgGrade.status != "ok" { warnings.append("iMessage: \(imsgGrade.text)") }
                     } else {
                         imsgStatus = "error"
                         imsgDetail = "chat.db found but query failed (error \(queryRc)) — Full Disk Access may be revoked"
@@ -2025,16 +2096,66 @@ class HTTPServer {
             ])
         }
 
-        // 5. WhatsApp — check DB file exists
+        // 5. WhatsApp — is it actually RECEIVING, not merely present on disk. WhatsApp is ~90% of
+        //    Alfred's fuel, so it gets the tight thresholds. Checked against whichever source is
+        //    really live: a dead bridge keeps reporting paired: true from its saved session.
         if config.messaging.whatsapp.enabled {
-            let waDbPath = config.messaging.whatsapp.expandedPath
-            let waDbExists = FileManager.default.fileExists(atPath: waDbPath)
+            let activeSource = WhatsAppSource.activeSourceName(config: config)
+            var newest: Date?
+            var sourceDetail: String
+            var hardFailure: String?
+
+            if activeSource == "bridge" {
+                if let data = await httpGetData("http://\(WhatsAppSource.bridgeAddr)/status", timeout: 3),
+                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    if let ts = obj["newest_message"] as? Double, ts > 0 {
+                        newest = Date(timeIntervalSince1970: ts)
+                    }
+                    let paired = (obj["paired"] as? Bool) == true
+                    let connected = (obj["connected"] as? Bool) == true
+                    let reason = (obj["reason"] as? String) ?? ""
+                    let because = reason.isEmpty ? "" : " (\(reason))"
+                    if !paired {
+                        sourceDetail = "bridge not paired"
+                        hardFailure = "WhatsApp bridge is not paired — scan the QR to link it"
+                    } else if !connected {
+                        sourceDetail = "bridge paired but NOT connected\(because)"
+                        hardFailure = "WhatsApp bridge is paired but not connected — nothing is being ingested\(because)"
+                    } else {
+                        sourceDetail = "bridge connected"
+                    }
+                } else {
+                    sourceDetail = "bridge unreachable on \(WhatsAppSource.bridgeAddr)"
+                    hardFailure = "WhatsApp bridge unreachable on \(WhatsAppSource.bridgeAddr)"
+                }
+            } else {
+                let waDbPath = config.messaging.whatsapp.expandedPath
+                if FileManager.default.fileExists(atPath: waDbPath) {
+                    sourceDetail = "local database"
+                    // ZMESSAGEDATE is a Core Data timestamp: seconds since 2001-01-01.
+                    if let raw = sqliteScalarDouble(path: waDbPath,
+                                                    query: "SELECT MAX(ZMESSAGEDATE) FROM ZWAMESSAGE") {
+                        newest = Date(timeIntervalSinceReferenceDate: raw)
+                    }
+                } else {
+                    sourceDetail = "local database not found at \(waDbPath)"
+                    hardFailure = "WhatsApp database not found"
+                }
+            }
+
+            let grade = Self.stalenessStatus(newest: newest, warnDays: 2, errorDays: 7)
             services.append([
                 "name": "WhatsApp",
-                "status": waDbExists ? "ok" : "warning",
-                "detail": waDbExists ? "Database found" : "Database not found at \(waDbPath)"
+                "status": hardFailure != nil ? "error" : grade.status,
+                "detail": "\(sourceDetail) · \(grade.text)"
             ])
-            if !waDbExists { warnings.append("WhatsApp database not found") }
+            if let hardFailure {
+                overallOk = false
+                warnings.append(hardFailure)
+            } else if grade.status != "ok" {
+                if grade.status == "error" { overallOk = false }
+                warnings.append("WhatsApp (\(sourceDetail)) is stale — \(grade.text)")
+            }
         }
 
         // 6. Email (SMTP) — check config has non-empty host/port/username
@@ -2067,8 +2188,70 @@ class HTTPServer {
         ])
         if !workflowDbExists { warnings.append("Workflow learning database not initialized") }
 
+        // 9. Cadences — did the last run succeed, and is anything silently overdue? None of this
+        //    was ever checked. lastRunStatus alone is not enough: a cadence that succeeded months
+        //    ago and has not run since still reads "success", which is exactly how Pattern Learning
+        //    sat at a July timestamp while this endpoint called every service healthy.
+        let enabledCadences = CadenceService.shared.getAll().filter { $0.enabled }
+        var failing: [String] = []
+        var overdue: [String] = []
+        var cooling: [String] = []
+        let now = Date()
+
+        for cadence in enabledCadences {
+            if cadence.lastRunStatus == "failure" {
+                let why = (cadence.lastRunSummary?.isEmpty == false)
+                    ? ": \(cadence.lastRunSummary!.prefix(140))" : ""
+                failing.append("\(cadence.name)\(why)")
+            }
+            if let until = cadence.failureCooldownUntil, until > now {
+                cooling.append("\(cadence.name) (until \(Self.iso8601Formatter.string(from: until)))")
+            }
+            // Overdue against the cadence's OWN period, with generous grace so a single missed
+            // slot or a catch-up window does not cry wolf.
+            let graceDays: Double
+            switch cadence.schedule {
+            case .daily: graceDays = 2
+            case .weekly: graceDays = 9
+            case .interval(let hours, _, _): graceDays = max(1, Double(hours) * 3 / 24)
+            }
+            if let lastRun = Self.parseISO8601(cadence.lastRunTimestamp) {
+                if now.timeIntervalSince(lastRun) / 86400 > graceDays {
+                    overdue.append("\(cadence.name) last ran \(Self.ageText(since: lastRun)) ago")
+                }
+            } else if now.timeIntervalSince(cadence.createdAt) / 86400 > graceDays {
+                overdue.append("\(cadence.name) has never run")
+            }
+        }
+
+        var cadenceStatus = "ok"
+        var cadenceDetail = "\(enabledCadences.count) enabled, all ran within their schedule"
+        if !failing.isEmpty {
+            cadenceStatus = "error"
+            overallOk = false
+            cadenceDetail = "\(failing.count) failing: \(failing.joined(separator: "; "))"
+            warnings.append("Cadence last run FAILED — \(failing.joined(separator: "; "))")
+        } else if !overdue.isEmpty {
+            cadenceStatus = "warning"
+            cadenceDetail = "\(overdue.count) overdue: \(overdue.joined(separator: "; "))"
+            warnings.append("Cadence overdue — \(overdue.joined(separator: "; "))")
+        }
+        if !cooling.isEmpty {
+            cadenceDetail += " · in failure cooldown: \(cooling.joined(separator: "; "))"
+            warnings.append("Cadence in failure cooldown — \(cooling.joined(separator: "; "))")
+            if cadenceStatus == "ok" { cadenceStatus = "warning" }
+        }
+        services.append([
+            "name": "Cadences",
+            "status": cadenceStatus,
+            "detail": cadenceDetail
+        ])
+
         let result: [String: Any] = [
-            "status": overallOk ? "ok" : "degraded",
+            // Honest three-state top line. This used to read "ok" whenever nothing had HARD-failed,
+            // so a curl of this endpoint answered "ok" while sitting next to a list of warnings.
+            // The point of this endpoint is to be believable when glanced at.
+            "status": !overallOk ? "degraded" : (warnings.isEmpty ? "ok" : "warning"),
             "version": AlfredApp.version,
             "timestamp": Self.iso8601Formatter.string(from: Date()),
             "services": services,
