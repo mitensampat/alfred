@@ -12617,6 +12617,13 @@ extension HTTPServer {
             out["paired"] = obj["paired"] ?? false
             out["connected"] = obj["connected"] ?? false
             out["messages"] = obj["messages"] ?? 0
+            // Forward the bridge's health detail so the UI can distinguish "paired" from
+            // "actually receiving". newest_message is the one field that exposes a stalled
+            // bridge: paired stays true and the count stays high while nothing new arrives.
+            for key in ["logged_out", "pairing", "newest_message", "reason",
+                        "last_connected", "last_disconnect"] {
+                if let value = obj[key] { out[key] = value }
+            }
             if (obj["paired"] as? Bool) != true,
                let png = await httpGetData("http://\(addr)/qr.png", timeout: 4), !png.isEmpty {
                 out["qr_png_base64"] = png.base64EncodedString()

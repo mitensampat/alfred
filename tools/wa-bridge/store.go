@@ -129,6 +129,21 @@ func (s *Store) MessageCount() int {
 	return n
 }
 
+// NewestMessageTimestamp is the unix time of the most recent message ingested, or 0 when the
+// store is empty. This is the one number that exposes a stalled bridge: the message count
+// stays high and `paired` stays true while nothing new arrives, so age is the only honest
+// health signal a caller can check.
+func (s *Store) NewestMessageTimestamp() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var ts sql.NullInt64
+	_ = s.db.QueryRow(`SELECT MAX(timestamp) FROM messages`).Scan(&ts)
+	if !ts.Valid {
+		return 0
+	}
+	return ts.Int64
+}
+
 func (s *Store) SaveContact(c Contact) {
 	if c.JID == "" {
 		return

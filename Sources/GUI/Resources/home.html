@@ -12303,12 +12303,30 @@
                 const d = await r.json();
                 const dot = document.getElementById('waDot');
                 if (dot){
+                    // Green means messages are actually arriving. `paired` only describes the
+                    // session saved on disk and stays true while a dead socket ingests nothing,
+                    // so colouring on it showed a healthy dot through a five-week outage.
                     let color = 'var(--dk-n400)';
-                    if (d.reachable && d.paired) color = '#2ea043';
-                    else if (d.reachable && !d.paired) color = 'var(--dk-hot)';
+                    let title = 'WhatsApp: ' + (d.active_source === 'bridge' ? 'bridge (starting)' : 'local database');
+                    if (d.reachable && d.connected) {
+                        color = '#2ea043';
+                        title = 'WhatsApp: connected via bridge';
+                    } else if (d.reachable && d.paired) {
+                        color = 'var(--dk-hot)';
+                        title = 'WhatsApp: bridge paired but NOT connected — not receiving'
+                              + (d.reason ? ' (' + d.reason + ')' : '');
+                    } else if (d.reachable) {
+                        color = 'var(--dk-hot)';
+                        title = 'WhatsApp: needs pairing'
+                              + (d.active_source === 'local_db' ? ' — reading the local database meanwhile' : '');
+                    }
+                    if (d.newest_message) {
+                        const days = Math.floor((Date.now() / 1000 - d.newest_message) / 86400);
+                        if (days >= 1) title += ' · newest message ' + days + 'd old';
+                    }
                     dot.style.background = color;
                     const btn = document.getElementById('waStatusBtn');
-                    if (btn) btn.title = (d.reachable ? (d.paired ? 'WhatsApp: connected via bridge' : 'WhatsApp: needs pairing') : ('WhatsApp: ' + (d.active_source === 'bridge' ? 'bridge (starting)' : 'local database')));
+                    if (btn) btn.title = title;
                 }
                 if (_waModalOpen) waRenderPairBody(d);
             } catch(e){}
