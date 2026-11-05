@@ -1,0 +1,19 @@
+# rewire decisions log
+
+newest first. each entry: date, decision, why. read this before changing the UI.
+
+| date | decision | why |
+| --- | --- | --- |
+| 2026-11-05 | fronts require a date (an explicit "no fixed date" is allowed) | a front is an outcome with a clock; a date is what makes it rankable |
+| 2026-11-05 | accent colour is deep sage `#4E6B5A` | zen, calm, distinct from warm urgency dot |
+| 2026-11-05 | the Notion mirror is a NEW database; old tasks and "Alfred tasks" are imported once | keeps the mirror clean; no mixed history |
+| 2026-11-05 | design phone, iPad Pro (landscape) and desktop web together | Miten uses all three |
+| 2026-11-05 | four tabs: now, to-dos, fronts, people | confirmed on the mock |
+| 2026-11-05 | the top slot on now is Alfred's "up next"; a to-do the user pins replaces it ("pinned by you") | the line must be owned; the user's call beats the model |
+| 2026-11-05 | cards are raised, post-style (white card on paper, header line, body, action row); no avatar on now cards; fronts and people cards keep their badge | tactile, like posts on X; avatars on now wasted space |
+| 2026-11-05 | extracted to-dos always wait in a "suggested" tray until accepted | nothing joins the list on its own |
+| 2026-11-05 | "waiting on" (what others owe) lives only inside fronts and people, not the main list | the main list is what you owe |
+| 2026-11-05 | up to 10 active fronts; Alfred proposes, the user confirms | raise the bar; fronts were 14+ auto-promoted themes |
+| 2026-11-05 | Alfred holds the main to-do list and writes to Notion; Notion edits sync back | one list, Notion as mirror and bulk editor |
+| 2026-11-05 | three objects: to-do, front, person | to-do is the unit; fronts and people are views of it |
+| 2026-11-05 | process: no changes without Miten's approval of direction first | explicit instruction |

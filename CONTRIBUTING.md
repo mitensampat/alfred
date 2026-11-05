@@ -36,6 +36,10 @@ swift build
 .build/debug/alfred --help
 ```
 
+## UX rewire
+
+Before changing the user interface, read [`docs/rewire/README.md`](docs/rewire/README.md): the spec, the decisions log, the mock and the plan.
+
 ## Project Structure
 
 ```
