@@ -9,6 +9,30 @@ import Foundation
 /// closes on its own closes the to-do).
 enum TodoService {
 
+    // MARK: - Suggestions (every extracted to-do comes in through here)
+
+    /// Add an extracted to-do as a suggestion, applying what Alfred has learned: corrected person
+    /// names, the user's own front tagging, and hiding what the user keeps dismissing (with a reason,
+    /// recoverable from the tray for 14 days). Returns the to-do id and whether it was new.
+    @discardableResult
+    static func suggest(title: String, person rawPerson: String?, due: String? = nil, source: String, sourceRef: String,
+                        sourceNote: String?, threadId: String? = nil, confidence: Double = 1.0,
+                        status: TodoStore.Status = .suggested, kind: TodoStore.Kind = .mine,
+                        fronts: [FrontService.ThemeRow]? = nil) -> (id: String, created: Bool) {
+        let store = TodoStore.shared
+        if let existing = store.linkedTodoId(source: source, ref: sourceRef) { return (existing, false) }
+        let person = TodoLearning.canonicalPerson(rawPerson)
+        let active = fronts ?? FrontService.activeThemes()
+        let front = TodoLearning.learnedFront(title: title, active: active) ?? matchFront(title: title, fronts: active)
+        let r = store.upsert(title: title, status: status, kind: kind, due: due, frontId: front?.id,
+                             frontName: front.map { FrontService.shortName($0.name) }, person: person,
+                             source: source, sourceRef: sourceRef, sourceNote: sourceNote, threadId: threadId, confidence: confidence)
+        if r.created, status == .suggested, let why = TodoLearning.hideReason(title: title, person: person, source: source) {
+            store.update(r.id, ["status": TodoStore.Status.dismissed.rawValue, "hidden_reason": why], markDirty: false)
+        }
+        return r
+    }
+
     // MARK: - Reconcile sources
 
     /// Bring the commitment tracker into the to-do list. Cheap; called on every list read.
@@ -27,14 +51,11 @@ enum TodoService {
         for c in open {
             let mine = c.type == "I Owe"
             let person = c.counterparty.trimmingCharacters(in: .whitespaces).trimmedNonEmpty
-            let front = matchFront(title: c.title, fronts: fronts)
             let status: TodoStore.Status = mine ? (firstRun ? .open : .suggested) : .open
             let platform = c.threadId.contains("@") ? "WhatsApp" : "a thread"
-            store.upsert(title: c.title, status: status, kind: mine ? .mine : .waiting,
-                         frontId: front?.id, frontName: front.map { FrontService.shortName($0.name) },
-                         person: person, source: "commitment", sourceRef: c.hash,
-                         sourceNote: person.map { "From \(platform) with \($0.split(separator: " ").first.map(String.init) ?? $0)" },
-                         threadId: c.threadId, confidence: c.confidence)
+            suggest(title: c.title, person: person, source: "commitment", sourceRef: c.hash,
+                    sourceNote: person.map { "From \(platform) with \($0.split(separator: " ").first.map(String.init) ?? $0)" },
+                    threadId: c.threadId, confidence: c.confidence, status: status, kind: mine ? .mine : .waiting, fronts: fronts)
         }
         if firstRun { store.setMeta("commitments_imported", TodoStore.nowISO()) }
 
@@ -103,13 +124,16 @@ enum TodoService {
     }
 
     static func accept(_ id: String) -> Bool {
-        TodoStore.shared.update(id, ["status": TodoStore.Status.open.rawValue])
+        guard let t = TodoStore.shared.get(id) else { return false }
+        TodoLearning.accepted(t)
+        return TodoStore.shared.update(id, ["status": TodoStore.Status.open.rawValue, "hidden_reason": NSNull()])
     }
 
     /// Dismiss a suggestion. A dismissed commitment is closed in the tracker too, so it does not
     /// come back on the next scan; the dismissal itself is the learning signal.
     static func dismiss(_ id: String) -> [String] {
         let store = TodoStore.shared
+        if let t = store.get(id) { TodoLearning.dismissed(t) }
         store.update(id, ["status": TodoStore.Status.dismissed.rawValue, "done_at": TodoStore.nowISO()])
         let hashes = store.sources(of: id).filter { $0.source == "commitment" }.map { $0.ref }
         for h in hashes { CommitmentScanTracker.shared.markCommitmentClosed(hash: h, closureMethod: "dismissed") }
@@ -310,7 +334,12 @@ enum TodoService {
         let topPeople = personCounts.sorted { $0.value > $1.value }.prefix(4).map { ["key": $0.key, "label": $0.key.split(separator: " ").first.map(String.init) ?? $0.key] }
         let frontChips = FrontService.activeThemes().map { ["key": $0.id, "label": FrontService.shortName($0.name)] }
         return [
-            "suggested": TodoStore.shared.suggestions().map { $0.dict },
+            "suggested": TodoStore.shared.suggestions()
+                .sorted { TodoLearning.acceptance(source: $0.source, person: $0.person) > TodoLearning.acceptance(source: $1.source, person: $1.person) }
+                .map { $0.dict },
+            "hidden": TodoStore.shared.hidden().map { t -> [String: Any] in
+                var d = t.dict; d["hidden_reason"] = TodoStore.shared.hiddenReason(t.id) ?? ""; return d },
+            "learning": TodoLearning.summary(),
             "today": section("today"),
             "upcoming": section("upcoming"),
             "someday": section("someday"),

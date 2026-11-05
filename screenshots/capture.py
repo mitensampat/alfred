@@ -3,7 +3,7 @@ import asyncio
 import os
 from playwright.async_api import async_playwright
 
-BASE = f"http://127.0.0.1:8080/home.html?passcode={os.environ.get('ALFRED_PASSCODE', 'YOUR_PASSCODE')}"
+BASE = f"http://127.0.0.1:8080/?passcode={os.environ.get('ALFRED_PASSCODE', 'YOUR_PASSCODE')}"
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)))
 
 async def hide_health_warning(page):

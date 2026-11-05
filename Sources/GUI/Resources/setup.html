@@ -1,0 +1,840 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F7F5F0">
+<title>Set up Alfred</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<!--
+  First-run setup (the onboarding wizard), moved out of the old desk (home.html) when the desk was
+  retired. The wizard logic is unchanged; it is restyled with the rewire's tokens (docs/rewire/MOCK.md).
+  When setup finishes it signs in and opens the app at /.
+-->
+<style>
+:root{
+  --canvas:#F7F5F0; --surface:#FFFFFF; --surface-sunken:#FAF8F4; --surface-overlay:rgba(31,30,27,.28);
+  --ink:#1F1E1B; --ink-secondary:#4A4740; --ink-tertiary:#6B675F; --ink-faint:#8A857B;
+  --line:#E4DFD5; --line-strong:#D9D4C9;
+  --coach:#4E6B5A; --coach-light:rgba(78,107,90,.10); --coach-dark:#3B5245;
+  --growth:#4E6B5A; --growth-light:rgba(78,107,90,.10); --growth-dark:#3B5245;
+  --warning:#9A5A22; --warning-light:#F5EBDD; --danger:#9A3A2A; --danger-light:#F6E6E1;
+  --info:#4E6B5A; --info-light:rgba(78,107,90,.10);
+  --font-display:"Newsreader", Georgia, serif; --font-body:"Inter", system-ui, -apple-system, sans-serif;
+}
+@media (prefers-color-scheme: dark){ :root{
+  --canvas:#1A1917; --surface:#23221F; --surface-sunken:#1E1D1A; --ink:#EDEAE3; --ink-secondary:#C4BFB4; --ink-tertiary:#A39E93; --ink-faint:#8C877C;
+  --line:#34322D; --line-strong:#3E3B35; --coach:#7FA08B; --coach-light:rgba(127,160,139,.14); --coach-dark:#9CBBA7;
+  --growth:#7FA08B; --growth-light:rgba(127,160,139,.14); --danger:#E0846E; --danger-light:#33201C; --warning:#E0A564; --warning-light:#33281C;
+}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--canvas);color:var(--ink);font-family:var(--font-body);-webkit-font-smoothing:antialiased}
+.hidden{display:none!important}
+button,input,select,textarea{font:inherit}
+        /* ── FTUE Wizard ── */
+        .ftue-screen { display: flex; align-items: center; justify-content: center; height: 100dvh; background: var(--canvas); padding: 20px; }
+        .ftue-container { background: var(--surface); border-radius: 0; padding: 32px; width: 100%; max-width: 480px; box-shadow: var(--shadow-md); max-height: 90vh; overflow-y: auto; }
+        .ftue-progress { display: flex; justify-content: center; gap: 8px; margin-bottom: 24px; }
+        .ftue-step-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); transition: all 0.3s; }
+        .ftue-step-dot.active { background: var(--coach); transform: scale(1.3); }
+        .ftue-step-dot.completed { background: var(--growth); }
+        .ftue-content h1, .ftue-content h2 { font-family: var(--font-display); font-weight: 400; margin-bottom: 8px; }
+        .ftue-content h1 { font-size: 24px; text-align: center; }
+        .ftue-content h2 { font-size: 20px; }
+        .ftue-content p { font-size: 14px; color: var(--ink-secondary); line-height: 1.6; margin-bottom: 16px; }
+        .ftue-icon, .ftue-success-icon { font-size: 48px; text-align: center; margin-bottom: 16px; }
+        .ftue-features { list-style: none; margin: 16px 0; }
+        .ftue-features li { display: flex; align-items: center; gap: 10px; padding: 8px 0; font-size: 14px; }
+        .ftue-features li span { font-size: 20px; }
+        .ftue-field { margin-bottom: 16px; }
+        .ftue-field label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+        .ftue-field .required { color: var(--danger); }
+        .ftue-field input, .ftue-field select { width: 100%; padding: 10px 12px; font-family: var(--font-body); font-size: 14px; border: 1px solid var(--line-strong); border-radius: 0; background: var(--surface); color: var(--ink); outline: none; }
+        .ftue-field input:focus { border-color: var(--coach); }
+        .ftue-field small { display: block; font-size: 12px; color: var(--ink-tertiary); margin-top: 4px; }
+        .ftue-field small a { color: var(--coach); }
+        .ftue-field-row { display: flex; gap: 12px; align-items: center; }
+        .ftue-field-row select { width: auto; min-width: 120px; }
+        .ftue-test-btn { font-family: var(--font-body); font-size: 12px; padding: 6px 14px; background: var(--surface-sunken); border: 1px solid var(--line-strong); border-radius: 0; cursor: pointer; color: var(--ink); }
+        .ftue-status { font-size: 12px; margin-left: 8px; }
+        .ftue-status.success { color: var(--growth); }
+        .ftue-status.error { color: var(--danger); }
+        .ftue-status.loading { color: var(--ink-tertiary); }
+        .ftue-inline-error { display: none; margin-top: 16px; padding: 10px 14px; font-size: 13px; line-height: 1.5; color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent); border-radius: 8px; }
+        .ftue-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 24px; }
+        .ftue-btn { font-family: var(--font-body); font-size: 14px; padding: 10px 24px; border-radius: 0; cursor: pointer; border: none; }
+        .ftue-btn-primary { background: var(--coach); color: white; font-weight: 500; }
+        .ftue-btn-primary:hover { background: var(--coach-dark); }
+        .ftue-btn-secondary { background: var(--surface-sunken); color: var(--ink); border: 1px solid var(--line-strong); }
+        .ftue-next-btn { font-family: var(--font-body); font-size: 13px; padding: 8px 16px; background: var(--surface-sunken); border: 1px solid var(--line-strong); border-radius: 0; cursor: pointer; color: var(--ink); }
+        .ftue-oauth-btn { display: flex; align-items: center; gap: 10px; padding: 12px 20px; border: 1px solid var(--line-strong); border-radius: 0; background: var(--surface); cursor: pointer; font-size: 14px; width: 100%; justify-content: center; }
+        .ftue-oauth-btn:disabled { opacity: 0.5; cursor: default; }
+        .ftue-toggle { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; }
+        .ftue-toggle input[type="checkbox"] { margin-top: 4px; width: 18px; height: 18px; }
+        .ftue-toggle label { font-weight: 500; font-size: 14px; cursor: pointer; }
+        .ftue-toggle small { font-size: 12px; color: var(--ink-tertiary); display: block; }
+        .ftue-summary { text-align: center; font-size: 14px; color: var(--growth); line-height: 2; }
+        .ftue-launch-btn { width: 100%; padding: 14px; font-family: var(--font-body); font-size: 16px; font-weight: 500; background: var(--coach); color: white; border: none; border-radius: 0; cursor: pointer; margin-top: 16px; }
+        .ftue-perm-card { background: var(--surface-sunken); border: 1px solid var(--line); padding: 16px; margin-bottom: 12px; transition: all 0.3s ease; }
+        .ftue-perm-card.granted { border-color: var(--growth); background: var(--surface); }
+        .ftue-perm-card-header { display: flex; align-items: center; gap: 10px; }
+        .ftue-perm-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; transition: background 0.3s ease; }
+        .ftue-perm-dot.missing { background: var(--danger); }
+        .ftue-perm-dot.granted { background: var(--growth); }
+        .ftue-perm-dot.pending { background: var(--ink-faint); }
+        .ftue-perm-dot.not-needed { background: var(--ink-faint); }
+        .ftue-perm-card-header strong { font-size: 14px; flex: 1; }
+        .ftue-perm-status { font-size: 12px; font-weight: 500; }
+        .ftue-perm-status.missing { color: var(--danger); }
+        .ftue-perm-status.granted { color: var(--growth); }
+        .ftue-perm-status.pending { color: var(--ink-tertiary); }
+        .ftue-perm-status.not-needed { color: var(--ink-faint); }
+        .ftue-perm-desc { font-size: 12px; color: var(--ink-secondary); margin: 8px 0 0 18px; line-height: 1.5; }
+        .ftue-perm-steps { margin: 12px 0 0 18px; }
+        .ftue-perm-steps .step { display: flex; gap: 10px; align-items: center; padding: 6px 0; font-size: 13px; }
+        .ftue-perm-steps .step-num { width: 20px; height: 20px; background: var(--ink); color: var(--surface); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; flex-shrink: 0; }
+        .ftue-perm-action { margin: 12px 0 0 18px; }
+        .ftue-perm-action button { padding: 10px 20px; font-family: var(--font-body); font-size: 13px; background: var(--ink); color: var(--surface); border: none; cursor: pointer; }
+        .ftue-perm-granted-check { display: none; margin-left: auto; font-size: 16px; color: var(--growth); }
+        .ftue-perm-card.granted .ftue-perm-granted-check { display: block; }
+        .ftue-perm-card.granted .ftue-perm-steps,
+        .ftue-perm-card.granted .ftue-perm-action { display: none; }
+        .ftue-perm-card.not-needed .ftue-perm-steps,
+        .ftue-perm-card.not-needed .ftue-perm-action { display: none; }
+        @keyframes permGranted { 0% { transform: scale(1); } 50% { transform: scale(1.02); } 100% { transform: scale(1); } }
+        .ftue-perm-card.just-granted { animation: permGranted 0.4s ease; }
+        .ftue-database-section { margin-bottom: 20px; }
+        .ftue-database-section label { font-size: 13px; font-weight: 600; display: block; margin-bottom: 8px; }
+        .ftue-database-picker { display: flex; flex-direction: column; gap: 6px; }
+        .ftue-database-option { padding: 10px 14px; border: 1px solid var(--line-strong); border-radius: 8px; cursor: pointer; transition: all 0.15s; }
+        .ftue-database-option strong { font-size: 13px; display: block; }
+        .ftue-database-option small { font-size: 11px; color: var(--ink-tertiary); }
+        .ftue-database-option.selected { border-color: var(--coach); background: var(--coach-light); }
+        .ftue-database-option:hover { background: var(--surface-sunken); }
+
+.ftue-container{border-radius:22px;box-shadow:0 1px 1px rgba(31,30,27,.04),0 4px 14px rgba(31,30,27,.06)}
+.ftue-next-btn{border-radius:22px!important}
+</style>
+</head>
+<body>
+    <!-- ═══ FTUE WIZARD ═══ -->
+    <div class="ftue-screen" id="ftueWizard">
+        <div class="ftue-container">
+            <div class="ftue-progress" id="ftueProgress"></div>
+            <div class="ftue-content" id="ftueContent"></div>
+            <div class="ftue-actions" id="ftueActions"></div>
+        </div>
+    </div>
+<!-- the wizard's sign-in step fills this, as it did in the old desk -->
+<input type="hidden" id="passcodeInput">
+<div id="authScreen" class="hidden"></div><div id="appContainer" class="hidden"></div>
+<script>
+let _ftuePasscode = new URLSearchParams(location.search).get('passcode') || '';
+function showToast(message) {
+  const t = document.createElement('div'); t.textContent = message;
+  t.style.cssText = 'position:fixed;bottom:28px;left:50%;transform:translateX(-50%);padding:12px 18px;background:var(--ink);color:var(--canvas);border-radius:14px;font-size:14px;z-index:9999';
+  document.body.appendChild(t); setTimeout(() => t.remove(), 2400);
+}
+// Finishing setup signs in with the passcode chosen in the wizard, then opens the app.
+async function authenticate() {
+  const passcode = document.getElementById('passcodeInput').value || _ftuePasscode;
+  try {
+    const r = await (await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passcode }) })).json();
+    if (r.success && r.token) { localStorage.setItem('alfred_auth_token', r.token); localStorage.setItem('alfred_auth_expires', r.expiresAt || ''); }
+  } catch (e) {}
+  location.href = '/';
+}
+function showAuthScreen() { location.href = '/'; }
+        // ═══════════════════════════════════════════════
+        // 9. FTUE WIZARD
+        // ═══════════════════════════════════════════════
+
+        // Order matters: permissions (Full Disk Access) MUST come before messaging,
+        // since reading iMessage/WhatsApp needs FDA granted first. All four connections
+        // (Anthropic, Messages, Calendar, Notion) are required — no skip.
+        const FTUE_STEPS = ['welcome', 'apiKeys', 'permissions', 'messaging', 'googleOauth', 'notion', 'profile', 'complete'];
+        let currentFtueStep = 0;
+        let ftueData = {};
+        let notionDatabases = [];
+
+        async function checkSetupStatus() {
+            try {
+                const response = await fetch('/api/setup/status');
+                const status = await response.json();
+                return status;
+            } catch (error) {
+                console.error('Failed to check setup status:', error);
+                return { isComplete: true };
+            }
+        }
+
+        async function showFtueWizard() {
+            document.getElementById('authScreen').classList.add('hidden');
+            document.getElementById('appContainer').classList.add('hidden');
+            document.getElementById('ftueWizard').classList.remove('hidden');
+            // Resume where the user left off — use currentStep from progress file,
+            // NOT completedSteps (which includes auto-detected steps like "messaging")
+            let startIndex = 0;
+            try {
+                const s = await checkSetupStatus();
+                if (s) {
+                    if (s.currentStep > 0) {
+                        startIndex = Math.min(s.currentStep, FTUE_STEPS.length - 1);
+                    }
+                    if (s.completedSteps && s.completedSteps.includes('googleOauth')) ftueData.googleConnected = true;
+                    if (s.completedSteps && s.completedSteps.includes('apiKeys')) ftueData.claudeKeyVerified = true;
+                }
+            } catch (e) { /* fall back to step 0 */ }
+            renderFtueStep(startIndex);
+        }
+
+        function hideFtueWizard() {
+            document.getElementById('ftueWizard').classList.add('hidden');
+        }
+
+        function renderFtueProgress() {
+            const progress = document.getElementById('ftueProgress');
+            progress.innerHTML = FTUE_STEPS.map((step, index) => {
+                let className = 'ftue-step-dot';
+                if (index < currentFtueStep) className += ' completed';
+                else if (index === currentFtueStep) className += ' active';
+                return `<div class="${className}"></div>`;
+            }).join('');
+        }
+
+        function renderFtueStep(stepIndex) {
+            // Stop permission polling when leaving the permissions step
+            var prevStep = FTUE_STEPS[currentFtueStep];
+            if (prevStep === 'permissions' && FTUE_STEPS[stepIndex] !== 'permissions') {
+                stopPermissionPolling();
+            }
+            currentFtueStep = stepIndex;
+            renderFtueProgress();
+            const content = document.getElementById('ftueContent');
+            const actions = document.getElementById('ftueActions');
+            const step = FTUE_STEPS[stepIndex];
+            content.innerHTML = getFtueStepContent(step);
+            actions.innerHTML = getFtueStepActions(step);
+        }
+
+        function getFtueStepContent(step) {
+            switch(step) {
+                case 'welcome':
+                    return `
+                        <h1 style="font-size:28px;margin-bottom:4px;">Coach Alfred</h1>
+                        <p style="text-align:center;font-size:13px;color:var(--ink-tertiary);margin-bottom:24px;letter-spacing:0.02em;">sharpen your genius</p>
+                        <p>Your AI coach that knows how you work — embedded in your messages, calendar, notes, and commitments. Alfred watches patiently, learns your patterns, and pushes you toward the 10x version of yourself.</p>
+                        <ul class="ftue-features">
+                            <li><span style="font-size:14px;">&#9679;</span> Surfaces what deserves your attention — not what's loudest</li>
+                            <li><span style="font-size:14px;">&#9679;</span> Tracks commitments you've made and ones owed to you</li>
+                            <li><span style="font-size:14px;">&#9679;</span> Gets sharper the longer it watches you operate</li>
+                            <li><span style="font-size:14px;">&#9679;</span> Coaches with context, not platitudes</li>
+                        </ul>
+                        <p style="font-size: 13px; color: var(--ink-tertiary);">5 minutes to set up. Then Alfred goes to work.</p>
+                    `;
+                case 'apiKeys':
+                    return `
+                        <h2>Connect Claude</h2>
+                        <p>Alfred runs on Anthropic's most capable models. Every briefing, nudge, and insight is generated with deep context — not canned responses. Your API key stays local.</p>
+                        <div class="ftue-field">
+                            <label>Claude API Key <span class="required">*</span></label>
+                            <input type="password" id="ftueClaudeApiKey" placeholder="sk-ant-..." value="${ftueData.claudeApiKey || ''}">
+                            <small>Get yours at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a></small>
+                            <div style="display: flex; align-items: center; margin-top: 8px;">
+                                <button class="ftue-test-btn" onclick="testClaudeApiKey()">Test Connection</button>
+                                <span id="claudeApiKeyStatus"></span>
+                            </div>
+                        </div>
+                    `;
+                case 'notion':
+                    const dbPickerHtml = notionDatabases.length > 0 ? renderNotionDatabasePickers() : '';
+                    return `
+                        <h2>Connect Notion <span style="font-size:13px;color:var(--ink-tertiary);font-weight:400;">· optional</span></h2>
+                        <p>If your second brain lives in Notion, Alfred can plug into it — pulling context from your notes and creating tasks from your conversations. Alfred works fully without it, so feel free to <strong>skip and add it later</strong>.</p>
+                        <div class="ftue-field">
+                            <label>Notion Integration Token</label>
+                            <input type="password" id="ftueNotionApiKey" placeholder="secret_..." value="${ftueData.notionApiKey || ''}">
+                            <small>Create an integration at <a href="https://www.notion.so/my-integrations" target="_blank">notion.so/my-integrations</a><br>Then share your databases with the integration.</small>
+                            <div style="display: flex; align-items: center; margin-top: 8px;">
+                                <button class="ftue-test-btn" onclick="testNotionConnection()">Connect & Load Databases</button>
+                                <span id="notionStatus"></span>
+                            </div>
+                        </div>
+                        <div id="notionDatabasePicker" class="${notionDatabases.length > 0 ? '' : 'hidden'}">${dbPickerHtml}</div>
+                    `;
+                case 'googleOauth':
+                    const googleConnected = ftueData.googleConnected;
+                    const hasGoogleCreds = ftueData.googleClientId && ftueData.googleClientSecret;
+                    return `
+                        <h2>Connect Google Calendar</h2>
+                        <p>Alfred reads your calendar to build daily briefings, prep you for meetings, and create events from chat.</p>
+                        <div id="googleCredsSection" style="${hasGoogleCreds ? 'display:none;' : ''}">
+                            <p style="font-size: 13px; color: var(--ink-secondary); margin-bottom: 12px;">
+                                First, create OAuth credentials in <a href="https://console.cloud.google.com/apis/credentials" target="_blank" style="color: var(--coach);">Google Cloud Console</a>.
+                                Enable the Google Calendar API, create an OAuth 2.0 Client ID (Web application), and add <code>http://localhost:8080/auth/callback</code> as an authorized redirect URI.
+                            </p>
+                            <div class="ftue-field">
+                                <label>Client ID <span class="required">*</span></label>
+                                <input type="text" id="ftueGoogleClientId" placeholder="your-client-id.apps.googleusercontent.com" value="${ftueData.googleClientId || ''}">
+                            </div>
+                            <div class="ftue-field">
+                                <label>Client Secret <span class="required">*</span></label>
+                                <input type="password" id="ftueGoogleClientSecret" placeholder="GOCSPX-..." value="${ftueData.googleClientSecret || ''}">
+                            </div>
+                            <button class="ftue-next-btn" style="margin-bottom: 16px;" onclick="saveGoogleCredentials()">Save Credentials</button>
+                            <div id="googleCredsStatus"></div>
+                        </div>
+                        <div id="googleOAuthSection" style="${hasGoogleCreds && !googleConnected ? '' : (googleConnected ? '' : 'display:none;')}">
+                            <button class="ftue-oauth-btn" onclick="startGoogleOAuth()" ${googleConnected ? 'disabled' : ''}>
+                                <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+                                ${googleConnected ? 'Connected &#10003;' : 'Connect Google Calendar'}
+                            </button>
+                        </div>
+                        <div id="googleOAuthStatus" style="text-align: center; margin-top: 16px;">
+                            ${googleConnected ? '<span class="ftue-status success">&#10003; Connected</span>' : ''}
+                        </div>
+                    `;
+                case 'profile':
+                    return `
+                        <h2>About You</h2>
+                        <p>A great coach studies the player before the game. Help Alfred calibrate to you.</p>
+                        <div class="ftue-field">
+                            <label>Your Name <span class="required">*</span></label>
+                            <input type="text" id="ftueUserName" placeholder="Your name" value="${ftueData.userName || ''}">
+                        </div>
+                        <div class="ftue-field">
+                            <label>Email <span class="required">*</span></label>
+                            <input type="email" id="ftueUserEmail" placeholder="you@example.com" value="${ftueData.userEmail || ''}">
+                            <small>Where Alfred sends your daily briefing</small>
+                        </div>
+                        <div class="ftue-field">
+                            <label>Work Hours</label>
+                            <div class="ftue-field-row">
+                                <select id="ftueWorkStartHour">${generateHourOptions(ftueData.workStartHour || '09')}</select>
+                                <span style="color: var(--ink-tertiary);">to</span>
+                                <select id="ftueWorkEndHour">${generateHourOptions(ftueData.workEndHour || '17')}</select>
+                            </div>
+                            <small>Alfred times briefings and attention alerts to your rhythm</small>
+                        </div>
+                        <div class="ftue-field">
+                            <label>How do you operate?</label>
+                            <select id="ftueWorkStyle" style="width:100%;padding:10px 12px;font-family:var(--font-body);font-size:14px;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);color:var(--ink);">
+                                <option value="">Select your style...</option>
+                                <option value="driver" ${ftueData.workStyle === 'driver' ? 'selected' : ''}>Driver — bias to action, impatient with noise</option>
+                                <option value="architect" ${ftueData.workStyle === 'architect' ? 'selected' : ''}>Architect — systems thinker, wants the full picture</option>
+                                <option value="connector" ${ftueData.workStyle === 'connector' ? 'selected' : ''}>Connector — relationships first, context through people</option>
+                                <option value="operator" ${ftueData.workStyle === 'operator' ? 'selected' : ''}>Operator — execution machine, thrives on throughput</option>
+                            </select>
+                            <small>Shapes how Alfred coaches you — directness, detail level, what gets flagged</small>
+                        </div>
+                    `;
+                case 'messaging':
+                    return `
+                        <h2>Messages</h2>
+                        <p>Most of the decisions and commitments that matter happen in conversations — and that's where they get lost. This is what Alfred learns the most from.</p>
+                        <div class="ftue-toggle">
+                            <input type="checkbox" id="ftueEnableWhatsApp" ${ftueData.enableWhatsApp !== false ? 'checked' : ''}>
+                            <div><label for="ftueEnableWhatsApp">WhatsApp Desktop</label><small>Reads your local WhatsApp database &mdash; needs Full Disk Access</small></div>
+                        </div>
+                        <div class="ftue-toggle">
+                            <input type="checkbox" id="ftueEnableSignal" ${ftueData.enableSignal ? 'checked' : ''} onchange="document.getElementById('ftueSignalVerify').style.display = this.checked ? 'block' : 'none'">
+                            <div><label for="ftueEnableSignal">Signal Desktop <span style="color:var(--growth);font-size:11px;font-weight:600;">&middot; no Full Disk Access</span></label><small>Reads your local Signal database &mdash; asks only for a one-time Keychain grant</small></div>
+                        </div>
+                        <div id="ftueSignalVerify" style="display:${ftueData.enableSignal ? 'block' : 'none'};margin:4px 0 0 30px;">
+                            <button class="ftue-test-btn" onclick="verifySignal()">Grant access &amp; verify</button>
+                            <span id="signalStatus" style="margin-left:8px;font-size:12px;"></span>
+                            <div style="font-size:11px;color:var(--ink-tertiary);margin-top:4px;">Click now (while you're here) so the Keychain prompt appears &mdash; then Alfred reads Signal silently, even overnight.</div>
+                        </div>
+                        <div style="margin-top:20px;padding:12px 14px;background:var(--surface-sunken);border-radius:8px;">
+                            <p style="font-size:12px;color:var(--ink-secondary);margin:0;line-height:1.5;"><strong style="color:var(--ink);">Privacy-first.</strong> All message processing happens locally on your Mac. Your conversations never leave this machine — no cloud sync, no forwarding.</p>
+                        </div>
+                        <p style="font-size: 12px; color: var(--ink-tertiary); margin-top: 12px;">You can skip this and add it later in Settings. But it's where Alfred gets most of its signal, so we recommend connecting it.</p>
+                    `;
+                case 'permissions':
+                    // Start polling for permission status
+                    startPermissionPolling();
+                    return `
+                        <h2>Permissions</h2>
+                        <p style="color:var(--ink-secondary);font-size:14px;line-height:1.6;">Alfred needs a few macOS permissions to work. Grant them below — the status updates live as you go.</p>
+
+                        <div class="ftue-perm-card" id="ftue-perm-fda" data-perm="fda">
+                            <div class="ftue-perm-card-header">
+                                <div class="ftue-perm-dot pending" id="ftue-dot-fda"></div>
+                                <strong>Full Disk Access</strong>
+                                <span class="ftue-perm-status pending" id="ftue-status-fda">Checking...</span>
+                                <span class="ftue-perm-granted-check">&#10003;</span>
+                            </div>
+                            <div class="ftue-perm-desc">Lets Alfred read your WhatsApp database locally on your Mac. Nothing leaves this machine.</div>
+                            <div class="ftue-perm-steps" id="ftue-steps-fda">
+                                <div class="step"><span class="step-num">1</span><span>Click <strong>Open Settings</strong> below</span></div>
+                                <div class="step"><span class="step-num">2</span><span>Click <strong>+</strong> and select <strong>Alfred.app</strong> from Applications</span></div>
+                                <div class="step"><span class="step-num">3</span><span>Ensure the toggle is <strong>on</strong></span></div>
+                            </div>
+                            <div class="ftue-perm-action" id="ftue-action-fda">
+                                <button onclick="openPermissionSettings('FullDiskAccess')">Open System Settings</button>
+                            </div>
+                        </div>
+
+                        <div class="ftue-perm-card" id="ftue-perm-contacts" data-perm="contacts">
+                            <div class="ftue-perm-card-header">
+                                <div class="ftue-perm-dot pending" id="ftue-dot-contacts"></div>
+                                <strong>Contacts</strong>
+                                <span class="ftue-perm-status pending" id="ftue-status-contacts">Checking...</span>
+                                <span class="ftue-perm-granted-check">&#10003;</span>
+                            </div>
+                            <div class="ftue-perm-desc">Resolves names in your WhatsApp conversations so Alfred knows who's who.</div>
+                            <div class="ftue-perm-action" id="ftue-action-contacts">
+                                <button onclick="requestContactsPermission()">Grant Access</button>
+                            </div>
+                        </div>
+
+                        <div class="ftue-perm-card" id="ftue-perm-notif" data-perm="notif">
+                            <div class="ftue-perm-card-header">
+                                <div class="ftue-perm-dot pending" id="ftue-dot-notif"></div>
+                                <strong>Notifications</strong>
+                                <span class="ftue-perm-status pending" id="ftue-status-notif">Checking...</span>
+                                <span class="ftue-perm-granted-check">&#10003;</span>
+                            </div>
+                            <div class="ftue-perm-desc">For morning briefings, post-meeting capture prompts, and attention alerts.</div>
+                            <div class="ftue-perm-action" id="ftue-action-notif">
+                                <button onclick="requestNotificationPermission()">Enable</button>
+                            </div>
+                        </div>
+
+                        <div style="margin-top:16px;padding:12px 14px;background:var(--surface-sunken);">
+                            <p style="font-size:12px;color:var(--ink-tertiary);margin:0;line-height:1.5;"><strong style="color:var(--ink-secondary);">Privacy-first.</strong> All processing happens locally on your Mac. Your conversations never leave this machine.</p>
+                        </div>
+                    `;
+                case 'complete':
+                    return `
+                        <h1 style="margin-top:8px;">You're live</h1>
+                        <p style="text-align:center;">Alfred is now embedded in the way you work. It will watch, learn, and get sharper every day. Your job: operate. Alfred's job: make sure nothing consequential slips.</p>
+                        <div class="ftue-summary">
+                            <div>Claude connected — highest-context coaching active</div>
+                            <div>Profile calibrated</div>
+                            ${ftueData.enableWhatsApp !== false ? '<div>WhatsApp — Alfred learns from your conversations</div>' : ''}
+                            ${ftueData.enableSignal ? '<div>Signal — connected, no Full Disk Access</div>' : ''}
+                            ${ftueData.googleConnected ? '<div>Calendar wired — briefings and meeting prep ready</div>' : ''}
+                            ${ftueData.notionApiKey ? '<div>Notion synced — your second brain is augmented</div>' : ''}
+                        </div>
+                        <p style="font-size:13px;color:var(--ink-tertiary);text-align:center;margin-top:16px;">First move: add your key contacts in Settings so Alfred knows who to watch closely.</p>
+                        <button class="ftue-launch-btn" onclick="completeFtue()">Let's go</button>
+                    `;
+                default: return '<p>Unknown step</p>';
+            }
+        }
+
+        function getFtueStepActions(step) {
+            if (step === 'welcome') {
+                return `<button class="ftue-btn ftue-btn-primary" onclick="nextFtueStep()">Get Started</button>
+                    <div style="margin-top: 16px; text-align: center;">
+                        <a href="#" onclick="skipFtueEntirely(); return false;" style="color: var(--ink-tertiary); font-size: 13px; text-decoration: none;">Already set up? Skip to login &rarr;</a>
+                    </div>`;
+            }
+            if (step === 'complete') return '';
+            const backBtn = currentFtueStep > 0 ? `<button class="ftue-btn ftue-btn-secondary" onclick="prevFtueStep()">Back</button>` : '<div></div>';
+            // Only the Claude key and your profile are required. Permissions, messages,
+            // calendar and Notion are optional — add now or later from Settings.
+            const optionalSteps = ['permissions', 'messaging', 'googleOauth', 'notion'];
+            const skipLink = optionalSteps.includes(step)
+                ? `<a href="#" onclick="skipFtueStep(); return false;" style="color:var(--ink-tertiary);font-size:13px;text-decoration:none;align-self:center;">Skip for now</a>`
+                : '';
+            return `${backBtn}<div style="display: flex; gap: 12px; align-items:center;">
+                ${skipLink}
+                <button class="ftue-btn ftue-btn-primary" onclick="nextFtueStep()">Continue</button>
+            </div>`;
+        }
+
+        function renderNotionDatabasePickers() {
+            const taskDbOptions = notionDatabases.map(db => `
+                <div class="ftue-database-option ${ftueData.tasksDatabaseId === db.id ? 'selected' : ''}" onclick="selectDatabase('tasks', '${db.id}', this)">
+                    <strong>${db.icon} ${db.title}</strong><small>${db.id.substring(0, 8)}...</small>
+                </div>`).join('');
+            const commitmentDbOptions = notionDatabases.map(db => `
+                <div class="ftue-database-option ${ftueData.commitmentsDatabaseId === db.id ? 'selected' : ''}" onclick="selectDatabase('commitments', '${db.id}', this)">
+                    <strong>${db.icon} ${db.title}</strong><small>${db.id.substring(0, 8)}...</small>
+                </div>`).join('');
+            return `<h3 style="font-size: 16px; margin: 24px 0 16px 0;">Select Your Databases</h3>
+                <p style="font-size: 13px; color: var(--ink-secondary); margin-bottom: 20px;">Choose existing databases for Alfred to use.</p>
+                <div class="ftue-database-section"><label>Tasks Database <span class="required">*</span></label>
+                    <div class="ftue-database-picker" id="tasksDatabaseOptions">${taskDbOptions}</div></div>
+                <div class="ftue-database-section"><label>Commitments Database</label>
+                    <div class="ftue-database-picker" id="commitmentsDatabaseOptions">${commitmentDbOptions}
+                        <div class="ftue-database-option ${!ftueData.commitmentsDatabaseId ? 'selected' : ''}" onclick="selectDatabase('commitments', '', this)">
+                            <strong>Same as Tasks</strong><small>Use the Tasks database for commitments too</small>
+                        </div></div></div>`;
+        }
+
+        function selectDatabase(type, id, element) {
+            element.parentElement.querySelectorAll('.ftue-database-option').forEach(opt => opt.classList.remove('selected'));
+            element.classList.add('selected');
+            if (type === 'tasks') ftueData.tasksDatabaseId = id;
+            else if (type === 'commitments') ftueData.commitmentsDatabaseId = id;
+        }
+
+        function generateHourOptions(selectedHour) {
+            let options = '';
+            for (let h = 6; h <= 22; h++) {
+                const hour = h.toString().padStart(2, '0');
+                const label = h === 12 ? '12 PM' : h > 12 ? `${h-12} PM` : `${h} AM`;
+                options += `<option value="${hour}" ${hour === selectedHour ? 'selected' : ''}>${label}</option>`;
+            }
+            return options;
+        }
+
+        async function nextFtueStep() {
+            const step = FTUE_STEPS[currentFtueStep];
+            if (!await validateAndSaveFtueStep(step)) return;
+            if (currentFtueStep < FTUE_STEPS.length - 1) renderFtueStep(currentFtueStep + 1);
+        }
+        function prevFtueStep() { if (currentFtueStep > 0) renderFtueStep(currentFtueStep - 1); }
+        function skipFtueStep() { if (currentFtueStep < FTUE_STEPS.length - 1) renderFtueStep(currentFtueStep + 1); }
+
+        async function skipFtueEntirely() {
+            try { await fetch('/api/setup/complete', { method: 'POST' }); } catch (e) {}
+            document.getElementById('ftueWizard').classList.add('hidden');
+            if (_ftuePasscode) {
+                document.getElementById('passcodeInput').value = _ftuePasscode;
+                authenticate();
+            } else {
+                showAuthScreen();
+            }
+        }
+
+        // ── Inline error helper (replaces alert()) ──
+        function setFtueError(msg) {
+            var el = document.getElementById('ftueInlineError');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'ftueInlineError';
+                el.className = 'ftue-inline-error';
+                var content = document.getElementById('ftueContent');
+                if (content) content.appendChild(el);
+            }
+            el.textContent = msg || '';
+            el.style.display = msg ? 'block' : 'none';
+        }
+        function clearFtueError() { setFtueError(''); }
+
+        // ── Verify-then-advance helpers ──
+        async function verifyClaudeKey(apiKey) {
+            try {
+                const r = await fetch('/api/setup/test-api-key', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey }) });
+                const j = await r.json();
+                return !!j.valid;
+            } catch (e) { return false; }
+        }
+        function setContinueBusy(busy, label) {
+            var btn = document.querySelector('#ftueActions .ftue-btn-primary');
+            if (!btn) return;
+            if (busy) { btn.dataset.label = btn.textContent; btn.textContent = label || 'Checking…'; btn.disabled = true; btn.style.opacity = '0.7'; }
+            else { btn.textContent = btn.dataset.label || 'Continue'; btn.disabled = false; btn.style.opacity = ''; }
+        }
+
+        // All four connections (Anthropic, Messages, Calendar, Notion) are REQUIRED.
+        // Each step verifies its connection actually works before advancing.
+        async function validateAndSaveFtueStep(step) {
+            clearFtueError();
+            switch(step) {
+                case 'apiKeys': {
+                    const claudeKey = document.getElementById('ftueClaudeApiKey')?.value?.trim();
+                    if (!claudeKey) { setFtueError('Enter your Anthropic API key to continue.'); return false; }
+                    // Verify the key actually works (and has billing) before advancing.
+                    if (!(ftueData.claudeKeyVerified && ftueData.claudeApiKey === claudeKey)) {
+                        setContinueBusy(true, 'Verifying key…');
+                        const ok = await verifyClaudeKey(claudeKey);
+                        setContinueBusy(false);
+                        if (!ok) { setFtueError("That key didn't work. Make sure it's correct and has billing credit, then try again."); return false; }
+                        ftueData.claudeKeyVerified = true;
+                    }
+                    ftueData.claudeApiKey = claudeKey;
+                    await saveFtueStepData('apiKeys', { claudeApiKey: claudeKey });
+                    return true;
+                }
+                case 'permissions': {
+                    // FDA is strongly recommended (Alfred reads WhatsApp locally) but not a hard
+                    // gate — you can grant it later from Settings, so nothing blocks setup here.
+                    return true;
+                }
+                case 'messaging': {
+                    const wa = document.getElementById('ftueEnableWhatsApp')?.checked;
+                    const sig = document.getElementById('ftueEnableSignal')?.checked;
+                    ftueData.enableWhatsApp = wa; ftueData.enableSignal = sig;
+                    await saveFtueStepData('messaging', { enableWhatsApp: wa ? 'true' : 'false', enableSignal: sig ? 'true' : 'false', enableIMessage: 'false' });
+                    return true;
+                }
+                case 'googleOauth': {
+                    // Calendar is optional — continue whether or not it's connected.
+                    return true;
+                }
+                case 'notion': {
+                    const notionKey = document.getElementById('ftueNotionApiKey')?.value?.trim();
+                    if (!notionKey) return true; // Notion is optional — skip freely.
+                    if (!ftueData.tasksDatabaseId) { setFtueError('Select a Tasks database, or leave the token blank to skip Notion.'); return false; }
+                    ftueData.notionApiKey = notionKey;
+                    await saveFtueStepData('notion', { notionApiKey: notionKey, tasksDatabaseId: ftueData.tasksDatabaseId, commitmentsDatabaseId: ftueData.commitmentsDatabaseId || ftueData.tasksDatabaseId });
+                    return true;
+                }
+                case 'profile': {
+                    const userName = document.getElementById('ftueUserName')?.value?.trim();
+                    const userEmail = document.getElementById('ftueUserEmail')?.value?.trim();
+                    const workStartHour = document.getElementById('ftueWorkStartHour')?.value;
+                    const workEndHour = document.getElementById('ftueWorkEndHour')?.value;
+                    const workStyle = document.getElementById('ftueWorkStyle')?.value || '';
+                    if (!userName || !userEmail) { setFtueError('Name and email are required.'); return false; }
+                    ftueData.userName = userName; ftueData.userEmail = userEmail;
+                    ftueData.workStartHour = workStartHour; ftueData.workEndHour = workEndHour;
+                    ftueData.workStyle = workStyle;
+                    await saveFtueStepData('profile', { name: userName, email: userEmail, workStartHour, workEndHour, workStyle });
+                    return true;
+                }
+                default: return true;
+            }
+        }
+
+        async function saveFtueStepData(step, data) {
+            try { await fetch('/api/setup/step', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ step, data }) }); } catch (e) { console.error('Failed to save step data:', e); }
+        }
+
+        // Trigger the Signal Keychain grant NOW, in the foreground, so the prompt surfaces
+        // while the user is present — after this the background ingestion reads silently.
+        async function verifySignal() {
+            const el = document.getElementById('signalStatus');
+            el.innerHTML = '<span class="ftue-status loading">Requesting Keychain access — click Allow on the prompt…</span>';
+            try {
+                await saveFtueStepData('messaging', { enableSignal: 'true', enableWhatsApp: document.getElementById('ftueEnableWhatsApp')?.checked ? 'true' : 'false', enableIMessage: 'false' });
+                const r = await fetch('/api/setup/test-signal', { method: 'POST' });
+                const d = await r.json();
+                if (d.ok) el.innerHTML = `<span class="ftue-status success">&#10003; ${d.messages} messages across ${d.threads} chats — no Full Disk Access</span>`;
+                else el.innerHTML = `<span class="ftue-status error">${(d.error || 'Could not read Signal').slice(0, 90)}</span>`;
+            } catch (e) { el.innerHTML = '<span class="ftue-status error">Timed out — did you click Allow on the Keychain prompt?</span>'; }
+        }
+
+        async function testClaudeApiKey() {
+            const apiKey = document.getElementById('ftueClaudeApiKey')?.value?.trim();
+            const statusEl = document.getElementById('claudeApiKeyStatus');
+            if (!apiKey) { statusEl.innerHTML = '<span class="ftue-status error">Please enter an API key</span>'; return; }
+            statusEl.innerHTML = '<span class="ftue-status loading">Testing...</span>';
+            try {
+                const response = await fetch('/api/setup/test-api-key', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey }) });
+                const result = await response.json();
+                if (result.valid) { statusEl.innerHTML = '<span class="ftue-status success">&#10003; Connected</span>'; ftueData.claudeApiKey = apiKey; }
+                else { statusEl.innerHTML = `<span class="ftue-status error">${result.error || 'Invalid key'}</span>`; }
+            } catch (e) { statusEl.innerHTML = '<span class="ftue-status error">Connection failed</span>'; }
+        }
+
+        async function testNotionConnection() {
+            const apiKey = document.getElementById('ftueNotionApiKey')?.value?.trim();
+            const statusEl = document.getElementById('notionStatus');
+            const pickerEl = document.getElementById('notionDatabasePicker');
+            if (!apiKey) { statusEl.innerHTML = '<span class="ftue-status error">Please enter a token</span>'; return; }
+            statusEl.innerHTML = '<span class="ftue-status loading">Connecting...</span>';
+            try {
+                const response = await fetch('/api/setup/test-notion', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ apiKey }) });
+                const result = await response.json();
+                if (result.valid) {
+                    statusEl.innerHTML = `<span class="ftue-status success">&#10003; Connected as ${result.user}</span>`;
+                    ftueData.notionApiKey = apiKey;
+                    await saveFtueStepData('notion', { notionApiKey: apiKey });
+                    statusEl.innerHTML = '<span class="ftue-status loading">Loading databases...</span>';
+                    const dbResponse = await fetch('/api/setup/notion-databases');
+                    const dbResult = await dbResponse.json();
+                    if (dbResult.databases && dbResult.databases.length > 0) {
+                        notionDatabases = dbResult.databases;
+                        pickerEl.innerHTML = renderNotionDatabasePickers();
+                        pickerEl.classList.remove('hidden');
+                        statusEl.innerHTML = `<span class="ftue-status success">&#10003; Found ${notionDatabases.length} databases</span>`;
+                    } else { statusEl.innerHTML = '<span class="ftue-status error">No databases found. Share a database with your integration.</span>'; }
+                } else { statusEl.innerHTML = `<span class="ftue-status error">${result.error || 'Invalid token'}</span>`; }
+            } catch (e) { statusEl.innerHTML = '<span class="ftue-status error">Connection failed</span>'; }
+        }
+
+        async function saveGoogleCredentials() {
+            const clientId = document.getElementById('ftueGoogleClientId')?.value?.trim();
+            const clientSecret = document.getElementById('ftueGoogleClientSecret')?.value?.trim();
+            const statusEl = document.getElementById('googleCredsStatus');
+            if (!clientId || !clientSecret) { if (statusEl) statusEl.innerHTML = '<span class="ftue-status error">Both fields are required</span>'; return; }
+            if (statusEl) statusEl.innerHTML = '<span style="color: var(--ink-tertiary);">Saving...</span>';
+            try {
+                const response = await fetch('/api/setup/step', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ step: 'googleCredentials', data: { client_id: clientId, client_secret: clientSecret, redirect_uri: 'http://localhost:8080/auth/callback' } }) });
+                if (response.ok) {
+                    ftueData.googleClientId = clientId; ftueData.googleClientSecret = clientSecret;
+                    const credsSection = document.getElementById('googleCredsSection');
+                    const oauthSection = document.getElementById('googleOAuthSection');
+                    if (credsSection) credsSection.style.display = 'none';
+                    if (oauthSection) oauthSection.style.display = '';
+                } else { if (statusEl) statusEl.innerHTML = '<span class="ftue-status error">Failed to save</span>'; }
+            } catch (e) { if (statusEl) statusEl.innerHTML = '<span class="ftue-status error">Error: ' + e.message + '</span>'; }
+        }
+
+        function startGoogleOAuth() {
+            const oauthWindow = window.open('/auth/google', 'googleOAuth', 'width=600,height=700');
+            window.addEventListener('message', function onOAuthComplete(event) {
+                if (event.data && event.data.type === 'google-oauth-complete') {
+                    ftueData.googleConnected = true; renderFtueStep(currentFtueStep);
+                    window.removeEventListener('message', onOAuthComplete);
+                }
+            });
+            let pollCount = 0;
+            const pollInterval = setInterval(async () => {
+                pollCount++;
+                if (pollCount > 60) { clearInterval(pollInterval); return; }
+                try {
+                    const resp = await fetch('/api/setup/status');
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.completedSteps && data.completedSteps.includes('googleOauth')) {
+                            ftueData.googleConnected = true; renderFtueStep(currentFtueStep); clearInterval(pollInterval);
+                        }
+                    }
+                } catch (e) {}
+            }, 2000);
+        }
+
+        async function openPermissionSettings(type) {
+            try {
+                await fetch('/api/setup/open-system-preferences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ panel: type }) });
+            } catch (e) {
+                if (type === 'FullDiskAccess') window.location.href = 'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles';
+            }
+        }
+
+        function requestNotificationPermission() {
+            if ('Notification' in window) {
+                Notification.requestPermission().then(function(p) {
+                    if (p === 'granted') {
+                        updatePermCard('notif', 'granted', 'Granted');
+                    } else if (p === 'denied') {
+                        updatePermCard('notif', 'missing', 'Blocked');
+                    }
+                });
+            }
+        }
+
+        async function requestContactsPermission() {
+            var btn = document.querySelector('#ftue-action-contacts button');
+            if (btn) btn.textContent = 'Requesting...';
+            try {
+                var resp = await fetch('/api/setup/request-contacts', { method: 'POST' });
+                if (resp.ok) {
+                    var data = await resp.json();
+                    if (data.granted) {
+                        updatePermCard('contacts', 'granted', 'Granted');
+                    } else {
+                        updatePermCard('contacts', 'missing', 'Denied');
+                        if (btn) btn.textContent = 'Open Settings';
+                        btn.onclick = function() { openPermissionSettings('Contacts'); };
+                    }
+                }
+            } catch (e) {
+                if (btn) btn.textContent = 'Grant Access';
+            }
+        }
+
+        // ── Permission polling (live validation during FTUE) ──
+        var _permPollInterval = null;
+        var _permPrevState = {};
+
+        function startPermissionPolling() {
+            stopPermissionPolling();
+            pollPermissions(); // immediate first check
+            _permPollInterval = setInterval(pollPermissions, 3000);
+        }
+
+        function stopPermissionPolling() {
+            if (_permPollInterval) { clearInterval(_permPollInterval); _permPollInterval = null; }
+        }
+
+        async function pollPermissions() {
+            try {
+                var resp = await fetch('/api/setup/permissions');
+                if (!resp.ok) return;
+                var data = await resp.json();
+
+                // FDA — always required (Messages is a required connection), so always evaluate.
+                if (data.fullDiskAccess === 'granted') {
+                    updatePermCard('fda', 'granted', 'Granted');
+                } else if (data.fullDiskAccess === 'denied') {
+                    updatePermCard('fda', 'missing', 'Missing');
+                } else if (data.fullDiskAccess === 'not_found') {
+                    updatePermCard('fda', 'missing', 'DB not found');
+                } else {
+                    updatePermCard('fda', 'pending', 'Checking...');
+                }
+
+                // Contacts
+                if (data.contacts === 'granted') {
+                    updatePermCard('contacts', 'granted', 'Granted');
+                } else if (data.contacts === 'denied') {
+                    updatePermCard('contacts', 'missing', 'Denied');
+                } else {
+                    updatePermCard('contacts', 'pending', 'Not yet asked');
+                }
+
+                // Notifications
+                if (data.notifications === 'granted') {
+                    updatePermCard('notif', 'granted', 'Granted');
+                } else if (data.notifications === 'denied') {
+                    updatePermCard('notif', 'missing', 'Denied');
+                } else {
+                    updatePermCard('notif', 'pending', 'Not yet enabled');
+                }
+            } catch (e) { /* silent */ }
+        }
+
+        function updatePermCard(key, state, label) {
+            var dot = document.getElementById('ftue-dot-' + key);
+            var status = document.getElementById('ftue-status-' + key);
+            var card = document.getElementById('ftue-perm-' + key);
+            if (!dot || !status || !card) return;
+
+            // Remove old state classes
+            dot.className = 'ftue-perm-dot ' + state;
+            status.className = 'ftue-perm-status ' + state;
+            status.textContent = label;
+
+            var wasGranted = card.classList.contains('granted');
+            if (state === 'granted' && !wasGranted) {
+                card.classList.add('granted', 'just-granted');
+                setTimeout(function() { card.classList.remove('just-granted'); }, 500);
+                // Check if all permissions are granted
+                checkAllPermissionsGranted();
+            } else if (state === 'granted') {
+                card.classList.add('granted');
+            } else {
+                card.classList.remove('granted');
+            }
+        }
+
+        function checkAllPermissionsGranted() {
+            var allCards = document.querySelectorAll('.ftue-perm-card');
+            var allDone = true;
+            allCards.forEach(function(c) {
+                if (!c.classList.contains('granted') && !c.classList.contains('not-needed')) allDone = false;
+            });
+            if (allDone) {
+                showToast('All permissions granted');
+            }
+        }
+
+
+        async function completeFtue() {
+            try { await fetch('/api/setup/complete', { method: 'POST' }); } catch (e) {}
+            hideFtueWizard();
+            if (_ftuePasscode) {
+                document.getElementById('passcodeInput').value = _ftuePasscode;
+                authenticate();
+            } else {
+                showAuthScreen();
+            }
+        }
+document.addEventListener('DOMContentLoaded', async () => {
+  const st = await checkSetupStatus();
+  if (st && st.isComplete) { location.href = '/'; return; }
+  showFtueWizard();
+});
+</script>
+</body>
+</html>

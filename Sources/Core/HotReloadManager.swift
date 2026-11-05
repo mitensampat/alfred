@@ -33,15 +33,15 @@ class HotReloadManager {
             .appendingPathComponent("Contents/Resources/Alfred_Alfred.bundle/GUI/Resources")
         let devFallback = home.appendingPathComponent("Documents/Claude apps/Alfred/Sources/GUI/Resources")
 
-        if let appRes = appBundleResources, fm.fileExists(atPath: appRes.appendingPathComponent("home.html").path) {
+        if let appRes = appBundleResources, fm.fileExists(atPath: appRes.appendingPathComponent("app.html").path) {
             self.sourceWebDir = appRes
-        } else if fm.fileExists(atPath: spmBundleResources.appendingPathComponent("home.html").path) {
+        } else if fm.fileExists(atPath: spmBundleResources.appendingPathComponent("app.html").path) {
             self.sourceWebDir = spmBundleResources
-        } else if fm.fileExists(atPath: devFallback.appendingPathComponent("home.html").path) {
+        } else if fm.fileExists(atPath: devFallback.appendingPathComponent("app.html").path) {
             self.sourceWebDir = devFallback
         } else {
             self.sourceWebDir = appBundleResources ?? devFallback
-            print("⚠️ home.html not found in any known location:")
+            print("⚠️ app.html not found in any known location:")
             print("   Bundle.main.resourceURL: \(appBundleResources?.path ?? "nil")")
             print("   SPM bundle: \(spmBundleResources.path)")
             print("   Dev fallback: \(devFallback.path)")
@@ -75,46 +75,10 @@ class HotReloadManager {
         copyPromptFilesIfNeeded()
     }
 
-    private func copyWebFilesIfNeeded() {
-        let fm = FileManager.default
-        let targetIndex = webDir.appendingPathComponent("home.html")
-
-        // Only copy if target doesn't exist
-        guard !fm.fileExists(atPath: targetIndex.path) else {
-            print("✓ Web UI files already in place at ~/.config/alfred/web/")
-            return
-        }
-
-        // Copy from source directory
-        let webFiles = ["home.html"]
-
-        for file in webFiles {
-            let source = sourceWebDir.appendingPathComponent(file)
-            let target = webDir.appendingPathComponent(file)
-
-            if fm.fileExists(atPath: source.path) {
-                do {
-                    try fm.copyItem(at: source, to: target)
-                    print("✓ Copied \(file) to ~/.config/alfred/web/")
-                } catch {
-                    print("⚠️ Failed to copy \(file): \(error)")
-                }
-            } else {
-                print("⚠️ Source file not found: \(source.path)")
-                // Last resort: check if binary's sibling bundle has it (SPM resource bundle)
-                let execURL = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
-                let spmBundle = execURL.appendingPathComponent("Alfred_Alfred.bundle/GUI/Resources/\(file)")
-                if fm.fileExists(atPath: spmBundle.path) {
-                    do {
-                        try fm.copyItem(at: spmBundle, to: target)
-                        print("✓ Copied \(file) from SPM bundle to ~/.config/alfred/web/")
-                    } catch {
-                        print("⚠️ Failed to copy from SPM bundle: \(error)")
-                    }
-                }
-            }
-        }
-    }
+    /// Web files are served from the bundle. ~/.config/alfred/web/ stays an override folder (a file
+    /// put there wins), but nothing is copied into it any more: a copied app.html would silently pin
+    /// every later update of the app to the version that was installed first.
+    private func copyWebFilesIfNeeded() {}
 
     private func copyPromptFilesIfNeeded() {
         let fm = FileManager.default
@@ -160,9 +124,9 @@ class HotReloadManager {
         return nil
     }
 
-    /// Get the primary web UI (home.html)
+    /// Get the primary web UI (app.html)
     func getMainWebUI() -> String? {
-        return getWebFile("home.html")
+        return getWebFile("app.html")
     }
 
     // MARK: - Prompt Loading

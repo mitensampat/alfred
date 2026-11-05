@@ -132,7 +132,7 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" << PLIST
 PLIST
 
 # Copy web resources
-for page in home.html app.html; do
+for page in app.html setup.html; do
     if [[ -f "Sources/GUI/Resources/${page}" ]]; then
         cp "Sources/GUI/Resources/${page}" "${APP_BUNDLE}/Contents/Resources/"
     fi

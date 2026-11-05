@@ -2547,11 +2547,11 @@ struct AlfredApp {
         let localIP = getLocalIP()
         if let ip = localIP {
             print("📍 Access the web interface at:")
-            print("   Local:  http://localhost:\(apiConfig.port)/web/home.html?passcode=\(apiConfig.passcode)")
-            print("   Network: http://\(ip):\(apiConfig.port)/web/home.html?passcode=\(apiConfig.passcode)")
+            print("   Local:  http://localhost:\(apiConfig.port)/?passcode=\(apiConfig.passcode)")
+            print("   Network: http://\(ip):\(apiConfig.port)/?passcode=\(apiConfig.passcode)")
         } else {
             print("📍 Access the web interface at:")
-            print("   http://localhost:\(apiConfig.port)/web/home.html?passcode=\(apiConfig.passcode)")
+            print("   http://localhost:\(apiConfig.port)/?passcode=\(apiConfig.passcode)")
         }
         print("")
         print("Press Ctrl+C to stop the server")
@@ -2822,7 +2822,7 @@ struct AlfredApp {
             try server.start()
 
             print("🌐 Setup wizard running at:")
-            print("   http://localhost:\(port)/home.html?passcode=\(passcode)")
+            print("   http://localhost:\(port)/?passcode=\(passcode)")
             print("")
             print("Opening browser...")
             print("")
@@ -2843,11 +2843,11 @@ struct AlfredApp {
             }
 
             if serverReady {
-                let url = URL(string: "http://localhost:\(port)/home.html?passcode=\(passcode)")!
+                let url = URL(string: "http://localhost:\(port)/?passcode=\(passcode)")!
                 NSWorkspace.shared.open(url)
                 print("🌐 Browser opened to setup wizard")
             } else {
-                print("⚠️ Server didn't respond after 5s — open manually: http://localhost:\(port)/home.html?passcode=\(passcode)")
+                print("⚠️ Server didn't respond after 5s — open manually: http://localhost:\(port)/?passcode=\(passcode)")
             }
 
             // Keep alive — use continuation so async context never returns
@@ -2865,10 +2865,10 @@ struct AlfredApp {
            let apiConfig = config.api {
             let port = apiConfig.port
             let passcode = apiConfig.passcode
-            let url = URL(string: "http://localhost:\(port)/home.html?passcode=\(passcode)")!
+            let url = URL(string: "http://localhost:\(port)/?passcode=\(passcode)")!
             NSWorkspace.shared.open(url)
         } else {
-            let url = URL(string: "http://localhost:8080/home.html")!
+            let url = URL(string: "http://localhost:8080/")!
             NSWorkspace.shared.open(url)
         }
     }

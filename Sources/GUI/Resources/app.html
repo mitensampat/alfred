@@ -11,8 +11,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
 <!--
   Alfred — the rewired app (docs/rewire/SPEC.md, MOCK.md).
-  One page for phone, iPad and desktop. Reads only /api/v2/*. The old desk stays at /home.html
-  and is reachable from the You menu until phase 4 retires it.
+  One page for phone, iPad and desktop. Everything the old desk (home.html) did lives here now:
+  the four tabs read /api/v2/*, and the pages behind the You menu (settings, your model, coach notes,
+  weekly review, archive, conversations) use the existing endpoints. First-run setup is setup.html.
 -->
 <style>
 :root{
@@ -189,6 +190,18 @@ textarea.field{resize:none}
 .bubble.me{background:var(--chip);margin-left:40px}
 .bubble.al{background:var(--card);border:1px solid var(--border);margin-right:20px}
 
+/* ── settings rows, switches ── */
+.srow{display:flex;align-items:center;gap:12px;min-height:56px;padding:10px 0;border-bottom:1px solid var(--hair2)}
+.srow:last-child{border-bottom:none}
+.srow.col{flex-direction:column;align-items:stretch;gap:2px}
+.field.mini{margin-top:4px;padding:8px 10px;font-size:14px;border-radius:10px}
+.srow > .field.mini, .srow select.field.mini{width:auto;flex:0 0 auto}
+.switch{flex:0 0 auto;width:44px;height:26px;border-radius:13px;border:none;background:var(--line);padding:3px;display:inline-flex;align-items:center;transition:background .15s}
+.switch span{width:20px;height:20px;border-radius:10px;background:var(--card);box-shadow:0 1px 2px rgba(31,30,27,.25);transition:transform .15s}
+.switch.on{background:var(--accent)}
+.switch.on span{transform:translateX(18px)}
+.code{background:var(--sunk);border:1px solid var(--border);border-radius:12px;padding:12px 14px;font:13px/1.5 ui-monospace,Menlo,monospace;overflow-x:auto}
+
 /* ── toast ── */
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + env(safe-area-inset-bottom));width:min(440px,calc(100vw - 32px));background:var(--ink);color:var(--paper);border-radius:14px;padding:0 8px 0 16px;min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:14px;z-index:60;box-shadow:0 6px 20px rgba(31,30,27,.2)}
 @media (min-width: 900px){ .toast{bottom:28px} }
@@ -274,8 +287,19 @@ const post = (path, json) => api(path, { method: 'POST', json: json || {} });
 async function boot() {
   try {
     const st = await (await fetch('/api/setup/status')).json();
-    if (st && st.isComplete === false) { location.href = '/home.html'; return; }
+    if (st && st.isComplete === false) { location.href = '/setup.html' + location.search; return; }
   } catch (e) {}
+  // The Mac launcher opens "/?passcode=…": sign in with it once, then take it out of the address bar.
+  const qp = new URLSearchParams(location.search);
+  const urlPass = qp.get('passcode');
+  if (urlPass) {
+    qp.delete('passcode');
+    history.replaceState(null, '', location.pathname + (qp.toString() ? '?' + qp : '') + location.hash);
+    try {
+      const r = await (await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passcode: urlPass }) })).json();
+      if (r.success && r.token) { localStorage.setItem(TOKEN_KEY, r.token); localStorage.setItem(EXPIRES_KEY, r.expiresAt || ''); }
+    } catch (e) {}
+  }
   const t = localStorage.getItem(TOKEN_KEY), exp = localStorage.getItem(EXPIRES_KEY);
   if (!t || (exp && new Date(exp) <= new Date())) return showLogin();
   try {
@@ -300,6 +324,11 @@ function start() {
   const want = (location.hash || '').replace('#', '');
   if (['now','todos','fronts','people'].includes(want)) S.tab = want;
   renderNav(); go(S.tab); loadStatus();
+  if (PAGE_TITLES[want]) openPage(want);
+  if (want === 'wa') openWa();
+  const action = new URLSearchParams(location.search).get('notify_action');
+  setTimeout(() => checkCapture(action === 'post-meeting'), action === 'post-meeting' ? 500 : 2000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(() => checkCapture(false), 500); });
   setInterval(() => { if (!document.hidden && !S.sheet) refresh(); }, 120000);
   setInterval(loadStatus, 120000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
@@ -334,11 +363,13 @@ const ICONS = {
 const icon = (k, s = 17, w = 1.8) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k]}</svg>`;
 const TABS = [['now','Now'],['todos','To-dos'],['fronts','Fronts'],['people','People']];
 function renderNav() {
-  document.getElementById('tabbar').innerHTML = TABS.map(([k, l]) => `<button type="button" class="tab ${S.tab===k?'on':''}" ${S.tab===k?'aria-current="page"':''} onclick="go('${k}')">${icon(k, 22, 1.7)}<span>${l}</span></button>`).join('');
-  document.getElementById('railTabs').innerHTML = TABS.map(([k, l]) => `<button type="button" class="railtab ${S.tab===k?'on':''}" ${S.tab===k?'aria-current="page"':''} onclick="go('${k}')">${icon(k, 24, 1.7)}<span>${l}</span></button>`).join('');
+  document.getElementById('tabbar').innerHTML = TABS.map(([k, l]) => `<button type="button" class="tab ${S.tab===k&&!S.page?'on':''}" ${S.tab===k&&!S.page?'aria-current="page"':''} onclick="go('${k}')">${icon(k, 22, 1.7)}<span>${l}</span></button>`).join('');
+  document.getElementById('railTabs').innerHTML = TABS.map(([k, l]) => `<button type="button" class="railtab ${S.tab===k&&!S.page?'on':''}" ${S.tab===k&&!S.page?'aria-current="page"':''} onclick="go('${k}')">${icon(k, 24, 1.7)}<span>${l}</span></button>`).join('');
 }
 function go(tab) {
-  S.tab = tab; S.replyId = null; history.replaceState(null, '', '#' + tab);
+  S.page = null; S.tab = tab; S.replyId = null; history.replaceState(null, '', '#' + tab);
+  if (tab === 'people') loadSched();
+  if (tab === 'todos') loadClosures();
   renderNav(); renderView(); load(tab);
   if (tab !== 'now' && !S.now) load('now');   // the aside reads the now payload
   window.scrollTo(0, 0);
@@ -366,6 +397,7 @@ async function loadStatus() {
 // ═══════════════════════════════════════════════════════════════════════
 function renderView() {
   const el = document.getElementById('view');
+  if (S.page) { el.innerHTML = viewPage(); return; }
   document.getElementById('dateLabel').textContent = (S.now && S.now.date_label) || '';
   if (S.tab === 'now') el.innerHTML = S.now ? viewNow() : '<div class="loading">Loading…</div>';
   if (S.tab === 'todos') el.innerHTML = S.todos ? viewTodos() : '<div class="loading">Loading…</div>';
@@ -456,6 +488,7 @@ function viewNow() {
 function viewTodos() {
   const d = S.todos; let h = `<h1 style="padding-top:18px">To-dos</h1><div class="chips">`;
   h += (d.chips || []).map(c => `<button type="button" class="chipbtn ${S.filter===c.key?'on':''}" onclick="setFilter('${esc(c.key)}')">${esc(c.label)}</button>`).join('') + '</div>';
+  h += viewClosures();
   if ((d.suggested || []).length) {
     h += `<div class="section"><div class="label">Suggested by Alfred · ${d.suggested.length} waiting for you</div><div class="stack">`;
     h += d.suggested.map(g => `<article class="card dashed post" style="display:flex;gap:12px">
@@ -467,6 +500,7 @@ function viewTodos() {
           <div class="actions"><button type="button" class="btn outline" onclick="accept('${esc(g.id)}')">Accept</button><button type="button" class="ghost" onclick="dismissTodo('${esc(g.id)}')">Dismiss</button></div>
         </div></article>`).join('') + '</div></div>';
   }
+  h += viewHidden();
   for (const [k, label] of [['today','Today'],['upcoming','Upcoming'],['someday','Someday']]) {
     const rows = d[k] || [];
     h += `<div class="section"><div class="label">${label}</div>${rows.length ? `<div class="stack tight">${rows.map(rowCard).join('')}</div>` : '<div class="empty">Nothing here.</div>'}</div>`;
@@ -521,7 +555,7 @@ function personCard(p, quiet) {
     </span></button>`;
 }
 function viewPeople() {
-  const d = S.people; let h = '<h1 style="padding-top:18px">People</h1>';
+  const d = S.people; let h = '<div style="display:flex;align-items:baseline;justify-content:space-between;padding-top:18px"><h1>People</h1><button type="button" class="ghost" onclick="openAdd({text:\'@schedule \'})">Schedule a meeting</button></div>' + viewSched();
   h += `<div class="section"><div class="label">Waiting on you</div>${(d.waiting_on_you||[]).length ? `<div class="stack">${d.waiting_on_you.map(p => personCard(p, false)).join('')}</div>` : '<div class="empty">Nobody is waiting on you.</div>'}</div>`;
   if ((d.going_quiet || []).length) h += `<div class="section"><div class="label">Going quiet</div><div class="stack">${d.going_quiet.map(p => personCard(p, true)).join('')}</div></div>`;
   return h;
@@ -590,7 +624,7 @@ function keepTopic(id) { act('/api/v2/fronts/state', { id, state: 'topic' }, () 
 // ═══════════════════════════════════════════════════════════════════════
 function sheetMode(kind) { if (!isWide()) return 'm-sheet'; return ['front','person','todo'].includes(kind) ? 'm-side' : 'm-dialog'; }
 function openSheet(kind, id, data) { S.sheet = { kind, id, data }; S.showLog = false; renderSheet(); if (S.tab === 'fronts' || S.tab === 'people') renderView(); }
-function closeSheet() { S.sheet = null; document.getElementById('sheetHost').innerHTML = ''; renderView(); }
+function closeSheet() { const was = S.sheet; S.sheet = null; document.getElementById('sheetHost').innerHTML = ''; clearTimeout(_waT); if (was) renderView(); }
 async function reopenSheet() {
   const s = S.sheet; if (!s) return;
   if (s.kind === 'front') s.data = await api('/api/v2/fronts/front?id=' + encodeURIComponent(s.id));
@@ -601,7 +635,7 @@ function renderSheet() {
   const s = S.sheet, host = document.getElementById('sheetHost');
   if (!s) { host.innerHTML = ''; return; }
   const mode = sheetMode(s.kind);
-  const inner = ({ add: sheetAdd, you: sheetYou, front: sheetFront, person: sheetPerson, todo: sheetTodo, activate: sheetActivate, migrate: sheetMigrate, newfront: sheetNewFront, chat: sheetChat })[s.kind](s);
+  const inner = ({ add: sheetAdd, you: sheetYou, front: sheetFront, person: sheetPerson, todo: sheetTodo, activate: sheetActivate, migrate: sheetMigrate, newfront: sheetNewFront, chat: sheetChat, wa: sheetWa, mirror: sheetMirror, skill: sheetSkill, export: sheetExport, capture: sheetCapture })[s.kind](s);
   host.innerHTML = `${mode !== 'm-side' ? '<button type="button" class="scrim" aria-label="Close" onclick="closeSheet()"></button>' : ''}
     <div class="sheet ${mode}" role="dialog" aria-modal="${mode !== 'm-side'}">${mode === 'm-sheet' ? '<div class="grab"><span></span></div>' : ''}
       <div class="close"><button type="button" onclick="closeSheet()">Close</button></div>${inner}</div>`;
@@ -652,8 +686,25 @@ async function runSchedule(text) {
 }
 
 // ── chat ──
+function toolSummary(d) {
+  const t = d.type || d.tool || '';
+  if (t === 'calendar') return '\n' + (d.events || []).map(e => '• ' + (e.start || '') + ' ' + e.title).join('\n') + '\n';
+  if (t === 'commitments') return '\n' + (d.items || []).map(i => '• ' + i.title + (i.committedTo ? ' (' + i.committedTo + ')' : '')).join('\n') + '\n';
+  if (t === 'tasks' || t === 'completed_tasks') return '\n' + (d.tasks || []).map(i => '• ' + i.title).join('\n') + '\n';
+  if (t === 'calendar_create') return '\n' + (d.success ? 'Booked: ' : 'Could not book: ') + (d.title || '') + ' ' + (d.timeRange || '') + '\n';
+  if (t === 'task_update') return '\n' + (d.success ? 'Updated: ' : 'Could not update: ') + (d.taskTitle || '') + '\n';
+  return '';
+}
+async function saveReflection() {
+  const last = [...S.chat].reverse().find(m => m.role === 'al');
+  const t = prompt('Save your conclusion as a belief', last ? last.text.split('\n')[0].slice(0, 200) : '');
+  if (!t) return;
+  const r = await apiSend('/api/self-model/resolve?id=' + encodeURIComponent(S.chatReflect.id) + '&resolution=' + encodeURIComponent(t), 'POST');
+  toast(r.ok ? 'Saved as a belief' : (r.error || 'Could not save')); closeSheet(); if (S.page === 'model') loadModel();
+}
 function sheetChat() {
-  return `<div class="serif" style="font-size:24px;padding-top:6px">Ask Alfred</div>
+  return `<div class="serif" style="font-size:24px;padding-top:6px">${S.chatReflect ? 'Think it through' : 'Ask Alfred'}</div>
+    ${S.chatReflect ? '<button type="button" class="link" onclick="saveReflection()">Save my conclusion as a belief</button>' : ''}
     <div id="chatLog">${S.chat.map(m => `<div class="bubble ${m.role==='user'?'me':'al'}">${esc(m.text)}</div>`).join('')}</div>
     <form style="margin-top:14px;display:flex;gap:8px" onsubmit="event.preventDefault();const i=document.getElementById('chatIn');const v=i.value.trim();if(v){i.value='';askAlfred(v)}">
       <input id="chatIn" class="field" style="margin-top:0" placeholder="Ask a follow-up" data-autofocus><button class="btn big" type="submit">Send</button></form>`;
@@ -662,7 +713,16 @@ async function askAlfred(q) {
   S.chat.push({ role: 'user', text: q }, { role: 'al', text: '…' }); renderSheet();
   const msg = S.chat[S.chat.length - 1];
   try {
-    const url = new URL('/api/chat/stream', location.origin); url.searchParams.set('q', q); if (S.chatSession) url.searchParams.set('sessionId', S.chatSession);
+    let url;
+    if (S.chatReflect) {
+      // Thinking an open question through: the self-model's reflect stream, with the turns so far.
+      url = new URL('/api/self-model/reflect', location.origin);
+      url.searchParams.set('facetId', S.chatReflect.id); url.searchParams.set('q', q);
+      url.searchParams.set('history', JSON.stringify(S.chatReflect.history.slice(-12)));
+      S.chatReflect.history.push({ role: 'user', content: q });
+    } else {
+      url = new URL('/api/chat/stream', location.origin); url.searchParams.set('q', q); if (S.chatSession) url.searchParams.set('sessionId', S.chatSession);
+    }
     const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + S.token, 'Accept': 'text/event-stream' } });
     const reader = res.body.getReader(), dec = new TextDecoder(); let buf = '', ev = null, text = '';
     for (;;) {
@@ -675,12 +735,14 @@ async function askAlfred(q) {
           try { const d = JSON.parse(line.slice(5).trim());
             if (ev === 'chunk' || (!ev && d.text)) { text += d.text || ''; msg.text = text; const log = document.getElementById('chatLog'); if (log && log.lastElementChild) log.lastElementChild.textContent = text; }
             if (ev === 'done' && d.sessionId) S.chatSession = d.sessionId;
+            if (ev === 'tool_result') { text += toolSummary(d); msg.text = text; }
             if (ev === 'error') { msg.text = d.error || d.message || 'Something went wrong.'; }
           } catch (e) {}
         }
       }
     }
     if (!text && msg.text === '…') msg.text = 'No answer came back.';
+    if (S.chatReflect && text) S.chatReflect.history.push({ role: 'assistant', content: text });
   } catch (e) { msg.text = 'Could not reach Alfred.'; }
   if (S.sheet && S.sheet.kind === 'chat') renderSheet();
 }
@@ -850,9 +912,10 @@ function openYou() { openSheet('you'); }
 function sheetYou() {
   const issues = (S.status && S.status.issues) || [];
   return `<div class="serif" style="font-size:26px;padding-top:6px">${esc(S.me || 'You')}</div>
-    ${issues.map(i => `<button type="button" class="issue" onclick="${i.fix === 'pair_whatsapp' ? "location.href='/home.html#wa'" : 'closeSheet()'}"><span style="display:flex;align-items:center;gap:8px;font-size:15px;font-weight:500"><span class="wdot" style="width:8px;height:8px;border-radius:4px"></span>${esc(i.title)}</span><span class="label" style="display:block;margin-top:4px">${esc(i.detail || '')}</span></button>`).join('')}
+    ${issues.map(i => `<button type="button" class="issue" onclick="${i.fix === 'pair_whatsapp' ? 'openWa()' : (i.fix === 'notion_mirror' ? 'openMirrorSetup()' : 'closeSheet()')}"><span style="display:flex;align-items:center;gap:8px;font-size:15px;font-weight:500"><span class="wdot" style="width:8px;height:8px;border-radius:4px"></span>${esc(i.title)}</span><span class="label" style="display:block;margin-top:4px">${esc(i.detail || '')}</span></button>`).join('')}
     <div style="margin-top:10px">
-      ${[['Weekly review','/home.html#weekly'],['Coach notes','/home.html#coach'],['Conversations',null,'chat'],['Your model','/home.html#model'],['You-Wiki','/wiki'],['Archive','/home.html#archive'],['Connections and settings','/home.html#settings'],['The old desk','/home.html']].map(([l, href, k]) => `<button type="button" class="menuitem" onclick="${k === 'chat' ? "S.chat=[];openSheet('chat')" : `location.href='${href}'`}"><span>${l}</span>${icon('chev',14)}</button>`).join('')}
+      ${[['Weekly review','weekly'],['Coach notes','coach'],['Conversations','conversations'],['Your model','model'],['Archive','archive'],['Settings','settings']].map(([l, k]) => `<button type="button" class="menuitem" onclick="openPage('${k}')"><span>${l}</span>${icon('chev',14)}</button>`).join('')}
+      <a class="menuitem" style="text-decoration:none;color:inherit" href="/wiki" target="_blank" rel="noopener"><span>You-Wiki</span>${icon('chev',14)}</a>
       <button type="button" class="menuitem" onclick="toggleTheme()"><span>Light / dark</span></button>
     </div>`;
 }
@@ -878,6 +941,457 @@ function dayLabel(iso) {
   if (diff < 7) return d.toLocaleDateString([], { weekday: 'short' });
   return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
 }
+// ═══════════════════════════════════════════════════════════════════════
+// pages reached from the You menu — everything that used to live in the old desk
+// (settings, your model, coach notes, weekly review, archive, conversations)
+// ═══════════════════════════════════════════════════════════════════════
+const ja = v => esc(JSON.stringify(v == null ? null : v));   // a safe JS argument inside an onclick="…"
+const sw = (on, call, label) => `<button type="button" class="switch ${on ? 'on' : ''}" role="switch" aria-checked="${on ? 'true' : 'false'}" aria-label="${esc(label || '')}" onclick="${call}"><span></span></button>`;
+const PAGE_TITLES = { settings: 'Settings', model: 'Your model', coach: 'Coach notes', weekly: 'Weekly review', archive: 'Archive', conversations: 'Conversations' };
+S.page = null; S.pd = {}; S.adv = false;
+
+function openPage(p) {
+  S.page = p; S.pd = {}; closeSheet(); renderNav(); renderView(); window.scrollTo(0, 0);
+  history.replaceState(null, '', '#' + p);
+  ({ settings: loadSettings, model: loadModel, coach: loadCoach, weekly: loadWeekly, archive: loadArchive, conversations: loadConversations })[p]();
+}
+function closePage() { S.page = null; go(S.tab); }
+function pageHead(p, extra) {
+  return `<button type="button" class="ghost" style="padding:0;margin-top:10px" onclick="closePage()">← Back</button>
+    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px"><h1 style="padding-top:6px">${PAGE_TITLES[p]}</h1>${extra || ''}</div>`;
+}
+function viewPage() {
+  const p = S.page;
+  return pageHead(p, p === 'coach' ? `<button type="button" class="ghost" onclick="loadCoach(true)">Refresh</button>` : '') +
+    (({ settings: viewSettings, model: viewModel, coach: viewCoach, weekly: viewWeekly, archive: viewArchive, conversations: viewConversations })[p]() || '');
+}
+async function pget(key, path) { try { S.pd[key] = await api(path); } catch (e) { S.pd[key] = { error: true }; } }
+function rerenderPage() { if (S.page) document.getElementById('view').innerHTML = viewPage(); }
+function block(title, hint, body) {
+  return `<section class="section"><div class="label">${esc(title)}</div>${hint ? `<div class="label" style="font-size:12px;margin-top:2px">${esc(hint)}</div>` : ''}<div class="card" style="margin-top:10px;padding:4px 18px">${body}</div></section>`;
+}
+function srow(main, sub, right) {
+  return `<div class="srow"><div style="flex:1 1 auto;min-width:0"><div style="font-size:15px">${main}</div>${sub ? `<div class="label" style="font-size:12px;margin-top:2px">${sub}</div>` : ''}</div>${right || ''}</div>`;
+}
+async function apiSend(path, method, json) {
+  try { const r = await api(path, { method, json: json || {} }); return r; } catch (e) { return { error: 'Could not reach Alfred.' }; }
+}
+
+// ── settings ──
+async function loadSettings() {
+  await Promise.all([
+    pget('notif', '/api/config/notifications'), pget('fav', '/api/favorites'), pget('status', '/api/v2/status'),
+    pget('sched', '/api/schedule/health'), pget('perm', '/api/setup/permissions'), pget('learn', '/api/v2/todos'),
+  ]);
+  rerenderPage();
+  if (S.adv) loadAdvanced();
+}
+async function loadAdvanced() {
+  await Promise.all([
+    pget('cad', '/api/cadences'), pget('skills', '/api/skills'), pget('lib', '/api/skills/library'), pget('tenets', '/api/tenets'),
+    pget('lenses', '/api/analyses'), pget('home', '/api/config/home'), pget('notion', '/api/config/notion'), pget('memory', '/api/memory/all'),
+    pget('health', '/api/health/detailed'),
+  ]);
+  rerenderPage();
+}
+function viewSettings() {
+  const d = S.pd; if (!d.notif) return '<div class="loading">Loading…</div>';
+  let h = '';
+  // Connections
+  const st = d.status || {}, mirror = st.notion_mirror || {}, issues = st.issues || [];
+  const wa = issues.find(i => i.key === 'whatsapp');
+  const cal = d.sched || {};
+  const perm = d.perm || {};
+  h += block('Connections', null,
+    srow('WhatsApp', esc(wa ? wa.title : 'Connected and receiving'), `<button type="button" class="btn outline" onclick="openWa()">${wa ? 'Fix' : 'Details'}</button>`) +
+    srow('Notion to-do mirror', esc(mirror.ok ? 'Syncing · last push ' + relTime(mirror.last_push) : (mirror.error || 'Not set up yet')), `<button type="button" class="btn outline" onclick="openMirrorSetup()">${mirror.ok ? 'Move' : 'Set up'}</button>`) +
+    srow('Google Calendar', esc(cal.calendar_connected ? 'Connected' : 'Not connected'), `<a class="btn outline" style="display:inline-flex;align-items:center;text-decoration:none" href="/auth/google" target="_blank" rel="noopener">${cal.calendar_connected ? 'Reconnect' : 'Connect'}</a>`) +
+    srow('Mac permissions', esc(['Full Disk Access: ' + (perm.fullDiskAccess || '?'), 'Contacts: ' + (perm.contacts || '?'), 'Notifications: ' + (perm.notifications || '?')].join(' · ')),
+      `<button type="button" class="btn outline" onclick="openSysPrefs('FullDiskAccess')">Open</button>`));
+  // Notifications
+  const n = d.notif;
+  h += block('Notifications', 'Push goes to the devices below; quiet hours and a daily cap keep it calm.',
+    srow('Push on this device', esc((n.subscriberCount || 0) + ' device' + (n.subscriberCount === 1 ? '' : 's') + ' subscribed'), `<span style="display:flex;gap:6px"><button type="button" class="btn outline" onclick="enablePush()">Enable here</button><button type="button" class="ghost" onclick="testPush()">Test</button></span>`) +
+    srow('Morning note at', '', `<input id="nBrief" type="time" class="field mini" value="${esc(n.briefingTime || '08:15')}">`) +
+    srow('Quiet hours', '', `<span style="display:flex;gap:6px;align-items:center"><input id="nQs" type="number" min="0" max="23" class="field mini" style="width:70px" value="${esc(n.quietHoursStart)}">to<input id="nQe" type="number" min="0" max="23" class="field mini" style="width:70px" value="${esc(n.quietHoursEnd)}"></span>`) +
+    srow('Most pushes in a day', '', `<input id="nMax" type="number" min="1" max="20" class="field mini" style="width:70px" value="${esc(n.maxPerDay)}">`) +
+    srow('Morning push', 'The first thing on your list', sw(n.morningNudgeEnabled !== false, "S.pd.notif.morningNudgeEnabled=!(S.pd.notif.morningNudgeEnabled!==false);rerenderPage()", 'Morning push')) +
+    srow('After a meeting', 'Asks for follow-ups, which go to your suggestions', sw(n.postMeetingCaptureEnabled !== false, "S.pd.notif.postMeetingCaptureEnabled=!(S.pd.notif.postMeetingCaptureEnabled!==false);rerenderPage()", 'After a meeting')) +
+    `<div style="padding:12px 0"><button type="button" class="btn" onclick="saveNotif()">Save</button></div>`);
+  // People Alfred watches
+  const fav = d.fav || {};
+  h += block('People and groups Alfred watches closely', 'Their threads are scanned first.',
+    (fav.contacts || []).map(c => srow(esc(c.name), esc((c.aliases || []).join(', ')), `<button type="button" class="ghost" onclick="favRemove('contacts',${ja(c.name)})">Remove</button>`)).join('') +
+    (fav.groups || []).map(g => srow(esc(g.name) + ' <span class="label" style="font-size:12px">group</span>', esc((g.aliases || []).join(', ')), `<button type="button" class="ghost" onclick="favRemove('groups',${ja(g.name)})">Remove</button>`)).join('') +
+    `<div style="display:flex;gap:8px;padding:12px 0;flex-wrap:wrap"><input id="favName" class="field mini" style="flex:1 1 160px" placeholder="Name"><input id="favAlias" class="field mini" style="flex:1 1 160px" placeholder="Also known as (optional)"><button type="button" class="btn" onclick="favAdd('contacts')">Add person</button><button type="button" class="ghost" onclick="favAdd('groups')">Add group</button></div>`);
+  // Learning
+  const lr = (d.learn && d.learn.learning) || {};
+  h += block('What Alfred has learned', 'From what you accept, dismiss and re-tag. It hides suggestions like the ones you keep dismissing, and you can restore any of them from to-dos for 14 days.',
+    srow('Suggestions you accepted', '', `<b>${lr.accepted || 0}</b>`) + srow('Suggestions you dismissed', '', `<b>${lr.dismissed || 0}</b>`) +
+    srow('Front and person corrections', '', `<b>${(lr.front_corrections || 0) + (lr.person_corrections || 0)}</b>`) + srow('Hidden in the last 14 days', '', `<b>${lr.hidden_recently || 0}</b>`));
+  // Appearance + security
+  const cur = localStorage.getItem('alfred_theme') || 'system';
+  h += block('Appearance', null, srow('Theme', '', `<select class="field mini" onchange="setTheme(this.value)">${['system','light','dark'].map(t => `<option value="${t}" ${cur===t?'selected':''}>${t[0].toUpperCase()+t.slice(1)}</option>`).join('')}</select>`));
+  h += block('Security', null,
+    `<div style="display:grid;gap:8px;padding:12px 0"><input id="pwCur" type="password" class="field mini" placeholder="Current passcode" autocomplete="current-password"><input id="pwNew" type="password" class="field mini" placeholder="New passcode (8+ characters)" autocomplete="new-password"><input id="pwNew2" type="password" class="field mini" placeholder="New passcode again" autocomplete="new-password">
+      <div style="display:flex;gap:8px"><button type="button" class="btn" onclick="changePasscode()">Change passcode</button><button type="button" class="ghost" onclick="signOut()">Sign out</button></div></div>`);
+  // Advanced
+  h += `<section class="section"><button type="button" class="ghost" style="padding:0;width:100%;justify-content:space-between" onclick="S.adv=!S.adv;rerenderPage();if(S.adv&&!S.pd.cad)loadAdvanced()"><span class="label" style="font-size:13px">Advanced: routines, coaching, Notion, memory, diagnostics</span><span>${S.adv?'Hide':'Show'}</span></button></section>`;
+  if (S.adv) h += viewAdvanced();
+  return h;
+}
+function viewAdvanced() {
+  const d = S.pd; if (!d.cad) return '<div class="loading">Loading…</div>';
+  let h = '';
+  h += block('Routines', 'What runs in the background. Email and banner switches are per routine.',
+    ((d.cad && d.cad.cadences) || []).map(c => srow(esc((c.icon || '') + ' ' + c.name), esc((c.schedule_display || '') + (c.last_run_summary ? ' · last: ' + c.last_run_summary : '') + (c.last_run_status === 'failed' ? ' · failed' : '')),
+      `<span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end"><span class="label" style="font-size:11px">email</span>${sw(c.email_on_success, `cadSet(${ja(c.id)},{email_on_success:${!c.email_on_success}})`, 'Email')}<span class="label" style="font-size:11px">on</span>${sw(c.enabled, `cadSet(${ja(c.id)},{enabled:${!c.enabled}})`, 'Enabled')}<button type="button" class="ghost" onclick="cadRun(${ja(c.id)})">Run</button></span>`)).join(''));
+  const skills = (d.skills && d.skills.skills) || [];
+  h += block('Coaching skills', 'Programs that produce coach notes. Your own skills can be edited.',
+    skills.map(s => srow(esc((s.icon || '') + ' ' + (s.effectiveName || s.name)), esc((s.description || '') + (s.frequency ? ' · ' + s.frequency : '')),
+      `<span style="display:flex;gap:6px;align-items:center">${s.editable ? `<button type="button" class="ghost" onclick="openSkill(${ja(s.id)})">Edit</button>` : ''}${sw(s.enabled, `toggleThing('/api/skills/toggle',${ja(s.id)})`, 'Enabled')}</span>`)).join('') +
+    `<div style="padding:12px 0;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn" onclick="openSkill(null)">New skill</button></div>` +
+    ((d.lib && d.lib.templates) || []).filter(t => !t.installed).map(t => srow(esc((t.icon || '') + ' ' + t.name) + ' <span class="label" style="font-size:12px">library</span>', esc(t.description || ''), `<button type="button" class="ghost" onclick="installSkill(${ja(t.id)})">Install</button>`)).join(''));
+  h += block('Coaching principles', 'Shape how every coach note is written.',
+    ((d.tenets && d.tenets.tenets) || []).map(t => srow(esc((t.icon || '') + ' ' + t.name), esc(t.description || ''), sw(t.enabled, `toggleThing('/api/tenets/toggle',${ja(t.id)})`, 'Enabled'))).join(''));
+  h += block('Analysis lenses', 'Detectors that look for patterns in your data.',
+    ((d.lenses && d.lenses.analyses) || []).map(a => srow(esc((a.icon || '') + ' ' + a.name), esc(a.description || ''), sw(a.enabled, `toggleThing('/api/analyses/toggle',${ja(a.id)})`, 'Enabled'))).join(''));
+  h += block('Meeting prep prompt', 'How Alfred writes the prep for your next meeting.',
+    `<div style="padding:12px 0"><textarea id="mbPrompt" class="field" rows="5">${esc((d.home && d.home.meeting_brief_prompt) || '')}</textarea><button type="button" class="btn" style="margin-top:8px" onclick="saveMeetingPrompt()">Save</button></div>`);
+  const nc = d.notion || {};
+  h += block('Notion sources', 'The old tasks database (read for the one-time import) and the pages Alfred reads for context.',
+    `<div style="padding:12px 0;display:grid;gap:8px"><label class="label">Tasks database<input id="nTasks" class="field mini" value="${esc(nc.tasksDatabaseId || '')}"></label>
+      <label class="label">Context databases (comma separated)<input id="nCtx" class="field mini" value="${esc((nc.contextDatabases || []).join(', '))}"></label>
+      <div><button type="button" class="btn" onclick="saveNotion()">Save</button></div></div>`);
+  const mem = (d.memory && d.memory.items) || [];
+  h += block('What Alfred remembers', 'Mark what is right or wrong; wrong items fade.',
+    mem.slice(0, 40).map(m => srow(esc(m.content), esc((m.source || '') + (m.isStale ? ' · stale' : '')), `<span style="display:flex;gap:2px"><button type="button" class="ghost" onclick="memFeedback(${ja(m.id)},'positive')">Right</button><button type="button" class="ghost" onclick="memFeedback(${ja(m.id)},'negative')">Wrong</button></span>`)).join('') || srow('Nothing yet', '', ''));
+  const hl = d.health || {};
+  h += block('Diagnostics', 'For when something looks off.',
+    ((hl.services) || []).map(s => srow(esc(s.name), esc(s.detail || ''), `<span class="label" style="color:${s.status === 'ok' ? 'var(--accent)' : 'var(--warmtext)'}">${esc(s.status)}</span>`)).join('') +
+    `<div style="padding:12px 0;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="ghost" onclick="clearCache()">Clear the cache</button><a class="ghost" href="/api/health/detailed" target="_blank" rel="noopener">Raw health</a></div>`);
+  return h;
+}
+async function saveNotif() {
+  const n = S.pd.notif;
+  const r = await apiSend('/api/config/notifications', 'POST', { briefingTime: document.getElementById('nBrief').value, quietHoursStart: +document.getElementById('nQs').value,
+    quietHoursEnd: +document.getElementById('nQe').value, maxPerDay: +document.getElementById('nMax').value,
+    morningNudgeEnabled: n.morningNudgeEnabled !== false, postMeetingCaptureEnabled: n.postMeetingCaptureEnabled !== false });
+  toast(r.success ? 'Saved' : (r.error || 'Could not save'));
+}
+async function favAdd(kind) {
+  const name = document.getElementById('favName').value.trim(); if (!name) return;
+  const aliases = document.getElementById('favAlias').value.split(',').map(s => s.trim()).filter(Boolean);
+  const r = await apiSend('/api/favorites/' + kind, 'POST', { name, aliases });
+  toast(r.success ? 'Added ' + name : (r.error || 'Could not add')); await pget('fav', '/api/favorites'); rerenderPage();
+}
+async function favRemove(kind, name) {
+  const r = await apiSend('/api/favorites/' + kind + '?name=' + encodeURIComponent(name), 'DELETE');
+  toast(r.success ? 'Removed ' + name : (r.error || 'Could not remove')); await pget('fav', '/api/favorites'); rerenderPage();
+}
+function setTheme(t) { if (t === 'system') { localStorage.removeItem('alfred_theme'); document.documentElement.removeAttribute('data-theme'); } else { localStorage.setItem('alfred_theme', t); document.documentElement.setAttribute('data-theme', t); } }
+async function changePasscode() {
+  const cur = document.getElementById('pwCur').value, a = document.getElementById('pwNew').value, b = document.getElementById('pwNew2').value;
+  if (a !== b) return toast('The new passcodes do not match');
+  if (a.length < 8) return toast('Use at least 8 characters');
+  const r = await apiSend('/api/config/passcode', 'POST', { currentPasscode: cur, newPasscode: a });
+  if (r.error) return toast(r.error);
+  toast('Passcode changed. Sign in again.'); setTimeout(signOut, 1200);
+}
+async function signOut() { try { await fetch('/api/auth/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + S.token } }); } catch (e) {} localStorage.removeItem(TOKEN_KEY); location.href = '/'; }
+async function cadSet(id, patch) { const r = await apiSend('/api/cadences', 'PUT', Object.assign({ id }, patch)); toast(r.success ? 'Saved' : (r.error || 'Could not save')); await pget('cad', '/api/cadences'); rerenderPage(); }
+async function cadRun(id) { const r = await apiSend('/api/cadences/run', 'POST', { id }); toast(r.success ? 'Running in the background' : (r.error || 'Could not start')); }
+async function toggleThing(path, id) { const r = await apiSend(path + '?id=' + encodeURIComponent(id), 'POST'); toast(r.message || (r.error ? r.error : 'Saved')); await loadAdvanced(); }
+async function installSkill(id) { const r = await apiSend('/api/skills/library/install?id=' + encodeURIComponent(id), 'POST'); toast(r.installed ? 'Installed ' + (r.name || '') : (r.error || 'Could not install')); await loadAdvanced(); }
+async function saveMeetingPrompt() { const r = await apiSend('/api/config/home', 'POST', { meeting_brief_prompt: document.getElementById('mbPrompt').value }); toast(r.success ? 'Saved' : (r.error || 'Could not save')); }
+async function saveNotion() {
+  const r = await apiSend('/api/config/notion', 'POST', { tasksDatabaseId: document.getElementById('nTasks').value.trim(), contextDatabases: document.getElementById('nCtx').value.split(',').map(s => s.trim()).filter(Boolean) });
+  toast(r.error || r.message || 'Saved');
+}
+async function memFeedback(id, fb) { const r = await apiSend('/api/memory/feedback', 'POST', { patternId: id, feedback: fb }); toast(r.message || (r.success ? 'Thanks' : (r.error || 'Could not save'))); }
+async function clearCache() { const r = await apiSend('/api/cache/clear', 'POST'); toast(r.message || 'Cleared'); }
+async function openSysPrefs(panel) { try { await fetch('/api/setup/open-system-preferences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ panel }) }); toast('Opened System Settings on the Mac'); } catch (e) { toast('Could not open System Settings'); } }
+function relTime(iso) { if (!iso) return 'never'; const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : Math.round(m / 60) + 'h ago'; }
+
+// push on this device (the same flow the old desk used)
+function b64ToBytes(b) { const p = '='.repeat((4 - b.length % 4) % 4), s = atob((b + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from([...s].map(c => c.charCodeAt(0))); }
+async function enablePush() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return toast('This browser cannot receive push. On iPhone, add Alfred to the Home Screen first.');
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js?v=2.4.0', { updateViaCache: 'none' }); await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      const k = await api('/api/push/vapid-public-key'); if (!k.vapid_public_key) return toast('Push keys are not set up on the Mac yet.');
+      if (Notification.permission !== 'granted' && (await Notification.requestPermission()) !== 'granted') return toast('Notifications are blocked for this site.');
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(k.vapid_public_key) });
+    }
+    const r = await apiSend('/api/push/subscribe', 'POST', sub.toJSON());
+    toast(r.success ? 'Push is on for this device' : (r.error || 'Could not subscribe')); await pget('notif', '/api/config/notifications'); rerenderPage();
+  } catch (e) { toast('Could not turn on push: ' + e.message); }
+}
+async function testPush() { const r = await apiSend('/api/push/test', 'POST', {}); toast(r.success ? 'Sent to ' + r.sentTo + ' device' + (r.sentTo === 1 ? '' : 's') : (r.error || 'Could not send')); }
+
+// WhatsApp pairing sheet (polls while open)
+let _waT = null;
+function openWa() { openSheet('wa', null, null); pollWa(); }
+async function pollWa() {
+  clearTimeout(_waT); if (!S.sheet || S.sheet.kind !== 'wa') return;
+  try { S.sheet.data = await api('/api/wa-bridge/status'); } catch (e) { S.sheet.data = { reachable: false }; }
+  renderSheet(); _waT = setTimeout(pollWa, 4000);
+}
+function sheetWa(s) {
+  const d = s.data; if (!d) return '<div class="loading">Checking WhatsApp…</div>';
+  let body;
+  if (!d.reachable) body = `<p>The WhatsApp bridge is not running on the Mac. Start it once in Terminal:</p><pre class="code">./scripts/wa-bridge.sh install</pre>`;
+  else if (d.paired) {
+    const days = d.newest_message ? Math.floor((Date.now() / 1000 - d.newest_message) / 86400) : null;
+    const live = d.connected && (days === null || days < 2);
+    body = live ? `<p><b>Connected.</b> ${d.messages || 0} messages synced.</p>` : `<p><b>Paired, but not receiving.</b> ${days !== null ? 'Newest message is ' + days + ' day' + (days === 1 ? '' : 's') + ' old. ' : ''}${esc(d.reason || '')} Restart the bridge, or unlink Alfred in WhatsApp → Linked devices and pair again.</p>`;
+  } else body = `<p>On your phone: WhatsApp → Settings → Linked devices → Link a device, then scan:</p>${d.qr_png_base64 ? `<img alt="Pairing code" style="width:240px;height:240px;image-rendering:pixelated;border-radius:12px;background:#fff;padding:8px" src="data:image/png;base64,${d.qr_png_base64}">` : '<div class="loading">Generating the code…</div>'}<p class="label">The code refreshes on its own.</p>`;
+  return `<div class="serif" style="font-size:24px;padding-top:6px">WhatsApp</div><div style="margin-top:10px;font-size:15px;line-height:1.5">${body}</div>`;
+}
+// Notion mirror location
+function openMirrorSetup() { openSheet('mirror', null, {}); }
+function sheetMirror() {
+  return `<div class="serif" style="font-size:24px;padding-top:6px">Notion to-do mirror</div>
+    <p style="font-size:15px;line-height:1.5;color:var(--body)">Alfred keeps your list in a Notion database called "Alfred to-dos". Paste the link of a Notion page shared with the Alfred integration, and Alfred creates the database there.</p>
+    <input id="mirrorParent" class="field" placeholder="Notion page link or id" data-autofocus>
+    <div id="mirrorErr" class="label" style="color:var(--warmtext);margin-top:8px;min-height:18px"></div>
+    <button type="button" class="btn big" style="width:100%" onclick="setupMirror()">Create it there</button>`;
+}
+async function setupMirror() {
+  const raw = document.getElementById('mirrorParent').value.trim(); const m = raw.match(/[0-9a-f]{32}|[0-9a-f-]{36}/i);
+  if (!m) { document.getElementById('mirrorErr').textContent = 'That does not look like a Notion page link.'; return; }
+  const r = await post('/api/v2/notion/mirror/setup', { parent: m[0] });
+  if (r.ok) { closeSheet(); toast('Notion mirror is set up'); loadStatus(); if (S.page === 'settings') loadSettings(); }
+  else document.getElementById('mirrorErr').textContent = r.error || 'Could not create it.';
+}
+// skill editor
+async function openSkill(id) {
+  openSheet('skill', id, id ? null : { name: '', description: '', prompt: '', tenets: '', frequency: 'daily', dataSources: [] });
+  if (id) { S.sheet.data = await api('/api/skills/detail?id=' + encodeURIComponent(id)); renderSheet(); }
+}
+function sheetSkill(s) {
+  const k = s.data; if (!k) return '<div class="loading">Opening…</div>';
+  const srcs = ['calendar', 'messages', 'commitments', 'tasks', 'notes'];
+  return `<div class="serif" style="font-size:24px;padding-top:6px">${s.id ? 'Edit skill' : 'New skill'}</div>
+    <label class="label" style="display:block;margin-top:12px">Name<input id="skName" class="field" value="${esc(k.name || '')}"></label>
+    <label class="label" style="display:block;margin-top:10px">What it is for<input id="skDesc" class="field" value="${esc(k.description || '')}"></label>
+    <label class="label" style="display:block;margin-top:10px">How often<select id="skFreq" class="field">${['daily','weekly','on_demand'].map(f => `<option ${k.frequency===f?'selected':''}>${f}</option>`).join('')}</select></label>
+    <div class="label" style="margin-top:10px">Reads from</div><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">${srcs.map(x => `<label class="label" style="display:flex;gap:6px;align-items:center"><input type="checkbox" class="skSrc" value="${x}" ${(k.dataSources || []).includes(x)?'checked':''}>${x}</label>`).join('')}</div>
+    <label class="label" style="display:block;margin-top:10px">Principles (optional)<textarea id="skTen" class="field" rows="3">${esc(k.tenets || '')}</textarea></label>
+    <label class="label" style="display:block;margin-top:10px">Instructions<textarea id="skPrompt" class="field" rows="8">${esc(k.prompt || '')}</textarea></label>
+    <div id="skErr" class="label" style="color:var(--warmtext);margin-top:8px;min-height:18px"></div>
+    <div style="display:flex;gap:8px"><button type="button" class="btn big" style="flex:1 1 auto" onclick="saveSkill()">Save</button>${s.id ? `<button type="button" class="ghost" onclick="deleteSkill()">Delete</button>` : ''}</div>`;
+}
+async function saveSkill() {
+  const id = S.sheet.id;
+  const body = { name: document.getElementById('skName').value.trim(), description: document.getElementById('skDesc').value.trim(), frequency: document.getElementById('skFreq').value,
+    dataSources: [...document.querySelectorAll('.skSrc:checked')].map(x => x.value), tenets: document.getElementById('skTen').value, prompt: document.getElementById('skPrompt').value };
+  const r = await apiSend('/api/skills' + (id ? '?id=' + encodeURIComponent(id) : ''), id ? 'PUT' : 'POST', body);
+  if (r.error) { document.getElementById('skErr').textContent = r.error + (r.warnings ? ': ' + r.warnings.join('; ') : ''); return; }
+  closeSheet(); toast('Saved'); loadAdvanced();
+}
+async function deleteSkill() { const r = await apiSend('/api/skills?id=' + encodeURIComponent(S.sheet.id), 'DELETE'); closeSheet(); toast(r.deleted ? 'Deleted' : (r.error || 'Could not delete')); loadAdvanced(); }
+
+// ── your model ──
+async function loadModel() {
+  await Promise.all([pget('m', '/api/self-model'), pget('props', '/api/self-model/proposals'), pget('merges', '/api/self-model/merges'), pget('strays', '/api/self-model/strays')]);
+  rerenderPage();
+}
+function verbs(item, kind) {
+  const confirmed = item.verdict === 'confirmed' || item.confirmed;
+  const manual = item.origin === 'manual';
+  return `<div style="display:flex;gap:2px;flex-wrap:wrap;margin:6px 0 2px -10px">
+    ${confirmed ? `<button type="button" class="ghost" onclick="smVerdict(${ja(item.id)},'')">✓ Confirmed · undo</button>` : `<button type="button" class="ghost" onclick="smVerdict(${ja(item.id)},'confirmed')">Sounds right</button>`}
+    ${manual ? `<button type="button" class="ghost" onclick="smDelete(${ja(item.id)})">Delete</button>` : `<button type="button" class="ghost" onclick="smVerdict(${ja(item.id)},'dismissed')">Not me</button>`}
+    ${kind !== 'pattern' ? `<button type="button" class="ghost" onclick="smRename(${ja(item.id)})">Reword</button>` : ''}</div>`;
+}
+function viewModel() {
+  const d = S.pd, m = d.m; if (!m) return '<div class="loading">Loading your model…</div>';
+  if (m.enabled === false) return '<div class="empty">The self-model is turned off in your config.</div>';
+  let h = `<div class="label" style="margin-top:4px">What Alfred understands about how you work. Confirm what is right, remove what is not.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><button type="button" class="btn outline" onclick="openExport()">Operating model</button><a class="btn plain" style="display:inline-flex;align-items:center;text-decoration:none" href="/wiki" target="_blank" rel="noopener">You-Wiki</a></div>`;
+  const review = [];
+  ((d.props && d.props.proposals) || []).forEach(p => review.push(srow(esc(p.decision), 'Evidence for: ' + esc(p.belief), `<span style="display:flex;gap:2px"><button type="button" class="ghost" onclick="smProposal(${ja(p.id)},'confirm')">Yes</button><button type="button" class="ghost" onclick="smProposal(${ja(p.id)},'reject')">No</button></span>`)));
+  ((d.merges && d.merges.merges) || []).forEach(x => review.push(srow(esc(x.a_name) + ' and ' + esc(x.b_name), 'Same thing?', `<span style="display:flex;gap:2px"><button type="button" class="ghost" onclick="smMerge(${ja(x.a)},${ja(x.b)},'merge')">Merge</button><button type="button" class="ghost" onclick="smMerge(${ja(x.a)},${ja(x.b)},'reject')">Keep apart</button></span>`)));
+  ((d.strays && d.strays.groups) || []).forEach(g => (g.items || []).forEach(i => review.push(srow(esc(i.content), esc('Filed under ' + i.from_theme + ' · belongs in ' + i.to_theme + '?'), `<span style="display:flex;gap:2px"><button type="button" class="ghost" onclick="smStray(${ja(i.id)},'accept')">Move</button><button type="button" class="ghost" onclick="smStray(${ja(i.id)},'reject')">Keep</button></span>`))));
+  if (review.length) h += block('To review', null, review.join(''));
+  if ((m.movement || []).length) h += block('What moved this week', null, m.movement.map(x => srow(esc(x.to || x.statement), esc((x.from ? 'Was: ' + x.from : '') + (x.when ? ' · ' + x.when : '')), '')).join(''));
+  const bel = (m.lenses && m.lenses.belief_shifts) || [];
+  h += block('Beliefs', 'How you think things work.', bel.map(b => `<div class="srow col"><div style="font-size:15px">${esc(b.to)}</div>${b.from ? `<div class="label" style="font-size:12px">Was: ${esc(b.from)}</div>` : ''}${verbs(b, 'belief')}</div>`).join('') + addRow('belief'));
+  h += block('Values', 'What you will not trade away.', (m.values || []).map(v => `<div class="srow col"><div style="font-size:15px">${esc(v.statement)}</div>${verbs(v, 'value')}</div>`).join('') + addRow('value'));
+  if ((m.questions || []).length) h += block('Open questions', 'What you are still working out.', m.questions.map(q => `<div class="srow col"><div style="font-size:15px">${esc(q.text)}</div><div style="display:flex;gap:2px;margin:6px 0 2px -10px"><button type="button" class="ghost" onclick="openReflect(${ja(q.id)},${ja(q.text)})">Think it through</button><button type="button" class="ghost" onclick="smAnswer(${ja(q.id)})">Answer it</button><button type="button" class="ghost" onclick="smVerdict(${ja(q.id)},'dismissed')">Not me</button></div></div>`).join(''));
+  const pats = (m.lenses && m.lenses.patterns) || [];
+  if (pats.length) h += block('Patterns Alfred sees', null, pats.map(p => `<div class="srow col"><div style="font-size:15px">${esc(p.description)}</div><div class="label" style="font-size:12px">${p.confidence >= 0.8 ? 'Strong' : p.confidence >= 0.55 ? 'Building' : 'Forming'}${p.reinforcements ? ' · seen ' + p.reinforcements + ' times' : ''}</div>${verbs(p, 'pattern')}</div>`).join(''));
+  return h;
+}
+function addRow(kind) { return `<div style="display:flex;gap:8px;padding:12px 0"><input id="add-${kind}" class="field mini" style="flex:1 1 auto" placeholder="Add a ${kind}"><button type="button" class="btn" onclick="smAdd('${kind}')">Add</button></div>`; }
+async function smDo(path, msg) { const r = await apiSend(path, 'POST'); toast(r.ok === false || r.error ? (r.error || 'Could not save') : msg); await loadModel(); }
+const smVerdict = (id, v) => smDo('/api/self-model/verdict?id=' + encodeURIComponent(id) + '&verdict=' + v, v === 'confirmed' ? 'Confirmed' : (v === 'dismissed' ? 'Removed' : 'Undone'));
+const smDelete = id => smDo('/api/self-model/facet/delete?id=' + encodeURIComponent(id), 'Deleted');
+function smRename(id) { const t = prompt('Say it in your words (leave empty to restore Alfred\'s wording)'); if (t === null) return; smDo('/api/self-model/facet/rename?id=' + encodeURIComponent(id) + '&statement=' + encodeURIComponent(t), 'Saved'); }
+function smAdd(kind) { const t = document.getElementById('add-' + kind).value.trim(); if (t.length < 3) return; smDo('/api/self-model/facet/create?kind=' + kind + '&statement=' + encodeURIComponent(t), 'Added'); }
+function smAnswer(id) { const t = prompt('Your answer becomes a belief'); if (!t) return; smDo('/api/self-model/resolve?id=' + encodeURIComponent(id) + '&resolution=' + encodeURIComponent(t), 'Saved as a belief'); }
+const smProposal = (id, a) => smDo('/api/self-model/proposals/resolve?id=' + encodeURIComponent(id) + '&action=' + a, a === 'confirm' ? 'Linked' : 'Not linked');
+const smMerge = (a, b, act) => smDo('/api/self-model/merges/resolve?a=' + encodeURIComponent(a) + '&b=' + encodeURIComponent(b) + '&action=' + act, act === 'merge' ? 'Merged' : 'Kept apart');
+async function smStray(id, action) { const r = await apiSend('/api/self-model/strays/resolve', 'POST', { id, action }); toast(r.success ? (action === 'accept' ? 'Moved' : 'Kept') : (r.error || 'Could not save')); await loadModel(); }
+async function openExport() {
+  openSheet('export', null, null);
+  let r = await api('/api/self-model/export');
+  if (!r.operating_model) r = await api('/api/self-model/export?push=0', { method: 'POST' });
+  S.sheet.data = r; renderSheet();
+}
+function sheetExport(s) {
+  const d = s.data; if (!d) return '<div class="loading">Writing your operating model…</div>';
+  return `<div class="serif" style="font-size:24px;padding-top:6px">Your operating model</div>
+    <div style="display:flex;gap:8px;margin-top:10px"><button type="button" class="btn" onclick="navigator.clipboard.writeText(S.sheet.data.operating_model||'').then(()=>toast('Copied'))">Copy</button><button type="button" class="ghost" onclick="pushExport()">Regenerate and send to Notion</button></div>
+    <pre class="code" style="white-space:pre-wrap;margin-top:12px">${esc(d.operating_model || 'Nothing yet.')}</pre>`;
+}
+async function pushExport() { toast('Regenerating…'); const r = await api('/api/self-model/export?push=1', { method: 'POST' }); S.sheet.data = r; renderSheet(); toast(r.notion_url ? 'Sent to Notion' : 'Regenerated'); }
+// "think it through": the self-model's reflect stream, in the chat sheet
+function openReflect(id, text) { S.chat = [{ role: 'al', text: 'Open question: ' + text }]; S.chatReflect = { id, history: [] }; openSheet('chat'); }
+
+// ── coach notes ──
+async function loadCoach(force) {
+  if (force) S.pd = {};
+  await Promise.all([pget('signals', '/api/coaching/signals'), pget('cards', '/api/coaching/cards')]);
+  rerenderPage();
+}
+function viewCoach() {
+  const d = S.pd; if (!d.cards) return '<div class="loading">Alfred is writing your coach notes. This can take a minute.</div>';
+  const cards = [].concat((d.signals && d.signals.signals) || [], Array.isArray(d.cards) ? d.cards : ((d.cards && d.cards.cards) || []));
+  if (!cards.length) return '<div class="empty">Nothing worth saying right now.</div>';
+  return `<div class="label" style="margin-top:4px">Everything your coaching skills noticed. Only the most pressing line ever reaches Now.</div><div class="stack">` +
+    cards.map((c, i) => `<article class="card post"><div class="who"><b>${esc(c.label || c.type || 'Coach')}</b></div>
+      <div class="body" style="font-weight:400;font-size:16px">${esc(c.insight || c.body || '')}</div>
+      <div class="actions" style="flex-wrap:wrap"><button type="button" class="btn outline" onclick="coachKeep(${i})">Keep in my model</button><button type="button" class="ghost" onclick="coachAsk(${i})">Ask Alfred</button><span class="spacer"></span><button type="button" class="ghost" onclick="coachFeedback(${i},'thumbs_up')">Useful</button><button type="button" class="ghost" onclick="coachFeedback(${i},'thumbs_down')">Not useful</button></div></article>`).join('') + '</div>';
+}
+function coachCard(i) { const d = S.pd; return [].concat((d.signals && d.signals.signals) || [], Array.isArray(d.cards) ? d.cards : ((d.cards && d.cards.cards) || []))[i] || {}; }
+async function coachKeep(i) { const c = coachCard(i); const r = await apiSend('/api/coaching/note-to-model', 'POST', { insight: c.insight || c.body, label: c.label || c.type }); toast(!r.success ? (r.error || 'Could not save') : (r.promoted === false ? 'Noted. It reads as an action, so it is kept out of your beliefs.' : 'Added to your model')); }
+async function coachFeedback(i, fb) { const c = coachCard(i); await apiSend('/api/coaching/feedback', 'POST', { cardType: c.type, feedback: fb, insight: c.insight }); toast('Thanks. Alfred will weigh this.'); }
+function coachAsk(i) { const c = coachCard(i); S.chat = []; S.chatReflect = null; openSheet('chat'); askAlfred('Help me act on this: ' + (c.insight || c.body || '')); }
+
+// ── weekly review ──
+async function loadWeekly() { await pget('w', '/api/weekly-reflection'); rerenderPage(); }
+function viewWeekly() {
+  const w = S.pd.w; if (!w) return '<div class="loading">Alfred is looking back at your week. This can take a minute.</div>';
+  if (w.error) return '<div class="empty">The weekly review could not be written just now.</div>';
+  const m = w.metrics || {};
+  const tile = (n, l) => `<div class="card" style="flex:1 1 0;padding:14px 16px"><div class="serif" style="font-size:28px">${esc(n)}</div><div class="label">${l}</div></div>`;
+  return `<div style="display:flex;gap:10px;margin-top:12px">${tile(m.tasksCompleted ?? 0, 'done')}${tile(m.tasksOverdue ?? 0, 'overdue')}${tile(Math.round((m.completionRate || 0) * (m.completionRate > 1 ? 1 : 100)) + '%', 'completion')}</div>
+    <div class="card" style="margin-top:14px;padding:6px 20px 14px;line-height:1.6;font-size:16px">${mdLite(w.narrative || '')}</div>`;
+}
+function mdLite(s) { return esc(s).split(/\n{2,}/).map(p => /^##\s/.test(p) ? `<h3 class="serif" style="font-weight:400;font-size:21px;margin:18px 0 4px">${p.replace(/^##\s*/, '')}</h3>` : `<p>${p.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>')}</p>`).join(''); }
+
+// ── archive ──
+async function loadArchive() { await pget('a', '/api/v2/fronts/archive'); rerenderPage(); }
+function viewArchive() {
+  const a = S.pd.a; if (!a) return '<div class="loading">Loading…</div>';
+  const rows = a.fronts || [];
+  return rows.length ? `<div class="label" style="margin-top:4px">Fronts you marked done or paused. Restoring one puts it back on your fronts, within the cap of 10.</div>` +
+    block('Done and paused', null, rows.map(f => srow(esc(f.name), esc((f.state === 'paused' ? 'Paused' : 'Done') + (f.date_label ? ' · ' + f.date_label : '')), `<button type="button" class="ghost" onclick="restoreFront(${ja(f.id)})">Restore</button>`)).join(''))
+    : '<div class="empty">Nothing archived yet.</div>';
+}
+async function restoreFront(id) {
+  await apiSend('/api/desk/front/restore', 'POST', { id });
+  const r = await post('/api/v2/fronts/state', { id, state: 'active' });
+  toast(r.ok ? 'Back on your fronts' : 'Could not restore'); loadArchive(); S.fronts = null;
+}
+
+// ── conversations ──
+async function loadConversations() { await pget('c', '/api/conversations?limit=30'); rerenderPage(); }
+function viewConversations() {
+  const c = S.pd.c; if (!c) return '<div class="loading">Loading…</div>';
+  const rows = c.conversations || [];
+  return `<div style="margin-top:12px"><button type="button" class="btn" onclick="S.chat=[];S.chatSession=null;S.chatReflect=null;openSheet('chat')">New conversation</button></div>` +
+    (rows.length ? block('Past conversations', null, rows.map(x => `<button type="button" class="srow" style="width:100%;border:none;background:none;text-align:left;border-bottom:1px solid var(--hair2)" onclick="resumeConversation(${ja(x.id)})"><div style="flex:1 1 auto;min-width:0"><div style="font-size:15px">${esc(x.title || 'Conversation')}</div><div class="label" style="font-size:12px">${esc(x.summary || '')}${x.turnCount ? ' · ' + x.turnCount + ' turns' : ''}</div></div>${icon('chev',14)}</button>`).join('')) : '<div class="empty">No past conversations.</div>');
+}
+async function resumeConversation(id) {
+  const r = await api('/api/conversations/restore?id=' + encodeURIComponent(id), { method: 'POST' });
+  S.chatSession = id; S.chatReflect = null;
+  S.chat = (r.turns || []).map(t => ({ role: t.role === 'user' ? 'user' : 'al', text: t.content }));
+  openSheet('chat');
+}
+
+// ── scheduling sessions (people tab) ──
+let _schedT = null;
+async function loadSched() {
+  try { S.sched = await api('/api/schedule/sessions'); } catch (e) { S.sched = null; }
+  if (S.tab === 'people' && !S.page) renderView();
+  clearTimeout(_schedT);
+  if (S.sched && (S.sched.sessions || []).length) _schedT = setTimeout(() => { if (S.tab === 'people' && !S.page && !document.hidden) loadSched(); }, 25000);
+}
+function viewSched() {
+  const ss = (S.sched && S.sched.sessions) || [];
+  if (!ss.length) return '';
+  return `<div class="section"><div class="label">Scheduling</div><div class="stack">` + ss.map(s => {
+    const first = firstName(s.contact_name || 'them');
+    let acts = '';
+    if (s.state === 'resolving') acts = (s.candidates || []).map((c, i) => `<button type="button" class="btn outline" onclick="schedSay(${ja(String(i + 1))},${ja(s.id)})">${esc(c)}</button>`).join('');
+    else if (s.state === 'slots_proposed') acts = `<button type="button" class="btn" onclick="schedSay('propose',${ja(s.id)})">Send to ${esc(first)}</button><button type="button" class="ghost" onclick="schedEdit(${ja(s.id)})">Change</button>`;
+    else if (s.state === 'reply_surfaced' || s.state === 'held') acts = `<button type="button" class="btn" onclick="schedSay('yes',${ja(s.id)})">Book it</button><button type="button" class="ghost" onclick="schedEdit(${ja(s.id)})">Change</button>`;
+    else if (s.state === 'awaiting_reply') acts = `<span class="label">Watching ${esc(first)}'s thread</span>`;
+    return `<article class="card post"><div class="who"><b>${esc(s.contact_name || 'Meeting')}</b></div><div class="meta">${esc(s.stage_label || '')}</div>
+      ${s.options ? `<pre class="code" style="white-space:pre-wrap;margin-top:8px">${esc(s.options)}</pre>` : ''}${s.draft ? `<div class="compose" style="margin-top:8px;font-size:14px;white-space:pre-wrap">${esc(s.draft)}</div>` : ''}
+      ${s.booked_link ? `<a class="link" href="${esc(s.booked_link)}" target="_blank" rel="noopener">Open the event</a>` : ''}
+      <div class="actions" style="flex-wrap:wrap">${acts}<span class="spacer"></span><button type="button" class="ghost" onclick="schedSay('leave it',${ja(s.id)})">Drop it</button></div></article>`;
+  }).join('') + '</div></div>';
+}
+async function schedSay(text, session) {
+  try {
+    const r = await (await fetch('/api/schedule/say?text=' + encodeURIComponent(text) + '&session=' + encodeURIComponent(session), { method: 'POST', headers: { 'Authorization': 'Bearer ' + S.token } })).json();
+    toast(r.error || (r.message || 'Done').split('\n')[0]);
+  } catch (e) { toast('Could not reach the scheduler.'); }
+  setTimeout(loadSched, 1200);
+}
+function schedEdit(session) { const t = prompt('What should change? (for example: next week, mornings only, 45 minutes)'); if (t) schedSay(t, session); }
+
+// ── closures waiting for a yes (to-dos tab) ──
+async function loadClosures() { try { S.closures = await api('/api/commitment-tracker/pending-closures'); } catch (e) { S.closures = null; } if (S.tab === 'todos' && !S.page) renderView(); }
+function viewClosures() {
+  const rows = (S.closures && S.closures.pendingClosures) || [];
+  if (!rows.length) return '';
+  return `<div class="section"><div class="label">Did you finish these? Alfred saw signs you did</div><div class="stack">` + rows.slice(0, 5).map(c =>
+    `<article class="card post"><div class="body" style="margin-top:0;font-size:16px">${esc(c.title)}</div><div class="meta">${esc(c.signal || '')} · ${Math.round((c.confidence || 0) * 100)}% sure</div>
+      <div class="actions"><button type="button" class="btn outline" onclick="closure(${ja(c.hash)},true)">Yes, done</button><button type="button" class="ghost" onclick="closure(${ja(c.hash)},false)">Still open</button></div></article>`).join('') + '</div></div>';
+}
+async function closure(hash, yes) {
+  const r = await apiSend('/api/commitment-tracker/' + (yes ? 'confirm-closure' : 'reject-closure'), 'POST', { hash });
+  toast(r.success ? (yes ? 'Closed' : 'Kept open') : (r.error || 'Could not save')); loadClosures(); refresh();
+}
+
+// ── hidden suggestions (to-dos tab) ──
+function viewHidden() {
+  const hid = (S.todos && S.todos.hidden) || [];
+  if (!hid.length) return '';
+  return `<button type="button" class="ghost" style="margin-top:8px;padding:0" onclick="S.showHidden=!S.showHidden;renderView()">${hid.length} hidden based on what you dismiss · ${S.showHidden ? 'hide' : 'show'}</button>` +
+    (S.showHidden ? `<div class="stack tight">${hid.map(g => `<div class="card post" style="padding:10px 16px"><div style="font-size:15px">${esc(g.title)}</div><div class="label" style="font-size:12px;margin-top:2px">${esc(g.hidden_reason || '')}</div><div class="actions"><button type="button" class="btn outline" onclick="accept(${ja(g.id)})">Restore to my list</button></div></div>`).join('')}</div>` : '');
+}
+
+// ── post-meeting capture ──
+async function checkCapture(force) {
+  try {
+    const p = await api('/api/v2/capture/pending');
+    if (p.pending && (force || sessionStorage.getItem('alfred_capture_seen') !== p.meeting_id)) {
+      sessionStorage.setItem('alfred_capture_seen', p.meeting_id);
+      openSheet('capture', p.meeting_id, p);
+    }
+  } catch (e) {}
+}
+function sheetCapture(s) {
+  return `<div class="label" style="padding-top:6px">Just left</div><div class="serif" style="font-size:24px">${esc(s.data.meeting_title || 'your meeting')}</div>
+    <label for="capText" class="label" style="display:block;margin-top:14px">Any follow-ups? One per line is fine. They go to your suggestions.</label>
+    <textarea id="capText" class="field" rows="5" data-autofocus placeholder="Send Kunal the revised model&#10;Ask Neha for the RBI checklist by Friday"></textarea>
+    <div style="margin-top:14px;display:flex;gap:8px"><button type="button" class="btn big" style="flex:1 1 auto" onclick="submitCapture()">Add follow-ups</button><button type="button" class="ghost" onclick="closeSheet()">Nothing</button></div>`;
+}
+async function submitCapture() {
+  const text = document.getElementById('capText').value.trim(); if (!text) return closeSheet();
+  const s = S.sheet; closeSheet(); toast('Reading your notes…');
+  const r = await post('/api/v2/capture', { text, meeting_id: s.id, meeting_title: s.data.meeting_title });
+  toast(r.receipt || 'Saved'); refresh();
+}
+
 window.addEventListener('resize', () => { if (S.sheet) renderSheet(); });
 boot();
 </script>

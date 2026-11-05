@@ -129,6 +129,23 @@ final class TodoStore {
         )
         """)
         exec("CREATE TABLE IF NOT EXISTS todo_meta (key TEXT PRIMARY KEY, value TEXT)")
+        // What the user did with each item: the raw material TodoLearning learns from.
+        exec("""
+        CREATE TABLE IF NOT EXISTS todo_feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            at TEXT NOT NULL,
+            event TEXT NOT NULL,
+            todo_id TEXT,
+            source TEXT,
+            person TEXT,
+            title TEXT,
+            from_value TEXT,
+            to_value TEXT
+        )
+        """)
+        exec("CREATE INDEX IF NOT EXISTS idx_feedback_event ON todo_feedback(event, at)")
+        // Suggestions Alfred hid on its own (learned from dismissals), with the reason it gives.
+        exec("ALTER TABLE todos ADD COLUMN hidden_reason TEXT")
         exec("CREATE INDEX IF NOT EXISTS idx_todos_status ON todos(status, kind)")
         exec("CREATE INDEX IF NOT EXISTS idx_todos_dedupe ON todos(dedupe_key)")
         exec("CREATE INDEX IF NOT EXISTS idx_todos_dirty ON todos(dirty)")
@@ -285,7 +302,7 @@ final class TodoStore {
     func update(_ id: String, _ fields: [String: Any?], markDirty: Bool = true, touch: Bool = true) -> Bool {
         let allowed: Set<String> = ["title", "status", "kind", "due", "front_id", "front_name", "person", "pinned",
                                     "snoozed_until", "skip_count", "done_at", "notion_page_id", "dirty", "draft",
-                                    "source_note", "updated_at"]
+                                    "source_note", "updated_at", "hidden_reason"]
         var sets: [String] = []
         var vals: [Any?] = []
         for (k, v) in fields where allowed.contains(k) {
@@ -346,6 +363,57 @@ final class TodoStore {
     func pin(_ id: String?) {
         exec("UPDATE todos SET pinned = 0 WHERE pinned = 1")
         if let id = id { update(id, ["pinned": true], markDirty: false) }
+    }
+
+    // MARK: - Feedback
+
+    struct Feedback { let at: String; let event: String; let todoId: String?; let source: String?; let person: String?; let title: String?; let from: String?; let to: String? }
+
+    func recordFeedback(_ event: String, todo: Todo?, from: String? = nil, to: String? = nil) {
+        lock.lock(); defer { lock.unlock() }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        let sql = "INSERT INTO todo_feedback (at, event, todo_id, source, person, title, from_value, to_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        bind(stmt, 1, Self.nowISO()); bind(stmt, 2, event)
+        bindOpt(stmt, 3, todo?.id); bindOpt(stmt, 4, todo?.source); bindOpt(stmt, 5, todo?.person); bindOpt(stmt, 6, todo?.title)
+        bindOpt(stmt, 7, from); bindOpt(stmt, 8, to)
+        sqlite3_step(stmt)
+    }
+
+    /// Feedback of the given events within the last `days`, newest first.
+    func feedback(events: [String], days: Int = 120, limit: Int = 2000) -> [Feedback] {
+        lock.lock(); defer { lock.unlock() }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        let since = Self.iso.string(from: Date().addingTimeInterval(-Double(days) * 86400))
+        let marks = events.map { _ in "?" }.joined(separator: ",")
+        let sql = "SELECT at, event, todo_id, source, person, title, from_value, to_value FROM todo_feedback WHERE event IN (\(marks)) AND at >= ? ORDER BY at DESC LIMIT \(limit)"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        var i: Int32 = 1
+        for e in events { bind(stmt, i, e); i += 1 }
+        bind(stmt, i, since)
+        var out: [Feedback] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            out.append(Feedback(at: col(stmt, 0) ?? "", event: col(stmt, 1) ?? "", todoId: col(stmt, 2), source: col(stmt, 3),
+                                person: col(stmt, 4), title: col(stmt, 5), from: col(stmt, 6), to: col(stmt, 7)))
+        }
+        return out
+    }
+
+    /// Suggestions Alfred hid on its own in the last `days`.
+    func hidden(days: Int = 14) -> [Todo] {
+        let since = Self.iso.string(from: Date().addingTimeInterval(-Double(days) * 86400))
+        return all(where: "status = 'dismissed' AND hidden_reason IS NOT NULL AND updated_at >= ?", args: [since], order: "updated_at DESC", limit: 50)
+    }
+
+    func hiddenReason(_ id: String) -> String? {
+        lock.lock(); defer { lock.unlock() }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, "SELECT hidden_reason FROM todos WHERE id = ?", -1, &stmt, nil) == SQLITE_OK else { return nil }
+        bind(stmt, 1, id)
+        return sqlite3_step(stmt) == SQLITE_ROW ? col(stmt, 0) : nil
     }
 
     // MARK: - SQLite helpers

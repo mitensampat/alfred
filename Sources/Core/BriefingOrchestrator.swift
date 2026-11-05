@@ -1558,8 +1558,8 @@ class BriefingOrchestrator {
                     // to-dos always wait for the user to accept them). Accepted to-dos reach Notion
                     // through the to-do mirror, so nothing is written to the old tasks database here.
                     let due = todo.dueDate.map { TodoStore.dayFormatter.string(from: $0) }
-                    let added = TodoStore.shared.upsert(
-                        title: todo.title, status: .suggested, due: due,
+                    let added = TodoService.suggest(
+                        title: todo.title, person: nil, due: due,
                         source: "whatsapp_self", sourceRef: messageHash,
                         sourceNote: "From your WhatsApp notes to self")
                     if added.created {

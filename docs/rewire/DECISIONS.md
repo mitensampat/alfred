@@ -4,6 +4,10 @@ newest first. each entry: date, decision, why. read this before changing the UI.
 
 | date | decision | why |
 | --- | --- | --- |
+| 2026-11-05 | the old desk (home.html) is retired; everything it did is in app.html, and first-run setup is its own page (setup.html) | Miten asked for it before the first build |
+| 2026-11-05 | Alfred learns from your choices with plain rules that always show their reason; a hidden suggestion stays restorable for 14 days | learning must be explainable and reversible |
+| 2026-11-05 | after a meeting, typed follow-ups are split by the model and go to the suggested tray (not straight to Notion) | one list, one way in |
+| 2026-11-05 | changing the passcode now requires the current one (the server never checked it) | security fix found while moving settings |
 | 2026-11-05 | on the switch, commitments already on the desk are imported as open to-dos; only ones extracted afterwards wait in the suggested tray | my call while building: those items are already the working list, and dumping them all into the tray would be the opposite of calm |
 | 2026-11-05 | WhatsApp notes-to-self become suggestions in Alfred, not tasks written straight to Notion; accepted to-dos reach Notion through the mirror | one list, one way into Notion |
 | 2026-11-05 | fronts require a date (an explicit "no fixed date" is allowed) | a front is an outcome with a clock; a date is what makes it rankable |

@@ -216,7 +216,7 @@ Open `http://localhost:8080` â€” the setup wizard walks you through Claude API â
 
 ```
 # Desk + Coach UI
-http://localhost:8080/home.html?passcode=YOUR_PASSCODE
+http://localhost:8080/?passcode=YOUR_PASSCODE
 
 # Your You-Wiki
 http://localhost:8080/wiki?passcode=YOUR_PASSCODE

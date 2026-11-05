@@ -146,7 +146,7 @@ class CoachingPushService {
         // Store pending capture for the most recent meeting
         pendingCapture = PendingCapture(meetingId: event.id, meetingTitle: event.title, createdAt: Date())
 
-        let captureUrl = "/home.html"
+        let captureUrl = "/#now"   // the app opens the capture sheet for a post-meeting push
 
         let body: String
         if candidateEvents.count > 1 {

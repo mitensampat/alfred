@@ -2,7 +2,7 @@
 // Handles push notifications and offline caching for PWA experience.
 // Cache version is auto-bumped by the server — no manual update needed.
 
-const CACHE_NAME = 'alfred-v2.4.0-rewire';
+const CACHE_NAME = 'alfred-v2.5.0-app';
 
 // Install: skip waiting to activate immediately
 self.addEventListener('install', function(event) {
@@ -90,9 +90,7 @@ self.addEventListener('notificationclick', function(event) {
     var targetUrl = notifData.url || '/';
     var notifType = notifData.type || null;
 
-    // The new app (/) and the old desk (/home.html) are different pages: send each notification to
-    // the page its url names. Query parameters go before any #hash.
-    var wantsDesk = targetUrl.indexOf('/home.html') !== -1;
+    // Query parameters go before any #hash.
     function withAction(u) {
         if (!notifType) return u;
         var hashAt = u.indexOf('#'), base = hashAt === -1 ? u : u.slice(0, hashAt), hash = hashAt === -1 ? '' : u.slice(hashAt);
@@ -101,18 +99,10 @@ self.addEventListener('notificationclick', function(event) {
 
     event.waitUntil(
         clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
+            // Focus an open Alfred window and take it to the notification's view; else open one.
             for (var i = 0; i < clientList.length; i++) {
                 var client = clientList[i];
-                var isDesk = client.url.indexOf('/home.html') !== -1;
-                if (wantsDesk && isDesk) {
-                    // Old desk: focus it and let it handle the notification (post-meeting capture lives there).
-                    return client.focus().then(function(focusedClient) {
-                        focusedClient.postMessage({ type: 'notification-click', notificationType: notifType, url: targetUrl });
-                        return focusedClient;
-                    });
-                }
-                if (!wantsDesk && !isDesk && 'navigate' in client) {
-                    // The app: focus it and take it to the notification's view (e.g. the meeting prep).
+                if ('navigate' in client) {
                     return client.focus().then(function(focusedClient) { return focusedClient.navigate(withAction(targetUrl)); });
                 }
             }

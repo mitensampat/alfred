@@ -14,7 +14,7 @@ branch: `claude/great-mayer-9tdjbs`. each phase lands as its own commits.
 ## phase 2, the new frame
 - [x] `app.html`: four tabs, add, You menu, now with up next / pin / top 3, zen tokens
 - [x] responsive: phone, tablet, desktop
-- [x] old desk reachable from the You menu (`/` now opens the new app; `/home.html` is the old desk)
+- [x] `/` opens the new app
 
 ## phase 3, fronts and people
 - [x] new front bar (own it, outcome + date, moved in 14 days, other people), proposals, cap 10
@@ -31,6 +31,6 @@ branch: `claude/great-mayer-9tdjbs`. each phase lands as its own commits.
 ## still to do (needs Miten's go-ahead or a Mac)
 
 - [ ] verify on the Mac: `swift build`, then use the new app for a week (this branch was type-checked on Linux, not built or run)
-- [ ] retire the old desk: move settings (basic / advanced, debug views to a diagnostics page), model, coach notes, archive, weekly review and post-meeting capture into the new app, then remove `home.html`
-- [ ] post-meeting capture: send captured follow-ups to the suggested tray
-- [ ] learn from dismissed suggestions and tag corrections (signals are stored; nothing reads them yet)
+- [x] retire the old desk: settings (basic, with advanced and diagnostics folded away), your model, coach notes, archive, weekly review, conversations, live scheduling, closure confirmations and first-run setup moved into the new app; `home.html` removed
+- [x] post-meeting capture: the capture sheet is in the new app; follow-ups are split by the model and land in the suggested tray
+- [x] learn from dismissed suggestions and tag corrections (TodoLearning: front and person corrections, hiding what you keep dismissing, tray order, extractor corrections)

@@ -7,6 +7,6 @@ start here before changing the user interface.
 3. `MOCK.md` — links to the interactive mock and the spec doc, plus the visual tokens.
 4. `ROADMAP.md` — phases and checklist; tick items as they land.
 
-rules: no direction changes without Miten's approval; the new interface is `Sources/GUI/Resources/app.html`, the old desk `home.html` stays until phase 4.
+rules: no direction changes without Miten's approval; the interface is `Sources/GUI/Resources/app.html` (first-run setup: `setup.html`); the old desk `home.html` was retired on 2026-11-05.
 
 verifying Swift changes without a Mac: `tools/linux-typecheck/` type-checks the whole package on Linux.

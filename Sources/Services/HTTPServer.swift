@@ -295,25 +295,15 @@ class HTTPServer {
             }
 
             // Allow web UI without authentication
-            if request.path == "/home.html" {
-                let response = handleNotionUI()
-                try await client.send(response)
-                return
-            }
-            if request.path == "/" || request.path == "/index.html",
-               let html = HotReloadManager.shared.getWebFile("app.html") {
-                let response = HTTPResponse(statusCode: 200, headers: ["Content-Type": "text/html; charset=utf-8"], htmlBody: html)
-                try await client.send(response)
-                return
-            }
-            if request.path == "/" || request.path == "/index.html" {
+            // The app. "/home.html" was the old desk; old bookmarks and the installed PWA land here too.
+            if request.path == "/" || request.path == "/index.html" || request.path == "/home.html" {
                 let response = handleNotionUI()
                 try await client.send(response)
                 return
             }
 
             // Serve the new app shell. Only named pages are served without a session: the shell itself
-            // holds no data and logs in like home.html. Prototypes and anything else are no longer
+            // holds no data and logs in itself. Prototypes and anything else are no longer
             // served unauthenticated (the review found prototype-walk.html open to anyone on the network).
             if Self.publicPages.contains(request.path) {
                 let filename = request.path == "/app" ? "app.html" : String(request.path.dropFirst())
@@ -663,7 +653,7 @@ class HTTPServer {
     }
 
     /// HTML pages served without a session (each logs in itself).
-    static let publicPages: Set<String> = ["/app.html", "/app"]
+    static let publicPages: Set<String> = ["/app.html", "/app", "/setup.html"]
 
     private func route(_ request: HTTPRequest) async -> HTTPResponse {
         if request.path.hasPrefix("/api/v2/") { return await routeRewire(request) }
@@ -1924,7 +1914,7 @@ class HTTPServer {
 
     private func handleNotionUI() -> HTTPResponse {
         // Use HotReloadManager for hot-reloadable web files
-        if let html = HotReloadManager.shared.getWebFile("home.html") {
+        if let html = HotReloadManager.shared.getWebFile("app.html") {
             return HTTPResponse(
                 statusCode: 200,
                 headers: ["Content-Type": "text/html; charset=utf-8"],
@@ -3228,7 +3218,7 @@ class HTTPServer {
         var customTitle = "Coach Alfred"
         var customBody = "Push notifications are working. You'll receive coaching insights here."
         var customTag = "test"
-        var customUrl = "/home.html"
+        var customUrl = "/"
         var customType = "test"
         var customActions: [WebPushService.PushPayload.PushAction] = [
             WebPushService.PushPayload.PushAction(action: "open", title: "Open Alfred")
@@ -4772,6 +4762,15 @@ The Commitment Check feature requires a properly configured Notion database.
                 statusCode: 400,
                 body: ["error": "Missing newPasscode in request body"]
             )
+        }
+
+        // The current passcode must be given and must match: a session token alone is not enough to
+        // change the key that guards everything (the old handler never checked it).
+        guard let current = json["currentPasscode"] as? String, current == self.passcode else {
+            return HTTPResponse(statusCode: 403, body: ["error": "Your current passcode is not right"])
+        }
+        guard newPasscode.count >= 8 else {
+            return HTTPResponse(statusCode: 400, body: ["error": "Use at least 8 characters"])
         }
 
         // Validate new passcode
@@ -13919,6 +13918,7 @@ extension HTTPServer {
             let r = TodoStore.shared.upsert(title: title, status: .open, due: due, frontId: frontId, frontName: frontName,
                                             person: v2Param(request, "person"), source: "capture",
                                             sourceRef: "capture:" + UUID().uuidString, sourceNote: "Added by you")
+            if let t = TodoStore.shared.get(r.id) { TodoLearning.createdWithFront(t) }
             return ok(["ok": true, "id": r.id, "receipt": "Added to your list" + (frontName.map { " · tagged \($0)" } ?? "")])
 
         case ("POST", "/api/v2/todos/update"):
@@ -13932,7 +13932,10 @@ extension HTTPServer {
                 f["front_id"] = id ?? NSNull()
                 f["front_name"] = id.flatMap { i in FrontService.activeThemes().first { $0.id == i } }.map { FrontService.shortName($0.name) } ?? NSNull()
             }
-            return ok(["ok": TodoStore.shared.update(id, f)])
+            let before = TodoStore.shared.get(id)
+            let saved = TodoStore.shared.update(id, f)
+            if let b = before, let a = TodoStore.shared.get(id) { TodoLearning.edited(before: b, after: a) }
+            return ok(["ok": saved])
 
         case ("POST", "/api/v2/todos/done"):
             guard let id = v2Param(request, "id") else { return bad("id required") }
@@ -14084,6 +14087,40 @@ extension HTTPServer {
             } catch {
                 return ok(["ok": false, "error": "cap", "message": "Keep at most \(FrontService.cap)."])
             }
+
+        // ── post-meeting capture → the suggested tray ──
+        case ("GET", "/api/v2/capture/pending"):
+            if let p = CoachingPushService.shared.pendingCapture, Date().timeIntervalSince(p.createdAt) < 30 * 60 {
+                return ok(["pending": true, "meeting_id": p.meetingId, "meeting_title": p.meetingTitle])
+            }
+            return ok(["pending": false])
+
+        case ("POST", "/api/v2/capture"):
+            guard let text = v2Param(request, "text") else { return bad("text required") }
+            let title = v2Param(request, "meeting_title") ?? "your meeting"
+            let meetingId = v2Param(request, "meeting_id") ?? UUID().uuidString
+            CoachingPushService.shared.clearPendingCapture()
+            let attendees = (await rewireSchedules()).first?.events.first { $0.id == meetingId }?.attendees.compactMap { $0.name } ?? []
+            let items = await MeetingCapture.followUps(from: text, meetingTitle: title, attendees: attendees,
+                                                       ai: getConfig().map { ClaudeAIService(config: $0.ai) })
+            var added = 0
+            for (i, item) in items.enumerated() {
+                let r = TodoService.suggest(title: item.title, person: item.person, due: item.due, source: "meeting",
+                                            sourceRef: "meeting:\(meetingId):\(i):" + SelfModelSynthesizer.stableId("c", item.title),
+                                            sourceNote: "From \(title)")
+                if r.created && TodoStore.shared.get(r.id)?.status == .suggested { added += 1 }
+            }
+            let receipt = added == 0 ? "Saved. Nothing new to add." : "\(added) follow-up\(added == 1 ? "" : "s") added to your suggestions"
+            return ok(["ok": true, "added": added, "receipt": receipt])
+
+        // ── archive: fronts you marked done or paused, and topics ──
+        case ("GET", "/api/v2/fronts/archive"):
+            let rows = FrontService.themes().filter { ["done", "paused"].contains($0.meta["front_state"] ?? "") || $0.verdict == "done" }
+                .map { t -> [String: Any] in
+                    ["id": t.id, "name": t.name, "state": t.meta["front_state"] ?? "done",
+                     "date_label": FrontService.dateLabel(t.meta["front_date"] ?? ""), "outcome": t.meta["outcome"] ?? ""]
+                }
+            return ok(["fronts": rows])
 
         // ── people ──
         case ("GET", "/api/v2/people"):

@@ -900,6 +900,7 @@ class ClaudeAIService {
           "due_date": "YYYY-MM-DD" or null
         }
 
+        \(CorrectionTracker.shared.getCorrectionsForPrompt(itemType: "Todo", limit: 5).isEmpty ? "" : "The user dismissed these as not real to-dos; do not extract similar ones:\n" + CorrectionTracker.shared.getCorrectionsForPrompt(itemType: "Todo", limit: 5) + "\n")
         IMPORTANT: Messages sent to yourself are almost ALWAYS todo items or reminders.
         Be aggressive about classifying them as todos. If it looks like something to do or remember, it IS a todo.
 
