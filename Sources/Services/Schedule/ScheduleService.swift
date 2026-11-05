@@ -605,6 +605,8 @@ final class ScheduleService {
                     if t <= wm { continue }
                     if t > newWM { newWM = t }
                     if isOwnPrompt(msg.text) { continue }   // skip Alfred's own prompts
+                    // to-do commands: "todo …", "done …", "now" (docs/rewire/SPEC.md, "channels")
+                    if let reply = TodoSelfChat.handle(msg.text) { recordPrompt(reply); await sendBridge(selfJID, reply); continue }
                     if let body = directBlockBody(msg.text) { await runDirectBlock(body); continue }   // "@schedule block …"
                     _ = await m.handleSelfChat(text: msg.text, msgID: "poll_\(Int(t.timeIntervalSince1970))", ts: t)
                 }

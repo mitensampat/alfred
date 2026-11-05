@@ -35,12 +35,30 @@ class CadenceService {
                 print("  + Injected \(added) new built-in cadence(s)")
                 try? save()
             }
+            applyRewireChannelDefaults()
         } else {
             // First run: migrate from old config
             cadences = CadenceService.migrateFromOldConfig()
             print("📦 Migrated \(cadences.count) built-in cadences from legacy config")
             try? save()
         }
+    }
+
+    /// One-time move of an existing install to the rewire's channel defaults (docs/rewire/SPEC.md,
+    /// "channels"): no macOS banner on success (failures still notify), no 15:00 attention email, no
+    /// Thursday learning-digest email. Runs once; anything the user changes afterwards sticks.
+    private func applyRewireChannelDefaults() {
+        let marker = (filePath as NSString).deletingLastPathComponent + "/rewire_channels_v1"
+        guard !FileManager.default.fileExists(atPath: marker) else { return }
+        for i in cadences.indices where cadences[i].isBuiltIn {
+            cadences[i].notifyOnSuccess = false
+            if ["builtin-attention-check", "builtin-pattern-learning"].contains(cadences[i].id) {
+                cadences[i].emailOnSuccess = false
+            }
+        }
+        try? save()
+        FileManager.default.createFile(atPath: marker, contents: Data(TodoStore.nowISO().utf8))
+        print("✓ Applied the rewire channel defaults to saved cadences")
     }
 
     // MARK: - CRUD
@@ -214,7 +232,7 @@ class CadenceService {
                 lastRunDate: lastRuns["briefing"],
                 lastRunTimestamp: lastRuns["briefing"],  // no precise timestamp in old state
                 catchUpWindowHours: 3,
-                notifyOnSuccess: true,
+                notifyOnSuccess: false,
                 emailOnSuccess: true
             ),
             Cadence(
@@ -230,7 +248,7 @@ class CadenceService {
                 lastRunDate: lastRuns["attention"],
                 lastRunTimestamp: lastRuns["attention"],
                 catchUpWindowHours: 3,
-                notifyOnSuccess: true,
+                notifyOnSuccess: false,
                 emailOnSuccess: false   // retired: the live Desk usurps the 3pm attention email (Step 6)
             ),
             Cadence(
@@ -250,7 +268,7 @@ class CadenceService {
                 lastRunDate: nil,
                 lastRunTimestamp: lastTimestamps["todoScan"],
                 catchUpWindowHours: 3,
-                notifyOnSuccess: true,
+                notifyOnSuccess: false,
                 emailOnSuccess: false
             ),
             Cadence(
@@ -266,7 +284,7 @@ class CadenceService {
                 lastRunDate: lastRuns["commitmentScan"],
                 lastRunTimestamp: lastTimestamps["commitmentScan"],
                 catchUpWindowHours: 3,
-                notifyOnSuccess: true,
+                notifyOnSuccess: false,
                 emailOnSuccess: false
             ),
             Cadence(
@@ -285,8 +303,8 @@ class CadenceService {
                 lastRunDate: lastRuns["patternLearn"],
                 lastRunTimestamp: lastTimestamps["patternLearn"],
                 catchUpWindowHours: 3,
-                notifyOnSuccess: true,
-                emailOnSuccess: true
+                notifyOnSuccess: false,
+                emailOnSuccess: false  // rewire: one weekly email (Sunday review)
             ),
             Cadence(
                 id: "builtin-group-analysis",
@@ -304,7 +322,7 @@ class CadenceService {
                 lastRunDate: lastRuns["groupAnalysis"],
                 lastRunTimestamp: lastTimestamps["groupAnalysis"],
                 catchUpWindowHours: 3,
-                notifyOnSuccess: true,
+                notifyOnSuccess: false,
                 emailOnSuccess: false
             ),
             Cadence(
@@ -320,7 +338,7 @@ class CadenceService {
                 lastRunDate: lastRuns["autoSummary"],
                 lastRunTimestamp: lastTimestamps["autoSummary"],
                 catchUpWindowHours: 3,
-                notifyOnSuccess: true,
+                notifyOnSuccess: false,
                 emailOnSuccess: true
             ),
             Cadence(
@@ -339,7 +357,7 @@ class CadenceService {
                 lastRunDate: lastRuns["weeklyReview"],
                 lastRunTimestamp: lastTimestamps["weeklyReview"],
                 catchUpWindowHours: 3,
-                notifyOnSuccess: true,
+                notifyOnSuccess: false,
                 emailOnSuccess: true
             ),
             Cadence(
@@ -387,7 +405,7 @@ class CadenceService {
                 lastRunDate: nil,
                 lastRunTimestamp: nil,
                 catchUpWindowHours: 3,
-                notifyOnSuccess: true,
+                notifyOnSuccess: false,
                 emailOnSuccess: false
             ),
             Cadence(
@@ -403,7 +421,7 @@ class CadenceService {
                 lastRunDate: nil,
                 lastRunTimestamp: nil,
                 catchUpWindowHours: 3,
-                notifyOnSuccess: true,
+                notifyOnSuccess: false,
                 emailOnSuccess: false
             ),
             Cadence(

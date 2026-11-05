@@ -86,6 +86,7 @@ class CoachingPushService {
         let todayStr = String(ISO8601DateFormatter().string(from: now).prefix(10))
         if let lastDate = morningNudgeSentDate, !lastDate.hasPrefix(todayStr) {
             postMeetingPushed.removeAll()
+            preMeetingPushed.removeAll()
         }
 
         // Morning nudge first (once per day, at briefing time) — gets priority over post-meeting
@@ -103,6 +104,9 @@ class CoachingPushService {
                 config: config, publicKey: publicKey, privateKey: privateKey, subject: subject
             )
         }
+
+        // Before a meeting: ~10 minutes ahead, opens its prep (docs/rewire/SPEC.md, "channels").
+        await checkPreMeeting(events: cachedEvents, now: now, publicKey: publicKey, privateKey: privateKey, subject: subject)
 
         // Evening nudge — "tomorrow, honestly" if tomorrow's calendar is heavy (fires ~9pm).
         await checkEveningNudge(
@@ -177,6 +181,38 @@ class CoachingPushService {
         PushBudgetService.shared.recordPush()
     }
 
+    // MARK: - Before a meeting
+
+    private var preMeetingPushed: Set<String> = []
+
+    private func checkPreMeeting(events: [CalendarEvent], now: Date, publicKey: String, privateKey: String, subject: String) async {
+        guard now.timeIntervalSince(lastPushSentAt) >= minPushIntervalSeconds else { return }
+        guard let event = events.first(where: { e in
+            let mins = e.startTime.timeIntervalSince(now) / 60
+            return !e.isAllDay && mins >= 8 && mins <= 12 && !preMeetingPushed.contains(e.id) && qualifiesForPush(e)
+        }) else { return }
+        guard PushBudgetService.shared.canPush() else { return }
+        preMeetingPushed.insert(event.id)
+        let who = event.attendees.first { !$0.isOrganizer }?.name
+        let owed = who.flatMap { w in
+            TodoStore.shared.openMine().first { ($0.person ?? "").lowercased().split(separator: " ").first == w.lowercased().split(separator: " ").first }
+        }
+        var body = "Starts in 10 minutes."
+        if let o = owed, let w = who { body += " Still open with \(w.split(separator: " ").first.map(String.init) ?? w): \(String(o.title.prefix(60)))." }
+        let payload = WebPushService.PushPayload(
+            title: String(event.title.prefix(50)),
+            body: body,
+            tag: "pre-meeting-\(String(event.id.prefix(12)))",
+            url: "/?open=prep#now",
+            type: "pre-meeting",
+            actions: [WebPushService.PushPayload.PushAction(action: "open", title: "Open prep")]
+        )
+        print("📱 [CoachingPush] Pre-meeting push for '\(event.title)'")
+        lastPushSentAt = Date()
+        await WebPushService.shared.sendToAll(payload, vapidPublicKey: publicKey, vapidPrivateKey: privateKey, vapidSubject: subject)
+        PushBudgetService.shared.recordPush()
+    }
+
     // MARK: - Morning Nudge
 
     private func checkMorningNudge(
@@ -204,11 +240,20 @@ class CoachingPushService {
         morningNudgeSentDate = todayStr
         saveNudgeState()
 
+        // Lead with the list (docs/rewire/SPEC.md, "channels"): "3 things today. First: …", opening the now tab.
+        let todaySchedule = DailySchedule(date: now, events: cachedEvents, totalMeetingTime: 0, freeSlots: [], externalMeetings: [])
+        let nowPayload = TodoService.now(schedules: [todaySchedule], userFirstName: "")
+        let topItems = (nowPayload["top"] as? [[String: Any]]) ?? []
+        let firstItem = ((nowPayload["pinned"] as? [String: Any]) ?? topItems.first)?["title"] as? String
+        let thingCount = topItems.count + ((nowPayload["more"] as? [[String: Any]]) ?? []).count + (nowPayload["pinned"] == nil ? 0 : 1)
+
         // Count today's meetings
         let meetingCount = cachedEvents.filter { !$0.isAllDay }.count
 
         let body: String
-        if meetingCount == 0 {
+        if let first = firstItem {
+            body = "\(thingCount) thing\(thingCount == 1 ? "" : "s") today. First: \(String(first.prefix(70)))."
+        } else if meetingCount == 0 {
             body = "Clear calendar today. Good day for deep work."
         } else {
             let nextMeeting = cachedEvents
@@ -229,7 +274,7 @@ class CoachingPushService {
             title: "Good morning",
             body: body,
             tag: "morning-nudge",
-            url: "/home.html",
+            url: "/",
             type: "morning",
             actions: [
                 WebPushService.PushPayload.PushAction(action: "open", title: "Open Alfred"),
@@ -394,7 +439,7 @@ class CoachingPushService {
         eveningNudgeSentDate = todayStr; saveNudgeState()
 
         let payload = WebPushService.PushPayload(
-            title: content.title, body: content.body, tag: "evening-nudge", url: "/home.html", type: "evening",
+            title: content.title, body: content.body, tag: "evening-nudge", url: "/", type: "evening",
             actions: [
                 WebPushService.PushPayload.PushAction(action: "open", title: "Open Alfred"),
                 WebPushService.PushPayload.PushAction(action: "dismiss", title: "Got it")

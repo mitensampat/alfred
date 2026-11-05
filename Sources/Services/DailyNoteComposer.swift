@@ -12,69 +12,63 @@ enum DailyNoteComposer {
         let dateStr = df.string(from: Date())
         var lines: [String] = []
 
-        // 1. Today's shape.
+        // The morning email is the now tab in words (docs/rewire/SPEC.md, "channels"): the up-next line,
+        // the top 3 from the same ranking, and at most one coach line. Same data as the app, so the two
+        // never disagree.
+        var schedules: [DailySchedule] = []
+        if let orch = orchestrator, let cfg = config {
+            for offset in 0..<2 {
+                guard let day = Calendar.current.date(byAdding: .day, value: offset, to: Date()) else { continue }
+                if let s = try? await orch.calendarServicePublic.fetchEventsFromAllCalendars(for: day, userSettings: cfg.user) {
+                    schedules.append(s)
+                }
+            }
+        }
+        let now = TodoService.now(schedules: schedules, userFirstName: name)
+
+        // 1. Today's shape (and the biggest open block worth protecting).
         let today = await calendarShape(orchestrator: orchestrator, dayOffset: 0)
         if today.count == 0 {
-            lines.append("Today's calendar is clear — a rare open day. Spend it on the one thing only you can move.")
+            lines.append("Today's calendar is clear. Spend it on the one thing only you can move.")
         } else {
             var l = "Today: \(today.count) meeting\(today.count == 1 ? "" : "s"), \(today.hoursStr) booked."
-            if let gap = today.biggestGap { l += " Biggest open block: \(gap.durStr) at \(gap.startStr) — protect it." }
+            if let gap = today.biggestGap { l += " Biggest open block: \(gap.durStr) at \(gap.startStr). Protect it." }
             lines.append(l)
         }
 
-        // 2. Who's waiting on you (top 3, oldest first).
-        let waiting = DeskService.buildPeople()
-            .filter { (($0["you_owe"] as? Int) ?? 0) > 0 }
-            .prefix(3)
-        if !waiting.isEmpty {
+        // 2. The pinned to-do, then the top 3.
+        let pinned = now["pinned"] as? [String: Any]
+        let top = (now["top"] as? [[String: Any]]) ?? []
+        func item(_ t: [String: Any]) -> String {
+            let who = (t["person"] as? String) ?? (t["front_name"] as? String)
+            let why = (t["why"] as? String) ?? ""
+            return "• " + (t["title"] as? String ?? "") + (who.map { " (\($0)" + (why.isEmpty ? ")" : ", \(why))") } ?? (why.isEmpty ? "" : " (\(why))"))
+        }
+        if let p = pinned {
             lines.append("")
-            lines.append("Waiting on you:")
-            for p in waiting {
-                let who = p["name"] as? String ?? ""
-                let owe = p["you_owe"] as? Int ?? 0
-                let age = p["oldest_age"] as? Int ?? 0
-                lines.append("• \(who) — \(age)d, \(owe) open")
-            }
+            lines.append("Pinned by you:")
+            lines.append(item(p))
+        }
+        if !top.isEmpty {
+            lines.append("")
+            lines.append("Top of your list:")
+            for t in top { lines.append(item(t)) }
+            let more = ((now["more"] as? [[String: Any]]) ?? []).count
+            if more > 0 { lines.append("…and \(more) more today.") }
+        } else if pinned == nil {
+            lines.append("")
+            lines.append("Nothing is waiting on you. You are clear.")
         }
 
-        // 3. Decide (top 1–2 hot/deciding fronts, with the one question).
-        let fronts = DeskService.buildFronts()
-        let toDecide = fronts.filter {
-            let stage = ($0["stage"] as? String ?? "").lowercased()
-            let temp = ($0["temperature"] as? String ?? "")
-            return (stage == "deciding" || temp == "hot") && !(($0["decision"] as? String ?? "").isEmpty)
-        }.prefix(2)
-        if !toDecide.isEmpty {
+        // 3. One coach line, only if a trigger fired.
+        if let coach = now["coach"] as? [String: Any], let text = coach["text"] as? String {
             lines.append("")
-            lines.append("Decide:")
-            for f in toDecide {
-                let short = shortName(f["name"] as? String ?? "")
-                let q = firstSentence(f["decision"] as? String ?? "", 110)
-                lines.append("• \(short): \(q)")
-            }
+            lines.append("Alfred noticed: " + text)
         }
-
-        // 4. Going quiet + a relationship to tend (the two deterministic coach signals).
-        let neglected = fronts
-            .filter { (($0["owned_by_you"] as? Bool) ?? true) && (($0["days_since"] as? Int) ?? 0) >= 14 }
-            .sorted { (($0["days_since"] as? Int) ?? 0) > (($1["days_since"] as? Int) ?? 0) }
-        if let f = neglected.first {
-            let d = f["days_since"] as? Int ?? 0
+        let suggested = (now["suggested_count"] as? Int) ?? 0
+        if suggested > 0 {
             lines.append("")
-            lines.append("Going quiet: \(shortName(f["name"] as? String ?? "")) — \(d)d untouched, yours to restart.")
-        }
-        let reliability = Dictionary(
-            TaskLifecycleTracker.shared.getStatsByCounterparty().map { ($0.name.lowercased(), $0) },
-            uniquingKeysWith: { a, _ in a })
-        if let c = DeskService.buildGoingCold(reliability: reliability, onDesk: Set()).first {
-            let who = c["name"] as? String ?? ""
-            lines.append("Tend: \(who) — \(firstSentence(c["reason"] as? String ?? "", 90))")
-        }
-
-        // 5. Tomorrow heads-up (only when heavy — reuses the evening-nudge logic).
-        if let ev = await CoachingPushService.shared.eveningNudgeContent(orchestrator: orchestrator) {
-            lines.append("")
-            lines.append(ev.body)
+            lines.append("\(suggested) suggested to-do\(suggested == 1 ? "" : "s") waiting for you in Alfred.")
         }
 
         let greeting = "Good morning, \(name). \(dateStr)."

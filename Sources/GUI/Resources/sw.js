@@ -2,7 +2,7 @@
 // Handles push notifications and offline caching for PWA experience.
 // Cache version is auto-bumped by the server — no manual update needed.
 
-const CACHE_NAME = 'alfred-v2.3.2-memory';
+const CACHE_NAME = 'alfred-v2.4.0-rewire';
 
 // Install: skip waiting to activate immediately
 self.addEventListener('install', function(event) {
@@ -70,7 +70,7 @@ self.addEventListener('push', function(event) {
         tag: data.tag || 'alfred-default',
         renotify: true,
         data: {
-            url: data.url || '/home.html',
+            url: data.url || '/',
             type: data.type || null
         }
     };
@@ -87,32 +87,36 @@ self.addEventListener('notificationclick', function(event) {
     event.notification.close();
 
     var notifData = event.notification.data || {};
-    var targetUrl = notifData.url || '/home.html';
+    var targetUrl = notifData.url || '/';
     var notifType = notifData.type || null;
+
+    // The new app (/) and the old desk (/home.html) are different pages: send each notification to
+    // the page its url names. Query parameters go before any #hash.
+    var wantsDesk = targetUrl.indexOf('/home.html') !== -1;
+    function withAction(u) {
+        if (!notifType) return u;
+        var hashAt = u.indexOf('#'), base = hashAt === -1 ? u : u.slice(0, hashAt), hash = hashAt === -1 ? '' : u.slice(hashAt);
+        return base + (base.indexOf('?') === -1 ? '?' : '&') + 'notify_action=' + encodeURIComponent(notifType) + hash;
+    }
 
     event.waitUntil(
         clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
-            // Try to find an existing Alfred window and focus it
             for (var i = 0; i < clientList.length; i++) {
                 var client = clientList[i];
-                if (client.url.indexOf('/home.html') !== -1) {
-                    // Found existing window — focus it and tell it about the notification
+                var isDesk = client.url.indexOf('/home.html') !== -1;
+                if (wantsDesk && isDesk) {
+                    // Old desk: focus it and let it handle the notification (post-meeting capture lives there).
                     return client.focus().then(function(focusedClient) {
-                        focusedClient.postMessage({
-                            type: 'notification-click',
-                            notificationType: notifType,
-                            url: targetUrl
-                        });
+                        focusedClient.postMessage({ type: 'notification-click', notificationType: notifType, url: targetUrl });
                         return focusedClient;
                     });
                 }
+                if (!wantsDesk && !isDesk && 'navigate' in client) {
+                    // The app: focus it and take it to the notification's view (e.g. the meeting prep).
+                    return client.focus().then(function(focusedClient) { return focusedClient.navigate(withAction(targetUrl)); });
+                }
             }
-            // No existing window — open a new one, preserving notification intent in URL
-            var openUrl = targetUrl;
-            if (notifType) {
-                openUrl += (openUrl.indexOf('?') === -1 ? '?' : '&') + 'notify_action=' + encodeURIComponent(notifType);
-            }
-            return clients.openWindow(openUrl);
+            return clients.openWindow(withAction(targetUrl));
         })
     );
 });

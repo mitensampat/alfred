@@ -480,6 +480,8 @@ class MenuBarController: NSObject, NSMenuDelegate {
             } catch {
                 logToFile("❌ [Cadence] \(cadence.name) failed: \(error)", path: logPath)
                 CadenceService.shared.markRunFailure(id: cadence.id, cooldownMinutes: 30, errorMessage: "\(error)")
+                // The one banner that needs you (docs/rewire/SPEC.md, "channels"): a routine that failed.
+                showNotification(title: "Alfred: \(cadence.name) failed", body: String("\(error)".prefix(140)))
             }
             // Release in-flight guard after completion (success or failure)
             inFlightCadenceIds.remove(cadence.id)

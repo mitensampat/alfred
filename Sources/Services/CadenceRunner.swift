@@ -383,7 +383,9 @@ class CadenceRunner {
             throw CadenceError.serviceUnavailable("BriefingOrchestrator")
         }
         let emailTo = cadence.emailOnSuccess ? loadEmailTo() : nil
-        let report = try await orchestrator.generateAttentionDefenseAlert(sendNotifications: true, toAddress: emailTo)
+        // Only send when the cadence's email flag is on: a nil address falls back to the default
+        // recipient, so `toAddress: nil` alone never stopped the 15:00 email.
+        let report = try await orchestrator.generateAttentionDefenseAlert(sendNotifications: cadence.emailOnSuccess, toAddress: emailTo)
         return "Attention check: \(report.criticalTasks.count) critical tasks, \(report.recommendations.count) recommendations"
     }
 
@@ -423,8 +425,9 @@ class CadenceRunner {
         // 1. Compute v2 learned patterns (includes v1 pattern computation)
         await WorkflowLearningService.shared.computeLearnedPatterns(config: config)
 
-        // 2. Generate and email learning digest
-        if let digest = WorkflowLearningService.shared.generateLearningDigest() {
+        // 2. Generate and email learning digest — only if this cadence emails (the rewire keeps one
+        //    weekly email, the Sunday review; the Thursday digest is off by default).
+        if cadence.emailOnSuccess, let digest = WorkflowLearningService.shared.generateLearningDigest() {
             let notifService = NotificationService(config: config.notifications)
             try await notifService.sendLearningDigest(subject: digest.subject, body: digest.body)
         }

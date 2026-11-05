@@ -303,7 +303,9 @@ function start() {
   setInterval(() => { if (!document.hidden && !S.sheet) refresh(); }, 120000);
   setInterval(loadStatus, 120000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
-  if (new URLSearchParams(location.search).get('open') === 'prep') setTimeout(openPrep, 600);
+  if (new URLSearchParams(location.search).get('open') === 'prep') setTimeout(openPrep, 900);
+  // Push notifications are delivered through the service worker; subscribing stays in settings.
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=2.4.0', { updateViaCache: 'none' }).catch(() => {});
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -821,7 +823,11 @@ async function submitMigration() {
 
 // ── a person ──
 async function openPerson(name) { if (!name) return; openSheet('person', name, null); S.sheet.data = await api('/api/v2/people/person?name=' + encodeURIComponent(name)); renderSheet(); }
-function openPrep() { const u = S.now && S.now.up_next; if (u && u.person) openPerson(u.person); }
+async function openPrep() {
+  if (!S.now) await load('now');
+  const u = S.now && S.now.up_next;
+  if (u && u.person) openPerson(u.person); else toast('No meeting in the next hour.');
+}
 function sheetPerson(s) {
   const p = s.data; if (!p) return '<div class="loading">Opening…</div>';
   const owe = (p.owe || []).map(t => `<div style="display:flex;align-items:center;gap:6px;min-height:56px;border-bottom:1px solid var(--hair2)"><button type="button" class="check" style="margin-left:-10px" aria-label="Mark done" onclick="done('${esc(t.id)}')"><span></span></button><button type="button" class="rowmain" onclick="openTodo('${esc(t.id)}')"><div class="t">${esc(t.title)}</div>${t.front_name ? `<div class="label" style="font-size:12px">${esc(t.front_name)}</div>` : ''}</button>${t.thread_id ? `<button type="button" class="btn outline" style="height:34px;padding:0 12px" onclick="nudge('${esc(t.id)}','Hi ${esc(firstName(p.name))}, ')">Reply</button>` : ''}</div>`).join('');

@@ -23,7 +23,14 @@ branch: `claude/great-mayer-9tdjbs`. each phase lands as its own commits.
 
 ## phase 4, coaching and channels
 - [x] coach triggers (5), 1 on screen, 2 a day, 7-day dismiss memory
-- [ ] morning email = moment line + top 3; 15:00 email off; one Sunday weekly review
-- [ ] push opens now; before-meeting push opens prep
-- [ ] WhatsApp self-chat: `todo …`, `done …`, `now`
-- [ ] macOS banners off by default (failures only)
+- [x] morning email = day shape + pinned + top 3 + one coach line; 15:00 attention email off (it sent even with its flag off); Thursday digest email off, so the Sunday review is the one weekly email
+- [x] morning push leads with the first to-do and opens now; new push 10 minutes before a meeting opens its prep; evening push opens now; the post-meeting capture push still opens the old desk, where capture lives
+- [x] WhatsApp self-chat: `todo …`, `done …`, `now`
+- [x] macOS banners off by default (failures only)
+
+## still to do (needs Miten's go-ahead or a Mac)
+
+- [ ] verify on the Mac: `swift build`, then use the new app for a week (this branch was type-checked on Linux, not built or run)
+- [ ] retire the old desk: move settings (basic / advanced, debug views to a diagnostics page), model, coach notes, archive, weekly review and post-meeting capture into the new app, then remove `home.html`
+- [ ] post-meeting capture: send captured follow-ups to the suggested tray
+- [ ] learn from dismissed suggestions and tag corrections (signals are stored; nothing reads them yet)
