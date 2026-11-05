@@ -264,7 +264,9 @@ class HTTPServer {
             while true {
                 do {
                     print("⏰ Running scheduled task lifecycle scan...")
-                    if let orchestrator = await MainActor.run(body: { alfredService.orchestrator }) {
+                    // Read it directly: AlfredService is deliberately not @MainActor, and hopping to
+                    // the main actor from this background task is what stalled this scan 143 times.
+                    if let orchestrator = alfredService.orchestrator {
                         let notionService = orchestrator.notionServicePublic
                         let result = try await TaskLifecycleTracker.shared.scan(notionService: notionService)
                         print("✓ Scheduled scan complete: \(result.tasksScanned) tasks, \(result.changesDetected) changes")
@@ -13859,7 +13861,9 @@ extension HTTPServer {
     /// Start the Notion to-do mirror loop (called from start()).
     func startTodoMirror() {
         NotionTodoMirror.start(
-            notion: { [weak self] in await MainActor.run { self?.alfredService.orchestrator?.notionServicePublic } },
+            // No MainActor hop: AlfredService is not main-actor isolated, and hopping from this
+            // long-lived background task is what kept the mirror from ever running a cycle.
+            notion: { [weak self] in self?.alfredService.orchestrator?.notionServicePublic },
             importFrom: { [weak self] in
                 var ids: [String] = []
                 if let n = self?.getConfig()?.notion {
@@ -14152,9 +14156,26 @@ extension HTTPServer {
                                    "detail": stale ? "No new messages in over 2 days." : "Messages are not arriving.", "fix": "pair_whatsapp"])
                 }
             }
+            // The mirror must speak up when it is not working. Reporting only on a recorded error
+            // meant "never set up" and "never ran a single cycle" both showed a clean, silent OK —
+            // which is exactly how a mirror that had pushed nothing at all stayed invisible.
             let mirror = NotionTodoMirror.status()
+            let notionConfigured = alfredService.orchestrator?.notionServicePublic != nil
+            let pending = (mirror["pending"] as? Int) ?? 0
             if let err = mirror["error"] as? String, !err.isEmpty {
                 issues.append(["key": "notion", "title": "Notion to-do mirror is not syncing", "detail": err, "fix": "notion_mirror"])
+            } else if notionConfigured, mirror["database_id"] is NSNull {
+                issues.append(["key": "notion", "title": "Notion to-do mirror is not set up",
+                               "detail": pending > 0 ? "\(pending) to-do\(pending == 1 ? "" : "s") are not in Notion." : "No mirror database yet.",
+                               "fix": "notion_mirror"])
+            } else if pending > 0, let last = mirror["last_push"] as? String,
+                      let at = ISO8601DateFormatter().date(from: last), Date().timeIntervalSince(at) > 600 {
+                issues.append(["key": "notion", "title": "Notion to-do mirror is behind",
+                               "detail": "\(pending) to-do\(pending == 1 ? "" : "s") have not reached Notion since \(last).",
+                               "fix": "notion_mirror"])
+            } else if pending > 0, mirror["last_push"] is NSNull {
+                issues.append(["key": "notion", "title": "Notion to-do mirror has never pushed",
+                               "detail": "\(pending) to-do\(pending == 1 ? "" : "s") are waiting.", "fix": "notion_mirror"])
             }
             return ok(["ok": issues.isEmpty, "issues": issues, "notion_mirror": mirror])
 

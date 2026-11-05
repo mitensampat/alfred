@@ -20,12 +20,13 @@ enum NotionTodoMirror {
     struct Page { let id: String; let title: String; let due: String?; let status: String?; let lastEdited: String; let alfredId: String? }
 
     enum MirrorError: Error, CustomStringConvertible {
-        case noParent, http(Int, String), noDatabase
+        case noParent, http(Int, String), noDatabase, partial(Int, String)
         var description: String {
             switch self {
             case .noParent: return "Notion needs a parent page for the to-do mirror. Share a page with the integration and set it in Connections."
             case .http(let c, let b): return "Notion returned \(c): \(b.prefix(200))"
             case .noDatabase: return "The Notion to-do mirror is not set up yet."
+            case .partial(let n, let first): return "\(n) to-do\(n == 1 ? "" : "s") did not reach Notion. First: \(first)"
             }
         }
     }
@@ -69,6 +70,7 @@ enum NotionTodoMirror {
                 "last_push": s.meta("notion_last_push") as Any? ?? NSNull(),
                 "last_pull": s.meta("notion_last_pull") as Any? ?? NSNull(),
                 "error": err.isEmpty ? NSNull() : err as Any,
+                "pending": s.dirtyCount(),
                 "ok": err.isEmpty && s.meta("notion_mirror_db") != nil]
     }
 
@@ -111,24 +113,50 @@ enum NotionTodoMirror {
 
     // MARK: - Push
 
+    /// Push every dirty to-do. One row that Notion rejects must never stop the others: `dirty()` is
+    /// ordered oldest-first, so a single to-do whose page was deleted in Notion would otherwise throw
+    /// on every cycle and block the whole queue for ever.
     static func push(notion: NotionService) async throws {
         guard let dbId = TodoStore.shared.meta("notion_mirror_db") else { throw MirrorError.noDatabase }
         let store = TodoStore.shared
+        var failures: [String] = []
         for t in store.dirty() {
-            let props = properties(for: t)
-            if let pageId = t.notionPageId {
-                let res = try await request(notion: notion, "PATCH", "pages/\(pageId)", ["properties": props])
-                settle(t.id, res)
-            } else if t.status == .open {
-                let res = try await request(notion: notion, "POST", "pages", ["parent": ["database_id": dbId], "properties": props])
-                if let pid = res["id"] as? String { store.update(t.id, ["notion_page_id": pid], markDirty: false, touch: false) }
-                settle(t.id, res)
-            } else {
-                // Done or dropped before it ever reached Notion: nothing to mirror.
-                store.update(t.id, ["dirty": 0], markDirty: false, touch: false)
+            do {
+                try await pushOne(t, dbId: dbId, notion: notion)
+            } catch {
+                var code: Int? = nil
+                if let m = error as? MirrorError, case .http(let c, _) = m { code = c }
+                // Rate limits, Notion outages and network errors must stay dirty and retry.
+                let transient = code.map { $0 == 429 || (500..<600).contains($0) } ?? true
+                if (code == 404 || code == 410), t.notionPageId != nil {
+                    // The page is gone in Notion: forget it, and the next cycle re-creates it.
+                    store.update(t.id, ["notion_page_id": NSNull()], markDirty: false, touch: false)
+                } else if !transient {
+                    // A request Notion will never accept. Stop retrying it once a minute for ever.
+                    store.update(t.id, ["dirty": 0], markDirty: false, touch: false)
+                    store.appendHistory(t.id, ["at": TodoStore.nowISO(), "event": "Notion refused this to-do",
+                                               "error": String("\(error)".prefix(200))])
+                }
+                failures.append(String(t.title.prefix(40)) + ": " + String("\(error)".prefix(120)))
             }
         }
         store.setMeta("notion_last_push", TodoStore.nowISO())
+        if !failures.isEmpty { throw MirrorError.partial(failures.count, failures[0]) }
+    }
+
+    private static func pushOne(_ t: TodoStore.Todo, dbId: String, notion: NotionService) async throws {
+        let store = TodoStore.shared
+        let props = properties(for: t)
+        if let pageId = t.notionPageId {
+            settle(t.id, try await request(notion: notion, "PATCH", "pages/\(pageId)", ["properties": props]))
+        } else if t.status == .open {
+            let res = try await request(notion: notion, "POST", "pages", ["parent": ["database_id": dbId], "properties": props])
+            if let pid = res["id"] as? String { store.update(t.id, ["notion_page_id": pid], markDirty: false, touch: false) }
+            settle(t.id, res)
+        } else {
+            // Done or dropped before it ever reached Notion: nothing to mirror.
+            store.update(t.id, ["dirty": 0], markDirty: false, touch: false)
+        }
     }
 
     /// After a write, adopt Notion's own edit time so the next pull does not see our write as theirs.
@@ -211,13 +239,20 @@ enum NotionTodoMirror {
     static func page(from raw: [String: Any]) -> Page {
         let props = (raw["properties"] as? [String: Any]) ?? [:]
         var title = "", due: String? = nil, status: String? = nil, alfredId: String? = nil
+        var otherDate: String? = nil
         for (name, value) in props {
             guard let v = value as? [String: Any], let type = v["type"] as? String else { continue }
             switch type {
             case "title":
                 title = ((v["title"] as? [[String: Any]]) ?? []).compactMap { $0["plain_text"] as? String }.joined()
             case "date":
-                if due == nil, let d = v["date"] as? [String: Any], let s = d["start"] as? String { due = String(s.prefix(10)) }
+                // Prefer the property actually named "Due". Dictionary order is arbitrary, so an old
+                // task database with several date fields ("Created", "Reviewed", …) could otherwise
+                // import whichever one happened to come out first.
+                if let d = v["date"] as? [String: Any], let s = d["start"] as? String {
+                    if name.lowercased() == "due" { due = String(s.prefix(10)) }
+                    else if otherDate == nil { otherDate = String(s.prefix(10)) }
+                }
             case "select":
                 if name == "Status" { status = (v["select"] as? [String: Any])?["name"] as? String }
             case "status":
@@ -230,7 +265,8 @@ enum NotionTodoMirror {
             }
         }
         return Page(id: raw["id"] as? String ?? "", title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-                    due: due, status: status, lastEdited: raw["last_edited_time"] as? String ?? "", alfredId: alfredId)
+                    due: due ?? otherDate, status: status,
+                    lastEdited: raw["last_edited_time"] as? String ?? "", alfredId: alfredId)
     }
 
     /// Open pages from one of the OLD task databases (the one-time import).

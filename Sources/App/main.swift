@@ -2794,10 +2794,19 @@ struct AlfredApp {
         // Start NSApplication on the main thread — this blocks forever and drives the menu bar.
         // The HTTP server runs on its own threads and doesn't need MainActor.
         // We use withCheckedContinuation so the async context stays alive while NSApp.run() blocks.
+        //
+        // It must NOT be started from inside a DispatchQueue.main.async block. The main dispatch
+        // queue is serial, so a block that never returns stops every later block from running, and
+        // every `await MainActor.run` from a background task then suspends forever. That is not
+        // hypothetical: it silently ate 143 task-lifecycle scans (143 started, 0 finished, 0 failed)
+        // and kept the Notion to-do mirror from ever running a single cycle. A CFRunLoopPerformBlock
+        // callout is driven by the run loop itself rather than by the main queue's drain, so the
+        // queue stays free to deliver MainActor work while NSApp.run() spins its nested loop.
         await withCheckedContinuation { (_: CheckedContinuation<Void, Never>) in
-            DispatchQueue.main.async {
+            CFRunLoopPerformBlock(CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue) {
                 NSApplication.shared.run()
             }
+            CFRunLoopWakeUp(CFRunLoopGetMain())
         }
     }
 

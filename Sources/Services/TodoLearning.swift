@@ -17,14 +17,37 @@ import Foundation
 ///     commitment extraction prompt (and now the notes-to-self prompt too).
 enum TodoLearning {
 
+    // MARK: - Feedback reads
+    //
+    // canonicalPerson, learnedFront and hideReason each read the feedback log, and reconcile calls
+    // them once per commitment on every list read — so reading fresh each time made the now tab
+    // O(open commitments x feedback rows), growing with every correction the user ever makes.
+    // These memos make it one read per batch instead; every write below clears them.
+    private static var memo: [String: (at: Date, rows: [TodoStore.Feedback])] = [:]
+    private static let memoLock = NSLock()
+
+    static func invalidate() { memoLock.lock(); memo.removeAll(); memoLock.unlock() }
+
+    private static func log(_ events: [String], days: Int) -> [TodoStore.Feedback] {
+        let key = events.sorted().joined(separator: ",") + "|\(days)"
+        memoLock.lock()
+        if let m = memo[key], Date().timeIntervalSince(m.at) < 10 { memoLock.unlock(); return m.rows }
+        memoLock.unlock()
+        let rows = TodoStore.shared.feedback(events: events, days: days)
+        memoLock.lock(); memo[key] = (Date(), rows); memoLock.unlock()
+        return rows
+    }
+
     // MARK: - Hooks (called by TodoService / the API)
 
     static func accepted(_ t: TodoStore.Todo) {
         TodoStore.shared.recordFeedback("accepted", todo: t)
+        invalidate()
     }
 
     static func dismissed(_ t: TodoStore.Todo) {
         TodoStore.shared.recordFeedback("dismissed", todo: t)
+        invalidate()
         // Tell the extractor: this was not a real to-do.
         CorrectionTracker.shared.recordFalsePositive(
             itemType: t.source == "commitment" ? "Commitment" : "Todo",
@@ -39,6 +62,7 @@ enum TodoLearning {
         if (before.person ?? "") != (after.person ?? "") {
             TodoStore.shared.recordFeedback("person_set", todo: after, from: before.person, to: after.person)
         }
+        invalidate()
         if before.title != after.title, before.source != "capture" {
             CorrectionTracker.shared.recordEdit(itemType: before.source == "commitment" ? "Commitment" : "Todo",
                                                 originalTitle: before.title, editedTitle: after.title,
@@ -50,6 +74,7 @@ enum TodoLearning {
     static func createdWithFront(_ t: TodoStore.Todo) {
         guard t.frontId != nil else { return }
         TodoStore.shared.recordFeedback("front_set", todo: t, from: nil, to: t.frontId)
+        invalidate()
     }
 
     // MARK: - 1. Fronts
@@ -68,7 +93,7 @@ enum TodoLearning {
         var votes: [String: Double] = [:]
         let w = words(title)
         guard !w.isEmpty else { return nil }
-        for f in TodoStore.shared.feedback(events: ["front_set"], days: 180) {
+        for f in log(["front_set"], days: 180) {
             let fw = words(f.title ?? "")
             let shared = Double(w.intersection(fw).count)
             guard shared > 0 else { continue }
@@ -87,7 +112,7 @@ enum TodoLearning {
     static func canonicalPerson(_ name: String?) -> String? {
         guard let n = name?.trimmingCharacters(in: .whitespaces), !n.isEmpty else { return name }
         let key = n.lowercased()
-        for f in TodoStore.shared.feedback(events: ["person_set"], days: 365) {
+        for f in log(["person_set"], days: 365) {
             if let from = f.from?.lowercased(), from == key, let to = f.to, !to.isEmpty { return to }
         }
         return n
@@ -97,15 +122,23 @@ enum TodoLearning {
 
     /// Why a new suggestion should be hidden, or nil to show it.
     static func hideReason(title: String, person: String?, source: String) -> String? {
-        let fb = TodoStore.shared.feedback(events: ["dismissed", "accepted"], days: 90)
+        let fb = log(["dismissed", "accepted"], days: 90)
         let w = words(title)
-        // a) Close match to something dismissed before (and never accepted since).
+        // a) Close match to something dismissed before (and never accepted since). The "since" half
+        //    was documented but not implemented, so a single dismissal buried every similar
+        //    suggestion for ever, even after the user accepted the same kind of thing again.
         if w.count >= 2 {
+            let accepted = fb.filter { $0.event == "accepted" }
+            func similar(_ other: String?) -> Bool {
+                let ow = words(other ?? "")
+                guard !ow.isEmpty else { return false }
+                return Double(w.intersection(ow).count) / Double(max(w.count, ow.count)) >= 0.7
+            }
             for f in fb where f.event == "dismissed" {
-                let fw = words(f.title ?? "")
-                guard !fw.isEmpty else { continue }
-                let overlap = Double(w.intersection(fw).count) / Double(max(w.count, fw.count))
-                if overlap >= 0.7 { return "Like one you dismissed: \"\(f.title ?? "")\"" }
+                guard similar(f.title) else { continue }
+                // One later acceptance of a similar item means they changed their mind: show it.
+                if accepted.contains(where: { $0.at > f.at && similar($0.title) }) { continue }
+                return "Like one you dismissed: \"\(f.title ?? "")\""
             }
         }
         // b) A person whose suggestions you keep dismissing: 3+ dismissed, none accepted, in 90 days.
@@ -129,7 +162,7 @@ enum TodoLearning {
 
     /// Predicted chance the user accepts this suggestion, from past decisions (Laplace-smoothed).
     static func acceptance(source: String, person: String?) -> Double {
-        let fb = TodoStore.shared.feedback(events: ["dismissed", "accepted"], days: 120)
+        let fb = log(["dismissed", "accepted"], days: 120)
         func rate(_ rows: [TodoStore.Feedback]) -> Double {
             let a = Double(rows.filter { $0.event == "accepted" }.count)
             return (a + 1) / (Double(rows.count) + 2)
@@ -146,7 +179,7 @@ enum TodoLearning {
 
     /// What Alfred has learned, in plain words (for the to-dos tab and settings).
     static func summary() -> [String: Any] {
-        let fb = TodoStore.shared.feedback(events: ["dismissed", "accepted", "front_set", "person_set"], days: 120)
+        let fb = log(["dismissed", "accepted", "front_set", "person_set"], days: 120)
         let acc = fb.filter { $0.event == "accepted" }.count
         let dis = fb.filter { $0.event == "dismissed" }.count
         return ["accepted": acc, "dismissed": dis,

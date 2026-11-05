@@ -86,19 +86,29 @@ enum TodoService {
     }
 
     /// One-time import of the old Notion task databases (open items only) as open to-dos.
+    /// Runs only once — so it must not record success after a failure. A Notion outage on the very
+    /// first run used to mark the import done anyway, silently skipping the user's existing tasks
+    /// for good. The marker is written only when every configured database was actually read.
     static func importNotionTasks(notion: NotionService, databaseIds: [String]) async -> Int {
         let store = TodoStore.shared
         guard store.meta("notion_imported") == nil else { return 0 }
+        let ids = databaseIds.filter { !$0.isEmpty }
+        guard !ids.isEmpty else { return 0 }   // nothing configured yet: try again next cycle
         var n = 0
-        for dbId in databaseIds where !dbId.isEmpty {
-            guard let pages = try? await NotionTodoMirror.queryOpenPages(notion: notion, databaseId: dbId) else { continue }
+        var allRead = true
+        for dbId in ids {
+            guard let pages = try? await NotionTodoMirror.queryOpenPages(notion: notion, databaseId: dbId) else {
+                print("⚠️ Notion import: could not read database \(dbId); will retry")
+                allRead = false
+                continue
+            }
             for p in pages {
                 let r = store.upsert(title: p.title, status: .open, due: p.due, source: "notion_import",
                                      sourceRef: p.id, sourceNote: "Imported from Notion")
                 if r.created { n += 1 }
             }
         }
-        store.setMeta("notion_imported", TodoStore.nowISO())
+        if allRead { store.setMeta("notion_imported", TodoStore.nowISO()) }
         return n
     }
 

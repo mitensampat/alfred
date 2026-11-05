@@ -326,6 +326,16 @@ function start() {
   renderNav(); go(S.tab); loadStatus();
   if (PAGE_TITLES[want]) openPage(want);
   if (want === 'wa') openWa();
+  // A notification that lands on an already-open window arrives as a hash change (sw.js calls
+  // client.navigate), and so does the back button. Both are same-document navigations, so without
+  // this the URL changes and the screen does not. go() uses replaceState, which fires no event here.
+  window.addEventListener('hashchange', () => {
+    const h = (location.hash || '').replace('#', '');
+    if (!h) return;
+    if (PAGE_TITLES[h]) { if (S.page !== h) openPage(h); return; }
+    if (h === 'wa') { openWa(); return; }
+    if (['now','todos','fronts','people'].includes(h) && (S.tab !== h || S.page)) go(h);
+  });
   const action = new URLSearchParams(location.search).get('notify_action');
   setTimeout(() => checkCapture(action === 'post-meeting'), action === 'post-meeting' ? 500 : 2000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(() => checkCapture(false), 500); });

@@ -232,6 +232,16 @@ final class TodoStore {
         all(where: "dirty = 1 AND status IN ('open', 'done', 'dismissed') AND kind = 'mine'", order: "updated_at ASC", limit: 50)
     }
 
+    /// How many to-dos are waiting to reach Notion (uncapped, unlike `dirty()`).
+    func dirtyCount() -> Int {
+        lock.lock(); defer { lock.unlock() }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        let sql = "SELECT COUNT(*) FROM todos WHERE dirty = 1 AND status IN ('open', 'done', 'dismissed') AND kind = 'mine'"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 0 }
+        return sqlite3_step(stmt) == SQLITE_ROW ? Int(sqlite3_column_int64(stmt, 0)) : 0
+    }
+
     // MARK: - Writes
 
     /// Normalised key used to recognise the same promise from several sources.
