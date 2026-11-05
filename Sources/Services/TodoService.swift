@@ -220,7 +220,9 @@ enum TodoService {
     }
 
     /// The now tab: up next (Alfred's line or the pinned to-do), top 3, the rest of today, coach line.
-    static func now(schedules: [DailySchedule], userFirstName: String) -> [String: Any] {
+    /// `coach: false` for callers that will not show the coach line (push, WhatsApp): evaluating it
+    /// counts against the two-a-day budget.
+    static func now(schedules: [DailySchedule], userFirstName: String, coach: Bool = true) -> [String: Any] {
         reconcileCommitments()
         let ctx = context(schedules: schedules)
         let all = TodoStore.shared.openMine()
@@ -240,7 +242,7 @@ enum TodoService {
         ]
         if let p = pinned { out["pinned"] = card(p, ctx: ctx) }
         out["up_next"] = upNext(top: top, ctx: ctx, schedules: schedules)
-        out["coach"] = CoachTriggerService.current(todos: TodoStore.shared.all(), schedules: schedules) ?? NSNull()
+        out["coach"] = coach ? (CoachTriggerService.current(todos: TodoStore.shared.all(), schedules: schedules) ?? NSNull()) : NSNull()
         return out
     }
 

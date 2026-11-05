@@ -242,7 +242,7 @@ class CoachingPushService {
 
         // Lead with the list (docs/rewire/SPEC.md, "channels"): "3 things today. First: …", opening the now tab.
         let todaySchedule = DailySchedule(date: now, events: cachedEvents, totalMeetingTime: 0, freeSlots: [], externalMeetings: [])
-        let nowPayload = TodoService.now(schedules: [todaySchedule], userFirstName: "")
+        let nowPayload = TodoService.now(schedules: [todaySchedule], userFirstName: "", coach: false)
         let topItems = (nowPayload["top"] as? [[String: Any]]) ?? []
         let firstItem = ((nowPayload["pinned"] as? [String: Any]) ?? topItems.first)?["title"] as? String
         let thingCount = topItems.count + ((nowPayload["more"] as? [[String: Any]]) ?? []).count + (nowPayload["pinned"] == nil ? 0 : 1)

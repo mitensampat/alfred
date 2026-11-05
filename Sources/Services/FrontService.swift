@@ -26,7 +26,22 @@ enum FrontService {
 
     // MARK: - Reads
 
+    /// Themes are read several times per request (reconcile, ranking, cards); cache them briefly.
+    /// Every write through setMeta clears the cache, so a change shows at once.
+    private static var cache: (at: Date, rows: [ThemeRow])?
+    private static let cacheLock = NSLock()
+    static func invalidate() { cacheLock.lock(); cache = nil; cacheLock.unlock() }
+
     static func themes() -> [ThemeRow] {
+        cacheLock.lock()
+        if let c = cache, Date().timeIntervalSince(c.at) < 30 { cacheLock.unlock(); return c.rows }
+        cacheLock.unlock()
+        let rows = loadThemes()
+        cacheLock.lock(); cache = (Date(), rows); cacheLock.unlock()
+        return rows
+    }
+
+    private static func loadThemes() -> [ThemeRow] {
         let facets = SelfModelStore.shared.getFacets(kind: "theme")
         let states = ReflectionStore.shared.getThemesWithState(days: 120, limit: 400)
         var stateById: [String: [String: Any]] = [:]
@@ -194,6 +209,7 @@ enum FrontService {
             if let v = v { meta[k] = v } else { meta.removeValue(forKey: k) }
         }
         let now = ISO8601DateFormatter().string(from: Date())
+        defer { invalidate() }
         return store.upsertFacet(
             id: id, kind: "theme",
             statement: (existing?["statement"] as? String) ?? fallbackName ?? "",

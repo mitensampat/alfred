@@ -14,7 +14,7 @@ enum TodoSelfChat {
         let lower = text.lowercased()
 
         if lower == "now" || lower == "@now" {
-            let now = TodoService.now(schedules: [], userFirstName: "")
+            let now = TodoService.now(schedules: [], userFirstName: "", coach: false)
             var items: [[String: Any]] = []
             if let p = now["pinned"] as? [String: Any] { items.append(p) }
             items += (now["top"] as? [[String: Any]]) ?? []
