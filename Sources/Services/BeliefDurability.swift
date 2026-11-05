@@ -84,14 +84,20 @@ enum BeliefDurability: String {
 
         let decided = await DecisionEngine.decide(
             "belief-durability", items: needModel.map { DecisionEngine.Item(key: $0, text: $0) })
+        // The decision file's own Fallback, so editing it actually changes what an unclassified
+        // statement becomes. Only a belief class is honoured: a fallback of fact or action would
+        // archive everything the model skipped, and nothing should leave the self-model untouched.
+        let fallback = DecisionEngine.fallbackLabel("belief-durability")
+            .flatMap(BeliefDurability.init(rawValue:))
+            .flatMap { $0.isBelief ? $0 : nil } ?? .durable
         for s in needModel {
             guard let d = decided[s], let cls = BeliefDurability(rawValue: d.label) else {
-                out[s] = .durable
+                out[s] = fallback
                 continue
             }
             // fact/action get archived out of the active set, so only take that call when the
             // model is confident enough to act; a hedged "fact" stays a belief.
-            out[s] = (cls.isBelief || d.tier == .act) ? cls : .durable
+            out[s] = (cls.isBelief || d.tier == .act) ? cls : fallback
         }
         return out
     }

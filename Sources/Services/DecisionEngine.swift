@@ -53,8 +53,14 @@ enum DecisionEngine {
                 maxTokens: 64 + 48 * chunk.count, useModel: def.model)
             var out: [String: DecisionResult] = [:]
             for row in (obj["decisions"] as? [[String: Any]]) ?? [] {
+                // An enum pins the label to the menu but not its capitalization — the API may
+                // answer "strategic" for an option spelled "Strategic". Match case-insensitively
+                // and hand the caller the menu's own spelling, or a correct answer would be
+                // thrown away here and land on the fallback.
                 guard let ref = row["id"] as? String, let key = keyByRef[ref],
-                      let label = row["label"] as? String, def.options.contains(label) else { continue }
+                      let answered = row["label"] as? String,
+                      let label = def.options.first(where: { $0.caseInsensitiveCompare(answered) == .orderedSame })
+                else { continue }
                 let raw = (row["confidence"] as? Double) ?? (row["confidence"] as? NSNumber)?.doubleValue ?? 0
                 let confidence = min(max(raw, 0), 1)   // schemas can't bound numbers; clamp here
                 out[key] = DecisionResult(label: label, confidence: confidence, tier: def.tier(for: confidence))
@@ -64,6 +70,13 @@ enum DecisionEngine {
             print("[DecisionEngine] \(def.id) failed for \(chunk.count) items: \(error)")
             return [:]
         }
+    }
+
+    /// The decision's configured fallback label — what a caller should use for an item the model
+    /// skipped or answered too thinly to act on. Callers map it through their own enum, so a value
+    /// the code can't use degrades to their built-in default instead of breaking the pass.
+    static func fallbackLabel(_ decisionId: String) -> String? {
+        DecisionLoader.shared.definition(id: decisionId)?.fallback
     }
 
     static func schema(refs: [String], options: [String]) -> [String: Any] {

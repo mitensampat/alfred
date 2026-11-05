@@ -427,10 +427,13 @@ class AttentionTracker {
             results[key] = MeetingCategory.fromDecisionLabel(decision.label)
         }
 
-        // Fill in any events that weren't categorized (fallback)
+        // Fill in any events that weren't categorized, using the decision file's own Fallback so
+        // editing it actually changes the outcome. An unmappable value lands on .uncategorized.
+        let fallback = DecisionEngine.fallbackLabel("meeting-category")
+            .map(MeetingCategory.fromDecisionLabel) ?? .uncategorized
         for item in needsAI {
             if results["\(item.index)"] == nil {
-                results["\(item.index)"] = .uncategorized
+                results["\(item.index)"] = fallback
             }
         }
 
