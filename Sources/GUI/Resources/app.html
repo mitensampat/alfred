@@ -1,0 +1,879 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F7F5F0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="/manifest.json">
+<title>Alfred</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<!--
+  Alfred — the rewired app (docs/rewire/SPEC.md, MOCK.md).
+  One page for phone, iPad and desktop. Reads only /api/v2/*. The old desk stays at /home.html
+  and is reachable from the You menu until phase 4 retires it.
+-->
+<style>
+:root{
+  --paper:#F7F5F0; --card:#FFFFFF; --ink:#1F1E1B; --ink2:#2E2C28; --body:#4A4740; --quiet:#6B675F; --faint:#8A857B;
+  --hair:#E4DFD5; --hair2:#EEEAE2; --hair3:#F0ECE4; --line:#D9D4C9; --chip:#ECEAE2; --avatar:#E8E4DA; --sunk:#FAF8F4;
+  --border:#E6E1D7; --dashed:#D3CDC1; --check:#B9B3A7;
+  --warm:#C9823F; --warmtext:#9A5A22; --warmbg:#F5EBDD;
+  --accent:#4E6B5A; --accent-soft:rgba(78,107,90,.10); --accent-line:rgba(78,107,90,.22); --on-accent:#FFFFFF;
+  --shadow:0 1px 1px rgba(31,30,27,.04), 0 4px 14px rgba(31,30,27,.06);
+  --serif:"Newsreader", Georgia, serif; --sans:"Inter", system-ui, -apple-system, sans-serif;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --paper:#1A1917; --card:#23221F; --ink:#EDEAE3; --ink2:#DAD6CD; --body:#C4BFB4; --quiet:#A39E93; --faint:#8C877C;
+  --hair:#34322D; --hair2:#2E2C28; --hair3:#2E2C28; --line:#3E3B35; --chip:#2E2C28; --avatar:#34322D; --sunk:#1E1D1A;
+  --border:#34322D; --dashed:#4A463F; --check:#6B675F;
+  --warm:#D9954F; --warmtext:#E0A564; --warmbg:#33281C;
+  --accent:#7FA08B; --accent-soft:rgba(127,160,139,.14); --accent-line:rgba(127,160,139,.28); --on-accent:#14130F;
+  --shadow:0 1px 1px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25);
+}}
+:root[data-theme="dark"]{
+  --paper:#1A1917; --card:#23221F; --ink:#EDEAE3; --ink2:#DAD6CD; --body:#C4BFB4; --quiet:#A39E93; --faint:#8C877C;
+  --hair:#34322D; --hair2:#2E2C28; --hair3:#2E2C28; --line:#3E3B35; --chip:#2E2C28; --avatar:#34322D; --sunk:#1E1D1A;
+  --border:#34322D; --dashed:#4A463F; --check:#6B675F;
+  --warm:#D9954F; --warmtext:#E0A564; --warmbg:#33281C;
+  --accent:#7FA08B; --accent-soft:rgba(127,160,139,.14); --accent-line:rgba(127,160,139,.28); --on-accent:#14130F;
+  --shadow:0 1px 1px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--paper);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+textarea,input,select{font:inherit;color:inherit}
+.hidden{display:none!important}
+.serif{font-family:var(--serif)}
+
+/* ── frame ── */
+.app{display:flex;justify-content:center;min-height:100dvh}
+.rail{display:none}
+.main{flex:1 1 auto;min-width:0;max-width:640px;padding:14px 20px 140px}
+.aside{display:none}
+.topbar{display:flex;align-items:center;gap:12px;height:48px}
+.me{position:relative;width:40px;height:40px;border-radius:20px;border:1px solid var(--line);background:var(--card);font-weight:600;font-size:15px;padding:0;flex:0 0 auto}
+.dot{position:absolute;top:1px;right:1px;width:9px;height:9px;border-radius:5px;background:var(--warm);border:2px solid var(--paper)}
+.date{font-size:14px;color:var(--quiet)}
+.tabbar{position:fixed;left:0;right:0;bottom:0;height:calc(72px + env(safe-area-inset-bottom));padding:6px 8px env(safe-area-inset-bottom);background:color-mix(in srgb,var(--paper) 94%,transparent);backdrop-filter:blur(10px);border-top:1px solid var(--hair);display:grid;grid-template-columns:repeat(4,minmax(0,1fr));z-index:30}
+.tab{border:none;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:12px;color:var(--faint);padding:0;min-height:52px}
+.tab.on{color:var(--ink);font-weight:600}
+.fab{position:fixed;right:20px;bottom:calc(88px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:28px;border:none;background:var(--accent);color:var(--on-accent);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(31,30,27,.18);z-index:31}
+
+@media (min-width: 900px){
+  .app{gap:0}
+  .rail{display:flex;flex-direction:column;gap:4px;flex:0 0 232px;height:100dvh;position:sticky;top:0;padding:22px 16px}
+  .main{max-width:640px;border-left:1px solid var(--hair);border-right:1px solid var(--hair);padding:18px 32px 60px;min-height:100dvh}
+  .tabbar,.fab,.topbar .me{display:none}
+  .more-toggle{display:none!important}
+  .more-list{display:flex!important}
+  .more-wide{display:block!important}
+}
+@media (min-width: 1180px){
+  .aside{display:flex;flex-direction:column;gap:16px;flex:0 0 380px;height:100dvh;position:sticky;top:0;overflow-y:auto;padding:22px 24px}
+}
+.wordmark{font-family:var(--serif);font-size:28px;padding:4px 14px 22px}
+.railtab{height:52px;border:none;border-radius:26px;background:none;display:flex;align-items:center;gap:14px;padding:0 16px;font-size:17px;color:var(--faint);text-align:left}
+.railtab.on{background:var(--chip);color:var(--ink);font-weight:600}
+.railadd{margin-top:16px;height:50px;border:none;border-radius:25px;background:var(--accent);color:var(--on-accent);font-size:16px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 2px 6px rgba(31,30,27,.18)}
+.railme{margin-top:auto;border:none;border-radius:30px;background:none;display:flex;align-items:center;gap:12px;padding:8px 10px;text-align:left}
+.railme .me{display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:21px}
+.railme small{display:block;font-size:12px;color:var(--warmtext)}
+
+/* ── type & sections ── */
+h1{margin:0;font-family:var(--serif);font-weight:400;font-size:30px}
+.label{font-size:13px;color:var(--quiet)}
+.section{margin-top:24px}
+.stack{display:flex;flex-direction:column;gap:12px;padding-top:10px}
+.stack.tight{gap:8px}
+.empty{padding:14px 0;font-size:14px;color:var(--quiet)}
+
+/* ── cards ── */
+.card{background:var(--card);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);transition:transform .12s ease,box-shadow .12s ease}
+.card.press:active{transform:scale(.985);box-shadow:0 1px 2px rgba(31,30,27,.06)}
+.card.dashed{border-style:dashed;border-color:var(--dashed)}
+.card.sel{border-color:var(--accent)}
+.post{padding:14px 18px 8px}
+.who{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;font-size:14px;line-height:1.3}
+.who b{font-weight:600}
+.meta{margin-top:2px;font-size:13px;color:var(--quiet);display:flex;align-items:center;gap:6px}
+.meta.urgent{color:var(--warmtext)}
+.wdot{width:6px;height:6px;border-radius:3px;background:var(--warm);display:inline-block;flex:0 0 auto}
+.body{margin-top:8px;font-size:17px;line-height:1.4;font-weight:500}
+.actions{margin-top:10px;padding-top:6px;border-top:1px solid var(--hair3);display:flex;align-items:center;gap:4px}
+.btn{height:36px;padding:0 18px;border-radius:18px;border:none;background:var(--accent);color:var(--on-accent);font-size:14px;font-weight:600;box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 1px 2px rgba(31,30,27,.18)}
+.btn.outline{background:var(--card);color:var(--accent);border:1px solid var(--accent);box-shadow:0 1px 2px rgba(31,30,27,.08)}
+.btn.plain{background:var(--card);color:var(--ink);border:1px solid var(--line);box-shadow:none;font-weight:400}
+.btn.big{height:46px;border-radius:23px;font-size:15px}
+.ghost{height:40px;padding:0 10px;border:none;background:none;color:var(--quiet);font-size:14px;display:inline-flex;align-items:center;gap:6px}
+.link{height:36px;padding:0;border:none;background:none;color:var(--accent);font-size:14px;font-weight:600}
+.icon{width:40px;height:40px;border:none;background:none;color:var(--faint);padding:0;display:inline-flex;align-items:center;justify-content:center}
+.spacer{flex:1 1 auto}
+.compose{margin-top:12px;background:var(--sunk);border:1px solid var(--border);border-radius:14px;padding:12px 14px}
+.compose textarea{margin-top:6px;width:100%;border:none;resize:none;outline:none;background:transparent;font-size:15px;line-height:1.45}
+
+.upnext{background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:20px;padding:16px 18px 12px;box-shadow:var(--shadow)}
+.upnext.pinned{background:var(--card);border:1.5px solid var(--accent)}
+.upnext .head{display:flex;align-items:center;gap:8px;font-size:13px}
+.amark{width:22px;height:22px;border-radius:11px;background:var(--accent);color:var(--on-accent);display:inline-flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:14px}
+.upnext p{margin:10px 0 0;font-family:var(--serif);font-size:24px;line-height:1.28}
+.upnext .actions{border-top-color:var(--accent-line)}
+
+.row{padding:8px 14px 8px 4px;display:flex;align-items:center;gap:6px}
+.check{flex:0 0 auto;width:44px;height:44px;border:none;background:none;padding:0;display:flex;align-items:center;justify-content:center}
+.check span{width:22px;height:22px;border-radius:11px;border:1.5px solid var(--check);background:var(--sunk);box-shadow:inset 0 1px 2px rgba(31,30,27,.08)}
+.check:hover span{border-color:var(--accent)}
+.rowmain{flex:1 1 auto;min-width:0;padding:4px 0;border:none;background:none;text-align:left}
+.rowmain .who{font-size:13px}
+.rowmain .t{margin-top:2px;font-size:15px;line-height:1.38}
+.due{flex:0 0 auto;font-size:12px;color:var(--quiet);padding-right:2px}
+.due.today{color:var(--warmtext)}
+
+.more-toggle{margin-top:8px;width:100%;min-height:52px;display:flex;align-items:center;justify-content:space-between;border:none;border-bottom:1px solid var(--hair);background:none;padding:0;color:var(--quiet);font-size:15px;text-align:left}
+.more-list{display:none;flex-direction:column;gap:8px;padding-top:10px}
+.more-list.open{display:flex}
+
+.coach{margin-top:22px;background:var(--chip);border-radius:16px;padding:16px 16px 12px}
+.coach .x{width:36px;height:36px;margin:-8px -8px 0 0;border:none;background:none;color:var(--quiet);padding:0}
+
+.chips{margin-top:14px;display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
+@media (min-width: 900px){ .chips{flex-wrap:wrap} }
+.chipbtn{flex:0 0 auto;height:36px;padding:0 14px;border-radius:18px;border:1px solid var(--line);background:var(--card);font-size:14px}
+.chipbtn.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.tag{height:32px;padding:0 12px;border-radius:16px;background:var(--chip);display:inline-flex;align-items:center;font-size:13px}
+
+.ent{width:100%;display:flex;gap:12px;text-align:left;padding:14px 16px 8px}
+.badge{flex:0 0 auto;width:42px;height:42px;border-radius:12px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600}
+.avatar{flex:0 0 auto;width:42px;height:42px;border-radius:21px;background:var(--avatar);color:var(--body);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600}
+.ent .top{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.ent .name{font-family:var(--serif);font-size:20px;line-height:1.2}
+.ent .pname{font-size:15px;font-weight:600}
+.ent .small{flex:0 0 auto;font-size:12px;color:var(--quiet)}
+.pulse{margin-top:4px;display:flex;align-items:center;gap:7px;font-size:13px;color:var(--quiet)}
+.pdot{width:7px;height:7px;border-radius:4px;display:inline-block;background:var(--accent)}
+.pdot.stalled{background:var(--warm)}
+.ent .line{margin-top:8px;display:block;font-size:15px;line-height:1.4;color:var(--ink2)}
+.foot{margin-top:10px;padding:8px 0 4px;border-top:1px solid var(--hair3);display:flex;gap:18px;font-size:13px;color:var(--quiet)}
+.foot span{display:inline-flex;align-items:center;gap:5px}
+
+/* ── aside ── */
+.panel{background:var(--card);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);padding:16px 18px 8px}
+.panel h2{margin:0;font-family:var(--serif);font-weight:400;font-size:21px}
+.aglist button{width:100%;display:flex;gap:14px;align-items:flex-start;text-align:left;border:none;border-top:1px solid var(--hair3);background:none;padding:11px 0}
+.aglist .tm{flex:0 0 48px;font-size:13px;color:var(--quiet);padding-top:1px}
+.aglist .ev{flex:1 1 auto;min-width:0;border-left:2px solid var(--line);padding-left:10px}
+.aglist .ev.owed{border-left-color:var(--accent)}
+.aglist .ev b{display:block;font-size:15px;font-weight:500}
+.aglist .ev small{display:block;margin-top:2px;font-size:13px;color:var(--quiet)}
+
+/* ── sheets ── */
+.scrim{position:fixed;inset:0;background:rgba(31,30,27,.28);z-index:40;border:none;padding:0;cursor:default}
+.sheet{position:fixed;z-index:41;background:var(--paper);overflow-y:auto;padding:10px 24px 34px;box-shadow:0 -8px 30px rgba(31,30,27,.12)}
+.sheet.m-sheet{left:0;right:0;bottom:0;max-height:90dvh;border-radius:22px 22px 0 0;padding-bottom:calc(34px + env(safe-area-inset-bottom))}
+.sheet.m-side{top:0;right:0;bottom:0;width:420px;border-left:1px solid var(--hair);box-shadow:-8px 0 24px rgba(31,30,27,.08)}
+.sheet.m-dialog{top:50%;left:50%;transform:translate(-50%,-50%);width:min(560px,92vw);max-height:86dvh;border-radius:22px;box-shadow:0 20px 60px rgba(31,30,27,.22)}
+.grab{display:flex;justify-content:center;padding-bottom:6px}
+.grab span{width:40px;height:4px;border-radius:2px;background:var(--line)}
+.sheet .close{display:flex;justify-content:flex-end;margin-bottom:-18px}
+.sheet .close button{height:40px;padding:0 4px;border:none;background:none;color:var(--quiet);font-size:14px}
+.field{display:block;width:100%;margin-top:6px;border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:var(--card);font-size:16px;line-height:1.45;outline:none;box-shadow:inset 0 1px 2px rgba(31,30,27,.06)}
+textarea.field{resize:none}
+.lrow{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:12px 0;border-bottom:1px solid var(--hair2)}
+.sub{margin-top:22px;font-size:13px;color:var(--quiet);padding-bottom:6px;border-bottom:1px solid var(--hair)}
+.menuitem{width:100%;min-height:52px;display:flex;justify-content:space-between;align-items:center;border:none;border-bottom:1px solid var(--hair2);background:none;padding:0;font-size:16px;text-align:left}
+.menuitem small{font-size:13px;color:var(--quiet)}
+.issue{margin-top:14px;width:100%;text-align:left;border:none;border-radius:14px;background:var(--warmbg);padding:14px 16px}
+.decision{margin-top:18px;background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:16px;padding:16px}
+.bubble{margin-top:10px;padding:10px 14px;border-radius:14px;font-size:15px;line-height:1.5;white-space:pre-wrap}
+.bubble.me{background:var(--chip);margin-left:40px}
+.bubble.al{background:var(--card);border:1px solid var(--border);margin-right:20px}
+
+/* ── toast ── */
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + env(safe-area-inset-bottom));width:min(440px,calc(100vw - 32px));background:var(--ink);color:var(--paper);border-radius:14px;padding:0 8px 0 16px;min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:14px;z-index:60;box-shadow:0 6px 20px rgba(31,30,27,.2)}
+@media (min-width: 900px){ .toast{bottom:28px} }
+.toast button{height:40px;padding:0 12px;border:none;background:none;color:var(--paper);opacity:.85;font-size:14px;font-weight:600}
+
+/* ── login ── */
+.login{min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px}
+.login .box{width:min(360px,100%)}
+.loading{padding:40px 0;color:var(--quiet);font-size:15px}
+@media (prefers-reduced-motion: reduce){ .card{transition:none} }
+</style>
+</head>
+<body>
+
+<div id="login" class="login hidden">
+  <form class="box" onsubmit="login(event)">
+    <div class="serif" style="font-size:40px">Alfred</div>
+    <label for="pass" class="label" style="display:block;margin-top:20px">Passcode</label>
+    <input id="pass" class="field" type="password" autocomplete="current-password" autofocus>
+    <div id="loginErr" class="label" style="color:var(--warmtext);margin-top:8px;min-height:18px"></div>
+    <button class="btn big" style="width:100%;margin-top:6px" type="submit">Open</button>
+  </form>
+</div>
+
+<div id="app" class="app hidden">
+  <nav class="rail" aria-label="Main">
+    <div class="wordmark">Alfred</div>
+    <div id="railTabs"></div>
+    <button class="railadd" type="button" onclick="openAdd()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add</button>
+    <button class="railme" type="button" onclick="openYou()">
+      <span class="me">M<span id="railDot" class="dot hidden"></span></span>
+      <span><span id="railName" style="display:block;font-size:15px;font-weight:600">You</span><small id="railIssue"></small></span>
+    </button>
+  </nav>
+
+  <main class="main" id="main">
+    <div class="topbar">
+      <button class="me" type="button" aria-label="Open the You menu" onclick="openYou()"><span id="meInitial">M</span><span id="meDot" class="dot hidden"></span></button>
+      <span class="date" id="dateLabel"></span>
+    </div>
+    <div id="view"><div class="loading">Loading…</div></div>
+  </main>
+
+  <aside class="aside" aria-label="Today" id="aside"></aside>
+</div>
+
+<nav class="tabbar hidden" id="tabbar" aria-label="Main"></nav>
+<button class="fab hidden" id="fab" type="button" aria-label="Add a to-do, ask, or schedule" onclick="openAdd()"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+
+<div id="sheetHost"></div>
+<div id="toastHost"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════
+// state
+// ═══════════════════════════════════════════════════════════════════════
+const TOKEN_KEY = 'alfred_auth_token', EXPIRES_KEY = 'alfred_auth_expires';
+const S = {
+  tab: 'now', token: null, me: '',
+  now: null, todos: null, fronts: null, people: null, status: null,
+  filter: 'all', showMore: false, replyId: null,
+  sheet: null,           // { kind, id, data }
+  showLog: false,
+  chat: [], chatSession: null,
+};
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const lowerFirst = s => !s ? s : (/^[A-Z]{2}/.test(s) ? s : s[0].toLowerCase() + s.slice(1));
+const firstName = n => String(n || '').split(' ')[0];
+const isWide = () => window.matchMedia('(min-width: 900px)').matches;
+
+// ═══════════════════════════════════════════════════════════════════════
+// auth
+// ═══════════════════════════════════════════════════════════════════════
+async function api(path, opts = {}) {
+  const headers = Object.assign({ 'Authorization': 'Bearer ' + S.token }, opts.headers || {});
+  if (opts.json) { headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(opts.json); }
+  const r = await fetch(path, Object.assign({}, opts, { headers }));
+  if (r.status === 401) { localStorage.removeItem(TOKEN_KEY); showLogin(); throw new Error('unauthorized'); }
+  return r.json();
+}
+const post = (path, json) => api(path, { method: 'POST', json: json || {} });
+
+async function boot() {
+  try {
+    const st = await (await fetch('/api/setup/status')).json();
+    if (st && st.isComplete === false) { location.href = '/home.html'; return; }
+  } catch (e) {}
+  const t = localStorage.getItem(TOKEN_KEY), exp = localStorage.getItem(EXPIRES_KEY);
+  if (!t || (exp && new Date(exp) <= new Date())) return showLogin();
+  try {
+    const v = await (await fetch('/api/auth/validate', { headers: { 'Authorization': 'Bearer ' + t } })).json();
+    if (!v.valid) return showLogin();
+  } catch (e) {}
+  S.token = t; start();
+}
+function showLogin() { document.getElementById('login').classList.remove('hidden'); document.getElementById('app').classList.add('hidden'); ['tabbar','fab'].forEach(id => document.getElementById(id).classList.add('hidden')); }
+async function login(e) {
+  e.preventDefault();
+  const passcode = document.getElementById('pass').value;
+  const r = await (await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ passcode }) })).json().catch(() => ({}));
+  if (r.success && r.token) { localStorage.setItem(TOKEN_KEY, r.token); localStorage.setItem(EXPIRES_KEY, r.expiresAt || ''); S.token = r.token; start(); }
+  else document.getElementById('loginErr').textContent = r.error || 'That passcode did not work.';
+}
+function start() {
+  document.getElementById('login').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  ['tabbar','fab'].forEach(id => document.getElementById(id).classList.remove('hidden'));
+  applyTheme();
+  const want = (location.hash || '').replace('#', '');
+  if (['now','todos','fronts','people'].includes(want)) S.tab = want;
+  renderNav(); go(S.tab); loadStatus();
+  setInterval(() => { if (!document.hidden && !S.sheet) refresh(); }, 120000);
+  setInterval(loadStatus, 120000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+  if (new URLSearchParams(location.search).get('open') === 'prep') setTimeout(openPrep, 600);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// theme
+// ═══════════════════════════════════════════════════════════════════════
+function applyTheme() { const t = localStorage.getItem('alfred_theme'); if (t) document.documentElement.setAttribute('data-theme', t); }
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next); localStorage.setItem('alfred_theme', next);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// navigation
+// ═══════════════════════════════════════════════════════════════════════
+const ICONS = {
+  now: '<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4L7 17M17 7l1.4-1.4"/>',
+  todos: '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.2l2.4 2.4 4.6-5"/>',
+  fronts: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
+  people: '<circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19c.8-3 3-4.5 5.5-4.5s4.7 1.5 5.5 4.5"/><circle cx="16.8" cy="9.5" r="2.5"/><path d="M15.5 14.6c2.3.1 4 1.5 4.8 4.1"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  pin: '<path d="M9 4h6l-1 6 4 3H6l4-3-1-6zM12 13v7"/>',
+  chev: '<path d="M9 6l6 6-6 6"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
+};
+const icon = (k, s = 17, w = 1.8) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[k]}</svg>`;
+const TABS = [['now','Now'],['todos','To-dos'],['fronts','Fronts'],['people','People']];
+function renderNav() {
+  document.getElementById('tabbar').innerHTML = TABS.map(([k, l]) => `<button type="button" class="tab ${S.tab===k?'on':''}" ${S.tab===k?'aria-current="page"':''} onclick="go('${k}')">${icon(k, 22, 1.7)}<span>${l}</span></button>`).join('');
+  document.getElementById('railTabs').innerHTML = TABS.map(([k, l]) => `<button type="button" class="railtab ${S.tab===k?'on':''}" ${S.tab===k?'aria-current="page"':''} onclick="go('${k}')">${icon(k, 24, 1.7)}<span>${l}</span></button>`).join('');
+}
+function go(tab) {
+  S.tab = tab; S.replyId = null; history.replaceState(null, '', '#' + tab);
+  renderNav(); renderView(); load(tab);
+  if (tab !== 'now' && !S.now) load('now');   // the aside reads the now payload
+  window.scrollTo(0, 0);
+}
+async function load(tab) {
+  try {
+    if (tab === 'now') { S.now = await api('/api/v2/now'); if (S.now.user_first_name) { S.me = S.now.user_first_name; document.getElementById('railName').textContent = S.me; document.getElementById('meInitial').textContent = S.me[0]; document.querySelector('.railme .me').firstChild.textContent = S.me[0]; } }
+    if (tab === 'todos') S.todos = await api('/api/v2/todos?filter=' + encodeURIComponent(S.filter));
+    if (tab === 'fronts') S.fronts = await api('/api/v2/fronts');
+    if (tab === 'people') S.people = await api('/api/v2/people');
+  } catch (e) { if (e.message !== 'unauthorized') console.error(e); }
+  if (tab === S.tab) renderView();
+  renderAside();
+}
+function refresh() { load(S.tab); if (S.tab !== 'now') load('now'); }
+async function loadStatus() {
+  try { S.status = await api('/api/v2/status'); } catch (e) { return; }
+  const issues = (S.status && S.status.issues) || [];
+  ['meDot','railDot'].forEach(id => document.getElementById(id).classList.toggle('hidden', !issues.length));
+  document.getElementById('railIssue').textContent = issues.length ? issues[0].title : '';
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// views
+// ═══════════════════════════════════════════════════════════════════════
+function renderView() {
+  const el = document.getElementById('view');
+  document.getElementById('dateLabel').textContent = (S.now && S.now.date_label) || '';
+  if (S.tab === 'now') el.innerHTML = S.now ? viewNow() : '<div class="loading">Loading…</div>';
+  if (S.tab === 'todos') el.innerHTML = S.todos ? viewTodos() : '<div class="loading">Loading…</div>';
+  if (S.tab === 'fronts') el.innerHTML = S.fronts ? viewFronts() : '<div class="loading">Loading…</div>';
+  if (S.tab === 'people') el.innerHTML = S.people ? viewPeople() : '<div class="loading">Loading…</div>';
+}
+
+// ── a to-do as a post-style card (now tab) ──
+function whoLine(t) {
+  const who = t.person || t.front_name || 'You';
+  const sub = t.person && t.front_name ? '· ' + t.front_name : '';
+  return `<div class="who"><b>${esc(who)}</b><span style="color:var(--quiet)">${esc(sub)}</span></div>`;
+}
+function primaryLabel(t) { return t.action === 'reply' ? 'Reply' : (t.action === 'decide' ? 'Decide' : 'Done'); }
+function postCard(t) {
+  const why = String(t.why || ''); const meta = why.charAt(0).toUpperCase() + why.slice(1);
+  const compose = S.replyId === t.id ? `<div class="compose"><div class="label" style="font-size:12px">To ${esc(firstName(t.person))} · WhatsApp</div>
+      <textarea id="reply-${esc(t.id)}" rows="4" aria-label="Reply">${esc(t.draft || ('Hi ' + firstName(t.person) + ', '))}</textarea>
+      <div style="margin-top:6px;display:flex;gap:6px"><button type="button" class="btn" onclick="sendReply('${esc(t.id)}')">Send</button><button type="button" class="ghost" onclick="S.replyId=null;renderView()">Cancel</button></div></div>` : '';
+  return `<article class="card press post">
+    ${whoLine(t)}
+    <div class="meta ${t.urgent?'urgent':''}">${t.urgent?'<span class="wdot"></span>':''}${esc(meta)}</div>
+    <div class="body">${esc(t.title)}</div>
+    ${compose}
+    <div class="actions">
+      <button type="button" class="btn" onclick="primary('${esc(t.id)}')">${primaryLabel(t)}</button>
+      <button type="button" class="ghost" onclick="notNow('${esc(t.id)}')">${icon('clock')}Not now</button>
+      <span class="spacer"></span>
+      <button type="button" class="icon" aria-label="Pin to the top" onclick="pin('${esc(t.id)}')">${icon('pin')}</button>
+      <button type="button" class="icon" aria-label="Open details" onclick="openTodo('${esc(t.id)}')">${icon('chev')}</button>
+    </div></article>`;
+}
+function rowCard(t) {
+  const due = t.snoozed_until && t.bucket === 'upcoming' ? dayLabel(t.snoozed_until) : (t.due ? dayLabel(t.due) : '');
+  const isToday = t.due && t.due <= todayISO();
+  const who = t.person || t.front_name || '';
+  const sub = t.person && t.front_name ? '· ' + t.front_name : '';
+  return `<div class="card row">
+    <button type="button" class="check" aria-label="Mark done" onclick="done('${esc(t.id)}')"><span></span></button>
+    <button type="button" class="rowmain" onclick="openTodo('${esc(t.id)}')">
+      ${who ? `<div class="who"><b>${esc(who)}</b> <span style="color:var(--quiet)">${esc(sub)}</span></div>` : ''}
+      <div class="t">${esc(t.title)}</div>
+    </button>
+    <div class="due ${isToday?'today':''}">${esc(due)}</div></div>`;
+}
+
+function viewNow() {
+  const n = S.now; let h = '';
+  // Up next: the pinned to-do wins; otherwise Alfred's line for this moment.
+  if (n.pinned) {
+    const p = n.pinned;
+    h += `<article class="upnext pinned"><div class="head" style="color:var(--accent)">${icon('pin',15)}<b>Pinned by you</b><span class="spacer"></span><button type="button" class="ghost" style="height:32px" onclick="pin(null)">Unpin</button></div>
+      <div class="label" style="margin-top:6px">${esc(p.person || p.front_name || '')} ${p.person && p.front_name ? '· ' + esc(p.front_name) : ''}</div>
+      <p style="margin-top:4px">${esc(p.title)}</p>
+      <div class="actions" style="border-top-color:var(--hair3)"><button type="button" class="btn" onclick="primary('${esc(p.id)}')">${primaryLabel(p)}</button></div></article>`;
+    if (S.replyId === p.id) h += postCard(p);
+  } else if (n.up_next && n.up_next.text) {
+    const u = n.up_next;
+    h += `<article class="upnext"><div class="head"><span class="amark" aria-hidden="true">A</span><b>Alfred</b><span style="color:var(--body)">· up next</span><span class="spacer"></span><span style="color:var(--body)">${esc(u.time || '')}</span></div>
+      <p>${esc(u.text)}</p>
+      <div class="actions">${u.kind === 'prep' ? `<button type="button" class="btn outline" onclick="openPrep()">Open prep</button>` : ''}<span class="spacer"></span><span class="label" style="font-size:12px;color:var(--body)">Pin a to-do to replace this</span></div></article>`;
+  }
+  if ((n.top || []).length) {
+    h += `<div class="label" style="margin-top:22px">Top of your list</div><div class="stack">${n.top.map(postCard).join('')}</div>`;
+  } else if (!n.pinned) {
+    const next = (n.agenda || [])[0];
+    h += `<div style="margin-top:22px;padding:26px 0;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair)"><div class="serif" style="font-size:22px">You are clear.</div>
+      <div style="margin-top:6px;font-size:15px;color:var(--quiet)">${next ? 'Next up is ' + esc(next.title) + ' at ' + esc(next.time) + '.' : 'Nothing is waiting on you.'}</div></div>`;
+  }
+  if ((n.more || []).length) {
+    h += `<button type="button" class="more-toggle" onclick="S.showMore=!S.showMore;renderView()"><span>${n.more.length} more today</span><span style="transform:${S.showMore?'rotate(90deg)':'none'}">${icon('chev',16)}</span></button>
+      <div class="label more-wide" style="display:none;margin-top:22px">Also today</div>
+      <div class="more-list ${S.showMore?'open':''}">${n.more.map(rowCard).join('')}</div>`;
+  }
+  if (n.suggested_count) {
+    h += `<button type="button" class="ghost" style="margin-top:10px;padding:0" onclick="go('todos')">${n.suggested_count} suggested to-do${n.suggested_count===1?'':'s'} waiting for you ${icon('chev',14)}</button>`;
+  }
+  if (n.coach) {
+    const c = n.coach;
+    h += `<div class="coach"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px"><div><div class="label" style="font-size:12px">Alfred noticed</div>
+      <div style="margin-top:4px;font-size:15px;line-height:1.45">${esc(c.text)}</div></div>
+      <button type="button" class="x" aria-label="Dismiss" onclick="dismissCoach()">${icon('x',16)}</button></div>
+      <button type="button" class="link" style="margin-top:6px" onclick="coachAct()">${esc(c.action_label)}</button></div>`;
+  }
+  return h;
+}
+
+function viewTodos() {
+  const d = S.todos; let h = `<h1 style="padding-top:18px">To-dos</h1><div class="chips">`;
+  h += (d.chips || []).map(c => `<button type="button" class="chipbtn ${S.filter===c.key?'on':''}" onclick="setFilter('${esc(c.key)}')">${esc(c.label)}</button>`).join('') + '</div>';
+  if ((d.suggested || []).length) {
+    h += `<div class="section"><div class="label">Suggested by Alfred · ${d.suggested.length} waiting for you</div><div class="stack">`;
+    h += d.suggested.map(g => `<article class="card dashed post" style="display:flex;gap:12px">
+        ${g.person ? `<span class="avatar" aria-hidden="true" style="width:40px;height:40px">${esc(initials(g.person))}</span>` : ''}
+        <div style="flex:1 1 auto;min-width:0">
+          <div class="who"><b>${esc(g.person || 'You')}</b><span style="color:var(--quiet)">· suggested</span></div>
+          <div class="body" style="font-size:16px;margin-top:4px">${esc(g.title)}</div>
+          <div class="label" style="font-size:12px;margin-top:4px">${esc(g.source_note || '')}</div>
+          <div class="actions"><button type="button" class="btn outline" onclick="accept('${esc(g.id)}')">Accept</button><button type="button" class="ghost" onclick="dismissTodo('${esc(g.id)}')">Dismiss</button></div>
+        </div></article>`).join('') + '</div></div>';
+  }
+  for (const [k, label] of [['today','Today'],['upcoming','Upcoming'],['someday','Someday']]) {
+    const rows = d[k] || [];
+    h += `<div class="section"><div class="label">${label}</div>${rows.length ? `<div class="stack tight">${rows.map(rowCard).join('')}</div>` : '<div class="empty">Nothing here.</div>'}</div>`;
+  }
+  return h;
+}
+
+function frontCard(f) {
+  const sel = S.sheet && S.sheet.kind === 'front' && S.sheet.id === f.id && isWide();
+  return `<button type="button" class="card press ent ${sel?'sel':''}" onclick="openFront('${esc(f.id)}')">
+    <span class="badge" aria-hidden="true">${esc(initials(f.name))}</span>
+    <span style="flex:1 1 auto;min-width:0;display:block">
+      <span class="top"><span class="name">${esc(f.name)}</span><span class="small">${esc(f.date_label || '')}</span></span>
+      <span class="pulse"><span class="pdot ${f.pulse==='stalled'?'stalled':''}"></span>${f.pulse==='stalled' ? 'Stalled ' + f.stalled_days + ' days' : 'Moving'}</span>
+      <span class="line">${esc(f.next)}</span>
+      <span class="foot"><span>${icon('todos')}${f.todo_count} to-do${f.todo_count===1?'':'s'}</span><span>${icon('people')}${f.people_count} ${f.people_count===1?'person':'people'}</span>${f.days_since != null ? `<span>${icon('clock')}${f.days_since === 0 ? 'today' : f.days_since + 'd ago'}</span>` : ''}</span>
+    </span></button>`;
+}
+function viewFronts() {
+  const d = S.fronts;
+  let h = `<div style="display:flex;align-items:baseline;justify-content:space-between;padding-top:18px"><h1>Fronts</h1><span class="label">${(d.fronts||[]).length} of ${d.cap} active</span></div>`;
+  if (d.needs_migration) {
+    h += `<div class="card dashed" style="margin-top:18px;padding:16px"><div class="label" style="font-size:12px">One-time review</div>
+      <div class="serif" style="font-size:21px;margin-top:4px">Pick the fronts that matter</div>
+      <div style="margin-top:4px;font-size:14px;line-height:1.45;color:var(--body)">Alfred used to promote any recurring theme to a front. Keep up to ${d.cap}, each with a date. The rest become topics; nothing is lost.</div>
+      <div style="margin-top:12px"><button type="button" class="btn" onclick="openMigration()">Start the review</button></div></div>`;
+  }
+  if (d.proposal) {
+    const p = d.proposal;
+    h += `<div class="card dashed" style="margin-top:18px;padding:16px"><div class="label" style="font-size:12px">Make this a front?</div>
+      <div class="serif" style="font-size:21px;margin-top:4px">${esc(p.name)}</div>
+      <div style="margin-top:4px;font-size:14px;line-height:1.45;color:var(--body)">${esc(p.why)}</div>
+      <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="btn" onclick="openActivate('${esc(p.id)}','${esc(p.name)}')">Make it a front</button><button type="button" class="ghost" onclick="keepTopic('${esc(p.id)}')">Keep as a topic</button></div></div>`;
+  }
+  const fr = d.fronts || [];
+  h += fr.length ? `<div class="stack" style="margin-top:6px">${fr.map(frontCard).join('')}</div>`
+    : (d.needs_migration ? '' : `<div class="empty" style="margin-top:12px">No fronts yet. When something you own has stakes, a date and other people in it, Alfred will propose it here, or add one yourself.</div>`);
+  h += `<button type="button" class="ghost" style="margin-top:14px;padding:0" onclick="openNewFront()">+ New front</button>`;
+  return h;
+}
+
+function personCard(p, quiet) {
+  const sel = S.sheet && S.sheet.kind === 'person' && S.sheet.id === p.name && isWide();
+  const age = quiet ? (p.silent_days + 'd') : (p.oldest_days ? p.oldest_days + 'd' : 'today');
+  const hot = quiet || p.oldest_days >= 7;
+  return `<button type="button" class="card press ent ${sel?'sel':''}" onclick="openPerson('${esc(p.name)}')">
+    <span class="avatar" aria-hidden="true">${esc(p.initials)}</span>
+    <span style="flex:1 1 auto;min-width:0;display:block">
+      <span class="top"><span class="pname">${esc(p.name)}</span><span class="small" style="${hot?'color:var(--warmtext)':''}">${esc(age)}</span></span>
+      <span class="line" style="margin-top:4px">${esc(p.line)}${p.more ? ' · +' + p.more + ' more' : ''}</span>
+      <span class="foot"><span>You owe ${p.you_owe}</span><span>${p.they_owe ? 'Waiting on ' + p.they_owe : 'Nothing waiting'}</span></span>
+    </span></button>`;
+}
+function viewPeople() {
+  const d = S.people; let h = '<h1 style="padding-top:18px">People</h1>';
+  h += `<div class="section"><div class="label">Waiting on you</div>${(d.waiting_on_you||[]).length ? `<div class="stack">${d.waiting_on_you.map(p => personCard(p, false)).join('')}</div>` : '<div class="empty">Nobody is waiting on you.</div>'}</div>`;
+  if ((d.going_quiet || []).length) h += `<div class="section"><div class="label">Going quiet</div><div class="stack">${d.going_quiet.map(p => personCard(p, true)).join('')}</div></div>`;
+  return h;
+}
+
+function renderAside() {
+  const el = document.getElementById('aside'); if (!el || !S.now) return;
+  const ag = S.now.agenda || [], gl = S.now.fronts_glance || [];
+  el.innerHTML = `<section class="panel"><h2>Today</h2><div class="aglist" style="margin-top:8px">${ag.length ? ag.map(e => `<button type="button" onclick="${e.person ? `openPerson('${esc(e.person)}')` : ''}"><span class="tm">${esc(e.time)}</span><span class="ev ${e.owed?'owed':''}"><b>${esc(e.title)}</b><small>${esc(e.note || '')}</small></span></button>`).join('') : '<div class="empty">No more meetings today.</div>'}</div></section>
+    <section class="panel"><h2>Fronts</h2><div class="aglist" style="margin-top:8px">${gl.map(f => `<button type="button" onclick="openFront('${esc(f.id)}')" style="justify-content:space-between;align-items:center"><span style="display:flex;align-items:center;gap:9px;font-size:15px"><span class="pdot ${f.pulse==='stalled'?'stalled':''}"></span>${esc(f.name)}</span><span class="label" style="font-size:12px">${f.pulse==='stalled' ? 'Stalled ' + f.stalled_days + 'd' : esc(f.date_label || '')}</span></button>`).join('') || '<div class="empty">No fronts yet.</div>'}</div>
+    <button type="button" class="link" onclick="go('fronts')">See all fronts</button></section>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// actions
+// ═══════════════════════════════════════════════════════════════════════
+function findTodo(id) {
+  const pools = [];
+  if (S.now) pools.push(S.now.top || [], S.now.more || [], S.now.pinned ? [S.now.pinned] : []);
+  if (S.todos) pools.push(S.todos.today || [], S.todos.upcoming || [], S.todos.someday || [], S.todos.suggested || []);
+  if (S.sheet && S.sheet.data) pools.push(S.sheet.data.todos || [], S.sheet.data.owe || []);
+  for (const p of pools) { const t = p.find(x => x.id === id); if (t) return t; }
+  return null;
+}
+async function act(path, body, undo) {
+  try {
+    const r = await post(path, body);
+    if (r.ok === false) { toast(r.message || r.error || 'That did not work.'); return r; }
+    toast(r.receipt || 'Done', undo);
+    refresh(); if (S.sheet && ['front','person'].includes(S.sheet.kind)) reopenSheet();
+    return r;
+  } catch (e) { toast('Could not reach Alfred.'); return { ok: false }; }
+}
+function primary(id) {
+  const t = findTodo(id); if (!t) return;
+  if (t.action === 'reply') { S.replyId = S.replyId === id ? null : id; renderView(); setTimeout(() => { const ta = document.getElementById('reply-' + id); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }, 30); return; }
+  if (t.action === 'decide' && t.front_id) return openFront(t.front_id);
+  done(id);
+}
+const done = id => act('/api/v2/todos/done', { id }, () => act('/api/v2/todos/undo', { id }));
+const notNow = id => act('/api/v2/todos/snooze', { id }, () => act('/api/v2/todos/unsnooze', { id }));
+const accept = id => act('/api/v2/todos/accept', { id });
+const dismissTodo = id => act('/api/v2/todos/dismiss', { id });
+function pin(id) {
+  const prev = S.now && S.now.pinned ? S.now.pinned.id : null;
+  act('/api/v2/todos/pin', id ? { id } : {}, () => act('/api/v2/todos/pin', prev ? { id: prev } : {}));
+}
+async function sendReply(id) {
+  const ta = document.getElementById('reply-' + id); const text = ta ? ta.value.trim() : '';
+  if (!text) return;
+  const r = await act('/api/v2/todos/reply', { id, text });
+  if (r && r.ok !== false) S.replyId = null;
+}
+function setFilter(k) { S.filter = k; S.todos = null; renderView(); load('todos'); }
+async function dismissCoach() { const c = S.now && S.now.coach; if (!c) return; await act('/api/v2/coach/dismiss', { key: c.key, metric: String(c.metric || 0) }); }
+function coachAct() {
+  const c = S.now && S.now.coach; if (!c) return;
+  if (c.action === 'add_step') return openAdd({ front_id: c.target });
+  if (c.action === 'block_hour' || c.action === 'do_now') return pin(c.target);
+  if (c.action === 'draft') return openPerson(c.target);
+}
+function keepTopic(id) { act('/api/v2/fronts/state', { id, state: 'topic' }, () => act('/api/v2/fronts/state', { id, state: 'none' })); }
+
+// ═══════════════════════════════════════════════════════════════════════
+// sheets
+// ═══════════════════════════════════════════════════════════════════════
+function sheetMode(kind) { if (!isWide()) return 'm-sheet'; return ['front','person','todo'].includes(kind) ? 'm-side' : 'm-dialog'; }
+function openSheet(kind, id, data) { S.sheet = { kind, id, data }; S.showLog = false; renderSheet(); if (S.tab === 'fronts' || S.tab === 'people') renderView(); }
+function closeSheet() { S.sheet = null; document.getElementById('sheetHost').innerHTML = ''; renderView(); }
+async function reopenSheet() {
+  const s = S.sheet; if (!s) return;
+  if (s.kind === 'front') s.data = await api('/api/v2/fronts/front?id=' + encodeURIComponent(s.id));
+  if (s.kind === 'person') s.data = await api('/api/v2/people/person?name=' + encodeURIComponent(s.id));
+  renderSheet();
+}
+function renderSheet() {
+  const s = S.sheet, host = document.getElementById('sheetHost');
+  if (!s) { host.innerHTML = ''; return; }
+  const mode = sheetMode(s.kind);
+  const inner = ({ add: sheetAdd, you: sheetYou, front: sheetFront, person: sheetPerson, todo: sheetTodo, activate: sheetActivate, migrate: sheetMigrate, newfront: sheetNewFront, chat: sheetChat })[s.kind](s);
+  host.innerHTML = `${mode !== 'm-side' ? '<button type="button" class="scrim" aria-label="Close" onclick="closeSheet()"></button>' : ''}
+    <div class="sheet ${mode}" role="dialog" aria-modal="${mode !== 'm-side'}">${mode === 'm-sheet' ? '<div class="grab"><span></span></div>' : ''}
+      <div class="close"><button type="button" onclick="closeSheet()">Close</button></div>${inner}</div>`;
+  const auto = host.querySelector('[data-autofocus]'); if (auto) setTimeout(() => auto.focus(), 40);
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && S.sheet) closeSheet();
+  if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); openAdd(); }
+});
+
+// ── add ──
+function openAdd(prefill) { openSheet('add', null, prefill || {}); }
+function sheetAdd(s) {
+  const fronts = (S.fronts && S.fronts.fronts) || (S.now && S.now.fronts_glance) || [];
+  const opts = ['<option value="">No front</option>'].concat(fronts.map(f => `<option value="${esc(f.id)}" ${s.data.front_id===f.id?'selected':''}>${esc(f.name)}</option>`)).join('');
+  return `<div class="serif" style="font-size:24px;padding-top:6px">Add</div>
+    <label for="addText" class="label" style="display:block;margin-top:14px">A to-do, a question for Alfred, or @schedule</label>
+    <textarea id="addText" class="field" rows="3" data-autofocus onkeydown="if((event.metaKey||event.ctrlKey)&&event.key==='Enter')addSubmit('todo')">${esc(s.data.text || '')}</textarea>
+    <div style="margin-top:12px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
+      <label class="label">Front<select id="addFront" class="field" style="padding:10px 12px;font-size:15px">${opts}</select></label>
+      <label class="label">Person<input id="addPerson" class="field" style="padding:10px 12px;font-size:15px" value="${esc(s.data.person || '')}" placeholder="Optional"></label>
+      <label class="label">Due<input id="addDue" type="date" class="field" style="padding:10px 12px;font-size:15px" value="${esc(s.data.due || '')}"></label>
+    </div>
+    <div style="margin-top:18px;display:flex;gap:8px">
+      <button type="button" class="btn big" style="flex:1 1 0" onclick="addSubmit('todo')">Add to-do</button>
+      <button type="button" class="btn big plain" style="flex:1 1 0" onclick="addSubmit('ask')">Ask Alfred</button>
+    </div>
+    <div class="label" style="margin-top:10px;font-size:12px">Start with @schedule or "block" to book time, for example: @schedule Kunal 30m next week.</div>`;
+}
+async function addSubmit(kind) {
+  const text = document.getElementById('addText').value.trim(); if (!text) return;
+  if (/^@?schedule\b/i.test(text) || /^block\b/i.test(text)) return runSchedule(text);
+  if (kind === 'ask') { S.chat = []; openSheet('chat'); return askAlfred(text); }
+  const body = { title: text, front_id: document.getElementById('addFront').value || null,
+                 person: document.getElementById('addPerson').value.trim() || null, due: document.getElementById('addDue').value || null };
+  closeSheet(); await act('/api/v2/todos', body);
+}
+async function runSchedule(text) {
+  closeSheet();
+  let s = text.replace(/^@?schedule\s*/i, '');
+  const block = /^block\b/i.test(s) ? s : null;
+  try {
+    const r = await (await fetch(block ? '/api/schedule/direct-block?text=' + encodeURIComponent(block) : '/api/schedule/say?text=' + encodeURIComponent('@schedule ' + s), { method: 'POST', headers: { 'Authorization': 'Bearer ' + S.token } })).json();
+    if (block) toast(r.booked ? 'Booked: ' + (r.title || '') + (r.when ? ' · ' + r.when : '') : (r.error || r.hint || 'Could not book that.'));
+    else if (r.blockers && r.blockers.length) toast('Scheduling cannot run yet: ' + r.blockers[0]);
+    else toast(r.message || 'Alfred is finding times.');
+  } catch (e) { toast('Could not reach the scheduler.'); }
+}
+
+// ── chat ──
+function sheetChat() {
+  return `<div class="serif" style="font-size:24px;padding-top:6px">Ask Alfred</div>
+    <div id="chatLog">${S.chat.map(m => `<div class="bubble ${m.role==='user'?'me':'al'}">${esc(m.text)}</div>`).join('')}</div>
+    <form style="margin-top:14px;display:flex;gap:8px" onsubmit="event.preventDefault();const i=document.getElementById('chatIn');const v=i.value.trim();if(v){i.value='';askAlfred(v)}">
+      <input id="chatIn" class="field" style="margin-top:0" placeholder="Ask a follow-up" data-autofocus><button class="btn big" type="submit">Send</button></form>`;
+}
+async function askAlfred(q) {
+  S.chat.push({ role: 'user', text: q }, { role: 'al', text: '…' }); renderSheet();
+  const msg = S.chat[S.chat.length - 1];
+  try {
+    const url = new URL('/api/chat/stream', location.origin); url.searchParams.set('q', q); if (S.chatSession) url.searchParams.set('sessionId', S.chatSession);
+    const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + S.token, 'Accept': 'text/event-stream' } });
+    const reader = res.body.getReader(), dec = new TextDecoder(); let buf = '', ev = null, text = '';
+    for (;;) {
+      const { done, value } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true }); const lines = buf.split('\n'); buf = lines.pop() || '';
+      for (const raw of lines) {
+        const line = raw.replace(/\r$/, '');
+        if (line.startsWith('event:')) ev = line.slice(6).trim();
+        else if (line.startsWith('data:')) {
+          try { const d = JSON.parse(line.slice(5).trim());
+            if (ev === 'chunk' || (!ev && d.text)) { text += d.text || ''; msg.text = text; const log = document.getElementById('chatLog'); if (log && log.lastElementChild) log.lastElementChild.textContent = text; }
+            if (ev === 'done' && d.sessionId) S.chatSession = d.sessionId;
+            if (ev === 'error') { msg.text = d.error || d.message || 'Something went wrong.'; }
+          } catch (e) {}
+        }
+      }
+    }
+    if (!text && msg.text === '…') msg.text = 'No answer came back.';
+  } catch (e) { msg.text = 'Could not reach Alfred.'; }
+  if (S.sheet && S.sheet.kind === 'chat') renderSheet();
+}
+
+// ── a to-do ──
+function openTodo(id) { const t = findTodo(id); if (t) openSheet('todo', id, t); }
+function sheetTodo(s) {
+  const t = s.data;
+  const fronts = (S.fronts && S.fronts.fronts) || (S.now && S.now.fronts_glance) || [];
+  const opts = ['<option value="">No front</option>'].concat(fronts.map(f => `<option value="${esc(f.id)}" ${t.front_id===f.id?'selected':''}>${esc(f.name)}</option>`)).join('');
+  return `<div class="label" style="padding-top:6px">${esc(t.source_note || '')}</div>
+    <label for="tdTitle" class="label" style="display:block;margin-top:14px">To-do</label>
+    <textarea id="tdTitle" class="field" rows="2">${esc(t.title)}</textarea>
+    <div style="margin-top:12px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
+      <label class="label">Front<select id="tdFront" class="field" style="padding:10px 12px;font-size:15px">${opts}</select></label>
+      <label class="label">Person<input id="tdPerson" class="field" style="padding:10px 12px;font-size:15px" value="${esc(t.person || '')}"></label>
+      <label class="label">Due<input id="tdDue" type="date" class="field" style="padding:10px 12px;font-size:15px" value="${esc(t.due || '')}"></label>
+    </div>
+    <div style="margin-top:18px;display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="btn" onclick="saveTodo('${esc(t.id)}')">Save</button>
+      ${t.status === 'suggested' ? `<button type="button" class="btn outline" onclick="closeSheet();accept('${esc(t.id)}')">Accept</button>` : `<button type="button" class="btn outline" onclick="closeSheet();done('${esc(t.id)}')">Done</button>`}
+      <button type="button" class="ghost" onclick="closeSheet();pin('${esc(t.id)}')">${icon('pin')}Pin</button>
+      <button type="button" class="ghost" onclick="closeSheet();notNow('${esc(t.id)}')">${icon('clock')}Tomorrow</button>
+      <span class="spacer"></span>
+      <button type="button" class="ghost" onclick="closeSheet();dismissTodo('${esc(t.id)}')">Drop it</button>
+    </div>`;
+}
+async function saveTodo(id) {
+  const body = { id, title: document.getElementById('tdTitle').value.trim(), front_id: document.getElementById('tdFront').value || '',
+                 person: document.getElementById('tdPerson').value.trim(), due: document.getElementById('tdDue').value || '' };
+  closeSheet(); const r = await post('/api/v2/todos/update', body); toast(r.ok ? 'Saved' : 'Could not save'); refresh();
+}
+
+// ── a front ──
+async function openFront(id) { openSheet('front', id, null); S.sheet.data = await api('/api/v2/fronts/front?id=' + encodeURIComponent(id)); renderSheet(); }
+function sheetFront(s) {
+  const f = s.data; if (!f) return '<div class="loading">Opening…</div>';
+  const todos = (f.todos || []).map(t => `<div style="display:flex;align-items:center;gap:6px;min-height:56px;border-bottom:1px solid var(--hair2)"><button type="button" class="check" style="margin-left:-10px" aria-label="Mark done" onclick="done('${esc(t.id)}')"><span></span></button><button type="button" class="rowmain" onclick="openTodo('${esc(t.id)}')"><div class="t">${esc(t.title)}</div>${t.person ? `<div class="label" style="font-size:12px">${esc(t.person)}</div>` : ''}</button></div>`).join('');
+  const waiting = (f.waiting || []).map(w => `<div class="lrow"><span style="font-size:15px">${esc(w.title)}</span><span class="label">${esc(w.person || '')}</span></div>`).join('');
+  return `<div class="pulse" style="padding-top:6px"><span class="pdot ${f.pulse==='stalled'?'stalled':''}"></span>${f.pulse==='stalled' ? 'Stalled ' + f.stalled_days + ' days' : 'Moving'}</div>
+    <div class="serif" style="margin-top:4px;font-size:30px;line-height:1.15">${esc(f.name)}</div>
+    <div style="margin-top:6px;font-size:15px;color:var(--body)">${esc(f.outcome || 'No outcome written yet')} · ${esc(f.date_label || 'no date')} <button type="button" class="link" style="height:auto;margin-left:6px" onclick="editFront()">Edit</button></div>
+    ${f.decision ? `<div class="decision"><div class="label" style="font-size:12px;color:var(--body)">The one decision</div><div style="margin-top:6px;font-size:18px;line-height:1.35;font-weight:500">${esc(f.decision)}</div>
+      <button type="button" class="btn" style="margin-top:12px;height:40px" onclick="decide('${esc(f.id)}')">Record the decision</button></div>` : ''}
+    <div class="sub">Next to-dos</div>${todos || `<div style="padding:14px 0;border-bottom:1px solid var(--hair2)"><div style="font-size:15px;color:var(--body)">Nothing on your list moves this front.</div></div>`}
+    <button type="button" class="link" style="margin-top:6px" onclick="openAdd({front_id:'${esc(f.id)}'})">Add the next step</button>
+    <div class="sub">Who is in it</div>${(f.people || []).map(p => `<button type="button" class="lrow" style="width:100%;border:none;border-bottom:1px solid var(--hair2);background:none;text-align:left" onclick="openPerson('${esc(p)}')"><span style="font-size:15px;font-weight:500">${esc(p)}</span>${icon('chev',14)}</button>`).join('') || '<div class="empty">No one yet.</div>'}
+    ${waiting ? `<div class="sub">Waiting on others</div>${waiting}` : ''}
+    <button type="button" class="ghost" style="margin-top:14px;width:100%;justify-content:space-between;padding:0" onclick="S.showLog=!S.showLog;renderSheet()"><span>What happened</span><span>${S.showLog?'Hide':'Show'}</span></button>
+    ${S.showLog ? (f.log || []).map(l => `<div style="display:flex;gap:14px;padding:8px 0;font-size:14px;line-height:1.4"><span style="flex:0 0 72px;color:var(--quiet)">${esc(l.date)}</span><span>${esc(l.text)}</span></div>`).join('') : ''}
+    <div style="margin-top:22px;display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="btn plain" onclick="frontState('${esc(f.id)}','done')">Mark done</button>
+      <button type="button" class="ghost" onclick="frontState('${esc(f.id)}','paused')">Pause</button>
+    </div>`;
+}
+function frontState(id, state) { closeSheet(); act('/api/v2/fronts/state', { id, state }, () => act('/api/v2/fronts/state', { id, state: 'active' })); }
+function decide(id) { act('/api/v2/fronts/decide', { id }); }
+function editFront() {
+  const f = S.sheet.data;
+  openSheet('activate', f.id, { name: f.name, edit: true, date: f.date, outcome: f.outcome, decision: f.decision });
+}
+
+// ── activate / new front / edit (a date is required, or an explicit "no fixed date") ──
+function openActivate(id, name) { openSheet('activate', id, { name }); }
+function dateFields(d) {
+  const none = d.date === 'none';
+  return `<label class="label" style="display:block;margin-top:14px">By when</label>
+    <input id="frDate" type="date" class="field" value="${esc(none ? '' : (d.date || ''))}" ${none?'disabled':''}>
+    <label class="label" style="display:flex;align-items:center;gap:8px;margin-top:8px"><input id="frNone" type="checkbox" ${none?'checked':''} onchange="document.getElementById('frDate').disabled=this.checked"> No fixed date</label>`;
+}
+function readDate() { return document.getElementById('frNone').checked ? 'none' : document.getElementById('frDate').value; }
+function sheetActivate(s) {
+  const d = s.data;
+  return `<div class="serif" style="font-size:24px;padding-top:6px">${d.edit ? 'Edit front' : 'Make it a front'}</div>
+    <div style="margin-top:4px;font-size:15px;color:var(--body)">${esc(d.name)}</div>
+    <label for="frOutcome" class="label" style="display:block;margin-top:14px">The outcome</label>
+    <input id="frOutcome" class="field" data-autofocus value="${esc(d.outcome || '')}" placeholder="What does done look like?">
+    ${dateFields(d)}
+    ${d.edit ? `<label for="frDecision" class="label" style="display:block;margin-top:14px">The one decision it turns on</label><input id="frDecision" class="field" value="${esc(d.decision || '')}" placeholder="Optional">` : ''}
+    <div id="frErr" class="label" style="color:var(--warmtext);margin-top:10px;min-height:18px"></div>
+    <button type="button" class="btn big" style="width:100%" onclick="submitActivate()">${d.edit ? 'Save' : 'Make it a front'}</button>`;
+}
+async function submitActivate() {
+  const s = S.sheet, date = readDate(), outcome = document.getElementById('frOutcome').value.trim();
+  if (!date) { document.getElementById('frErr').textContent = 'Pick a date, or tick no fixed date.'; return; }
+  let r;
+  if (s.data.edit) {
+    const decision = document.getElementById('frDecision').value.trim();
+    r = await post('/api/v2/fronts/meta', { id: s.id, date, outcome, decision });
+    if (r.ok) { toast('Saved'); openFront(s.id); refresh(); return; }
+  } else {
+    r = await post('/api/v2/fronts/activate', { id: s.id, date, outcome, name: s.data.name });
+    if (r.ok) { closeSheet(); toast(r.receipt); refresh(); return; }
+  }
+  document.getElementById('frErr').textContent = r.error === 'cap' ? (r.message + ' Active: ' + (r.active || []).map(a => a.name).join(', ')) : (r.message || 'Could not save.');
+}
+function openNewFront() { openSheet('newfront', null, {}); }
+function sheetNewFront(s) {
+  return `<div class="serif" style="font-size:24px;padding-top:6px">New front</div>
+    <label for="nfName" class="label" style="display:block;margin-top:14px">Name</label><input id="nfName" class="field" data-autofocus placeholder="Close the series D">
+    <label for="frOutcome" class="label" style="display:block;margin-top:14px">The outcome</label><input id="frOutcome" class="field" placeholder="What does done look like?">
+    ${dateFields(s.data)}
+    <label for="nfDecision" class="label" style="display:block;margin-top:14px">The one decision it turns on</label><input id="nfDecision" class="field" placeholder="Optional">
+    <div id="frErr" class="label" style="color:var(--warmtext);margin-top:10px;min-height:18px"></div>
+    <button type="button" class="btn big" style="width:100%" onclick="submitNewFront()">Add front</button>`;
+}
+async function submitNewFront() {
+  const name = document.getElementById('nfName').value.trim(), date = readDate();
+  if (!name) { document.getElementById('frErr').textContent = 'Give it a name.'; return; }
+  if (!date) { document.getElementById('frErr').textContent = 'Pick a date, or tick no fixed date.'; return; }
+  const r = await post('/api/v2/fronts/new', { name, date, outcome: document.getElementById('frOutcome').value.trim(), decision: document.getElementById('nfDecision').value.trim() });
+  if (r.ok) { closeSheet(); toast(r.receipt); refresh(); }
+  else document.getElementById('frErr').textContent = r.error === 'cap' ? (r.message + ' Active: ' + (r.active || []).map(a => a.name).join(', ')) : (r.message || 'Could not add it.');
+}
+
+// ── migration review ──
+async function openMigration() { openSheet('migrate', null, null); S.sheet.data = await api('/api/v2/fronts/migration'); S.sheet.keep = {}; (S.sheet.data.candidates || []).filter(c => c.recommended).slice(0, S.sheet.data.cap).forEach(c => S.sheet.keep[c.id] = c.date || ''); renderSheet(); }
+function sheetMigrate(s) {
+  const d = s.data; if (!d) return '<div class="loading">Ranking your fronts…</div>';
+  const n = Object.keys(s.keep).length;
+  return `<div class="serif" style="font-size:24px;padding-top:6px">Pick the fronts that matter</div>
+    <div style="margin-top:4px;font-size:14px;color:var(--body);line-height:1.45">Keep up to ${d.cap}. Each needs a date. Everything you do not keep becomes a topic: its to-dos stay tagged and nothing is deleted.</div>
+    <div class="label" style="margin-top:14px">${n} of ${d.cap} kept · ranked by the new bar</div>
+    ${(d.candidates || []).map(c => { const on = c.id in s.keep; return `<div style="padding:12px 0;border-bottom:1px solid var(--hair2)">
+      <label style="display:flex;gap:10px;align-items:flex-start"><input type="checkbox" ${on?'checked':''} ${!on && n >= d.cap ? 'disabled' : ''} onchange="migToggle('${esc(c.id)}',this.checked)" style="margin-top:4px">
+        <span><span style="font-size:16px;font-weight:500">${esc(c.name)}</span>${c.recommended ? ' <span class="tag" style="height:22px;font-size:11px">recommended</span>' : ''}<br><span class="label" style="font-size:12px">${esc(c.why || '')}</span></span></label>
+      ${on ? `<div style="display:flex;gap:10px;align-items:center;margin:8px 0 0 26px"><input type="date" class="field" style="margin:0;padding:8px 10px;font-size:14px;width:auto" value="${esc(s.keep[c.id] === 'none' ? '' : s.keep[c.id])}" onchange="S.sheet.keep['${esc(c.id)}']=this.value"><label class="label" style="display:flex;gap:6px;align-items:center"><input type="checkbox" ${s.keep[c.id]==='none'?'checked':''} onchange="S.sheet.keep['${esc(c.id)}']=this.checked?'none':'';renderSheet()">No fixed date</label></div>` : ''}
+    </div>`; }).join('')}
+    <div id="migErr" class="label" style="color:var(--warmtext);margin-top:10px;min-height:18px"></div>
+    <button type="button" class="btn big" style="width:100%" onclick="submitMigration()">Keep ${n} front${n===1?'':'s'}</button>`;
+}
+function migToggle(id, on) { if (on) S.sheet.keep[id] = ''; else delete S.sheet.keep[id]; renderSheet(); }
+async function submitMigration() {
+  const keep = S.sheet.keep;
+  if (Object.values(keep).some(v => !v)) { document.getElementById('migErr').textContent = 'Each front you keep needs a date, or tick no fixed date.'; return; }
+  const r = await post('/api/v2/fronts/migrate', { keep });
+  if (r.ok) { closeSheet(); toast(r.receipt); S.fronts = null; go('fronts'); }
+  else document.getElementById('migErr').textContent = r.message || 'Could not save.';
+}
+
+// ── a person ──
+async function openPerson(name) { if (!name) return; openSheet('person', name, null); S.sheet.data = await api('/api/v2/people/person?name=' + encodeURIComponent(name)); renderSheet(); }
+function openPrep() { const u = S.now && S.now.up_next; if (u && u.person) openPerson(u.person); }
+function sheetPerson(s) {
+  const p = s.data; if (!p) return '<div class="loading">Opening…</div>';
+  const owe = (p.owe || []).map(t => `<div style="display:flex;align-items:center;gap:6px;min-height:56px;border-bottom:1px solid var(--hair2)"><button type="button" class="check" style="margin-left:-10px" aria-label="Mark done" onclick="done('${esc(t.id)}')"><span></span></button><button type="button" class="rowmain" onclick="openTodo('${esc(t.id)}')"><div class="t">${esc(t.title)}</div>${t.front_name ? `<div class="label" style="font-size:12px">${esc(t.front_name)}</div>` : ''}</button>${t.thread_id ? `<button type="button" class="btn outline" style="height:34px;padding:0 12px" onclick="nudge('${esc(t.id)}','Hi ${esc(firstName(p.name))}, ')">Reply</button>` : ''}</div>`).join('');
+  const wait = (p.waiting || []).map(w => `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;border-bottom:1px solid var(--hair2)"><div style="font-size:15px;line-height:1.35">${esc(w.title)}<div class="label" style="font-size:12px">asked ${w.age_days} day${w.age_days===1?'':'s'} ago</div></div>${w.thread_id ? `<button type="button" class="btn outline" style="height:34px;padding:0 12px" onclick="nudge('${esc(w.id)}','Hi ${esc(firstName(p.name))}, checking in on ${esc(lowerFirst(w.title))}.')">Nudge</button>` : ''}</div>`).join('');
+  const compose = s.compose ? `<div class="compose"><div class="label" style="font-size:12px">To ${esc(firstName(p.name))} · WhatsApp</div><textarea id="nudgeText" rows="3">${esc(s.compose.text)}</textarea><div style="margin-top:6px;display:flex;gap:6px"><button type="button" class="btn" onclick="sendNudge()">Send</button><button type="button" class="ghost" onclick="S.sheet.compose=null;renderSheet()">Cancel</button></div></div>` : '';
+  return `<div style="display:flex;align-items:center;gap:14px;padding-top:10px"><span class="avatar" style="width:52px;height:52px;border-radius:26px;font-size:17px">${esc(p.initials)}</span>
+      <div><div class="serif" style="font-size:28px;line-height:1.1">${esc(p.name)}</div><div class="label" style="margin-top:4px;font-size:14px">${esc(p.next_meeting || 'No meeting coming up')}</div></div></div>
+    ${compose}
+    <div class="sub">You owe</div>${owe || '<div class="empty">Nothing. You are square.</div>'}
+    <div class="sub">Waiting on them</div>${wait || '<div class="empty">Nothing open.</div>'}
+    ${(p.fronts || []).length ? `<div class="label" style="margin-top:22px">Fronts together</div><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">${p.fronts.map(f => `<button type="button" class="tag" style="border:none" onclick="openFront('${esc(f.id)}')">${esc(f.name)}</button>`).join('')}</div>` : ''}
+    ${p.on_time_pct != null ? `<div class="label" style="margin-top:18px">Delivers on time ${p.on_time_pct}% of the time</div>` : ''}
+    <button type="button" class="btn big plain" style="margin-top:22px;width:100%" onclick="runSchedule('@schedule ${esc(p.name)} 30m')">Schedule time with ${esc(firstName(p.name))}</button>`;
+}
+function nudge(id, text) { S.sheet.compose = { id, text }; renderSheet(); setTimeout(() => { const t = document.getElementById('nudgeText'); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } }, 30); }
+async function sendNudge() { const c = S.sheet.compose; const text = document.getElementById('nudgeText').value.trim(); if (!text) return; S.sheet.compose = null; await act('/api/v2/todos/reply', { id: c.id, text }); }
+
+// ── you menu ──
+function openYou() { openSheet('you'); }
+function sheetYou() {
+  const issues = (S.status && S.status.issues) || [];
+  return `<div class="serif" style="font-size:26px;padding-top:6px">${esc(S.me || 'You')}</div>
+    ${issues.map(i => `<button type="button" class="issue" onclick="${i.fix === 'pair_whatsapp' ? "location.href='/home.html#wa'" : 'closeSheet()'}"><span style="display:flex;align-items:center;gap:8px;font-size:15px;font-weight:500"><span class="wdot" style="width:8px;height:8px;border-radius:4px"></span>${esc(i.title)}</span><span class="label" style="display:block;margin-top:4px">${esc(i.detail || '')}</span></button>`).join('')}
+    <div style="margin-top:10px">
+      ${[['Weekly review','/home.html#weekly'],['Coach notes','/home.html#coach'],['Conversations',null,'chat'],['Your model','/home.html#model'],['You-Wiki','/wiki'],['Archive','/home.html#archive'],['Connections and settings','/home.html#settings'],['The old desk','/home.html']].map(([l, href, k]) => `<button type="button" class="menuitem" onclick="${k === 'chat' ? "S.chat=[];openSheet('chat')" : `location.href='${href}'`}"><span>${l}</span>${icon('chev',14)}</button>`).join('')}
+      <button type="button" class="menuitem" onclick="toggleTheme()"><span>Light / dark</span></button>
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// toast + helpers
+// ═══════════════════════════════════════════════════════════════════════
+let _toastT = null;
+function toast(text, undo) {
+  const host = document.getElementById('toastHost');
+  clearTimeout(_toastT);
+  host.innerHTML = `<div class="toast" role="status"><span>${esc(text)}</span>${undo ? '<button type="button" id="undoBtn">Undo</button>' : ''}</div>`;
+  if (undo) document.getElementById('undoBtn').onclick = () => { host.innerHTML = ''; undo(); };
+  _toastT = setTimeout(() => host.innerHTML = '', 10000);
+}
+function initials(n) { return String(n || '').split(' ').filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join(''); }
+function todayISO() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+function dayLabel(iso) {
+  if (!iso) return ''; const t = todayISO();
+  if (iso === t) return 'Today'; if (iso < t) return 'Overdue';
+  const d = new Date(iso + 'T12:00:00'), diff = Math.round((d - new Date(t + 'T12:00:00')) / 86400000);
+  if (diff === 1) return 'Tomorrow';
+  if (diff < 7) return d.toLocaleDateString([], { weekday: 'short' });
+  return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+}
+window.addEventListener('resize', () => { if (S.sheet) renderSheet(); });
+boot();
+</script>
+</body>
+</html>

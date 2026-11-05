@@ -5257,6 +5257,16 @@
             deskNavActive('Fronts');
             deskSetMobile('list');
             loadDesk();
+            // Deep links from the new app's You menu (app.html): open the surface it named.
+            setTimeout(() => {
+                const h = (location.hash || '').replace('#', '');
+                if (h === 'coach') deskNav('coach');
+                else if (h === 'model') deskNav('model');
+                else if (h === 'archive') dkArchiveOpen();
+                else if (h === 'settings') openSettingsPanel();
+                else if (h === 'wa') waPairOpen();
+                else if (h === 'weekly') { deskShowSurface('chat'); loadWeeklyReflection(); }
+            }, 400);
             waBridgePoll();
             setInterval(waBridgePoll, 30000);  // keep the WA status dot fresh
             tidyRefreshBadge();

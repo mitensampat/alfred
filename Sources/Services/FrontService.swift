@@ -229,7 +229,9 @@ enum FrontService {
         }
     }
 
+    /// `none` clears the decision (used to undo "keep as a topic").
     static func setState(_ id: String, _ state: String) -> Bool {
+        if state == "none" { return setMeta(id, ["front_state": nil]) }
         guard ["active", "paused", "done", "topic"].contains(state) else { return false }
         return setMeta(id, ["front_state": state])
     }

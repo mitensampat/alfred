@@ -261,7 +261,7 @@ enum TodoService {
                 return p == w || p.split(separator: " ").first == w.split(separator: " ").first
             }
             var line = "\(e.title) in \(mins) minute\(mins == 1 ? "" : "s")."
-            if let o = owed, let w = who { line += " You owe \(w.split(separator: " ").first.map(String.init) ?? w) " + FrontService.lowerFirst(o.title) + "." }
+            if let o = owed, let w = who { line += " Still open with \(w.split(separator: " ").first.map(String.init) ?? w): " + FrontService.lowerFirst(o.title) + "." }
             return ["kind": "prep", "text": line, "time": tf.string(from: now),
                     "action": "Open prep", "person": who as Any? ?? NSNull(), "event_title": e.title]
         }
@@ -408,7 +408,7 @@ enum TodoService {
                     return p.split(separator: " ").first == w.split(separator: " ").first
                 }
                 var note = who ?? ""
-                if let o = owed { note += (note.isEmpty ? "" : " · ") + "you owe " + FrontService.lowerFirst(o.title) }
+                if let o = owed { note += (note.isEmpty ? "" : " · ") + "open: " + FrontService.lowerFirst(o.title) }
                 return ["time": tf.string(from: e.startTime), "title": e.title, "note": note,
                         "person": who as Any? ?? NSNull(), "owed": owed != nil]
             }

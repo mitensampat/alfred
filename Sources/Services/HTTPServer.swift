@@ -295,7 +295,18 @@ class HTTPServer {
             }
 
             // Allow web UI without authentication
-            if request.path == "/" || request.path == "/index.html" || request.path == "/home.html" {
+            if request.path == "/home.html" {
+                let response = handleNotionUI()
+                try await client.send(response)
+                return
+            }
+            if request.path == "/" || request.path == "/index.html",
+               let html = HotReloadManager.shared.getWebFile("app.html") {
+                let response = HTTPResponse(statusCode: 200, headers: ["Content-Type": "text/html; charset=utf-8"], htmlBody: html)
+                try await client.send(response)
+                return
+            }
+            if request.path == "/" || request.path == "/index.html" {
                 let response = handleNotionUI()
                 try await client.send(response)
                 return
@@ -13888,6 +13899,7 @@ extension HTTPServer {
         case ("GET", "/api/v2/now"):
             let s = await rewireSchedules()
             var out = TodoService.now(schedules: s, userFirstName: firstName)
+            out["user_first_name"] = firstName
             out["agenda"] = TodoService.agenda(schedules: s)
             out["fronts_glance"] = Array(FrontService.activeCards(todos: TodoStore.shared.all()).prefix(5))
             return ok(out)
