@@ -1529,6 +1529,12 @@ class BriefingOrchestrator {
                     threadId: thread.contactIdentifier
                 )
 
+                // Already in Alfred's to-do list (as a suggestion, or accepted): skip before spending a model call.
+                if TodoStore.shared.linkedTodoId(source: "whatsapp_self", ref: messageHash) != nil {
+                    skippedDuplicates += 1
+                    continue
+                }
+
                 // Check if this message was already processed (hash exists in Notion)
                 if let existingId = try? await notionService.findTaskByHash(messageHash) {
                     print("    ⊘ Already processed message (hash match: \(existingId))\n")
@@ -1548,17 +1554,19 @@ class BriefingOrchestrator {
                         continue
                     }
 
-                    // Create in Notion using unified Tasks database
-                    do {
-                        // Convert TodoItem to TaskItem with stable message-based hash
-                        let taskItem = TaskItem.fromTodoItem(todo, hash: messageHash)
-
-                        // Create task in Notion
-                        let pageId = try await notionService.createTask(taskItem)
-                        print("    ✓ Created in Notion (ID: \(pageId))\n")
+                    // Into Alfred's to-do list as a SUGGESTION (docs/rewire/DECISIONS.md: extracted
+                    // to-dos always wait for the user to accept them). Accepted to-dos reach Notion
+                    // through the to-do mirror, so nothing is written to the old tasks database here.
+                    let due = todo.dueDate.map { TodoStore.dayFormatter.string(from: $0) }
+                    let added = TodoStore.shared.upsert(
+                        title: todo.title, status: .suggested, due: due,
+                        source: "whatsapp_self", sourceRef: messageHash,
+                        sourceNote: "From your WhatsApp notes to self")
+                    if added.created {
+                        print("    ✓ Suggested in Alfred (\(added.id))\n")
                         createdTodos.append(todo)
-                    } catch {
-                        print("    ✗ Failed to create in Notion: \(error)\n")
+                    } else {
+                        skippedDuplicates += 1
                     }
                 } else {
                     print("    • Not a todo\n")

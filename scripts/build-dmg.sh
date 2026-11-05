@@ -132,9 +132,11 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" << PLIST
 PLIST
 
 # Copy web resources
-if [[ -f "Sources/GUI/Resources/home.html" ]]; then
-    cp Sources/GUI/Resources/home.html "${APP_BUNDLE}/Contents/Resources/"
-fi
+for page in home.html app.html; do
+    if [[ -f "Sources/GUI/Resources/${page}" ]]; then
+        cp "Sources/GUI/Resources/${page}" "${APP_BUNDLE}/Contents/Resources/"
+    fi
+done
 
 # Copy PWA resources (service worker, manifest, icons)
 mkdir -p "${APP_BUNDLE}/Contents/Resources/web"

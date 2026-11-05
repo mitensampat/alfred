@@ -250,6 +250,9 @@ class SelfModelStore {
     static let userAuthoredMetaKeys: Set<String> = [
         "owner", "stage", "next_date", "type", "decision",
         "pinned", "top_dismissed", "people_json", "people_curated",
+        // The rewire's front lifecycle (docs/rewire/SPEC.md, "fronts"): the user's confirmation,
+        // date and outcome must survive every recompute, or a confirmed front would vanish overnight.
+        "front_state", "front_date", "outcome",
         // Machine-computed but expensive to recompute — carry forward so the nightly
         // materialize() doesn't drop the durability tag and force a re-classification.
         "durability", "durability_hash"

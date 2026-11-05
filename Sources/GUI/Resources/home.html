@@ -10916,6 +10916,7 @@
             // browser, You into the curated registers.
             const isNow = which === 'now';
             const smVisible = !isNow;  // You or Model
+            ['deskScreen', 'coachScreen'].forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
             document.getElementById('conversationScroll').style.display = isNow ? '' : 'none';
             document.getElementById('inputArea').style.display = isNow ? '' : 'none';
             document.getElementById('youScreen').style.display = smVisible ? 'flex' : 'none';
@@ -10973,7 +10974,7 @@
         // Fronts and People are DISTINCT contained environments that share one shape (top-desk +
         // searchable list + scoped side rail). The nav switches which environment fills the desk.
         function deskNav(seg){
-            ['Fronts','People','Model'].forEach(s => document.getElementById('deskNav'+s).classList.remove('active'));
+            ['Fronts','People','Coach','Model'].forEach(s => document.getElementById('deskNav'+s).classList.remove('active'));
             if (seg === 'fronts' || seg === 'people'){
                 _deskEntity = seg; _deskView = 'list'; _deskSel = null; _deskDetail = null;
                 deskShowSurface('desk');
@@ -11078,8 +11079,10 @@
             if (btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
             try {
                 const r = await authFetch('/api/coaching/note-to-model', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ insight, label: c.label || c.type || 'Coaching insight' }) });
-                if (!(await r.json()).success) throw new Error('failed');
-                if (btn){ btn.textContent = '✓ In your Model'; }
+                const res = await r.json();
+                if (!res.success) throw new Error('failed');
+                // The server keeps actions and facts out of beliefs; only a promoted insight is "in your Model".
+                if (btn){ btn.textContent = res.promoted === false ? '✓ Noted (not a belief)' : '✓ In your Model'; btn.title = res.note || ''; }
             } catch(e){ if (btn){ btn.disabled = false; btn.textContent = 'Keep → Model'; } alert('Could not save to Model.'); }
         }
         async function loadCoach(force){
@@ -11563,7 +11566,7 @@
                 <div class="dk-week"><div class="dk-sec-label">Your week, honestly</div>
                     <div class="dk-week-stat"><span class="dk-week-num">${w.meeting_h||0}h</span><span class="dk-week-l">in meetings · ${w.focus_h||0}h focus</span></div>
                     <div class="dk-week-stat"><span class="dk-week-num hot">${_deskOver}</span><span class="dk-week-l">people waiting over a week</span></div>
-                    <div class="dk-week-foot">Friday 17:00, Alfred asks one question about whichever number looks worst.</div>
+                    <div class="dk-week-foot">Your weekly review looks back at these numbers.</div>
                 </div>`;
         }
         function renderFrontsMarginHTML(){
@@ -11581,7 +11584,7 @@
                     <div class="dk-week-stat"><span class="dk-week-num">${w.unattended_fronts||0}</span><span class="dk-week-l">front${(w.unattended_fronts===1)?'':'s'} running without you</span></div>
                     <div class="dk-week-stat"><span class="dk-week-num">${w.handed_off||0}</span><span class="dk-week-l">handed off, not done by you</span></div>
                     <div class="dk-week-stat"><span class="dk-week-num ${cold.length?'hot':''}">${cold.length}</span><span class="dk-week-l">stalled over ${'2 weeks'}</span></div>
-                    <div class="dk-week-foot">Friday 17:00, Alfred asks one question about whichever number looks worst.</div>
+                    <div class="dk-week-foot">Your weekly review looks back at these numbers.</div>
                 </div>`;
         }
 
@@ -12317,7 +12320,7 @@
             const input = document.getElementById('deskAskInput');
             const text = (typeof prefill === 'string' && prefill) ? prefill : (input ? input.value.trim() : '');
             deskShowSurface('chat');
-            deskNavActive('Fronts');
+            deskNavActive('');   // chat is not a tab: light none
             if (text){ if (input) input.value = ''; setTimeout(() => sendChat(text), 60); }
         }
         function deskAskAbout(name){ deskAsk('Help me edit the draft to ' + name + '.'); }
@@ -12368,6 +12371,17 @@
                 return;
             }
             if (d.paired){
+                // Paired is not the same as receiving: a dead socket stays paired. Say which it is.
+                const days = d.newest_message ? Math.floor((Date.now()/1000 - d.newest_message) / 86400) : null;
+                const live = d.connected && (days === null || days < 2);
+                if (!live){
+                    el.innerHTML = `<div style="text-align:center;padding:8px 0;">
+                        <div style="font-size:30px;color:var(--dk-hot);">&#9888;</div>
+                        <div style="font-weight:800;font-size:18px;margin-top:6px;">Paired, but not receiving</div>
+                        <div style="color:var(--dk-n600);font-size:13px;margin-top:6px;line-height:1.5;">${days !== null ? 'Newest message is ' + days + ' day' + (days === 1 ? '' : 's') + ' old. ' : ''}${_esc(d.reason || 'The bridge is not connected.')} Restart the bridge, or unlink and pair again.</div>
+                    </div>`;
+                    return;
+                }
                 el.innerHTML = `<div style="text-align:center;padding:8px 0;">
                     <div style="font-size:30px;color:#2ea043;">&#10003;</div>
                     <div style="font-weight:800;font-size:18px;margin-top:6px;">Connected</div>

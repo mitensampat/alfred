@@ -4,6 +4,8 @@ newest first. each entry: date, decision, why. read this before changing the UI.
 
 | date | decision | why |
 | --- | --- | --- |
+| 2026-11-05 | on the switch, commitments already on the desk are imported as open to-dos; only ones extracted afterwards wait in the suggested tray | my call while building: those items are already the working list, and dumping them all into the tray would be the opposite of calm |
+| 2026-11-05 | WhatsApp notes-to-self become suggestions in Alfred, not tasks written straight to Notion; accepted to-dos reach Notion through the mirror | one list, one way into Notion |
 | 2026-11-05 | fronts require a date (an explicit "no fixed date" is allowed) | a front is an outcome with a clock; a date is what makes it rankable |
 | 2026-11-05 | accent colour is deep sage `#4E6B5A` | zen, calm, distinct from warm urgency dot |
 | 2026-11-05 | the Notion mirror is a NEW database; old tasks and "Alfred tasks" are imported once | keeps the mirror clean; no mixed history |

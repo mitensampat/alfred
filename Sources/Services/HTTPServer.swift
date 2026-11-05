@@ -238,6 +238,9 @@ class HTTPServer {
         // Start scheduled task lifecycle scanning (every hour)
         startScheduledTaskScanning()
 
+        // Keep the one to-do list mirrored to Notion (docs/rewire/SPEC.md, "Notion sync").
+        startTodoMirror()
+
         Task {
             while true {
                 do {
@@ -298,9 +301,11 @@ class HTTPServer {
                 return
             }
 
-            // Serve any HTML file from web directory (prototypes, etc.)
-            if request.path.hasSuffix(".html") && request.path != "/home.html" && request.path != "/index.html" {
-                let filename = String(request.path.dropFirst()) // strip leading /
+            // Serve the new app shell. Only named pages are served without a session: the shell itself
+            // holds no data and logs in like home.html. Prototypes and anything else are no longer
+            // served unauthenticated (the review found prototype-walk.html open to anyone on the network).
+            if Self.publicPages.contains(request.path) {
+                let filename = request.path == "/app" ? "app.html" : String(request.path.dropFirst())
                 if let html = HotReloadManager.shared.getWebFile(filename) {
                     let response = HTTPResponse(statusCode: 200, headers: ["Content-Type": "text/html; charset=utf-8"], htmlBody: html)
                     try await client.send(response)
@@ -646,7 +651,11 @@ class HTTPServer {
         }
     }
 
+    /// HTML pages served without a session (each logs in itself).
+    static let publicPages: Set<String> = ["/app.html", "/app"]
+
     private func route(_ request: HTTPRequest) async -> HTTPResponse {
+        if request.path.hasPrefix("/api/v2/") { return await routeRewire(request) }
         switch (request.method, request.path) {
         case ("GET", "/api/health"):
             return handleHealth()
@@ -13806,5 +13815,311 @@ extension HTTPServer {
     private func handleReflectReset() -> HTTPResponse {
         ReflectionStore.shared.clearAll()
         return jsonResponse(["success": true, "message": "All reflection data cleared"], status: 200)
+    }
+}
+
+// MARK: - The rewire API (/api/v2, docs/rewire/SPEC.md)
+//
+// The new app (Sources/GUI/Resources/app.html) reads only these endpoints. They sit beside the
+// desk's /api/desk* routes, which stay until phase 4 retires the old surface.
+extension HTTPServer {
+
+    /// Calendar for today + the next 6 days, cached for 5 minutes (the now tab polls).
+    private static var _schedCache: (at: Date, schedules: [DailySchedule])?
+    private static let _schedLock = NSLock()
+
+    func rewireSchedules() async -> [DailySchedule] {
+        Self._schedLock.lock()
+        if let c = Self._schedCache, Date().timeIntervalSince(c.at) < 300 { Self._schedLock.unlock(); return c.schedules }
+        Self._schedLock.unlock()
+        var schedules: [DailySchedule] = []
+        if let orchestrator = alfredService.orchestrator, let user = getConfig()?.user {
+            let cal = Calendar.current
+            for offset in 0..<7 {
+                guard let day = cal.date(byAdding: .day, value: offset, to: Date()) else { continue }
+                if let s = try? await orchestrator.calendarServicePublic.fetchEventsFromAllCalendars(for: day, userSettings: user) {
+                    schedules.append(s)
+                }
+            }
+        }
+        Self._schedLock.lock(); Self._schedCache = (Date(), schedules); Self._schedLock.unlock()
+        return schedules
+    }
+
+    /// Start the Notion to-do mirror loop (called from start()).
+    func startTodoMirror() {
+        NotionTodoMirror.start(
+            notion: { [weak self] in await MainActor.run { self?.alfredService.orchestrator?.notionServicePublic } },
+            importFrom: { [weak self] in
+                var ids: [String] = []
+                if let n = self?.getConfig()?.notion {
+                    if let t = n.tasksDatabaseId, t != "YOUR_TASKS_DATABASE_ID" { ids.append(t) }
+                    if let t = n.briefingSources?.tasksDatabaseId, t != "YOUR_TASKS_DATABASE_ID", !ids.contains(t) { ids.append(t) }
+                }
+                return ids
+            })
+    }
+
+    private func v2Body(_ request: HTTPRequest) -> [String: Any] {
+        guard let b = request.body, let o = try? JSONSerialization.jsonObject(with: b) as? [String: Any] else { return [:] }
+        return o
+    }
+
+    private func v2Param(_ request: HTTPRequest, _ key: String) -> String? {
+        let body = v2Body(request)
+        let v = (body[key] as? String) ?? request.queryParams[key]
+        return v?.trimmingCharacters(in: .whitespacesAndNewlines).trimmedNonEmpty
+    }
+
+    /// Close / reopen the commitments behind a to-do in Notion too (best-effort, like the desk).
+    private func v2SyncCommitments(_ r: TodoService.ActionResult) async {
+        for h in r.closeHashes { try? await alfredService.closeCommitmentByHash(hash: h, reason: "Alfred to-do done") }
+        for h in r.reopenHashes { await alfredService.reopenCommitmentByHash(hash: h) }
+    }
+
+    func routeRewire(_ request: HTTPRequest) async -> HTTPResponse {
+        let ok: (Any) -> HTTPResponse = { HTTPResponse(statusCode: 200, body: ($0 as? [String: Any]) ?? ["ok": true]) }
+        let bad: (String) -> HTTPResponse = { HTTPResponse(statusCode: 400, body: ["ok": false, "error": $0]) }
+        let firstName = (getConfig()?.user.name ?? "").split(separator: " ").first.map(String.init) ?? ""
+
+        switch (request.method, request.path) {
+
+        // ── now ──
+        case ("GET", "/api/v2/now"):
+            let s = await rewireSchedules()
+            var out = TodoService.now(schedules: s, userFirstName: firstName)
+            out["agenda"] = TodoService.agenda(schedules: s)
+            out["fronts_glance"] = Array(FrontService.activeCards(todos: TodoStore.shared.all()).prefix(5))
+            return ok(out)
+
+        case ("GET", "/api/v2/agenda"):
+            return ok(["agenda": TodoService.agenda(schedules: await rewireSchedules())])
+
+        // ── to-dos ──
+        case ("GET", "/api/v2/todos"):
+            return ok(TodoService.list(filter: request.queryParams["filter"], schedules: await rewireSchedules()))
+
+        case ("POST", "/api/v2/todos"):
+            guard let title = v2Param(request, "title") else { return bad("title required") }
+            let frontId = v2Param(request, "front_id")
+            let frontName = frontId.flatMap { id in FrontService.activeThemes().first { $0.id == id } }.map { FrontService.shortName($0.name) }
+            let due = v2Param(request, "due").flatMap { TodoStore.dayFormatter.date(from: $0) != nil ? $0 : nil }
+            let r = TodoStore.shared.upsert(title: title, status: .open, due: due, frontId: frontId, frontName: frontName,
+                                            person: v2Param(request, "person"), source: "capture",
+                                            sourceRef: "capture:" + UUID().uuidString, sourceNote: "Added by you")
+            return ok(["ok": true, "id": r.id, "receipt": "Added to your list" + (frontName.map { " · tagged \($0)" } ?? "")])
+
+        case ("POST", "/api/v2/todos/update"):
+            guard let id = v2Param(request, "id"), TodoStore.shared.get(id) != nil else { return bad("id required") }
+            var f: [String: Any?] = [:]
+            if let t = v2Param(request, "title") { f["title"] = t }
+            if let d = v2Body(request)["due"] { f["due"] = (d as? String).flatMap { TodoStore.dayFormatter.date(from: $0) != nil ? $0 : nil } ?? NSNull() }
+            if let p = v2Body(request)["person"] { f["person"] = (p as? String)?.trimmedNonEmpty ?? NSNull() }
+            if let fr = v2Body(request)["front_id"] {
+                let id = (fr as? String)?.trimmedNonEmpty
+                f["front_id"] = id ?? NSNull()
+                f["front_name"] = id.flatMap { i in FrontService.activeThemes().first { $0.id == i } }.map { FrontService.shortName($0.name) } ?? NSNull()
+            }
+            return ok(["ok": TodoStore.shared.update(id, f)])
+
+        case ("POST", "/api/v2/todos/done"):
+            guard let id = v2Param(request, "id") else { return bad("id required") }
+            let r = TodoService.complete(id)
+            await v2SyncCommitments(r)
+            return ok(["ok": r.ok, "receipt": r.receipt])
+
+        case ("POST", "/api/v2/todos/undo"):
+            guard let id = v2Param(request, "id") else { return bad("id required") }
+            let r = TodoService.reopen(id)
+            await v2SyncCommitments(r)
+            return ok(["ok": r.ok, "receipt": r.receipt])
+
+        case ("POST", "/api/v2/todos/accept"):
+            guard let id = v2Param(request, "id") else { return bad("id required") }
+            return ok(["ok": TodoService.accept(id), "receipt": "Added to your list"])
+
+        case ("POST", "/api/v2/todos/dismiss"):
+            guard let id = v2Param(request, "id") else { return bad("id required") }
+            let hashes = TodoService.dismiss(id)
+            for h in hashes { try? await alfredService.closeCommitmentByHash(hash: h, reason: "Dismissed in Alfred") }
+            return ok(["ok": true, "receipt": "Dismissed. Alfred will learn from this."])
+
+        case ("POST", "/api/v2/todos/snooze"):
+            guard let id = v2Param(request, "id") else { return bad("id required") }
+            let day = TodoService.snooze(id, until: v2Param(request, "until"))
+            return ok(["ok": true, "until": day, "receipt": "Moved to " + (day == TodoStore.dayFormatter.string(from: Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()) ? "tomorrow" : day)])
+
+        case ("POST", "/api/v2/todos/unsnooze"):
+            guard let id = v2Param(request, "id") else { return bad("id required") }
+            let skips = max(0, (TodoStore.shared.get(id)?.skipCount ?? 1) - 1)
+            return ok(["ok": TodoStore.shared.update(id, ["snoozed_until": NSNull(), "skip_count": skips], markDirty: false)])
+
+        case ("POST", "/api/v2/todos/pin"):
+            let id = v2Param(request, "id")
+            TodoStore.shared.pin(id)
+            return ok(["ok": true, "receipt": id == nil ? "Unpinned. Alfred picks what is up next." : "Pinned to the top of Now"])
+
+        case ("POST", "/api/v2/todos/reply"):
+            // Send a WhatsApp reply on the to-do's own thread, then close it (or, for a nudge on a
+            // "waiting on" item, send without closing — they still owe you).
+            guard let id = v2Param(request, "id"), let text = v2Param(request, "text"),
+                  let t = TodoStore.shared.get(id) else { return bad("id and text required") }
+            guard let jid = t.threadId, jid.contains("@") else {
+                return ok(["ok": false, "error": "No WhatsApp thread is linked to this to-do."])
+            }
+            let sent = await sendViaWhatsAppBridge(jid: jid, message: text)
+            guard sent.ok else { return ok(["ok": false, "error": sent.error]) }
+            if t.kind == .mine {
+                let r = TodoService.complete(id)
+                await v2SyncCommitments(r)
+            }
+            let who = t.person?.split(separator: " ").first.map(String.init) ?? "them"
+            return ok(["ok": true, "receipt": "Sent to \(who) on WhatsApp"])
+
+        // ── fronts ──
+        case ("GET", "/api/v2/fronts"):
+            TodoService.reconcileCommitments()
+            let todos = TodoStore.shared.all()
+            return ok([
+                "fronts": FrontService.activeCards(todos: todos),
+                "cap": FrontService.cap,
+                "proposal": FrontService.proposal(todos: todos) as Any? ?? NSNull(),
+                "needs_migration": FrontService.needsMigration() && !DeskService.buildFronts().isEmpty
+            ])
+
+        case ("GET", "/api/v2/fronts/front"):
+            guard let id = request.queryParams["id"], let t = FrontService.themes().first(where: { $0.id == id }) else { return bad("front not found") }
+            let todos = TodoStore.shared.all()
+            var card = FrontService.card(t, todos: todos)
+            let ctx = TodoService.context(schedules: await rewireSchedules())
+            card["todos"] = TodoStore.shared.openMine().filter { $0.frontId == id && $0.source != "front_decision" }.prefix(5).map { TodoService.card($0, ctx: ctx) }
+            card["decision_todo"] = TodoStore.shared.openMine().first { $0.frontId == id && $0.source == "front_decision" }?.id as Any? ?? NSNull()
+            card["waiting"] = TodoStore.shared.waiting().filter { $0.frontId == id }.map { $0.dict }
+            card["state"] = t.meta["front_state"] ?? ""
+            let detail = ReflectionStore.shared.getThemeDetail(theme: t.name, days: 120)
+            card["log"] = ((detail["timeline"] as? [[String: Any]]) ?? []).prefix(8).map {
+                ["date": $0["date"] as? String ?? "", "text": $0["content"] as? String ?? ""]
+            }
+            return ok(card)
+
+        case ("POST", "/api/v2/fronts/activate"):
+            guard let id = v2Param(request, "id") else { return bad("id required") }
+            do {
+                try FrontService.activate(id, date: v2Param(request, "date"), outcome: v2Param(request, "outcome"), name: v2Param(request, "name"))
+                return ok(["ok": true, "receipt": "It is a front now"])
+            } catch FrontService.FrontError.cap(let active) {
+                return ok(["ok": false, "error": "cap", "message": "You have \(FrontService.cap) fronts. Close or pause one first.", "active": active])
+            } catch FrontService.FrontError.dateRequired {
+                return ok(["ok": false, "error": "date_required", "message": "A front needs a date (or choose no fixed date)."])
+            } catch {
+                return ok(["ok": false, "error": "not_found"])
+            }
+
+        case ("POST", "/api/v2/fronts/new"):
+            guard let name = v2Param(request, "name") else { return bad("name required") }
+            do {
+                let id = try FrontService.create(name: name, date: v2Param(request, "date"), outcome: v2Param(request, "outcome"))
+                if let decision = v2Param(request, "decision") {
+                    FrontService.setMeta(id, ["decision": decision])
+                    FrontService.syncDecisionTodo(frontId: id, decision: decision)
+                }
+                return ok(["ok": true, "id": id, "receipt": "\(name) is a front now"])
+            } catch FrontService.FrontError.cap(let active) {
+                return ok(["ok": false, "error": "cap", "message": "You have \(FrontService.cap) fronts. Close or pause one first.", "active": active])
+            } catch {
+                return ok(["ok": false, "error": "date_required", "message": "A front needs a date (or choose no fixed date)."])
+            }
+
+        case ("POST", "/api/v2/fronts/state"):
+            guard let id = v2Param(request, "id"), let st = v2Param(request, "state") else { return bad("id and state required") }
+            let prev = FrontService.themes().first { $0.id == id }?.meta["front_state"]
+            let done = FrontService.setState(id, st)
+            let label = ["done": "Marked done", "paused": "Paused", "topic": "Kept as a topic", "active": "Back on your fronts"][st] ?? "Updated"
+            return ok(["ok": done, "receipt": label, "previous": prev as Any? ?? NSNull()])
+
+        case ("POST", "/api/v2/fronts/meta"):
+            guard let id = v2Param(request, "id") else { return bad("id required") }
+            var changes: [String: String?] = [:]
+            for key in ["outcome", "decision", "owner"] { if let v = v2Param(request, key) { changes[key] = v } }
+            if let d = v2Param(request, "date") {
+                guard let valid = FrontService.validDate(d) else { return ok(["ok": false, "error": "date_required"]) }
+                changes["front_date"] = valid
+            }
+            let done = FrontService.setMeta(id, changes)
+            if let decision = changes["decision"] ?? nil { FrontService.syncDecisionTodo(frontId: id, decision: decision) }
+            return ok(["ok": done])
+
+        case ("POST", "/api/v2/fronts/decide"):
+            // Record the one decision: closes the decision to-do and clears the front's open decision.
+            guard let id = v2Param(request, "id") else { return bad("id required") }
+            if let todo = TodoStore.shared.openMine().first(where: { $0.frontId == id && $0.source == "front_decision" }) {
+                _ = TodoService.complete(todo.id)
+            }
+            FrontService.setMeta(id, ["decision": nil, "last_decision": v2Param(request, "note") ?? "decided"])
+            return ok(["ok": true, "receipt": "Decision recorded"])
+
+        case ("GET", "/api/v2/fronts/migration"):
+            TodoService.reconcileCommitments()
+            return ok(["candidates": FrontService.migrationCandidates(todos: TodoStore.shared.all()), "cap": FrontService.cap])
+
+        case ("POST", "/api/v2/fronts/migrate"):
+            let keep = (v2Body(request)["keep"] as? [String: String]) ?? [:]
+            do {
+                try FrontService.migrate(keep: keep)
+                return ok(["ok": true, "receipt": "Kept \(keep.count) front\(keep.count == 1 ? "" : "s"). The rest are topics."])
+            } catch FrontService.FrontError.dateRequired {
+                return ok(["ok": false, "error": "date_required", "message": "Each front you keep needs a date (or no fixed date)."])
+            } catch {
+                return ok(["ok": false, "error": "cap", "message": "Keep at most \(FrontService.cap)."])
+            }
+
+        // ── people ──
+        case ("GET", "/api/v2/people"):
+            return ok(TodoService.people())
+
+        case ("GET", "/api/v2/people/person"):
+            guard let name = request.queryParams["name"]?.trimmedNonEmpty else { return bad("name required") }
+            return ok(TodoService.person(name, schedules: await rewireSchedules()))
+
+        // ── coach ──
+        case ("POST", "/api/v2/coach/dismiss"):
+            guard let key = v2Param(request, "key") else { return bad("key required") }
+            CoachTriggerService.dismiss(key: key, metric: Int(v2Param(request, "metric") ?? "0") ?? 0)
+            return ok(["ok": true, "receipt": "Got it. Alfred will not raise this for 7 days."])
+
+        // ── status: one dot, only when something needs the user ──
+        case ("GET", "/api/v2/status"):
+            var issues: [[String: Any]] = []
+            let wa = await handleWaBridgeStatus(request)
+            if let data = wa.body, let w = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               (w["reachable"] as? Bool) == true, getConfig()?.messaging.whatsapp.enabled == true {
+                let connected = (w["connected"] as? Bool) == true
+                var stale = false
+                if let newest = (w["newest_message"] as? Double) ?? (w["newest_message"] as? Int).map(Double.init) {
+                    stale = Date().timeIntervalSince1970 - newest > 2 * 86400
+                }
+                if !connected || stale {
+                    issues.append(["key": "whatsapp", "title": (w["paired"] as? Bool) == true ? "WhatsApp is paired but not receiving" : "WhatsApp needs pairing",
+                                   "detail": stale ? "No new messages in over 2 days." : "Messages are not arriving.", "fix": "pair_whatsapp"])
+                }
+            }
+            let mirror = NotionTodoMirror.status()
+            if let err = mirror["error"] as? String, !err.isEmpty {
+                issues.append(["key": "notion", "title": "Notion to-do mirror is not syncing", "detail": err, "fix": "notion_mirror"])
+            }
+            return ok(["ok": issues.isEmpty, "issues": issues, "notion_mirror": mirror])
+
+        case ("POST", "/api/v2/notion/mirror/setup"):
+            guard let n = alfredService.orchestrator?.notionServicePublic else { return bad("Notion is not configured") }
+            do {
+                let id = try await NotionTodoMirror.ensureDatabase(notion: n, parentPageId: v2Param(request, "parent"))
+                return ok(["ok": true, "database_id": id])
+            } catch {
+                return ok(["ok": false, "error": "\(error)"])
+            }
+
+        default:
+            return HTTPResponse(statusCode: 404, body: ["error": "not found"])
+        }
     }
 }
