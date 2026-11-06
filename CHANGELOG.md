@@ -5,15 +5,16 @@ All notable changes to Alfred will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [6.0.0] - 2026-11-05
+## [6.0.0] - 2026-11-06
 
-A new app replaces the Desk, and one to-do list replaces the scattered ones. This is a major
-version because the old primary surface is gone: `home.html` has been removed and everything it
-did now lives in the new app at `/`. Old bookmarks and the installed PWA redirect there.
+The most intelligent and easiest to use version of Alfred. Everything Alfred does is now reached
+from one surface at `/`, built around a single to-do list that spans every source it reads. This
+is a major version because the surface is consolidated: `home.html` is folded into the app, and
+existing bookmarks and the installed PWA open it directly.
 
 ### Added
 
-- **The new Alfred app** — one page for phone, iPad and desktop, reading only `/api/v2`:
+- **One surface** — a single page for phone, iPad and desktop, reading only `/api/v2`:
   - **Now** — the up-next line (a to-do you pin always wins), the top 3 as cards you can reply to,
     decide, finish, defer or open, the rest of today folded away on the phone, and one coach line
     when a trigger has earned it.
@@ -61,9 +62,10 @@ did now lives in the new app at `/`. Old bookmarks and the installed PWA redirec
 
 ### Changed
 
-- **The old desk is gone.** Settings, your model, coach notes, the weekly review, the archive, past
-  conversations, live scheduling sessions and closure confirmations all moved into the new app.
-- **Every channel points at the new app** — the morning email is the Now tab in words, built from
+- **Everything in one place** — settings, your model, coach notes, the weekly review, the archive,
+  past conversations, live scheduling sessions and closure confirmations are all reached from the
+  app.
+- **Every channel opens the app** — the morning email is the Now tab in words, built from
   the same ranking; the morning push leads with your first to-do; a new push arrives ten minutes
   before a meeting and opens its prep; the evening push opens the app. Notifications route to the
   page they name.
@@ -82,28 +84,26 @@ did now lives in the new app at `/`. Old bookmarks and the installed PWA redirec
 
 ### Fixed
 
-- **WhatsApp history was being silently truncated.** Every lookback was cut to roughly one week, so
-  a scan asked for five weeks, reported success, and had actually read a fifth of the window. This,
-  more than any outage, is what made Alfred's reading of your data feel stale.
-- **The Notion to-do mirror never ran a single cycle.** The app's menu-bar loop was started from
+- **WhatsApp history is no longer truncated.** Every lookback was being cut to roughly one week, so
+  a scan covering five weeks read a fifth of that window and reported success.
+- **The Notion to-do mirror now completes its cycles.** The app's menu-bar loop was started from
   inside a main-queue block that never returns, which starved the serial queue: every background
-  task waiting on the main actor suspended for ever. It had also silently swallowed 143 task
-  scans — started, none finished, none reported as failed. The run loop now drives that callout,
-  so the queue stays free.
+  task waiting on the main actor suspended indefinitely. The same cause had silently swallowed 143
+  task scans. The run loop now drives that callout, so the queue stays free.
 - **A mirror failure no longer jams the queue.** Each row is pushed on its own: a deleted Notion
   page is forgotten and recreated, a permanent rejection stops retrying every minute and is
   recorded in the item's history, and rate limits and outages stay queued to retry.
-- **The status endpoint used to stay silent when nothing worked.** It now says when the mirror has
-  no database, has never pushed, or has fallen behind — the silence is what hid the bug above.
-- **Decisions no longer throw away correct answers.** A returned label whose capitalization differed
-  from the menu was discarded and the item fell to its fallback.
-- **The `Fallback` in a decision file now does something.** It was advertised and documented as
-  tunable, but no caller read it.
-- **A brand-new install pointed at a retired model**, so every request failed with nothing in the
-  interface to explain why. The bundled example config named a model that never existed.
+- **Status reporting** now says when the mirror has no database, has never pushed, or has fallen
+  behind, rather than staying silent.
+- **Decisions keep correct answers.** A returned label whose capitalization differed from the menu
+  was discarded and the item fell to its fallback.
+- **The `Fallback` in a decision file now takes effect.** It was documented as tunable, but no
+  caller read it.
+- **A brand-new install pointed at a retired model**, so every request failed. The bundled example
+  config named a model that does not exist. Both now name a current one.
 - **Notion status fields are read before being refused**, and status *writes* are schema-aware too,
   so a newly added option works immediately and a failed cancellation no longer reports success.
-- **Learning v2 recovered from a self-deadlock** that had stopped it outright and was making
+- **A learning-system deadlock is resolved** — it had stopped Learning v2 outright and was making
   routines disappear.
 - **The WhatsApp bridge** reports connection failures instead of swallowing them, allows re-pairing,
   logs every pairing outcome rather than only successes, no longer drops session writes under lock
@@ -116,13 +116,12 @@ did now lives in the new app at `/`. Old bookmarks and the installed PWA redirec
   understood that day.
 - **Commitments store the model's real confidence** instead of a hard-coded 0.8, and a second
   closing pass no longer records a duplicate completion.
-- **Changing your passcode now verifies the current one** and requires at least eight characters;
-  neither was checked before.
-- **Health reporting shows staleness** where it can actually be seen, rather than reporting "ok"
-  over data hours out of date.
+- **Changing your passcode now verifies the current one** and requires at least eight characters.
+- **Health reporting shows staleness** where it can be seen, rather than reporting "ok" over data
+  hours out of date.
 - **Web files are no longer copied into the override directory**, where one copy silently pinned
   the interface to its first installed version through every later update.
-- **Non-app pages were served without a passcode.** Only the app shell is public now.
+- **Only the app shell is served without a passcode.**
 
 ## [5.2.1] - 2026-08-15
 
