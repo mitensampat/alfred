@@ -372,7 +372,12 @@ class SetupStatusService {
             ],
             "ai": [
                 "anthropic_api_key": "",
-                "model": "claude-sonnet-4-20250514",
+                // The model a brand-new install starts on, so it has to be one the API still
+                // serves: claude-sonnet-4-20250514 was retired on 15 June 2026, which left a
+                // fresh Alfred failing every Claude call with nothing in the UI to explain why.
+                // This is the model the rest of the codebase is actually tuned and verified
+                // against; moving new installs to a newer Sonnet is a separate, testable change.
+                "model": "claude-sonnet-4-5-20250929",
                 "message_analysis_model": "claude-haiku-4-5-20251001"
             ],
             "messaging": [

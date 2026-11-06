@@ -5,23 +5,124 @@ All notable changes to Alfred will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [6.0.0] - 2026-11-05
+
+A new app replaces the Desk, and one to-do list replaces the scattered ones. This is a major
+version because the old primary surface is gone: `home.html` has been removed and everything it
+did now lives in the new app at `/`. Old bookmarks and the installed PWA redirect there.
 
 ### Added
-- **Decisions as editable definitions** — pick-from-a-menu judgements (belief durability, meeting
-  category) now live as Markdown files in `~/.alfred/decisions/` alongside skills and lenses: the
-  menu, the confidence thresholds, the fallback, and the prompt. User files override the installed
-  defaults; built-in menus stay fixed because code maps them onto enums.
-- **One confidence policy** — every decision returns a confidence, and one rule turns it into a tier:
-  `act` (apply on its own), `propose` (surface for the user), or `ask` (too unsure — fall back).
+
+- **The new Alfred app** — one page for phone, iPad and desktop, reading only `/api/v2`:
+  - **Now** — the up-next line (a to-do you pin always wins), the top 3 as cards you can reply to,
+    decide, finish, defer or open, the rest of today folded away on the phone, and one coach line
+    when a trigger has earned it.
+  - **To-dos** — filter by front or person; a suggestion tray you accept or dismiss; today,
+    upcoming and someday; an edit sheet for any item.
+  - **Fronts** — up to ten confirmed fronts, each with a date; a front page holding its one open
+    decision, next to-dos, who is involved, what others owe and what has happened.
+  - **People** — who is waiting on you and who has gone quiet; per person, what you owe, what you
+    are waiting on (reply or nudge over WhatsApp), shared fronts and scheduling.
+  - One add box for everything (to-do, a question for Alfred, `@schedule`), a You menu whose status
+    dot appears only when something needs you, and light and dark themes.
+  - Phone layout with bottom tabs, a floating add button and bottom sheets; iPad and desktop get a
+    left rail, a centre column and a right column for today's agenda and fronts at a glance.
+- **One to-do list over every source** (`~/.alfred/todos.db`) — extracted items arrive as
+  suggestions and join the list only once accepted; what others owe you is held separately as
+  "waiting" rather than cluttering your own list; one promise found in several places stays one
+  to-do with each source linked.
+- **Two-way Notion mirror** — a dedicated "Alfred to-dos" database. Alfred pushes every change
+  within a minute and pulls Notion edits every five minutes; the newest edit wins and the losing
+  version is kept in the item's history. Open tasks in previously configured databases are
+  imported once.
+- **Alfred learns from your choices** — plain rules that always show their reason: correcting a
+  front or a person teaches the tagger; a suggestion resembling one you dismissed, or coming from
+  a source you keep dismissing, is hidden with its reason and restorable for fourteen days; the
+  tray puts what you usually accept first; your dismissals and title edits feed the extractors.
+- **Post-meeting capture** — a sheet (opened by a push, or when you next open the app) that splits
+  your notes into follow-ups, tags them with the people from the meeting, and sends them to the
+  suggestion tray.
+- **Meeting preferences written as prose** — describe your week in a paragraph ("never before ten",
+  "keep Fridays for thinking") and Alfred compiles it into slot scoring, always echoing its reading
+  back in plain sentences so a misreading is corrected in seconds. Hard windows are removed from
+  consideration rather than ranked down; a long free run is protected but never vetoed; slots too
+  soon to be useful are dropped.
+- **Decisions as editable definitions** — the fixed-menu judgements Alfred makes (belief
+  durability, meeting category) now live as Markdown files in `~/.alfred/decisions/` alongside
+  skills and lenses: the menu, the confidence thresholds, the fallback and the prompt. User files
+  override the installed defaults; built-in menus stay fixed because code maps them onto enums.
+- **One confidence policy** — every decision returns a confidence, and one rule turns it into a
+  tier: `act` (apply on its own), `propose` (surface it for you), or `ask` (too unsure — fall back).
+- **Tasks close themselves after 30 days** — a task nobody has touched in a month is closed
+  automatically, for both tracked tasks and Alfred's own commitments, so the queue reflects live
+  work instead of accumulating.
+- **A failing routine now tells you** — a macOS banner on failure, which never existed before.
+- **Setup is its own page** (`setup.html`) — the same first-run wizard, restyled.
 
 ### Changed
-- **Typed decision output** — decisions use structured outputs (`output_config.format`), so the reply
-  always validates against a schema whose item ids and labels are enums. No more JSON extraction or
-  repair, and an answer can no longer shift onto the wrong item when the model drops one.
-- **Belief durability archives only when confident** — a statement is archived as a fact or action
-  only at the `act` tier; a hedged call keeps it as a belief.
-- **Meeting categories** — low-confidence calls land as Uncategorized instead of a guess.
+
+- **The old desk is gone.** Settings, your model, coach notes, the weekly review, the archive, past
+  conversations, live scheduling sessions and closure confirmations all moved into the new app.
+- **Every channel points at the new app** — the morning email is the Now tab in words, built from
+  the same ranking; the morning push leads with your first to-do; a new push arrives ten minutes
+  before a meeting and opens its prep; the evening push opens the app. Notifications route to the
+  page they name.
+- **WhatsApp self-chat commands** — `todo …` adds a to-do, `done …` closes the best match (and
+  refuses to guess between two equally good ones), `now` replies with your top 3.
+- **Quieter by default** — success banners are off for every routine, the mid-afternoon attention
+  email no longer sends, and the weekly learning digest is off by default, leaving the Sunday
+  review as the one weekly email. Existing installs are moved to these defaults once; changes you
+  make afterwards stick.
+- **Typed decision output** — decisions use structured outputs, so the reply always validates
+  against a schema whose item ids and labels are enums. No more JSON extraction or repair, and an
+  answer can no longer shift onto the wrong item when the model drops one.
+- **Belief durability archives only when confident** — a statement is archived as a fact or an
+  action only at the `act` tier; a hedged call stays a belief.
+- **Meeting categories** — a low-confidence call lands as Uncategorized instead of a guess.
+
+### Fixed
+
+- **WhatsApp history was being silently truncated.** Every lookback was cut to roughly one week, so
+  a scan asked for five weeks, reported success, and had actually read a fifth of the window. This,
+  more than any outage, is what made Alfred's reading of your data feel stale.
+- **The Notion to-do mirror never ran a single cycle.** The app's menu-bar loop was started from
+  inside a main-queue block that never returns, which starved the serial queue: every background
+  task waiting on the main actor suspended for ever. It had also silently swallowed 143 task
+  scans — started, none finished, none reported as failed. The run loop now drives that callout,
+  so the queue stays free.
+- **A mirror failure no longer jams the queue.** Each row is pushed on its own: a deleted Notion
+  page is forgotten and recreated, a permanent rejection stops retrying every minute and is
+  recorded in the item's history, and rate limits and outages stay queued to retry.
+- **The status endpoint used to stay silent when nothing worked.** It now says when the mirror has
+  no database, has never pushed, or has fallen behind — the silence is what hid the bug above.
+- **Decisions no longer throw away correct answers.** A returned label whose capitalization differed
+  from the menu was discarded and the item fell to its fallback.
+- **The `Fallback` in a decision file now does something.** It was advertised and documented as
+  tunable, but no caller read it.
+- **A brand-new install pointed at a retired model**, so every request failed with nothing in the
+  interface to explain why. The bundled example config named a model that never existed.
+- **Notion status fields are read before being refused**, and status *writes* are schema-aware too,
+  so a newly added option works immediately and a failed cancellation no longer reports success.
+- **Learning v2 recovered from a self-deadlock** that had stopped it outright and was making
+  routines disappear.
+- **The WhatsApp bridge** reports connection failures instead of swallowing them, allows re-pairing,
+  logs every pairing outcome rather than only successes, no longer drops session writes under lock
+  contention, and no longer pins reads to a bridge that has died.
+- **Scheduling reads availability from every calendar**, not just the first, and says why a command
+  did nothing instead of failing silently. The self-chat watcher starts on the path the service
+  actually takes and finds the self-chat whatever form its id is stored in.
+- **Improving the preference compiler now reaches people who already saved preferences** — compiled
+  settings used to be cached on the prose alone and stayed frozen at whatever the compiler
+  understood that day.
+- **Commitments store the model's real confidence** instead of a hard-coded 0.8, and a second
+  closing pass no longer records a duplicate completion.
+- **Changing your passcode now verifies the current one** and requires at least eight characters;
+  neither was checked before.
+- **Health reporting shows staleness** where it can actually be seen, rather than reporting "ok"
+  over data hours out of date.
+- **Web files are no longer copied into the override directory**, where one copy silently pinned
+  the interface to its first installed version through every later update.
+- **Non-app pages were served without a passcode.** Only the app shell is public now.
 
 ## [5.2.1] - 2026-08-15
 
