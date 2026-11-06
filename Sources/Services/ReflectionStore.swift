@@ -1490,7 +1490,7 @@ class ReflectionStore {
                     // Freshest open question OWNED BY THIS THEME becomes the "live edge" (rows are
                     // DESC). Owner precedence: an accepted move (override) > the extractor's per-
                     // question tag > deterministic best-fit. This kills the old bug where a co-tagged
-                    // topic's question bled in as the headline (a VN-conduct question on the CCBP front).
+                    // topic's question bled in as the headline (a conduct question on the Northstar front).
                     if agg.edge.isEmpty {
                         for q in questions where !q.isEmpty {
                             if excludedByTheme[theme]?.contains(q.trimmingCharacters(in: .whitespacesAndNewlines)) == true { continue }

@@ -291,7 +291,7 @@ enum FrontService {
 
     static func lowerFirst(_ s: String) -> String {
         guard let f = s.first else { return s }
-        // Keep acronyms and proper nouns ("RBI", "Kunal") as they are.
+        // Keep acronyms and proper nouns ("RBI", "Samir") as they are.
         let second = s.dropFirst().first
         if f.isUppercase, let c = second, c.isUppercase { return s }
         return f.lowercased() + s.dropFirst()

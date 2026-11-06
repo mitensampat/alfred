@@ -338,7 +338,7 @@ enum DeskService {
 
     /// A going-cold row must clear four tenets, or it doesn't belong here:
     ///   1. It's a PERSON with a real human name — never a phone/JID/hex id, never a room
-    ///      ("CRED Treasury Strategy", "peercheque founders" are topics, not relationships).
+    ///      ("Acme Treasury Strategy", "Examplepay founders" are topics, not relationships).
     ///   2. It's actually COLD — quiet ≥ `coldMinDays`. Someone you spoke to yesterday is not
     ///      cooling, no matter what a noisy engagement trend says.
     ///   3. It's NOT already on your desk — those are surfaced in People; showing them twice is
@@ -362,19 +362,19 @@ enum DeskService {
         "relationship", "context", "debrief"
     ]
     /// Your own first name — a multi-word title that contains it (not as the leading token) is a
-    /// group/meeting title ("Ankit Sahil Miten", "Nalin Kunal Miten"), not a contact. Computed once.
+    /// group/meeting title ("Alex Jordan <you>", "Nina Dana <you>"), not a contact. Computed once.
     private static let userFirstName: String = {
         (AppConfig.load()?.user.name.split(separator: " ").first).map { String($0).lowercased() } ?? ""
     }()
     /// True only for something that reads as a person's name (tenet 1). The desk is thick with
-    /// company/room names ("CRED: Card Core", "FACE Members", "3 Musketeers", "Nash CRED"), so
+    /// company/room names ("Acme: Card Core", "Guild Members", "The Trio", "Team Acme"), so
     /// reject the tells: colons, leading digits, ALL-CAPS org acronyms, room words, multi-party.
     static func isRelationshipName(_ raw: String) -> Bool {
         let s = raw.trimmingCharacters(in: .whitespaces)
         guard !s.isEmpty, !s.hasPrefix("+") else { return false }        // empty / raw phone
         if s.contains(where: { $0.isNumber }) { return false }           // "Grade 5C", "Team 2"
-        if s.contains(":") { return false }                              // "CRED: Card Core"
-        // Reject domain-like names ("Fintechorg.in") but ALLOW initials with periods ("A.K. Sharma").
+        if s.contains(":") { return false }                              // "Acme: Card Core"
+        // Reject domain-like names ("Examplecorp.in") but ALLOW initials with periods ("A.K. Sharma").
         if s.range(of: "\\.(com|in|io|org|net|co|ai|app|dev)\\b", options: [.regularExpression, .caseInsensitive]) != nil { return false }
         let letterCount = s.unicodeScalars.filter { CharacterSet.letters.contains($0) }.count
         guard letterCount >= 2 else { return false }                     // needs real letters
@@ -386,20 +386,20 @@ enum DeskService {
         // dropped — the previous 2-word cap silently excluded a lot of legitimate contacts. Four+
         // tokens is far more often a group of first names than a person, so cap there.
         if words.count > 3 { return false }
-        // An ALL-CAPS token of 3+ letters is an org/acronym (CRED, FACE, HDFC, NBFC), not a name.
+        // An ALL-CAPS token of 3+ letters is an org/acronym (ACME, GUILD, BANKCO, NBFC), not a name.
         for w in words {
             let letters = w.filter { $0.isLetter }
             if letters.count >= 3 && letters == letters.uppercased() && letters != letters.lowercased() { return false }
         }
         // Group / meeting / topic titles that a 3-word allowance let through (from the accuracy eval).
         let lower = s.lowercased()
-        if s.contains(",") { return false }                              // "Cindy, Miten, Nikolay"
-        if lower.contains(" meet ") || lower.contains(" x ") || s.contains("+") || s.contains("@") { return false }  // "Krish meet Miten", "A x B", "KS + Travel"
-        if s.range(of: "[\\x{1F000}-\\x{1FAFF}\\x{2600}-\\x{27BF}]", options: .regularExpression) != nil { return false }  // emoji ("Benne Cap 🧢")
+        if s.contains(",") { return false }                              // "Alex, <you>, Nina"
+        if lower.contains(" meet ") || lower.contains(" x ") || s.contains("+") || s.contains("@") { return false }  // "Alex meet Nina", "A x B", "KS + Travel"
+        if s.range(of: "[\\x{1F000}-\\x{1FAFF}\\x{2600}-\\x{27BF}]", options: .regularExpression) != nil { return false }  // emoji ("Team Cap 🧢")
         if let c = words.first?.first, c.isLowercase { return false }    // "temp for…", "nothing official…" — a name is Title-Case
         let phraseStops: Set<String> = ["in", "at", "for", "the", "of", "on", "to", "from", "with"]
-        if words.contains(where: { phraseStops.contains($0.lowercased()) }) { return false }  // "Street in Haridwar"
-        if !userFirstName.isEmpty, words.dropFirst().contains(where: { $0.lowercased() == userFirstName }) { return false }  // "Ankit Sahil Miten"
+        if words.contains(where: { phraseStops.contains($0.lowercased()) }) { return false }  // "Street in Riverside"
+        if !userFirstName.isEmpty, words.dropFirst().contains(where: { $0.lowercased() == userFirstName }) { return false }  // "Alex Jordan <you>"
         if words.count >= 2, Set(words.map { $0.lowercased() }).count == 1 { return false }   // "Party Party Party"
         let capPairs = words.filter { $0.count == 2 && $0.allSatisfy { $0.isLetter && $0.isUppercase } }
         if capPairs.count >= 2 { return false }                          // "GS MS SS", "MS AP SB"

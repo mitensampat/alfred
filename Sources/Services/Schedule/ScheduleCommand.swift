@@ -59,8 +59,8 @@ enum ScheduleCommandParser {
         }
         var cmd = ScheduleCommand()
         var fields = rest.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" }).map(String.init)
-        // Tolerate a repeated prefix. "@schedule @schedule arundhati" and "@schedule schedule
-        // arundhati" both reach here with the word still attached, and it used to end up inside the
+        // Tolerate a repeated prefix. "@schedule @schedule rohini" and "@schedule schedule
+        // rohini" both reach here with the word still attached, and it used to end up inside the
         // name — which then matched nobody.
         while let f = fields.first?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "@")), f == "schedule" {
             fields.removeFirst()

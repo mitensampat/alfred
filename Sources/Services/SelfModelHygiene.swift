@@ -134,7 +134,7 @@ enum SelfModelHygiene {
     For each stray return: item (its index number), belongs_in (verbatim workspace name from the menu), confidence ("high" only if unmistakable), why (one short clause).
 
     Return ONLY JSON, no prose:
-    {"strays":[{"item":3,"belongs_in":"CCBP","confidence":"high","why":"about CCBP MDR economics, not this hiring workspace"}]}
+    {"strays":[{"item":3,"belongs_in":"Northstar","confidence":"high","why":"about Northstar MDR economics, not this hiring workspace"}]}
     Return {"strays":[]} if everything is correctly filed.
     """
 

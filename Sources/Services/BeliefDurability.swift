@@ -10,7 +10,7 @@ import Foundation
 ///                situations, people, and quarters. ("CEO command of strategy + detail first.")
 ///   • tactical — a current thesis/read on a specific business, metric, or market. Legitimately
 ///                part of how you're thinking now, but could flip next quarter.
-///                ("Kuvera's right to win is pure distribution.")
+///                ("Acme's right to win is pure distribution.")
 ///   • fact     — a past event, status, or arrangement. Something that happened or is in place —
 ///                not a belief at all. ("Secured 100% bank funding for Q2.")
 ///   • action   — an instruction, todo, or nudge. Tells someone to do something.

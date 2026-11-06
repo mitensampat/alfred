@@ -673,7 +673,7 @@ function sheetAdd(s) {
       <button type="button" class="btn big" style="flex:1 1 0" onclick="addSubmit('todo')">Add to-do</button>
       <button type="button" class="btn big plain" style="flex:1 1 0" onclick="addSubmit('ask')">Ask Alfred</button>
     </div>
-    <div class="label" style="margin-top:10px;font-size:12px">Start with @schedule or "block" to book time, for example: @schedule Kunal 30m next week.</div>`;
+    <div class="label" style="margin-top:10px;font-size:12px">Start with @schedule or "block" to book time, for example: @schedule Samir 30m next week.</div>`;
 }
 async function addSubmit(kind) {
   const text = document.getElementById('addText').value.trim(); if (!text) return;
@@ -1392,7 +1392,7 @@ async function checkCapture(force) {
 function sheetCapture(s) {
   return `<div class="label" style="padding-top:6px">Just left</div><div class="serif" style="font-size:24px">${esc(s.data.meeting_title || 'your meeting')}</div>
     <label for="capText" class="label" style="display:block;margin-top:14px">Any follow-ups? One per line is fine. They go to your suggestions.</label>
-    <textarea id="capText" class="field" rows="5" data-autofocus placeholder="Send Kunal the revised model&#10;Ask Neha for the RBI checklist by Friday"></textarea>
+    <textarea id="capText" class="field" rows="5" data-autofocus placeholder="Send Samir the revised model&#10;Ask Nina for the RBI checklist by Friday"></textarea>
     <div style="margin-top:14px;display:flex;gap:8px"><button type="button" class="btn big" style="flex:1 1 auto" onclick="submitCapture()">Add follow-ups</button><button type="button" class="ghost" onclick="closeSheet()">Nothing</button></div>`;
 }
 async function submitCapture() {

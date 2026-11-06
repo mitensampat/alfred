@@ -54,7 +54,7 @@ enum ScheduleDryRun {
         let deps = ScheduleManager.Deps(
             cal: cal, interp: interp, drafter: drafter, sender: sender, store: store,
             timezone: .current, myStyle: { "" },
-            directChats: { [(jid: jid, names: ["Kunal Shah", "Kunal"])] },
+            directChats: { [(jid: jid, names: ["Samir Rivera", "Samir"])] },
             thread: { _, _, _ in [] }, contactTZOverride: { _ in "" })
         let m = ScheduleManager(deps)
 
@@ -63,8 +63,8 @@ enum ScheduleDryRun {
         var t = Date()
         func tick() -> Date { t = t.addingTimeInterval(5); return t }
 
-        // 1) @schedule kunal 30m tomorrow → resolves + proposes options in self-chat.
-        _ = await m.handleSelfChat(text: "@schedule kunal 30m tomorrow", msgID: "m1", ts: tick())
+        // 1) @schedule samir 30m tomorrow → resolves + proposes options in self-chat.
+        _ = await m.handleSelfChat(text: "@schedule samir 30m tomorrow", msgID: "m1", ts: tick())
         let proposed = sender.toSelf.last ?? ""
         add("@schedule resolves + surfaces options + draft", proposed.contains("Free options:") && proposed.contains("Draft to send:"))
         let s1 = store.openSession(contactJID: jid)
@@ -101,31 +101,31 @@ enum ScheduleDryRun {
         // 5) A failed self-chat send must not take the session with it. The Desk runs the same flow
         //    off the stored prompt; losing the state left the user clicking buttons against nothing.
         let deadSender = FakeSender(); deadSender.ok = false
-        let (m2, store2) = build(deadSender, FakeInterp(), [(jid: jid, names: ["Kunal Shah", "Kunal"])])
-        _ = await m2.handleSelfChat(text: "@schedule kunal 30m tomorrow", msgID: "d1", ts: tick())
+        let (m2, store2) = build(deadSender, FakeInterp(), [(jid: jid, names: ["Samir Rivera", "Samir"])])
+        _ = await m2.handleSelfChat(text: "@schedule samir 30m tomorrow", msgID: "d1", ts: tick())
         let survivor = store2.openSession(contactJID: jid)
         add("session survives a failed self-chat send",
             survivor?.state == .slotsProposed && !(survivor?.lastPromptText.isEmpty ?? true) && survivor?.lastPromptAt != nil)
 
         // 6) Two live sessions: a line naming one acts on THAT one. The Desk's cards are
-        //    per-session, so "leave it" on Kunal's card must not close Priya's.
+        //    per-session, so "leave it" on Samir's card must not close Priya's.
         let jidB = "919820000001@s.whatsapp.net"
         let (m3, store3) = build(FakeSender(), FakeInterp(),
-                                 [(jid: jid, names: ["Kunal Shah"]), (jid: jidB, names: ["Priya Nair"])])
-        _ = await m3.handleSelfChat(text: "@schedule kunal 30m tomorrow", msgID: "t1", ts: tick())
+                                 [(jid: jid, names: ["Samir Rivera"]), (jid: jidB, names: ["Priya Nair"])])
+        _ = await m3.handleSelfChat(text: "@schedule samir 30m tomorrow", msgID: "t1", ts: tick())
         _ = await m3.handleSelfChat(text: "@schedule priya 30m tomorrow", msgID: "t2", ts: tick())
-        let kunalID = store3.openSession(contactJID: jid)?.id ?? ""
-        _ = await m3.handleSelfChat(text: "leave it", msgID: "t3", ts: tick(), sessionID: kunalID)
+        let samirID = store3.openSession(contactJID: jid)?.id ?? ""
+        _ = await m3.handleSelfChat(text: "leave it", msgID: "t3", ts: tick(), sessionID: samirID)
         add("a targeted line acts on the session it names",
-            !kunalID.isEmpty && store3.openSession(contactJID: jid) == nil
+            !samirID.isEmpty && store3.openSession(contactJID: jid) == nil
                 && store3.openSession(contactJID: jidB)?.state == .slotsProposed)
 
         // 7) The poller re-feeds the thread from the proposal on every tick. The same message must
         //    be read once — re-reading meant an LLM call a minute and a repeat of a prompt the user
         //    had already answered.
         let counting = FakeInterp()
-        let (m4, _) = build(FakeSender(), counting, [(jid: jid, names: ["Kunal Shah", "Kunal"])])
-        _ = await m4.handleSelfChat(text: "@schedule kunal 30m tomorrow", msgID: "w1", ts: tick())
+        let (m4, _) = build(FakeSender(), counting, [(jid: jid, names: ["Samir Rivera", "Samir"])])
+        _ = await m4.handleSelfChat(text: "@schedule samir 30m tomorrow", msgID: "w1", ts: tick())
         _ = await m4.handleSelfChat(text: "propose", msgID: "w2", ts: tick())
         let replyTS = tick()
         await m4.onContactMessage(jid: jid, isFromMe: false, text: "the second one works", ts: replyTS)
@@ -136,16 +136,16 @@ enum ScheduleDryRun {
         // 8) A name that matches nobody outright offers the closest saved names to pick from,
         //    instead of ending the command in silence. A guess is never auto-started.
         let (m5, store5) = build(FakeSender(), FakeInterp(),
-                                 [(jid: jid, names: ["Arundhati Sampat"]), (jid: jidB, names: ["Priya Nair"])])
-        _ = await m5.handleSelfChat(text: "@schedule arundati", msgID: "n1", ts: tick())
+                                 [(jid: jid, names: ["Rohini Iyer"]), (jid: jidB, names: ["Priya Nair"])])
+        _ = await m5.handleSelfChat(text: "@schedule rohni", msgID: "n1", ts: tick())
         let guessed = store5.allOpenSessions().first
         add("a misspelled name offers the closest match",
-            guessed?.state == .resolving && guessed?.candidates.first?.name == "Arundhati Sampat")
+            guessed?.state == .resolving && guessed?.candidates.first?.name == "Rohini Iyer")
 
         // 9) A doubled prefix (the palette and the self-chat both let one through) must not land
         //    inside the name.
-        let doubled = (try? ScheduleCommandParser.parse("@schedule arundhati 30m"))?.name ?? ""
-        add("a doubled @schedule prefix parses to the bare name", doubled == "arundhati")
+        let doubled = (try? ScheduleCommandParser.parse("@schedule rohini 30m"))?.name ?? ""
+        add("a doubled @schedule prefix parses to the bare name", doubled == "rohini")
 
         // 10) Re-running an ambiguous command renews the disambiguation instead of stacking a
         //     second one on the same pending key. Retrying is the natural thing to do while
@@ -153,11 +153,11 @@ enum ScheduleDryRun {
         //     openSession() (it returns only the newest) but still reachable by a bare reply
         //     through latestPromptedSession(), which is how "yes" lands on the wrong session.
         let (m6, store6) = build(FakeSender(), FakeInterp(),
-                                 [(jid: jid, names: ["Arundhati B (ex SBI)"]), (jid: jidB, names: ["Arundhati C (Accenture)"])])
-        _ = await m6.handleSelfChat(text: "@schedule arundhati", msgID: "r1", ts: tick())
-        _ = await m6.handleSelfChat(text: "@schedule arundhati", msgID: "r2", ts: tick())
-        _ = await m6.handleSelfChat(text: "@schedule arundhati", msgID: "r3", ts: tick())
-        let pend = store6.allOpenSessions().filter { $0.contactJID == "pending:arundhati" }
+                                 [(jid: jid, names: ["Rohini B (ex Bankco)"]), (jid: jidB, names: ["Rohini C (Globex)"])])
+        _ = await m6.handleSelfChat(text: "@schedule rohini", msgID: "r1", ts: tick())
+        _ = await m6.handleSelfChat(text: "@schedule rohini", msgID: "r2", ts: tick())
+        _ = await m6.handleSelfChat(text: "@schedule rohini", msgID: "r3", ts: tick())
+        let pend = store6.allOpenSessions().filter { $0.contactJID == "pending:rohini" }
         add("re-running an ambiguous command leaves one pending session",
             pend.count == 1 && pend.first?.state == .resolving, "open=\(pend.count)")
 

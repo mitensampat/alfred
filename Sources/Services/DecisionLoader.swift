@@ -118,7 +118,7 @@ class DecisionLoader {
             You are sorting statements from a CEO's self-model. Classify each by durability:
 
             - durable: a general principle about how they operate, decide, or lead — true across situations, people, and quarters (e.g. "CEO should command strategy and detail first, then let the team fill blanks").
-            - tactical: a current thesis or read on a specific business, metric, or market — legitimate now but could flip next quarter (e.g. "Kuvera's right to win is pure distribution").
+            - tactical: a current thesis or read on a specific business, metric, or market — legitimate now but could flip next quarter (e.g. "Acme's right to win is pure distribution").
             - fact: a past event, status, or arrangement — something that happened or is in place, not a stance (e.g. "Secured 100% bank funding for Q2").
             - action: an instruction, todo, or nudge that tells someone to do something (e.g. "Mute the group and set read-only hours").
             """,

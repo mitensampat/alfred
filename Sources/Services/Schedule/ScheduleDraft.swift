@@ -53,7 +53,7 @@ final class LLMDrafter: ScheduleDrafting {
     func inferContext(contactName: String, thread: [ScheduleThreadMsg], cmd: ScheduleCommand?) async -> ScheduleInferredContext {
         var sb = """
         You help a scheduling assistant infer meeting context from a WhatsApp thread. The user wants to schedule a meeting with the contact below. From the recent messages, infer:
-        - topic: a short phrase for what the meeting is about (e.g. "CRED partnership follow-up"). If the thread gives no clue, use "catch-up".
+        - topic: a short phrase for what the meeting is about (e.g. "Acme partnership follow-up"). If the thread gives no clue, use "catch-up".
         - duration_min: sensible duration in minutes (30 default; 60 if it's clearly a deep work session or meal).
         - format: "call", "video", or "in-person" if the thread suggests one, else "".
         - window: a time window if the thread suggests one (e.g. "this week", "after the 20th"), else "".

@@ -28,7 +28,7 @@ branch: `claude/great-mayer-9tdjbs`. each phase lands as its own commits.
 - [x] WhatsApp self-chat: `todo …`, `done …`, `now`
 - [x] macOS banners off by default (failures only)
 
-## still to do (needs Miten's go-ahead or a Mac)
+## still to do (needs the owner's go-ahead or a Mac)
 
 - [ ] verify on the Mac: `swift build`, then use the new app for a week (this branch was type-checked on Linux, not built or run)
 - [x] retire the old desk: settings (basic, with advanced and diagnostics folded away), your model, coach notes, archive, weekly review, conversations, live scheduling, closure confirmations and first-run setup moved into the new app; `home.html` removed

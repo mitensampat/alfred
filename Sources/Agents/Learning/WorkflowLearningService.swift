@@ -1290,11 +1290,11 @@ class WorkflowLearningService {
         CRITICAL: the "content" field MUST read as a durable belief, phrased like a standing instruction. NEVER narrate what the user just said.
         BAD examples (DO NOT produce these):
           ❌ "User is expressing a preference for high-impact summaries"
-          ❌ "User wants WhatsApp messages from CRED filtered by today"
+          ❌ "User wants WhatsApp messages from Acme filtered by today"
           ❌ "User is requesting summaries organized by thread"
         GOOD examples:
           ✅ "Prefers high-impact summaries over comprehensive tactical detail"
-          ✅ "Leads growth at CRED"
+          ✅ "Leads growth at Acme"
           ✅ "Wants thread-grouped summaries when reviewing team messages"
         Rules for content:
         - Never start with "User is", "User wants", "User prefers", "User requested", "User expressed", "Indicates"

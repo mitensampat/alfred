@@ -647,7 +647,7 @@ class ClaudeAIService {
         - "Need to review Q4 metrics by Friday"
         - "Follow up with Sarah about the proposal"
         - "Buy milk"
-        - "Vibin feedback today" (short reminder: give feedback to/about Vibin today)
+        - "Taylor feedback today" (short reminder: give feedback to/about Taylor today)
         - "Call dentist" (two-word action)
         - "Send deck to Alice" (quick task note)
         - "Review Q3 numbers" (self-reminder)

@@ -59,7 +59,7 @@ capture you want to lock in — add it as a pinned fixture:
    ```json
    {
      "id": "case_shallow_summary",
-     "user_message": "summarize WhatsApp from CRED today, first and fastest",
+     "user_message": "summarize WhatsApp from Acme today, first and fastest",
      "assistant_response": "<the assistant's actual reply, or empty>",
      "source_event_type": "chat_preference",
      "notes": "Was being captured as 'User is expressing a preference for…'. Must NOT classify as preference — it's a one-off task.",

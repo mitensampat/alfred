@@ -288,7 +288,7 @@ enum SelfModelSynthesizer {
     }
 
     /// Adjacency gate at creation: map every candidate theme name to its CANONICAL workspace, so
-    /// lexical near-duplicates ("CRED card growth" / "CRED card growth economics") collapse into one
+    /// lexical near-duplicates ("Acme card growth" / "Acme card growth economics") collapse into one
     /// instead of proliferating. The most-established variant (highest frequency, then recurrence)
     /// wins as canonical. Deterministic — recomputed identically by the theme loop and the item
     /// attach loops so a collapsed name never orphans its items. The semantic-but-not-lexical dups

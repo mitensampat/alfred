@@ -12,7 +12,7 @@ private final class RecordingSelfSender: ScheduleSender {
 
 /// Live wiring for @schedule: builds the real ScheduleManager over Alfred's Google Calendar,
 /// Claude, the wa-bridge, and the session store, and drives it. Entry points:
-///   handle(_:)  — feed a self-chat line ("@schedule kunal 30m tomorrow", "propose", "yes", …)
+///   handle(_:)  — feed a self-chat line ("@schedule samir 30m tomorrow", "propose", "yes", …)
 ///   tick()      — poll the user's self-chat for typed follow-ups AND open sessions' counterpart
 ///                 threads for replies, then run the 48h expiry sweep.
 ///   startWatcher() — runs tick() every 20s. Every entry point (server, menu bar, `alfred
@@ -202,7 +202,7 @@ final class ScheduleService {
 
     /// Everything @schedule needs, and which of it is actually there. The whole command path runs
     /// through Google Calendar, the wa-bridge (it is the only directory Alfred has for "who is
-    /// Arundhati", and the only way to send the ask) and Claude; when one is missing the command
+    /// Rohini", and the only way to send the ask) and Claude; when one is missing the command
     /// used to end in silence. The Desk shows this, so a dead scheduler names its own cause.
     func readiness() async -> [String: Any] {
         let config = AppConfig.load()
@@ -476,7 +476,7 @@ final class ScheduleService {
         await say("on it — blocking that time…")
 
         guard let plan = await parseDirectBlock(instruction) else {
-            let hint = "I couldn't read a specific time. Try: block 30m with Priya at 4pm tomorrow topic Sync location CRED One priya@x.com"
+            let hint = "I couldn't read a specific time. Try: block 30m with Priya at 4pm tomorrow topic Sync location Acme HQ priya@x.com"
             await say(hint)
             return ["booked": false, "error": "no concrete time found", "hint": hint]
         }
@@ -515,7 +515,7 @@ final class ScheduleService {
     }
 
     /// Start the 60s watcher, once per process. Everything typed into the WhatsApp self-chat
-    /// ("@schedule Arundhati", "propose", "yes") is only ever read by this loop, and so is every
+    /// ("@schedule Rohini", "propose", "yes") is only ever read by this loop, and so is every
     /// counterpart reply — it used to hang off the `alfred schedule` Scheduler's timer alone, which
     /// neither `alfred server` nor the menu bar starts, so in the mode Alfred actually runs in the
     /// self-chat was polled by nobody. Safe to call from every entry point: the guard keeps one loop.

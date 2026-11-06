@@ -9,7 +9,7 @@ import Foundation
 ///
 ///  1. Fronts: a title word the user tagged to a front (by correcting a tag, or by adding a to-do with a
 ///     front) votes for that front next time; a word they untagged votes against it.
-///  2. People: a person name the user corrected ("KS" → "Kunal Shah") is rewritten on arrival.
+///  2. People: a person name the user corrected ("SR" → "Samir Rivera") is rewritten on arrival.
 ///  3. Suggestions: one that closely matches something dismissed before, or that comes from a
 ///     person/source whose suggestions the user keeps dismissing, is hidden instead of shown.
 ///  4. Order: suggestions from sources and people the user usually accepts come first.
@@ -108,7 +108,7 @@ enum TodoLearning {
 
     // MARK: - 2. People
 
-    /// "KS" → "Kunal Shah" when the user corrected that name before (most recent correction wins).
+    /// "SR" → "Samir Rivera" when the user corrected that name before (most recent correction wins).
     static func canonicalPerson(_ name: String?) -> String? {
         guard let n = name?.trimmingCharacters(in: .whitespaces), !n.isEmpty else { return name }
         let key = n.lowercased()

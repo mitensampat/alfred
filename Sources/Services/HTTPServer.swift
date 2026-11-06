@@ -1441,7 +1441,7 @@ class HTTPServer {
             return HTTPResponse(statusCode: 200,
                                 body: await ScheduleService.shared.previewSlots(days: days, durationMin: dur, inPerson: inPerson))
         case ("POST", "/api/schedule/say"):
-            // Drive the scheduler with a self-chat line ("@schedule kunal 30m tomorrow", "propose",
+            // Drive the scheduler with a self-chat line ("@schedule samir 30m tomorrow", "propose",
             // "yes", "edit", "leave it"). `session` names the session it acts on (the Desk sends the
             // card's id); without it the line lands on the most recently prompted session. Returns
             // what Alfred said back so the Desk can show it — the same line the WhatsApp self-chat gets.
@@ -1645,7 +1645,7 @@ class HTTPServer {
             // Phase-4a dev check: a session round-trips through the SQLite store.
             let store = ScheduleStore.shared
             let jid = "selftest_\(Int(Date().timeIntervalSince1970))@s.whatsapp.net"
-            var s = ScheduleSession(id: ScheduleStore.newID(), contactJID: jid, contactName: "Kunal",
+            var s = ScheduleSession(id: ScheduleStore.newID(), contactJID: jid, contactName: "Samir",
                                     state: .slotsProposed, intent: .schedule)
             s.topic = "quick sync"; s.durationMin = 30; s.draft = "When works for a call?"
             s.slots = [ScheduleSlot(start: Date().addingTimeInterval(3600), end: Date().addingTimeInterval(5400))]
@@ -1777,7 +1777,7 @@ class HTTPServer {
             ]
             var results: [[String: Any]] = []
             for sc in scenarios {
-                let rc = ScheduleReplyContext(contactName: "Kunal", slots: sc.slots, draft: "When works for a quick call?",
+                let rc = ScheduleReplyContext(contactName: "Samir", slots: sc.slots, draft: "When works for a quick call?",
                                               thread: [ScheduleThreadMsg(fromMe: false, text: sc.text, time: now)], now: now, timezone: tz)
                 let got = (try? await interp.interpretReply(rc)) ?? ScheduleInterpretation(intent: .ambiguous)
                 results.append(["case": sc.name, "got": got.intent.rawValue, "want": sc.want.rawValue,
@@ -1790,7 +1790,7 @@ class HTTPServer {
             var results: [[String: Any]] = []
             let now = Date()
             func mk(_ state: ScheduleState) -> ScheduleSession {
-                var s = ScheduleSession(id: "t", contactJID: "j", contactName: "Kunal", state: state, intent: .schedule)
+                var s = ScheduleSession(id: "t", contactJID: "j", contactName: "Samir", state: state, intent: .schedule)
                 s.slots = (0..<3).map { ScheduleSlot(start: now.addingTimeInterval(3600 * Double($0 + 1)),
                                                      end: now.addingTimeInterval(3600 * Double($0 + 1) + 1800)) }
                 s.lastPromptAt = now.addingTimeInterval(-60)   // inside the consent window
@@ -12871,8 +12871,8 @@ extension HTTPServer {
     }
 
     /// Canonical form of a counterparty string for matching/grouping: lowercased, trimmed,
-    /// internal whitespace collapsed. Merges whitespace/case variants (the "CRED " vs "CRED"
-    /// duplicate) without merging genuinely different names (Kunal vs Kunal Shah).
+    /// internal whitespace collapsed. Merges whitespace/case variants (the "Acme " vs "Acme"
+    /// duplicate) without merging genuinely different names (Samir vs Samir Rivera).
     static func normalizeCounterparty(_ s: String) -> String {
         s.lowercased()
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -13280,8 +13280,8 @@ extension HTTPServer {
             return HTTPResponse(statusCode: 400, body: ["error": "id required"])
         }
         let nameLower = name.lowercased()
-        // Normalized EXACT match on counterparty — not substring — so "Kunal" no longer
-        // sweeps in "Kunal Shah". This keeps the person page's counts identical to the
+        // Normalized EXACT match on counterparty — not substring — so "Samir" no longer
+        // sweeps in "Samir Rivera". This keeps the person page's counts identical to the
         // People-column row the user clicked.
         let target = Self.normalizeCounterparty(name)
         let all = CommitmentScanTracker.shared.getAllOpenCommitments()

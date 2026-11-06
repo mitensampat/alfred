@@ -2,8 +2,8 @@ import Foundation
 
 /// Converges fragmented themes into their true workspaces.
 ///
-/// The extractor mints a fresh theme per angle of a subject ("CCBP MTU decline",
-/// "CCBP TPV underperformance", "CCBP user churn"…) so one workspace shatters into
+/// The extractor mints a fresh theme per angle of a subject ("Northstar MTU decline",
+/// "Northstar TPV underperformance", "Northstar user churn"…) so one workspace shatters into
 /// many. Lexical (token-Jaccard) merge detection is blind to this — the titles share
 /// the *subject* but almost no words. So we cluster by *meaning*: one LLM pass groups
 /// the titles into subjects, and each cluster flat-merges into a single workspace, its
@@ -157,11 +157,11 @@ enum SelfModelConvergence {
     // MARK: - Prompt
 
     private static let systemPrompt = """
-    You converge a person's fragmented workspace themes. Each theme below is a subject they've worked on; several titles often describe the SAME underlying workspace from different angles (e.g. "CCBP MTU decline", "CCBP TPV underperformance", "CCBP user churn" are all the ONE CCBP workspace — cluster them together).
+    You converge a person's fragmented workspace themes. Each theme below is a subject they've worked on; several titles often describe the SAME underlying workspace from different angles (e.g. "Northstar MTU decline", "Northstar TPV underperformance", "Northstar user churn" are all the ONE Northstar workspace — cluster them together).
 
     Group themes that are the same underlying subject/workspace. Rules:
     - Put each theme in AT MOST ONE cluster. A cluster has ≥2 members.
-    - Titles that repeatedly name the same specific product, deal, company, or entity (CCBP, ESOP, Meta, a named portfolio company) are usually ONE workspace even when each describes a different metric or angle — cluster them.
+    - Titles that repeatedly name the same specific product, deal, company, or entity (Northstar, ESOP, Meta, a named portfolio company) are usually ONE workspace even when each describes a different metric or angle — cluster them.
     - Do NOT merge a general principle, philosophy, mental model, or behavioural pattern into a specific project. Those are beliefs, not workspaces. (e.g. "commitment without follow-through" or "bottom-up vs top-down goal setting" must NOT be swallowed into a project workspace.)
     - Do NOT merge two distinct specific subjects merely because they share a domain (two different portfolio companies; two different products; a thesis vs a specific deal).
     - Prefer fewer, cleaner clusters over aggressive merging. Leave genuine singletons alone (do not return them).

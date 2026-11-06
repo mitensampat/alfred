@@ -203,12 +203,17 @@ def print_scorecard(summary: dict, baseline: dict | None):
     print(f"PASS {passes}/{n}  ({rate:.0%})")
     if baseline:
         prev_rate = baseline.get("pass_rate", 0.0)
-        delta = rate - prev_rate
-        sign = "+" if delta >= 0 else ""
-        print(f"Baseline: {baseline['passed']}/{baseline['fixtures']} ({prev_rate:.0%})  "
-              f"→ delta {sign}{delta:+.1%}")
-        # ID-level diff
         prev_pass = {r["id"]: r["passed"] for r in baseline.get("results", [])}
+        # The committed baseline holds pinned fixtures only, so the delta is computed over
+        # the fixtures both runs actually share — comparing it to this run's total rate
+        # would read as a regression every time a seed fixture fails.
+        shared = [r for r in summary["results"] if r["id"] in prev_pass]
+        shared_pass = sum(1 for r in shared if r["passed"])
+        cur_rate = (shared_pass / len(shared)) if shared else 0.0
+        delta = cur_rate - prev_rate
+        print(f"Baseline: {baseline['passed']}/{baseline['fixtures']} ({prev_rate:.0%})  "
+              f"→ shared {shared_pass}/{len(shared)} ({cur_rate:.0%}), delta {delta:+.1%}")
+        # ID-level diff
         regressions = [r["id"] for r in summary["results"]
                        if r["id"] in prev_pass and prev_pass[r["id"]] and not r["passed"]]
         improvements = [r["id"] for r in summary["results"]
@@ -231,10 +236,38 @@ def load_baseline() -> dict | None:
     return None
 
 
+def pinned_ids() -> set[str]:
+    """Ids from the committed fixture file. Anything else came from fixtures_seed.jsonl,
+    which is gitignored because its messages are real."""
+    ids: set[str] = set()
+    if FIXTURES_PINNED.exists():
+        for line in FIXTURES_PINNED.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                try:
+                    ids.add(json.loads(line)["id"])
+                except Exception:
+                    continue
+    return ids
+
+
 def save_baseline(summary: dict):
+    # The baseline is checked in, so it may only carry results from pinned fixtures.
+    # Seed fixtures live in a gitignored file precisely because their messages and the
+    # signals extracted from them are real — contact names, emails, work content — and
+    # writing those results here published them anyway. The full picture of a local run
+    # stays in baselines/last_run.json, which is also gitignored.
+    keep = pinned_ids()
+    results = [r for r in summary.get("results", []) if r["id"] in keep]
+    withheld = len(summary.get("results", [])) - len(results)
+    n = len(results)
+    passes = sum(1 for r in results if r["passed"])
+    public = {**summary, "fixtures": n, "passed": passes, "failed": n - passes,
+              "pass_rate": (passes / n) if n else 0.0, "results": results}
     BASELINE.parent.mkdir(parents=True, exist_ok=True)
-    BASELINE.write_text(json.dumps(summary, indent=2))
-    print(f"Baseline saved → {BASELINE}")
+    BASELINE.write_text(json.dumps(public, indent=2))
+    note = f", {withheld} seed result(s) withheld" if withheld else ""
+    print(f"Baseline saved → {BASELINE} ({n} pinned fixture(s){note})")
 
 
 def add_fixture_interactive():

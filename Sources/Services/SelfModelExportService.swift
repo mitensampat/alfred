@@ -31,7 +31,7 @@ enum SelfModelExportService {
         (NSHomeDirectory() as NSString).appendingPathComponent(".alfred/exports")
     }
 
-    /// Filename stem from the user's name: "Miten Sampat" → "Miten_Sampat".
+    /// Filename stem from the user's name: "Jane Doe" → "Jane_Doe".
     /// Spaces become underscores; anything not alphanumeric/underscore is dropped.
     private static func fileBase(_ name: String) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
