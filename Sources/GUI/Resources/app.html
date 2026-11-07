@@ -155,6 +155,9 @@ h1{margin:0;font-family:var(--serif);font-weight:400;font-size:30px}
 .pdot{width:7px;height:7px;border-radius:4px;display:inline-block;background:var(--accent)}
 .pdot.stalled{background:var(--warm)}
 .ent .line{margin-top:8px;display:block;font-size:15px;line-height:1.4;color:var(--ink2)}
+.pinbtn{flex:0 0 auto;width:44px;height:44px;margin:-6px -8px 0 0;border:none;background:none;padding:0;display:flex;align-items:center;justify-content:center;border-radius:22px;color:var(--quiet)}
+.pinbtn.on{color:var(--accent)}
+.pinbtn:hover{color:var(--ink)}
 .foot{margin-top:10px;padding:8px 0 4px;border-top:1px solid var(--hair3);display:flex;gap:18px;font-size:13px;color:var(--quiet)}
 .foot span{display:inline-flex;align-items:center;gap:5px}
 
@@ -262,7 +265,7 @@ const TOKEN_KEY = 'alfred_auth_token', EXPIRES_KEY = 'alfred_auth_expires';
 const S = {
   tab: 'now', token: null, me: '',
   now: null, todos: null, fronts: null, people: null, status: null,
-  filter: 'all', showMore: false, replyId: null,
+  filter: 'all', pfilter: 'all', addPerson: false, addPersonName: '', showMore: false, replyId: null,
   sheet: null,           // { kind, id, data }
   showLog: false,
   chat: [], chatSession: null,
@@ -339,7 +342,7 @@ function start() {
   const action = new URLSearchParams(location.search).get('notify_action');
   setTimeout(() => checkCapture(action === 'post-meeting'), action === 'post-meeting' ? 500 : 2000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(() => checkCapture(false), 500); });
-  setInterval(() => { if (!document.hidden && !S.sheet) refresh(); }, 120000);
+  setInterval(() => { if (!document.hidden && !S.sheet && !S.addPerson) refresh(); }, 120000);
   setInterval(loadStatus, 120000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
   if (new URLSearchParams(location.search).get('open') === 'prep') setTimeout(openPrep, 900);
@@ -413,6 +416,9 @@ function renderView() {
   if (S.tab === 'todos') el.innerHTML = S.todos ? viewTodos() : '<div class="loading">Loading…</div>';
   if (S.tab === 'fronts') el.innerHTML = S.fronts ? viewFronts() : '<div class="loading">Loading…</div>';
   if (S.tab === 'people') el.innerHTML = S.people ? viewPeople() : '<div class="loading">Loading…</div>';
+  // A background refresh (every two minutes, and on every visibilitychange) rebuilds this view
+  // wholesale, which would otherwise throw away a half-typed name and the caret with it.
+  if (S.tab === 'people' && S.addPerson) restoreAddPerson();
 }
 
 // ── a to-do as a post-style card (now tab) ──
@@ -552,23 +558,81 @@ function viewFronts() {
   return h;
 }
 
-function personCard(p, quiet) {
+// The pin lives outside the card's own click target: a button inside a button is invalid HTML and
+// the nested one does not reliably receive the tap.
+function personCard(p) {
   const sel = S.sheet && S.sheet.kind === 'person' && S.sheet.id === p.name && isWide();
-  const age = quiet ? (p.silent_days + 'd') : (p.oldest_days ? p.oldest_days + 'd' : 'today');
-  const hot = quiet || p.oldest_days >= 7;
-  return `<button type="button" class="card press ent ${sel?'sel':''}" onclick="openPerson('${esc(p.name)}')">
+  const age = p.quiet ? (p.silent_days + 'd quiet') : (p.oldest_days ? p.oldest_days + 'd' : 'today');
+  const hot = p.quiet || p.oldest_days >= 7;
+  return `<div class="card press ent ${sel?'sel':''}">
     <span class="avatar" aria-hidden="true">${esc(p.initials)}</span>
-    <span style="flex:1 1 auto;min-width:0;display:block">
+    <button type="button" class="rowmain" onclick="openPerson(${ja(p.name)})">
       <span class="top"><span class="pname">${esc(p.name)}</span><span class="small" style="${hot?'color:var(--warmtext)':''}">${esc(age)}</span></span>
       <span class="line" style="margin-top:4px">${esc(p.line)}${p.more ? ' · +' + p.more + ' more' : ''}</span>
       <span class="foot"><span>You owe ${p.you_owe}</span><span>${p.they_owe ? 'Waiting on ' + p.they_owe : 'Nothing waiting'}</span></span>
-    </span></button>`;
+    </button>
+    <button type="button" class="pinbtn ${p.pinned?'on':''}" aria-pressed="${p.pinned?'true':'false'}" aria-label="${p.pinned?'Unpin':'Pin'} ${esc(p.name)}" onclick="togglePin(${ja(p.name)},${!!p.pinned})">${icon('pin', 18)}</button>
+  </div>`;
+}
+
+const PEOPLE_FILTERS = [['all','All'],['owe','Waiting on you'],['owed','Waiting on them'],['quiet','Going quiet']];
+const PEOPLE_EMPTY = { all: 'Nobody on your list yet.', owe: 'Nobody is waiting on you.',
+                       owed: 'You are not waiting on anyone.', quiet: 'Nobody has gone quiet.' };
+function peopleMatch(p) {
+  if (S.pfilter === 'owe') return p.you_owe > 0;
+  if (S.pfilter === 'owed') return p.they_owe > 0;
+  if (S.pfilter === 'quiet') return !!p.quiet;
+  return true;
 }
 function viewPeople() {
-  const d = S.people; let h = '<div style="display:flex;align-items:baseline;justify-content:space-between;padding-top:18px"><h1>People</h1><button type="button" class="ghost" onclick="openAdd({text:\'@schedule \'})">Schedule a meeting</button></div>' + viewSched();
-  h += `<div class="section"><div class="label">Waiting on you</div>${(d.waiting_on_you||[]).length ? `<div class="stack">${d.waiting_on_you.map(p => personCard(p, false)).join('')}</div>` : '<div class="empty">Nobody is waiting on you.</div>'}</div>`;
-  if ((d.going_quiet || []).length) h += `<div class="section"><div class="label">Going quiet</div><div class="stack">${d.going_quiet.map(p => personCard(p, true)).join('')}</div></div>`;
+  const rows = (S.people && S.people.people) || [];
+  const pins = rows.filter(p => p.pinned);
+  const rest = rows.filter(p => !p.pinned).filter(peopleMatch);
+  let h = `<div style="padding-top:18px"><h1>People</h1>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+      <button type="button" class="ghost" onclick="toggleAddPerson()">Add person</button>
+      <button type="button" class="ghost" onclick="openAdd({text:'@schedule '})">Schedule a meeting</button>
+    </div></div>`;
+  h += addPersonRow() + viewSched();
+  h += `<div class="section"><div class="label">Pinned</div>${pins.length ? `<div class="stack">${pins.map(personCard).join('')}</div>` : '<div class="empty">Pin someone to keep them here.</div>'}</div>`;
+  h += `<div class="chips">` + PEOPLE_FILTERS.map(([k, l]) => `<button type="button" class="chipbtn ${S.pfilter===k?'on':''}" onclick="setPeopleFilter('${k}')">${esc(l)}</button>`).join('') + `</div>`;
+  h += `<div class="section">${rest.length ? `<div class="stack">${rest.map(personCard).join('')}</div>` : `<div class="empty">${esc(PEOPLE_EMPTY[S.pfilter] || PEOPLE_EMPTY.all)}</div>`}</div>`;
   return h;
+}
+function setPeopleFilter(k) { S.pfilter = k; renderView(); }
+function toggleAddPerson() {
+  S.addPerson = !S.addPerson;
+  if (!S.addPerson) S.addPersonName = '';
+  renderView();
+  restoreAddPerson();
+}
+function restoreAddPerson() {
+  const i = document.getElementById('newPerson'); if (!i) return;
+  if (document.activeElement !== i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+}
+function addPersonRow() {
+  if (!S.addPerson) return '';
+  return `<div class="card" style="margin-top:12px;padding:12px 14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <input id="newPerson" class="field mini" style="flex:1 1 160px" placeholder="Name" autocomplete="off"
+           value="${esc(S.addPersonName || '')}" oninput="S.addPersonName = this.value"
+           onkeydown="if(event.key==='Enter'){event.preventDefault();trackPerson()}">
+    <button type="button" class="btn" onclick="trackPerson()">Add</button>
+    <button type="button" class="ghost" onclick="toggleAddPerson()">Cancel</button>
+  </div>`;
+}
+async function trackPerson() {
+  const el = document.getElementById('newPerson');
+  const name = ((el ? el.value : S.addPersonName) || '').trim();
+  if (!name) return;
+  S.addPerson = false; S.addPersonName = '';
+  await act('/api/v2/people/track', { name });
+}
+async function togglePin(name, pinned) {
+  await act(pinned ? '/api/v2/people/unpin' : '/api/v2/people/pin', { name });
+}
+async function rescanPerson(name) {
+  toast('Reading the last 3 days with ' + firstName(name) + '…');
+  await act('/api/v2/people/rescan', { name, days: '3' });
 }
 
 function renderAside() {
@@ -907,6 +971,11 @@ function sheetPerson(s) {
   const compose = s.compose ? `<div class="compose"><div class="label" style="font-size:12px">To ${esc(firstName(p.name))} · WhatsApp</div><textarea id="nudgeText" rows="3">${esc(s.compose.text)}</textarea><div style="margin-top:6px;display:flex;gap:6px"><button type="button" class="btn" onclick="sendNudge()">Send</button><button type="button" class="ghost" onclick="S.sheet.compose=null;renderSheet()">Cancel</button></div></div>` : '';
   return `<div style="display:flex;align-items:center;gap:14px;padding-top:10px"><span class="avatar" style="width:52px;height:52px;border-radius:26px;font-size:17px">${esc(p.initials)}</span>
       <div><div class="serif" style="font-size:28px;line-height:1.1">${esc(p.name)}</div><div class="label" style="margin-top:4px;font-size:14px">${esc(p.next_meeting || 'No meeting coming up')}</div></div></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">
+      <button type="button" class="ghost" onclick="togglePin(${ja(p.name)},${!!p.pinned})">${icon('pin', 16)}${p.pinned ? 'Pinned' : 'Pin'}</button>
+      <button type="button" class="ghost" onclick="openAdd({person:${ja(p.name)}})">Add a to-do</button>
+      <button type="button" class="ghost" onclick="rescanPerson(${ja(p.name)})">Rescan last 3 days</button>
+    </div>
     ${compose}
     <div class="sub">You owe</div>${owe || '<div class="empty">Nothing. You are square.</div>'}
     <div class="sub">Waiting on them</div>${wait || '<div class="empty">Nothing open.</div>'}

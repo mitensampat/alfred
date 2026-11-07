@@ -358,48 +358,74 @@ enum TodoService {
         ]
     }
 
-    /// The people tab: waiting on you, longest first; going quiet (silent 3+ weeks with something open).
+    /// The people tab: one flat list, every candidate exactly once.
+    ///
+    /// The server no longer pre-sorts rows into "waiting on you" and "going quiet" and drops the
+    /// rest — that is how anyone who only owed *you* something, and had been in touch inside three
+    /// weeks, used to be built into a row and then thrown away. Every candidate comes back with its
+    /// counts and flags, and the app sections the pins and filters the rest.
+    ///
+    /// Candidates are anyone named on an open to-do in either direction, plus everyone pinned
+    /// (`PinnedPeopleStore`) — so a pinned person has a row even with nothing open, which is the
+    /// whole point of pinning them.
     static func people() -> [String: Any] {
         reconcileCommitments()
-        let open = TodoStore.shared.openMine()
-        let waiting = TodoStore.shared.waiting()
+        // Group by a case-folded key and keep the first spelling seen as the display name, so a pin
+        // saved as "alex carter" and a to-do that says "Alex Carter" are one person, not two.
         var mineBy: [String: [TodoStore.Todo]] = [:]
-        for t in open { if let p = t.person { mineBy[p, default: []].append(t) } }
         var waitBy: [String: [TodoStore.Todo]] = [:]
-        for t in waiting { if let p = t.person { waitBy[p, default: []].append(t) } }
+        var display: [String: String] = [:]
+        func key(_ raw: String) -> String {
+            let trimmed = raw.trimmingCharacters(in: .whitespaces)
+            let k = trimmed.lowercased()
+            if display[k] == nil { display[k] = trimmed }
+            return k
+        }
+        for t in TodoStore.shared.openMine() { if let p = t.person { mineBy[key(p), default: []].append(t) } }
+        for t in TodoStore.shared.waiting() { if let p = t.person { waitBy[key(p), default: []].append(t) } }
+
         var lastSeen: [String: Int] = [:]
         for th in ContactLearner.shared.getAllThreads() where !th.isGroup {
             let n = th.threadName.trimmingCharacters(in: .whitespaces).lowercased()
             lastSeen[n] = min(lastSeen[n] ?? Int.max, DeskService.ageDaysPublic(from: th.lastSeen))
         }
-        func row(_ name: String) -> [String: Any] {
-            let items = (mineBy[name] ?? []).sorted { $0.createdAt < $1.createdAt }
-            let oldest = items.first.map { ageDays($0.createdAt) } ?? 0
-            let silent = lastSeen[name.lowercased()]
+
+        let pins = PinnedPeopleStore.shared.all()
+        let pinKeys = Set(pins.map { key($0) })
+
+        func row(_ k: String) -> [String: Any] {
+            let name = display[k] ?? k
+            let items = (mineBy[k] ?? []).sorted { $0.createdAt < $1.createdAt }
+            let owed = waitBy[k] ?? []
+            let silent = lastSeen[k]
+            let anythingOpen = !items.isEmpty || !owed.isEmpty
             return ["name": name,
                     "initials": initials(name),
                     "you_owe": items.count,
-                    "they_owe": (waitBy[name] ?? []).count,
-                    "oldest_days": oldest,
-                    "line": items.first?.title ?? ((waitBy[name] ?? []).first.map { "Waiting on: " + $0.title } ?? ""),
+                    "they_owe": owed.count,
+                    "oldest_days": items.first.map { ageDays($0.createdAt) } ?? 0,
+                    "line": items.first?.title ?? (owed.first.map { "Waiting on: " + $0.title } ?? "Nothing open yet."),
                     "more": max(0, items.count - 1),
-                    "silent_days": silent as Any? ?? NSNull()]
+                    "silent_days": silent as Any? ?? NSNull(),
+                    "quiet": (silent ?? 0) >= 21 && anythingOpen,
+                    "pinned": pinKeys.contains(k)]
         }
-        let names = Set(mineBy.keys).union(waitBy.keys)
-        var waitingOnYou: [[String: Any]] = []
-        var goingQuiet: [[String: Any]] = []
-        for n in names {
-            let r = row(n)
-            let silent = r["silent_days"] as? Int ?? 0
-            if silent >= 21 && ((r["you_owe"] as? Int ?? 0) > 0 || (r["they_owe"] as? Int ?? 0) > 0) {
-                goingQuiet.append(r)
-            } else if (r["you_owe"] as? Int ?? 0) > 0 {
-                waitingOnYou.append(r)
+
+        // Pins first, in the order you pinned them; then everyone else, longest-waiting first,
+        // falling back to the longest silence so a they-owe-only row still sorts sensibly.
+        let pinnedRows = pins.map { row(key($0)) }
+        let rest = Set(mineBy.keys).union(waitBy.keys).subtracting(pinKeys).map(row)
+            .sorted {
+                let a = $0["oldest_days"] as? Int ?? 0, b = $1["oldest_days"] as? Int ?? 0
+                if a != b { return a > b }
+                let qa = $0["silent_days"] as? Int ?? 0, qb = $1["silent_days"] as? Int ?? 0
+                if qa != qb { return qa > qb }
+                // Name last, so the order is stable: the candidates come out of a Set, whose
+                // iteration order varies between requests, and without this the tab visibly
+                // reshuffles people every time it loads.
+                return ($0["name"] as? String ?? "") < ($1["name"] as? String ?? "")
             }
-        }
-        waitingOnYou.sort { ($0["oldest_days"] as? Int ?? 0) > ($1["oldest_days"] as? Int ?? 0) }
-        goingQuiet.sort { ($0["silent_days"] as? Int ?? 0) > ($1["silent_days"] as? Int ?? 0) }
-        return ["waiting_on_you": waitingOnYou, "going_quiet": goingQuiet]
+        return ["people": pinnedRows + rest, "pinned_count": pinnedRows.count]
     }
 
     /// A person's page: what you owe, what you are waiting on, fronts together, next meeting.
@@ -433,7 +459,8 @@ enum TodoService {
         var reliability: Any = NSNull()
         if let s = stats, s.completedTasks >= 5 { reliability = Int(((1 - s.overdueRate) * 100).rounded()) }
         return ["name": name, "initials": initials(name), "owe": owe, "waiting": wait,
-                "fronts": fronts, "next_meeting": next as Any? ?? NSNull(), "on_time_pct": reliability]
+                "fronts": fronts, "next_meeting": next as Any? ?? NSNull(), "on_time_pct": reliability,
+                "pinned": PinnedPeopleStore.shared.isPinned(name)]
     }
 
     /// Today's agenda for the wide layouts' right column.

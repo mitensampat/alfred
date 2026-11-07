@@ -14134,6 +14134,47 @@ extension HTTPServer {
             guard let name = request.queryParams["name"]?.trimmedNonEmpty else { return bad("name required") }
             return ok(TodoService.person(name, schedules: await rewireSchedules()))
 
+        // Pin a person to the top of the People tab. This is a pin and nothing else — it is NOT
+        // the favourites list, which is scan scope (see PinnedPeopleStore for why they are apart).
+        case ("POST", "/api/v2/people/pin"), ("POST", "/api/v2/people/track"):
+            guard let name = v2Param(request, "name") else { return bad("name required") }
+            do { try PinnedPeopleStore.shared.pin(name) } catch { return bad("Could not save that pin.") }
+            // "track" is the add-a-person button: it pins, because a hand-added person has no
+            // to-dos yet and would otherwise land under a filter the user is not looking at,
+            // making the add look like it did nothing.
+            let added = request.path.hasSuffix("/track")
+            return ok(["ok": true, "name": name, "pinned": true,
+                       "receipt": added ? "\(name) is on your People tab." : "Pinned \(name)."])
+
+        case ("POST", "/api/v2/people/unpin"):
+            guard let name = v2Param(request, "name") else { return bad("name required") }
+            do { try PinnedPeopleStore.shared.unpin(name) } catch { return bad("Could not save that pin.") }
+            return ok(["ok": true, "name": name, "pinned": false, "receipt": "Unpinned \(name)."])
+
+        // Rescan one person's recent messages on demand. requireNotion: false because the output
+        // that matters is local — the tracker, which TodoService.reconcileCommitments turns into
+        // to-dos. Anything new arrives in the suggestion tray like any other extraction.
+        case ("POST", "/api/v2/people/rescan"):
+            guard let name = v2Param(request, "name") else { return bad("name required") }
+            let days = max(1, min(30, Int(v2Param(request, "days") ?? "3") ?? 3))
+            do {
+                let r = try await alfredService.scanCommitments(contactName: name, lookbackDays: days,
+                                                                scanMode: "contact", requireNotion: false,
+                                                                force: true)
+                TodoService.reconcileCommitments()
+                let receipt: String
+                if r.saved > 0 {
+                    receipt = "Found \(r.saved) new thing\(r.saved == 1 ? "" : "s") with \(name). Check your suggestions."
+                } else if r.totalFound > 0 {
+                    receipt = "Nothing new with \(name) — the \(r.totalFound) found were already on your list."
+                } else {
+                    receipt = "Nothing new with \(name) in the last \(days) day\(days == 1 ? "" : "s")."
+                }
+                return ok(["ok": true, "found": r.totalFound, "saved": r.saved, "days": days, "receipt": receipt])
+            } catch {
+                return bad("Could not rescan \(name): \(error.localizedDescription)")
+            }
+
         // ── coach ──
         case ("POST", "/api/v2/coach/dismiss"):
             guard let key = v2Param(request, "key") else { return bad("key required") }

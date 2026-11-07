@@ -203,7 +203,8 @@ class AlfredService: ObservableObject {
         return tasks.filter { $0.isOverdue }.compactMap { $0.toCommitment() }
     }
 
-    func scanCommitments(contactName: String?, lookbackDays: Int, scanMode: String = "favorites") async throws -> CommitmentScanResult {
+    func scanCommitments(contactName: String?, lookbackDays: Int, scanMode: String = "favorites",
+                         requireNotion: Bool = true, force: Bool = false) async throws -> CommitmentScanResult {
         guard let orchestrator = orchestrator else {
             throw ServiceError.notInitialized
         }
@@ -211,8 +212,14 @@ class AlfredService: ObservableObject {
             throw ServiceError.commitmentsNotEnabled
         }
 
-        // Use unified Tasks database
-        guard orchestrator.notionServicePublic.tasksDatabaseId != nil else {
+        // The unified Tasks database. A v5 leftover required it unconditionally: back then a
+        // scanned commitment was written straight to Notion, so no database meant no output. In
+        // 6.0.0 the scan's real output is the local to-do list (CommitmentScanTracker, which
+        // TodoService.reconcileCommitments pulls into TodoStore) and Notion is a mirror, so a
+        // missing database must not stop a commitment reaching the list. Callers that genuinely
+        // need the mirror still ask for it, and today every existing caller does.
+        let notionAvailable = orchestrator.notionServicePublic.tasksDatabaseId != nil
+        if requireNotion && !notionAvailable {
             throw ServiceError.notionDatabaseNotConfigured
         }
 
@@ -271,8 +278,13 @@ class AlfredService: ObservableObject {
                 guard let firstMessage = threadMessages.first else { continue }
                 let threadId = firstMessage.threadId
 
-                // INCREMENTAL SCAN: Only analyze messages newer than the last scan
-                let lastMsgTimestamp = tracker.getLastMessageTimestamp(threadId: threadId)
+                // INCREMENTAL SCAN: Only analyze messages newer than the last scan.
+                // `force` re-reads the whole window instead, which is what a person asking to
+                // "rescan the last 3 days" means — otherwise a scheduled scan has already moved
+                // the watermark past everything and the manual rescan always answers "nothing
+                // new". Re-reading cannot duplicate anything: commitments are deduplicated by
+                // hash below, both against the local tracker and against Notion.
+                let lastMsgTimestamp = force ? nil : tracker.getLastMessageTimestamp(threadId: threadId)
                 let newMessages: [Message]
 
                 if let lastTimestamp = lastMsgTimestamp {
@@ -286,9 +298,9 @@ class AlfredService: ObservableObject {
                     newMessages = filtered.map { $0.message }
                     print("📬 \(threadName): \(newMessages.count) new messages (of \(threadMessages.count) total)")
                 } else {
-                    // Never scanned before - analyze all messages
                     newMessages = threadMessages.map { $0.message }
-                    print("🆕 \(threadName): first scan - \(newMessages.count) messages")
+                    print(force ? "🔁 \(threadName): forced rescan - \(newMessages.count) messages"
+                                : "🆕 \(threadName): first scan - \(newMessages.count) messages")
                 }
 
                 let extraction = try await orchestrator.commitmentAnalyzer.analyzeMessages(
@@ -307,26 +319,30 @@ class AlfredService: ObservableObject {
                         continue
                     }
 
-                    // Check 2: Notion database (catches completed/done items too - no status filter)
-                    let existingCommitment = try await orchestrator.notionServicePublic.findCommitmentByHashInTasks(
-                        commitment.uniqueHash
-                    )
-
-                    if existingCommitment != nil {
-                        // Record in local tracker so we skip faster next time
-                        tracker.recordExtraction(
-                            hash: commitment.uniqueHash,
-                            threadId: threadId,
-                            type: commitment.type.rawValue,
-                            title: commitment.title,
-                            counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy,
-                            confidence: commitment.confidence
+                    // Check 2: Notion database (catches completed/done items too - no status filter).
+                    // Skipped when there is no tasks database: the local tracker above has already
+                    // deduplicated, and the commitment still belongs in the to-do list.
+                    if notionAvailable {
+                        let existingCommitment = try await orchestrator.notionServicePublic.findCommitmentByHashInTasks(
+                            commitment.uniqueHash
                         )
-                        print("⏭️  Skipping duplicate (exists in Notion): \(commitment.title)")
-                        continue
-                    }
 
-                    _ = try await orchestrator.notionServicePublic.createCommitmentInTasks(commitment)
+                        if existingCommitment != nil {
+                            // Record in local tracker so we skip faster next time
+                            tracker.recordExtraction(
+                                hash: commitment.uniqueHash,
+                                threadId: threadId,
+                                type: commitment.type.rawValue,
+                                title: commitment.title,
+                                counterparty: commitment.type == .iOwe ? commitment.committedTo : commitment.committedBy,
+                                confidence: commitment.confidence
+                            )
+                            print("⏭️  Skipping duplicate (exists in Notion): \(commitment.title)")
+                            continue
+                        }
+
+                        _ = try await orchestrator.notionServicePublic.createCommitmentInTasks(commitment)
+                    }
                     totalSaved += 1
 
                     // Record extraction to tracker
