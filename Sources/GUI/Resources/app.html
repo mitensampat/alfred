@@ -155,6 +155,8 @@ h1{margin:0;font-family:var(--serif);font-weight:400;font-size:30px}
 .pdot{width:7px;height:7px;border-radius:4px;display:inline-block;background:var(--accent)}
 .pdot.stalled{background:var(--warm)}
 .ent .line{margin-top:8px;display:block;font-size:15px;line-height:1.4;color:var(--ink2)}
+.dismissbtn{flex:0 0 auto;width:44px;height:44px;border:none;background:none;padding:0;display:flex;align-items:center;justify-content:center;border-radius:22px;color:var(--quiet)}
+.dismissbtn:hover{color:var(--ink)}
 .pinbtn{flex:0 0 auto;width:44px;height:44px;margin:-6px -8px 0 0;border:none;background:none;padding:0;display:flex;align-items:center;justify-content:center;border-radius:22px;color:var(--quiet)}
 .pinbtn.on{color:var(--accent)}
 .pinbtn:hover{color:var(--ink)}
@@ -673,6 +675,10 @@ const done = id => act('/api/v2/todos/done', { id }, () => act('/api/v2/todos/un
 const notNow = id => act('/api/v2/todos/snooze', { id }, () => act('/api/v2/todos/unsnooze', { id }));
 const accept = id => act('/api/v2/todos/accept', { id });
 const dismissTodo = id => act('/api/v2/todos/dismiss', { id });
+// Something you are waiting on that was never real, or no longer matters. Undo restores it:
+// /todos/undo reopens the to-do AND reopens the commitment in the tracker and in Notion, so the
+// tracker's closure flow-back does not quietly close it again on the next load.
+const dismissWaiting = id => act('/api/v2/todos/dismiss', { id }, () => act('/api/v2/todos/undo', { id }));
 function pin(id) {
   const prev = S.now && S.now.pinned ? S.now.pinned.id : null;
   act('/api/v2/todos/pin', id ? { id } : {}, () => act('/api/v2/todos/pin', prev ? { id: prev } : {}));
@@ -967,7 +973,13 @@ async function openPrep() {
 function sheetPerson(s) {
   const p = s.data; if (!p) return '<div class="loading">Opening…</div>';
   const owe = (p.owe || []).map(t => `<div style="display:flex;align-items:center;gap:6px;min-height:56px;border-bottom:1px solid var(--hair2)"><button type="button" class="check" style="margin-left:-10px" aria-label="Mark done" onclick="done('${esc(t.id)}')"><span></span></button><button type="button" class="rowmain" onclick="openTodo('${esc(t.id)}')"><div class="t">${esc(t.title)}</div>${t.front_name ? `<div class="label" style="font-size:12px">${esc(t.front_name)}</div>` : ''}</button>${t.thread_id ? `<button type="button" class="btn outline" style="height:34px;padding:0 12px" onclick="nudge('${esc(t.id)}','Hi ${esc(firstName(p.name))}, ')">Reply</button>` : ''}</div>`).join('');
-  const wait = (p.waiting || []).map(w => `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;border-bottom:1px solid var(--hair2)"><div style="font-size:15px;line-height:1.35">${esc(w.title)}<div class="label" style="font-size:12px">asked ${w.age_days} day${w.age_days===1?'':'s'} ago</div></div>${w.thread_id ? `<button type="button" class="btn outline" style="height:34px;padding:0 12px" onclick="nudge('${esc(w.id)}','Hi ${esc(firstName(p.name))}, checking in on ${esc(lowerFirst(w.title))}.')">Nudge</button>` : ''}</div>`).join('');
+  const wait = (p.waiting || []).map(w => `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;border-bottom:1px solid var(--hair2)">
+      <div style="font-size:15px;line-height:1.35;min-width:0">${esc(w.title)}<div class="label" style="font-size:12px">asked ${w.age_days} day${w.age_days===1?'':'s'} ago</div></div>
+      <span style="flex:0 0 auto;display:flex;align-items:center;gap:2px">
+        ${w.thread_id ? `<button type="button" class="btn outline" style="height:34px;padding:0 12px" onclick="nudge(${ja(w.id)},${ja('Hi ' + firstName(p.name) + ', checking in on ' + lowerFirst(w.title) + '.')})">Nudge</button>` : ''}
+        <button type="button" class="dismissbtn" title="Dismiss" aria-label="Dismiss: ${esc(w.title)}" onclick="dismissWaiting(${ja(w.id)})">${icon('x', 16)}</button>
+      </span>
+    </div>`).join('');
   const compose = s.compose ? `<div class="compose"><div class="label" style="font-size:12px">To ${esc(firstName(p.name))} · WhatsApp</div><textarea id="nudgeText" rows="3">${esc(s.compose.text)}</textarea><div style="margin-top:6px;display:flex;gap:6px"><button type="button" class="btn" onclick="sendNudge()">Send</button><button type="button" class="ghost" onclick="S.sheet.compose=null;renderSheet()">Cancel</button></div></div>` : '';
   return `<div style="display:flex;align-items:center;gap:14px;padding-top:10px"><span class="avatar" style="width:52px;height:52px;border-radius:26px;font-size:17px">${esc(p.initials)}</span>
       <div><div class="serif" style="font-size:28px;line-height:1.1">${esc(p.name)}</div><div class="label" style="margin-top:4px;font-size:14px">${esc(p.next_meeting || 'No meeting coming up')}</div></div></div>
