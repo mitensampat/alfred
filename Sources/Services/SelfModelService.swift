@@ -16,6 +16,53 @@ enum SelfModelService {
         (f["user_verdict"] as? String) ?? ""
     }
 
+    private static let dayFmt: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "d MMM"; return f
+    }()
+
+    /// One line saying what holds this row up, for the UI to print under it.
+    ///
+    /// Every row on the Model page used to arrive with no provenance at all, so a claim built
+    /// from one thread six months ago looked exactly like one Alfred has watched recur. The
+    /// synthesis pass fills `evidence_json` with real refs; until a row has been through it we
+    /// say what we actually know — how many signals, and since when.
+    static func evidenceLabel(_ f: [String: Any]) -> String {
+        let origin = (f["origin"] as? String) ?? "emergent"
+        let evidence = (f["evidence"] as? [[String: String]]) ?? []
+        let steps = (f["trajectory"] as? [[String: String]])?.count ?? 0
+        let support = max(evidence.count, steps)
+
+        var since = ""
+        if let iso = (f["first_seen"] as? String) ?? (f["last_seen"] as? String), iso.count >= 10 {
+            // Claim evidence carries plain dates ("2026-09-22"); facets written by the older
+            // paths carry full timestamps. ISO8601DateFormatter rejects the first kind outright,
+            // which is why every claim read "2 signals" with no date at all.
+            let df = DateFormatter()
+            df.dateFormat = "yyyy-MM-dd"
+            if let d = df.date(from: String(iso.prefix(10))) { since = dayFmt.string(from: d) }
+        }
+
+        switch origin {
+        case "synthesized":
+            let n = max(support, 1)
+            let signals = "\(n) signal\(n == 1 ? "" : "s")"
+            // A value Alfred inferred from how you actually chose is labelled as its read, not
+            // as something you told it.
+            let lead = (f["kind"] as? String) == "value" ? "Alfred's read from \(signals)" : signals
+            return since.isEmpty ? lead : "\(lead) · since \(since)"
+        case "declared":
+            return since.isEmpty ? "You declared this" : "You declared this · \(since)"
+        case "manual":
+            return since.isEmpty ? "You added this" : "You added this · \(since)"
+        case "coaching":
+            return since.isEmpty ? "From a coach note you kept" : "From a coach note you kept · \(since)"
+        default:
+            let n = max(support, 1)
+            let signals = n == 1 ? "1 signal" : "\(n) signals"
+            return since.isEmpty ? signals : "\(signals) · since \(since)"
+        }
+    }
+
     /// Ensure the durable store is populated and reasonably fresh.
     private static func ensureMaterialized(_ store: SelfModelStore) {
         let empty = store.counts().values.reduce(0, +) == 0
@@ -75,7 +122,8 @@ enum SelfModelService {
 
         // ---- Questions ----
         let questions: [[String: Any]] = questionFacets.prefix(6).map { f in
-            ["id": f["id"] as? String ?? "", "text": f["statement"] as? String ?? "", "verdict": verdict(f)]
+            ["id": f["id"] as? String ?? "", "text": f["statement"] as? String ?? "",
+             "verdict": verdict(f), "evidence": evidenceLabel(f)]
         }
 
         // ---- Support: what holds a belief up (lenses and decisions, both directions) ----
@@ -143,7 +191,8 @@ enum SelfModelService {
                 "lenses": attached,
                 "origin": origin,
                 "aspiration": origin == "declared" && emergentLensCount == 0,
-                "themes": lineage
+                "themes": lineage,
+                "evidence": evidenceLabel(f)
             ]
         }
 
@@ -192,7 +241,10 @@ enum SelfModelService {
         // The header used to count what happened to be rendered — "6 themes" meant six
         // rows below, not 256 in the model. Inventory belongs in Explore; this space
         // should say what is waiting on the user's judgement.
+        // "To review" renders proposals AND stray moves AND merges, so counting only proposals
+        // reported 0 while 36 items sat in the block. Count what the block shows.
         let pendingProposals = store.getProposals(status: "pending").count
+            + ReflectionStore.shared.getItemMoveProposals(status: "pending").count
         let unbackedDeclared = beliefFacets.filter { f in
             guard (f["origin"] as? String) == "declared" else { return false }
             let id = f["id"] as? String ?? ""
@@ -222,11 +274,19 @@ enum SelfModelService {
         // Declared values — the slowest-moving thing the user states about themselves.
         let valuesOut: [[String: Any]] = store.getFacets(kind: "value")
             .filter { verdict($0) != "dismissed" }
+            .sorted { a, b in
+                // What you declared leads; Alfred's reads follow, best-evidenced first.
+                let da = (a["origin"] as? String) == "declared", db = (b["origin"] as? String) == "declared"
+                if da != db { return da }
+                return ((a["confidence"] as? Double) ?? 0) > ((b["confidence"] as? Double) ?? 0)
+            }
             .map { f in
                 ["id": f["id"] as? String ?? "",
                  "statement": f["statement"] as? String ?? "",
                  "origin": f["origin"] as? String ?? "declared",
-                 "renamed": (f["renamed"] as? Bool) ?? false]
+                 "renamed": (f["renamed"] as? Bool) ?? false,
+                 "proposed": ((f["metadata"] as? [String: String])?["proposed"] ?? "0") == "1",
+                 "evidence": evidenceLabel(f)]
             }
 
         return [
@@ -264,7 +324,16 @@ enum SelfModelService {
     /// and overrides.
     static func promotedThemeIds(store: SelfModelStore) -> Set<String> {
         let decisionIds = Set(store.getFacets(kind: "decision").compactMap { $0["id"] as? String })
-        let beliefIds = Set(store.getFacets(kind: "belief").compactMap { $0["id"] as? String })
+        // Count a belief the claim-synthesis migration superseded as if it were still here. A
+        // workspace that produced beliefs has earned front status; retiring the one-thread
+        // fragments in favour of real claims must not silently demote it off the Desk — fronts
+        // come straight out of this set.
+        let beliefIds = Set(store.getFacets(kind: "belief", includeArchived: true)
+            .filter { f in
+                if (f["status"] as? String) != "archived" { return true }
+                return (f["metadata"] as? [String: String])?["superseded"] == "claims"
+            }
+            .compactMap { $0["id"] as? String })
         var dec: [String: Int] = [:], bel: [String: Int] = [:]
         for l in store.allLineage() {
             if decisionIds.contains(l.facet) { dec[l.theme, default: 0] += 1 }
@@ -558,5 +627,95 @@ enum SelfModelService {
             "when": f["last_seen"] as? String ?? "",
             "confirmed": verdict(f) == "confirmed"
         ]
+    }
+}
+
+// MARK: - The model as an input
+
+extension SelfModelService {
+
+    /// What Alfred has concluded about this person, written for a prompt.
+    ///
+    /// For most of its life the self-model was an exhibit: the Model page and the Wiki read it,
+    /// and nothing else did — not the chat, not the coaching, not the briefing. Every claim it
+    /// made was therefore unfalsifiable in practice, because it never had to be useful in a
+    /// conversation. This is the other half of interpretation: Alfred reasons *from* the model,
+    /// and the user corrects it in the flow of use rather than in a curation session.
+    ///
+    /// The steer is deliberately strong (the user's call): these are not background colour, they
+    /// are the frame. The guard against a wrong claim is that conflicts must be named out loud,
+    /// which is also how a wrong claim gets noticed and fixed.
+    static func promptContext(maxChars: Int = 2600) -> String {
+        let store = SelfModelStore.shared
+        func live(_ kind: String) -> [[String: Any]] {
+            store.getFacets(kind: kind)
+                .filter { ($0["user_verdict"] as? String) != "dismissed" }
+                .sorted { (($0["confidence"] as? Double) ?? 0) > (($1["confidence"] as? Double) ?? 0) }
+        }
+        func durability(_ f: [String: Any]) -> BeliefDurability {
+            let meta = (f["metadata"] as? [String: String]) ?? [:]
+            return meta["durability"].flatMap { BeliefDurability(rawValue: $0) } ?? .durable
+        }
+        func text(_ f: [String: Any]) -> String { (f["statement"] as? String) ?? "" }
+
+        let beliefs = live("belief")
+        let principles = Array(beliefs.filter { durability($0) == .durable }.prefix(8))
+        let theses = Array(beliefs.filter { durability($0) == .tactical }.prefix(3))
+
+        // Both kinds of value, deliberately. Declared values sort first everywhere else, and at
+        // a flat cut they filled the whole section — so the values Alfred inferred from actual
+        // trade-offs, the ones most worth testing in conversation, never reached a prompt at all.
+        let allValues = live("value")
+        let declaredValues = allValues.filter { ($0["origin"] as? String) == "declared" }.prefix(4)
+        let readValues = allValues.filter { ($0["origin"] as? String) != "declared" }.prefix(3)
+        let values = Array(declaredValues) + Array(readValues)
+        guard !principles.isEmpty || !values.isEmpty else { return "" }
+
+        // The closing instruction is the steer — it must survive the budget, so trim the lists
+        // rather than the string. Cutting the tail once left the prompt ending mid-word.
+        let closing = """
+        Reason from this. Frame advice in these terms and use their own distinctions rather than \
+        generic management language. When what they are about to do cuts against one of these, say \
+        so plainly and name which one — that is the most useful thing you can tell them, and it is \
+        also how a wrong reading here gets corrected. Never quote this section back at them as a \
+        list, and never treat an unconfirmed read as settled fact.
+
+        """
+
+        func render(_ p: ArraySlice<[String: Any]>, _ v: ArraySlice<[String: Any]>,
+                    _ t: ArraySlice<[String: Any]>) -> String {
+            var out = "## WHO THIS PERSON IS (drawn from their own decisions, not from what they told you)\n\n"
+            if !p.isEmpty {
+                out += "### How they operate\n"
+                for b in p { out += "- \(text(b))\n" }
+                out += "\n"
+            }
+            if !v.isEmpty {
+                out += "### What they protect when two good things conflict\n"
+                for item in v {
+                    let proposed = ((item["metadata"] as? [String: String])?["proposed"] ?? "0") == "1"
+                    out += "- \(text(item))\(proposed ? " (Alfred's read, unconfirmed)" : "")\n"
+                }
+                out += "\n"
+            }
+            if !t.isEmpty {
+                out += "### Live reads, true for now\n"
+                for item in t { out += "- \(text(item))\n" }
+                out += "\n"
+            }
+            return out + closing
+        }
+
+        var np = principles.count, nv = values.count, nt = theses.count
+        var out = render(principles[0..<np], values[0..<nv], theses[0..<nt])
+        while out.count > maxChars {
+            // Drop the weakest line of whichever section is longest; never empty the beliefs.
+            if nt > 0 { nt -= 1 }
+            else if nv > 2 { nv -= 1 }
+            else if np > 3 { np -= 1 }
+            else { break }
+            out = render(principles[0..<np], values[0..<nv], theses[0..<nt])
+        }
+        return out
     }
 }

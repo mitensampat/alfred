@@ -1761,8 +1761,10 @@ class WorkflowLearningService {
         sqlite3_finalize(stmt)
 
         for instruction in instructions {
-            // Create a stable pattern ID from the instruction content
-            let patternId = "direct_\(instruction.context.hashValue)"
+            // Stable across launches. String.hashValue is seeded per process, so the old id
+            // changed on every restart and INSERT OR REPLACE could never replace anything —
+            // the same instruction could land as a second row.
+            let patternId = "direct_" + Self.stableKey(instruction.context)
 
             let insertSql = """
             INSERT OR REPLACE INTO learned_patterns
@@ -2301,7 +2303,9 @@ class WorkflowLearningService {
 
     /// Get learning context tailored for a specific endpoint
     func getContextForEndpoint(_ endpoint: String) -> String {
-        let patterns = getLearnedPatterns()
+        // Curated, not raw: a one-off ask ("i want you to review what i got done last 7 days")
+        // must never reach a prompt as a standing preference.
+        let patterns = curatedPatterns()
         guard !patterns.isEmpty else { return "" }
 
         var context = "## What Alfred Has Learned About You\n\n"
@@ -2392,6 +2396,99 @@ class WorkflowLearningService {
         }
 
         return context
+    }
+
+    // MARK: - Curated patterns
+
+    /// FNV-1a over the normalized text — stable across processes, unlike String.hashValue.
+    static func stableKey(_ s: String) -> String {
+        var h: UInt64 = 1469598103934665603
+        for b in s.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().utf8 {
+            h = (h ^ UInt64(b)) &* 1099511628211
+        }
+        return String(h, radix: 16)
+    }
+
+
+    /// Words that mark a statement as a STANDING rule rather than a one-off ask.
+    private static let standingMarkers = [
+        "always", "never", "from now on", "going forward", "don't ever", "dont ever",
+        "stop reminding", "stop telling", "stop sending", "i prefer", "i don't like",
+        "i dont like", "teach:", "remember that", "keep in mind", "by default",
+        "no need to", "in general", "every time"
+    ]
+
+    /// Verbs that open a one-off request. "i want you to review what i got done last 7 days"
+    /// tripped the "i want you to " trigger and was filed as a permanent preference; it is a
+    /// task, and it has been sitting in both the Model page and the chat prompt ever since.
+    private static let requestOpeners = [
+        "show", "summarize", "summarise", "block", "schedule", "give", "find", "list",
+        "review", "update", "add", "make", "send", "draft", "check", "tell me", "what",
+        "when", "who", "how", "can you", "could you", "please show", "i want you to review",
+        "i want you to take", "ok never mind", "never mind"
+    ]
+
+    /// Patterns worth showing the user and worth putting in a prompt.
+    ///
+    /// `getLearnedPatterns()` stays raw — the memory screen must show everything so it can be
+    /// deleted. This is the read for the two places where a bad row does damage: the Model
+    /// page's "Patterns Alfred sees", and the prompt injection. Two rules, both deterministic:
+    /// a pattern must read like a standing rule, and near-identical rules collapse to one
+    /// (three separate messages about muting the same group produced three "patterns").
+    func curatedPatterns() -> [(id: String, type: String, description: String, confidence: Double, isStale: Bool, isArchived: Bool, isDirect: Bool, reinforcements: Int, lastReinforced: String)] {
+        let all = getLearnedPatterns().filter { !$0.isArchived }
+
+        func isStanding(_ raw: String) -> Bool {
+            let t = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            guard t.count >= 12 else { return false }
+            if Self.requestOpeners.contains(where: { t.hasPrefix($0) }) { return false }
+            if t.hasSuffix("?") { return false }
+            return Self.standingMarkers.contains { t.contains($0) }
+        }
+
+        // Politeness and framing carry no subject, and they are most of what differs between
+        // two sayings of the same instruction. Compare what the instruction is ABOUT.
+        let filler: Set<String> = [
+            "please", "already", "going", "forward", "have", "that", "this", "about", "again",
+            "remind", "reminding", "reminders", "stop", "dont", "don", "never", "always",
+            "want", "would", "could", "think", "really", "just", "also", "from", "with",
+            "anymore", "longer", "need", "mind", "actually", "thanks", "there", "these", "those"
+        ]
+        func tokens(_ s: String) -> Set<String> {
+            Set(s.lowercased().components(separatedBy: CharacterSet.alphanumerics.inverted)
+                .filter { $0.count > 3 && !filler.contains($0) })
+        }
+
+        // user_context rows are facts, not rules — they keep their own gate (non-empty, not a
+        // question), since "I lead the growth org" is worth knowing and has no standing marker.
+        var kept: [(id: String, type: String, description: String, confidence: Double, isStale: Bool, isArchived: Bool, isDirect: Bool, reinforcements: Int, lastReinforced: String)] = []
+        for p in all {
+            let d = p.description.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard d.count >= 12 else { continue }
+            if p.type == "explicit_preference", !isStanding(d) { continue }
+            if p.type == "user_context", d.lowercased().hasSuffix("?") { continue }
+            // Near-duplicate of something already kept? Keep the better-evidenced one.
+            let t = tokens(d)
+            if let idx = kept.firstIndex(where: { k in
+                let kt = tokens(k.description)
+                guard kt.count >= 4, t.count >= 4 else { return false }
+                let inter = Double(kt.intersection(t).count)
+                let uni = Double(kt.union(t).count)
+                // Jaccard catches two sayings of the same length; containment catches a short
+                // restatement of a longer rule — "i've already muted X so please don't…" against
+                // "I have muted X whatsapp group. please stop reminding me…" scores 0.44 on
+                // Jaccard (so it survived) but 0.7 on containment, which is the real relation.
+                let containment = inter / Double(min(kt.count, t.count))
+                return (uni > 0 && inter / uni >= 0.5) || containment >= 0.6
+            }) {
+                let incumbent = kept[idx]
+                let better = (p.reinforcements, p.description.count) > (incumbent.reinforcements, incumbent.description.count)
+                if better { kept[idx] = p }
+                continue
+            }
+            kept.append(p)
+        }
+        return kept
     }
 
     /// Get all active learned patterns

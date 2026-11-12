@@ -258,6 +258,10 @@ struct AIConfig: Codable {
     let model: String
     let messageAnalysisModel: String?
     let coachingModel: String?
+    /// The model the claim-synthesis pass uses. This is the one place in Alfred where the job is
+    /// judgement rather than extraction, so it gets the strongest model by default; set
+    /// `ai.synthesis_model` in config.json to pin a different one.
+    let synthesisModel: String?
     let maxThreadsToAnalyze: Int?
     let maxEmailThreadsToAnalyze: Int?
     let baseUrl: String?
@@ -268,6 +272,10 @@ struct AIConfig: Codable {
 
     var effectiveCoachingModel: String {
         coachingModel ?? model
+    }
+
+    var effectiveSynthesisModel: String {
+        synthesisModel ?? "claude-opus-4-5"
     }
 
     var effectiveMaxThreads: Int {
@@ -287,6 +295,7 @@ struct AIConfig: Codable {
         case model
         case messageAnalysisModel = "message_analysis_model"
         case coachingModel = "coaching_model"
+        case synthesisModel = "synthesis_model"
         case maxThreadsToAnalyze = "max_threads_to_analyze"
         case maxEmailThreadsToAnalyze = "max_email_threads_to_analyze"
         case baseUrl = "base_url"

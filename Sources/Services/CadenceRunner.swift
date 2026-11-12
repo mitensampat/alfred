@@ -46,6 +46,8 @@ class CadenceRunner {
             return try await runThemeConvergence(cadence: cadence)
         case .notionSync:
             return try await runNotionSync(cadence: cadence)
+        case .claimSynthesis:
+            return try await runClaimSynthesis(cadence: cadence)
         }
     }
 
@@ -235,6 +237,23 @@ class CadenceRunner {
         UserWikiComposer.write()
 
         return "\(mergeSummary). Strays: \(stray.queued) new move proposals queued (\(stray.found) found). Beliefs: \(dur.tagged) tagged, \(dur.archived) archived. You-Wiki refreshed."
+    }
+
+    /// The interpret stage: read each workspace's decisions and shifts and conclude what the
+    /// user believes and protects. Weekly, because thinking does not turn over daily — and after
+    /// convergence, so a workspace is whole before anything is concluded from it.
+    private func runClaimSynthesis(cadence: Cadence) async throws -> String {
+        guard AppConfig.load()?.features?.selfModel ?? false else {
+            return "Self-model disabled — synthesis skipped"
+        }
+        let clusters = 40
+        // The weekly run migrates: by the time it runs, its claims replace that workspace's
+        // one-thread fragments (anything the user confirmed, kept or re-worded is left alone).
+        let r = await ClaimSynthesizer.run(maxClusters: clusters, migrate: true)
+        UserWikiComposer.write()
+        return "Claims: \(r.beliefs) beliefs + \(r.values) values across \(r.clusters) workspaces "
+            + "(\(r.kept) reaffirmed, \(r.updated) restated, \(r.thin) too thin, \(r.retired) retired, "
+            + "\(r.legacyRetired) fragments superseded, \(r.failures) failed) on \(r.model)"
     }
 
     // MARK: - Individual Runners

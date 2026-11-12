@@ -440,6 +440,24 @@ class CadenceService {
                 catchUpWindowHours: 3,
                 notifyOnSuccess: false,
                 emailOnSuccess: false
+            ),
+            Cadence(
+                id: "builtin-claim-synthesis",
+                name: "Claim Synthesis",
+                icon: "🪞",
+                actionType: .claimSynthesis,
+                params: [:],
+                // Sunday, after convergence has collapsed the week's fragments and before the
+                // weekly review reads the model.
+                schedule: .weekly(day: "sunday", time: "23:15"),
+                enabled: config?.features?.selfModel ?? false,
+                isBuiltIn: true,
+                createdAt: now,
+                lastRunDate: nil,
+                lastRunTimestamp: nil,
+                catchUpWindowHours: 6,
+                notifyOnSuccess: false,
+                emailOnSuccess: false
             )
         ]
         // Notion diff-only pull — four times a day (08:00 / 13:00 / 20:00 / 01:00). Each run grabs

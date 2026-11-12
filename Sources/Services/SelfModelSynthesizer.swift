@@ -110,11 +110,18 @@ enum SelfModelSynthesizer {
         }
 
         // ---- Patterns (durable preferences/instructions; skip journal-like context) ----
-        // getLearnedPatterns takes WorkflowLearningService's lock, which computeLearnedPatterns
+        // curatedPatterns takes WorkflowLearningService's lock, which computeLearnedPatterns
         // holds during (sometimes hanging) LLM calls. Bound the wait so materialize — and thus
         // the whole You/Now surface — never hangs waiting on the learning service.
-        let learnedPatterns = withTimeout(seconds: 3) { WorkflowLearningService.shared.getLearnedPatterns() } ?? []
+        //
+        // Curated, not raw. "Patterns Alfred sees" was rendering verbatim chat lines — four of
+        // the eight rows were the same instruction about muting one group, and one was a request
+        // ("i want you to review what i got done last 7 days"). The read boundary now keeps only
+        // standing rules and collapses near-duplicates.
+        let learnedPatterns = withTimeout(seconds: 3) { WorkflowLearningService.shared.curatedPatterns() } ?? []
+        var livePatternIds = Set<String>()
         for p in learnedPatterns where !p.isArchived && p.type != "user_context" {
+            livePatternIds.insert("pattern_" + p.id)
             _ = facets.upsertFacet(
                 id: "pattern_" + p.id, kind: "pattern", statement: p.description,
                 confidence: p.confidence, status: p.isStale ? "fading" : "active",
@@ -123,33 +130,43 @@ enum SelfModelSynthesizer {
                            "reinforcements": String(p.reinforcements)])
         }
 
-// ---- Beliefs (trajectory chaining) ----
-        // Build chains deterministically in memory (oldest-first), then upsert each chain
-        // as ONE belief facet. This keeps the whole pass idempotent — no reliance on
-        // prior DB state, so re-running produces identical chains rather than appending.
-        let ordered: [[String: String]] = store.getRecentBeliefShifts(days: 180, limit: 40)
-            .reversed()  // getRecentBeliefShifts is newest-first
-            .map { ["from": $0["from"] ?? "", "to": $0["to"] ?? "", "date": $0["date"] ?? now] }
+        // A pattern facet the curated read no longer vouches for drops out of the active set.
+        // Without this, every raw utterance ever promoted stays on the page for ever — curating
+        // the read would change nothing for rows already written. Anything you confirmed stays.
+        // A confirmation does not protect one of these. All 8 junk rows were marked
+        // `confirmed` — the user clicking "Sounds right" on "I have muted that group" was
+        // agreeing with the *statement*, not voting that a verbatim chat line is a standing
+        // pattern. The learning store is the source of truth for whether a pattern exists, and
+        // the raw instruction stays there (and on the memory screen) either way. Declared
+        // patterns are the user's own words and never touched.
+        for f in facets.getFacets(kind: "pattern") {
+            guard let id = f["id"] as? String, !livePatternIds.contains(id) else { continue }
+            guard (f["origin"] as? String) != "declared" else { continue }
+            _ = facets.archiveFacet(id: id)
+        }
 
-        var chains: [[[String: String]]] = []
-        for shift in ordered {
-            guard let to = shift["to"], !to.isEmpty else { continue }
-            let from = shift["from"] ?? ""
-            if let idx = chains.firstIndex(where: { fuzzyMatch($0.last?["to"] ?? "", from) }) {
-                chains[idx].append(shift)
-            } else {
-                chains.append([shift])
-            }
+        // ---- Questions: age out what has no recent evidence ----
+        // 456 questions had accumulated, every one still "open", because nothing ever retired
+        // them. A question Alfred hasn't seen in the stream for 60 days is not an open question;
+        // it is a question from a thread. Archived, not deleted — still browsable.
+        let qCutoff = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-60 * 86400))
+        for f in facets.getFacets(kind: "question") {
+            guard let id = f["id"] as? String else { continue }
+            let last = (f["last_seen"] as? String) ?? ""
+            let v = f["user_verdict"] as? String
+            guard v != "confirmed", v != "kept" else { continue }
+            if last.isEmpty || last < qCutoff { _ = facets.archiveFacet(id: id) }
         }
-        for chain in chains {
-            guard let first = chain.first, let last = chain.last else { continue }
-            let id = "belief_" + fnv1a((first["from"] ?? "") + "|" + (first["to"] ?? ""))
-            let conf = min(1.0, 0.55 + 0.1 * Double(chain.count))
-            _ = facets.upsertFacet(
-                id: id, kind: "belief", statement: last["to"] ?? "", confidence: conf,
-                status: "active", firstSeen: first["date"], lastSeen: last["date"],
-                trajectory: chain, evidence: [], metadata: ["shift_count": String(chain.count)])
-        }
+
+// ---- Beliefs ----
+        // Nothing is minted here any more. This used to chain the last 40 `mental_model_shifts`
+        // into one belief facet per chain, which is how 131 of the store's 140 beliefs came to be
+        // single-thread fragments at a flat 0.65 confidence. The shifts are still the substrate —
+        // they live in ReflectionStore and `ClaimSynthesizer` reads them per workspace, alongside
+        // the decisions, and writes claims that have to clear an independent-support bar.
+        // Existing fragments stay until the synthesis pass runs with migrate:true for their
+        // workspace, which archives them (marked `superseded`) and keeps anything you confirmed,
+        // kept or re-worded.
 
         // ---- Decisions ----
         materializeDecisions()
@@ -341,7 +358,7 @@ enum SelfModelSynthesizer {
         let reflections = ReflectionStore.shared.getRecentReflections(limit: 2000, days: 400)
         let canon = canonicalThemeMap()
         let overrides = ReflectionStore.shared.itemOwnerOverrides()   // accepted moves win
-        store.clearLineage(facetKind: "belief")   // rebuild belief→theme edges under the gate
+        store.clearLineage(facetKind: "belief", sparingOrigin: "synthesized")   // rebuild belief→theme edges under the gate; claims keep theirs
         for r in reflections {
             guard let shifts = r["mental_model_shifts"] as? [[String: String]], !shifts.isEmpty,
                   let themes = r["themes"] as? [String], !themes.isEmpty else { continue }

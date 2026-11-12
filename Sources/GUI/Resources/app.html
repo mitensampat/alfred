@@ -1307,12 +1307,22 @@ function viewModel() {
   ((d.props && d.props.proposals) || []).forEach(p => review.push(srow(esc(p.decision), 'Evidence for: ' + esc(p.belief), `<span style="display:flex;gap:2px"><button type="button" class="ghost" onclick="smProposal(${ja(p.id)},'confirm')">Yes</button><button type="button" class="ghost" onclick="smProposal(${ja(p.id)},'reject')">No</button></span>`)));
   ((d.merges && d.merges.merges) || []).forEach(x => review.push(srow(esc(x.a_name) + ' and ' + esc(x.b_name), 'Same thing?', `<span style="display:flex;gap:2px"><button type="button" class="ghost" onclick="smMerge(${ja(x.a)},${ja(x.b)},'merge')">Merge</button><button type="button" class="ghost" onclick="smMerge(${ja(x.a)},${ja(x.b)},'reject')">Keep apart</button></span>`)));
   ((d.strays && d.strays.groups) || []).forEach(g => (g.items || []).forEach(i => review.push(srow(esc(i.content), esc('Filed under ' + i.from_theme + ' · belongs in ' + i.to_theme + '?'), `<span style="display:flex;gap:2px"><button type="button" class="ghost" onclick="smStray(${ja(i.id)},'accept')">Move</button><button type="button" class="ghost" onclick="smStray(${ja(i.id)},'reject')">Keep</button></span>`))));
-  if (review.length) h += block('To review', null, review.join(''));
+  // Housekeeping is not self-knowledge. 36 stray-move proposals were pushing Beliefs, Values
+  // and Open questions below the fold — the page opened on a chore list. Show a few; the rest
+  // are one click away.
+  if (review.length) {
+    const expanded = S.allReview || review.length <= 4;
+    const rest = review.length - 4;
+    const more = rest > 0
+      ? `<div class="srow"><div class="label" style="flex:1 1 auto">${rest} more filing suggestion${rest === 1 ? '' : 's'}</div><button type="button" class="ghost" onclick="S.allReview=!S.allReview;rerenderPage()">${expanded ? 'Show fewer' : 'Show all'}</button></div>`
+      : '';
+    h += block('To review', null, (expanded ? review : review.slice(0, 4)).join('') + more);
+  }
   if ((m.movement || []).length) h += block('What moved this week', null, m.movement.map(x => srow(esc(x.to || x.statement), esc((x.from ? 'Was: ' + x.from : '') + (x.when ? ' · ' + x.when : '')), '')).join(''));
   const bel = (m.lenses && m.lenses.belief_shifts) || [];
-  h += block('Beliefs', 'How you think things work.', bel.map(b => `<div class="srow col"><div style="font-size:15px">${esc(b.to)}</div>${b.from ? `<div class="label" style="font-size:12px">Was: ${esc(b.from)}</div>` : ''}${verbs(b, 'belief')}</div>`).join('') + addRow('belief'));
-  h += block('Values', 'What you will not trade away.', (m.values || []).map(v => `<div class="srow col"><div style="font-size:15px">${esc(v.statement)}</div>${verbs(v, 'value')}</div>`).join('') + addRow('value'));
-  if ((m.questions || []).length) h += block('Open questions', 'What you are still working out.', m.questions.map(q => `<div class="srow col"><div style="font-size:15px">${esc(q.text)}</div><div style="display:flex;gap:2px;margin:6px 0 2px -10px"><button type="button" class="ghost" onclick="openReflect(${ja(q.id)},${ja(q.text)})">Think it through</button><button type="button" class="ghost" onclick="smAnswer(${ja(q.id)})">Answer it</button><button type="button" class="ghost" onclick="smVerdict(${ja(q.id)},'dismissed')">Not me</button></div></div>`).join(''));
+  h += block('Beliefs', 'How you think things work.', bel.map(b => `<div class="srow col"><div style="font-size:15px">${esc(b.to)}</div>${b.from ? `<div class="label" style="font-size:12px">Was: ${esc(b.from)}</div>` : ''}${b.evidence ? `<div class="label" style="font-size:12px">${esc(b.evidence)}</div>` : ''}${verbs(b, 'belief')}</div>`).join('') + addRow('belief'));
+  h += block('Values', 'What you will not trade away.', (m.values || []).map(v => `<div class="srow col"><div style="font-size:15px">${esc(v.statement)}</div>${v.evidence ? `<div class="label" style="font-size:12px">${esc(v.evidence)}</div>` : ''}${verbs(v, 'value')}</div>`).join('') + addRow('value'));
+  if ((m.questions || []).length) h += block('Open questions', 'What you are still working out.', m.questions.map(q => `<div class="srow col"><div style="font-size:15px">${esc(q.text)}</div>${q.evidence ? `<div class="label" style="font-size:12px">${esc(q.evidence)}</div>` : ''}<div style="display:flex;gap:2px;margin:6px 0 2px -10px"><button type="button" class="ghost" onclick="openReflect(${ja(q.id)},${ja(q.text)})">Think it through</button><button type="button" class="ghost" onclick="smAnswer(${ja(q.id)})">Answer it</button><button type="button" class="ghost" onclick="smVerdict(${ja(q.id)},'dismissed')">Not me</button></div></div>`).join(''));
   const pats = (m.lenses && m.lenses.patterns) || [];
   if (pats.length) h += block('Patterns Alfred sees', null, pats.map(p => `<div class="srow col"><div style="font-size:15px">${esc(p.description)}</div><div class="label" style="font-size:12px">${p.confidence >= 0.8 ? 'Strong' : p.confidence >= 0.55 ? 'Building' : 'Forming'}${p.reinforcements ? ' · seen ' + p.reinforcements + ' times' : ''}</div>${verbs(p, 'pattern')}</div>`).join(''));
   return h;

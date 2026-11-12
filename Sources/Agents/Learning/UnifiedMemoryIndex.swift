@@ -138,7 +138,11 @@ class UnifiedMemoryIndex {
     // MARK: - Source Aggregation
 
     private func getWorkflowPatterns() -> [MemoryItem] {
-        let patterns = WorkflowLearningService.shared.getLearnedPatterns()
+        // Curated: this is the path that actually reaches a prompt (getContextForEndpoint is
+        // unused), and it was feeding one-off requests into "Your Explicit Preferences" — Alfred
+        // was being told that "i want you to review what i got done last 7 days" is a standing
+        // preference of yours.
+        let patterns = WorkflowLearningService.shared.curatedPatterns()
         return patterns.compactMap { p in
             guard !p.isArchived else { return nil }
             let type: MemoryItem.ItemType = {

@@ -255,7 +255,9 @@ class SelfModelStore {
         "front_state", "front_date", "outcome",
         // Machine-computed but expensive to recompute — carry forward so the nightly
         // materialize() doesn't drop the durability tag and force a re-classification.
-        "durability", "durability_hash", "durability_source"
+        "durability", "durability_hash", "durability_source",
+        // When this workspace was last read by the claim-synthesis pass (drives its rotation).
+        "claims_at", "workspace", "support", "support_days", "rationale", "proposed", "superseded"
     ]
 
     /// Insert a facet, or replace it if the id already exists.
@@ -677,17 +679,77 @@ class SelfModelStore {
     /// the lineage under the attachment gate instead of only appending to the old bled edges
     /// (facet_lineage is INSERT OR IGNORE — without this, re-materializing never removes bleed).
     @discardableResult
-    func clearLineage(facetKind: String) -> Bool {
+    /// Drop the theme edges of one facet kind, optionally sparing an origin.
+    ///
+    /// `backfillLineage` rebuilds belief→theme edges from the reflection stream, which would wipe
+    /// the edges `ClaimSynthesizer` writes for its own claims — those have no shift to rebuild
+    /// from, so they would be orphaned (and with them every workspace's claim history).
+    func clearLineage(facetKind: String, sparingOrigin: String? = nil) -> Bool {
         dbLock.lock()
         defer { dbLock.unlock() }
         guard let db = db else { return false }
         var stmt: OpaquePointer?
-        let sql = "DELETE FROM facet_lineage WHERE facet_id IN (SELECT id FROM self_facet WHERE kind = ?)"
+        var sql = "DELETE FROM facet_lineage WHERE facet_id IN (SELECT id FROM self_facet WHERE kind = ?"
+        if sparingOrigin != nil { sql += " AND origin <> ?" }
+        sql += ")"
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
         sqlite3_bind_text(stmt, 1, (facetKind as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        if let spare = sparingOrigin {
+            sqlite3_bind_text(stmt, 2, (spare as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        }
         let ok = sqlite3_step(stmt) == SQLITE_DONE
         sqlite3_finalize(stmt)
         return ok
+    }
+
+    /// Where each merged-away theme's evidence should now be read: loser id → surviving id.
+    ///
+    /// Convergence re-points lineage when it merges, but the nightly rebuilds
+    /// (`backfillLineage`, `materializeDecisions`) re-derive edges from the reflection stream and
+    /// can land them back on the loser's id. The result, measured: 1,251 of 1,957 evidence links
+    /// hanging off dismissed themes, invisible to anything that reads a live workspace. The
+    /// merges themselves are recorded in `model_feedback` ("loser name → winner name"), so the
+    /// mapping can be recovered rather than lost. Chains are followed, so a theme merged twice
+    /// resolves to where it finally landed.
+    func convergenceWinners(maxHops: Int = 5) -> [String: String] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return [:] }
+
+        // Theme name → id, from both the machine name and any user rename.
+        var idByName: [String: String] = [:]
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "SELECT id, statement, user_statement FROM self_facet WHERE kind = 'theme'", -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let id = columnText(stmt, 0) else { continue }
+                if let name = columnText(stmt, 1), !name.isEmpty { idByName[name] = id }
+                if let name = columnText(stmt, 2), !name.isEmpty { idByName[name] = id }
+            }
+        }
+        sqlite3_finalize(stmt)
+        stmt = nil
+
+        var direct: [String: String] = [:]
+        if sqlite3_prepare_v2(db, "SELECT facet_id, detail FROM model_feedback WHERE kind = 'converge' ORDER BY ts", -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let loser = columnText(stmt, 0), let detail = columnText(stmt, 1) else { continue }
+                let parts = detail.components(separatedBy: " → ")
+                guard parts.count == 2 else { continue }
+                let winnerName = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let winner = idByName[winnerName], winner != loser else { continue }
+                direct[loser] = winner   // later merges overwrite earlier ones
+            }
+        }
+        sqlite3_finalize(stmt)
+
+        var resolved: [String: String] = [:]
+        for (loser, _) in direct {
+            var cur = loser
+            var hops = 0
+            while let next = direct[cur], hops < maxHops { cur = next; hops += 1 }
+            if cur != loser { resolved[loser] = cur }
+        }
+        return resolved
     }
 
     /// All lineage edges as (facet_id, theme_id) pairs.

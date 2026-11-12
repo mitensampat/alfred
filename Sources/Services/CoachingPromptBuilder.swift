@@ -343,6 +343,14 @@ struct CoachingPromptBuilder {
             """
         }
 
+        // THE SELF-MODEL AS AN INPUT — what the claim-synthesis pass concluded from the user's
+        // own decisions. Placed before the learned-pattern context: patterns calibrate HOW Alfred
+        // speaks, this frames WHAT it should be reasoning from.
+        let modelContext = SelfModelService.promptContext()
+        if !modelContext.isEmpty {
+            prompt += "\n" + modelContext
+        }
+
         // UNIFIED LEARNED CONTEXT (Learning v3 — aggregated from all memory sources)
         let unifiedContext = UnifiedMemoryIndex.shared.getFormattedContext(
             endpoint: "chat",

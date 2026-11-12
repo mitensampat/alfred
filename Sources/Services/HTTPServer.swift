@@ -745,6 +745,29 @@ class HTTPServer {
             let note = await DailyNoteComposer.compose(orchestrator: alfredService.orchestrator)
             return HTTPResponse(statusCode: 200, body: ["subject": note.subject, "plain": note.plain])
 
+        case ("GET", "/api/model/prompt-context"):
+            // Exactly what the self-model contributes to a prompt. Worth an endpoint: the thing
+            // that went wrong for the model's whole life was that nobody could see whether it
+            // reached a prompt at all.
+            let ctx = SelfModelService.promptContext()
+            return HTTPResponse(statusCode: 200, body: ["chars": ctx.count, "context": ctx])
+
+        case ("POST", "/api/model/synthesize"):
+            // The interpret stage, on demand (it also runs weekly). `clusters` bounds the cost;
+            // `migrate=1` also retires the one-thread beliefs of each workspace it covers.
+            let clusters = Int(request.queryParams["clusters"] ?? "") ?? 40
+            let migrate = (request.queryParams["migrate"] ?? "0") == "1"
+            // `sweep=1` also retires the fragments no live workspace claims — a one-shot, meant
+            // for right after a full backfill, never on the cadence.
+            let sweep = (request.queryParams["sweep"] ?? "0") == "1"
+            let r = await ClaimSynthesizer.run(maxClusters: max(1, min(clusters, 120)),
+                                               migrate: migrate, sweepLegacy: sweep)
+            UserWikiComposer.write()
+            return HTTPResponse(statusCode: 200, body: [
+                "clusters": r.clusters, "beliefs": r.beliefs, "values": r.values,
+                "kept": r.kept, "updated": r.updated, "thin": r.thin, "retired": r.retired,
+                "superseded": r.legacyRetired, "failures": r.failures, "model": r.model])
+
         case ("POST", "/api/model/tag-durability"):
             // On-demand belief-durability pass (also runs nightly): tag durable/tactical/fact/action
             // and archive the non-beliefs, then regenerate the Wiki off the curated set.
