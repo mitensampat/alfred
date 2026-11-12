@@ -767,20 +767,35 @@ class HTTPServer {
             // coaching nudge ("mute the group, set read-only hours") is an action, not a belief;
             // storing it as one is exactly what silted up "what you believe". Gate on durability.
             CoachingMemoryService.shared.updatePattern(category: "affirmed", observation: insight)
-            let dur = BeliefDurability.heuristic(insight)
-            if dur == .action || dur == .fact {
+            // Ask properly: the keyword heuristic only recognises a few shapes, and the old code
+            // took its `nil` ("unsure") as a yes. One statement is cheap to classify, so when the
+            // heuristic abstains, put it to the model rather than assuming.
+            let (dur, durSource) = await BeliefDurability.classifyOne(insight)
+            if !dur.isBelief {
                 return HTTPResponse(statusCode: 200, body: [
-                    "success": true, "promoted": false, "kind": dur!.rawValue,
+                    "success": true, "promoted": false, "kind": dur.rawValue,
                     "note": "Noted in coaching memory — kept out of beliefs (it reads as \(dur == .action ? "an action" : "a fact"), not a belief)."])
             }
             let fid = SelfModelSynthesizer.stableId("belief", insight)
+            // A durability tag is only worth storing when something actually decided it. Stamping
+            // a fallback — tag plus matching hash — is what told the nightly pass "already
+            // classified" and froze the guess in place. Leave a guess untagged so the pass picks
+            // it up; honour a real verdict so the pass doesn't redo the work.
+            var meta = ["origin_label": label]
+            if durSource != "fallback" {
+                meta["durability"] = dur.rawValue
+                meta["durability_hash"] = BeliefDurability.hash(insight)
+                meta["durability_source"] = durSource
+            }
             let ok = SelfModelStore.shared.upsertFacet(
-                id: fid, kind: "belief", statement: insight, confidence: 1.0, status: "active",
+                // One affirmation is a real signal, but weaker than a belief Alfred watched the
+                // user arrive at over several shifts (those reach 0.75+). 1.0 put every clicked
+                // coach card at the top of a confidence-ordered list, which is how a nudge ended
+                // up heading "what you believe".
+                id: fid, kind: "belief", statement: insight, confidence: 0.7, status: "active",
                 firstSeen: nowStr, lastSeen: nowStr, trajectory: [],
                 evidence: [["source_type": "coaching", "snippet": insight, "ts": nowStr]],
-                metadata: ["origin_label": label,
-                           "durability": (dur ?? .durable).rawValue,
-                           "durability_hash": BeliefDurability.hash(insight)],
+                metadata: meta,
                 origin: "coaching", preserveUserMeta: true)
             _ = SelfModelStore.shared.setVerdict(id: fid, verdict: "kept")   // user-affirmed, protect from convergence
             return HTTPResponse(statusCode: ok ? 200 : 500, body: ["success": ok, "promoted": true, "id": fid])

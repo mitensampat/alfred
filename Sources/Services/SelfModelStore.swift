@@ -255,7 +255,7 @@ class SelfModelStore {
         "front_state", "front_date", "outcome",
         // Machine-computed but expensive to recompute — carry forward so the nightly
         // materialize() doesn't drop the durability tag and force a re-classification.
-        "durability", "durability_hash"
+        "durability", "durability_hash", "durability_source"
     ]
 
     /// Insert a facet, or replace it if the id already exists.

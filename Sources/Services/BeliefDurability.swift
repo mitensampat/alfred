@@ -67,38 +67,56 @@ enum BeliefDurability: String {
     }
 
     // ── Model classifier ──────────────────────────────────────────────────────────
-    /// Classify many statements via the `belief-durability` decision (~/.alfred/decisions/).
-    /// Anything the model skips, or answers without enough confidence to act on, defaults to
-    /// `.durable` — we never silently drop a belief; worst case it stays in "what you believe"
-    /// until the user dismisses it.
-    static func classify(_ statements: [String]) async -> [String: BeliefDurability] {
-        var out: [String: BeliefDurability] = [:]
+    /// How a durability tag was arrived at. Only `heuristic` and `model` are verdicts;
+    /// `fallback` means nothing actually decided and the answer is a safe default.
+    ///
+    /// This distinction is the fix for a real defect: the promotion path asked only the
+    /// heuristic, took its `nil` ("unsure") as `durable`, and stamped a tag + hash beside it —
+    /// which told the nightly pass the statement was already classified. A coaching nudge became
+    /// a permanent "durable principle" at the top of the Wiki. Callers now store a tag only when
+    /// something decided it, so a default stays retryable instead of becoming a verdict.
+    typealias Verdict = (durability: BeliefDurability, source: String)
+
+    /// Classify statements via the `belief-durability` decision (~/.alfred/decisions/),
+    /// reporting how each answer was reached.
+    static func classifySourced(_ statements: [String]) async -> [String: Verdict] {
+        var out: [String: Verdict] = [:]
         guard !statements.isEmpty else { return out }
 
         // Heuristic pre-pass — free, and shrinks the model batch.
         var needModel: [String] = []
         for s in statements {
-            if let h = heuristic(s) { out[s] = h } else { needModel.append(s) }
+            if let h = heuristic(s) { out[s] = (h, "heuristic") } else { needModel.append(s) }
         }
         guard !needModel.isEmpty else { return out }
 
         let decided = await DecisionEngine.decide(
             "belief-durability", items: needModel.map { DecisionEngine.Item(key: $0, text: $0) })
-        // The decision file's own Fallback, so editing it actually changes what an unclassified
-        // statement becomes. Only a belief class is honoured: a fallback of fact or action would
-        // archive everything the model skipped, and nothing should leave the self-model untouched.
-        let fallback = DecisionEngine.fallbackLabel("belief-durability")
-            .flatMap(BeliefDurability.init(rawValue:))
-            .flatMap { $0.isBelief ? $0 : nil } ?? .durable
         for s in needModel {
             guard let d = decided[s], let cls = BeliefDurability(rawValue: d.label) else {
-                out[s] = fallback
+                out[s] = (modelFallback, "fallback")
                 continue
             }
             // fact/action get archived out of the active set, so only take that call when the
             // model is confident enough to act; a hedged "fact" stays a belief.
-            out[s] = (cls.isBelief || d.tier == .act) ? cls : fallback
+            out[s] = (cls.isBelief || d.tier == .act) ? (cls, "model") : (modelFallback, "fallback")
         }
         return out
+    }
+
+    /// Classify a single statement. Used on the promotion path, where one statement is cheap to
+    /// ask about and guessing is what caused the defect described above.
+    static func classifyOne(_ s: String) async -> Verdict {
+        await classifySourced([s])[s] ?? (modelFallback, "fallback")
+    }
+
+    /// The decision file's own Fallback, so editing `belief-durability.md` actually changes what
+    /// an unclassified statement becomes. Only a belief class is honoured: a fallback of fact or
+    /// action would archive everything the model skipped, and nothing should leave the
+    /// self-model untouched.
+    static var modelFallback: BeliefDurability {
+        DecisionEngine.fallbackLabel("belief-durability")
+            .flatMap(BeliefDurability.init(rawValue:))
+            .flatMap { $0.isBelief ? $0 : nil } ?? .durable
     }
 }

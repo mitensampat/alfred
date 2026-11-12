@@ -180,27 +180,37 @@ enum SelfModelSynthesizer {
                   stmt.count > 4 else { continue }
             let meta = (f["metadata"] as? [String: String]) ?? [:]
             let curHash = BeliefDurability.hash(stmt)
+            // Skip only a statement whose tag was actually *decided* — by the heuristic or the
+            // model — and whose text hasn't changed since. A tag with no `durability_source` came
+            // from an older build that wrote a fallback as if it were a verdict, so re-examine it;
+            // that makes the first run after this change a one-off migration of the legacy tags.
             if let tag = meta["durability"], !tag.isEmpty,
+               let src = meta["durability_source"], !src.isEmpty, src != "fallback",
                meta["durability_hash"] == curHash {
-                continue   // already tagged, unchanged
+                continue   // already classified, unchanged
             }
             pending.append((id, stmt, f["user_verdict"] as? String))
         }
         guard !pending.isEmpty else { return (0, 0) }
 
         // Classify in bounded chunks so no single prompt gets unwieldy.
-        var verdictByStatement: [String: BeliefDurability] = [:]
+        var verdictByStatement: [String: BeliefDurability.Verdict] = [:]
         for chunk in stride(from: 0, to: pending.count, by: 30).map({ Array(pending[$0..<min($0+30, pending.count)]) }) {
-            let classified = await BeliefDurability.classify(chunk.map { $0.statement })
+            let classified = await BeliefDurability.classifySourced(chunk.map { $0.statement })
             for (k, v) in classified { verdictByStatement[k] = v }
         }
 
         var tagged = 0, archived = 0
         for p in pending {
-            let cls = verdictByStatement[p.statement] ?? .durable
+            // Store a tag only when something actually decided it. When the model skipped the
+            // statement we leave it untagged so the next run retries, rather than recording the
+            // fallback as a verdict — that is what froze a nudge in as a "durable principle".
+            guard let v = verdictByStatement[p.statement], v.source != "fallback" else { continue }
+            let cls = v.durability
             store.mergeFacetMetadata(id: p.id, [
                 "durability": cls.rawValue,
-                "durability_hash": BeliefDurability.hash(p.statement)
+                "durability_hash": BeliefDurability.hash(p.statement),
+                "durability_source": v.source
             ])
             tagged += 1
             // A fact or an action isn't a belief. Archive it out of the active set — unless the
