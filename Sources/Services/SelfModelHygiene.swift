@@ -105,17 +105,121 @@ enum SelfModelHygiene {
         return proposals
     }
 
+    // MARK: - Reconciliation
+
+    /// How long a proposal nobody answered stays in the queue before it is dropped.
+    /// Dropped, not silenced: if the detector still believes it, the next run raises it again.
+    static let proposalMaxAgeDays = 60
+    /// Pending proposals one workspace may hold. Past this the detector stops adding to the pile.
+    static let pendingPerWorkspaceCap = 10
+
+    struct Reconciliation {
+        var before = 0
+        var deadTarget = 0      // destination workspace no longer exists
+        var collapsed = 0       // source and destination merged into each other
+        var superseded = 0      // the item already carries an override
+        var expired = 0         // nobody answered it for proposalMaxAgeDays
+        var remapped = 0        // endpoints rewritten through convergence
+        var after = 0
+    }
+
+    /// Reconcile the pending queue with the world as it is now.
+    ///
+    /// 365 proposals had accumulated against 57 the user ever answered, and the queue read as a
+    /// chore list nobody could face. Measured on that backlog, 248 of the 365 proposed moving an
+    /// item into a workspace that no longer existed: the detector had queued them, convergence
+    /// had then merged the destination away, and nothing ever went back. They were not decisions
+    /// waiting to be made — they were questions about a world that had moved on.
+    ///
+    /// This runs on every read of the queue. It costs no model calls.
+    @discardableResult
+    static func reconcileProposals() -> Reconciliation {
+        var r = Reconciliation()
+        let store = ReflectionStore.shared
+        let pending = store.getItemMoveProposals(status: "pending")
+        r.before = pending.count
+        guard !pending.isEmpty else { return r }
+
+        let live = SelfModelStore.shared.liveThemeNames()
+        guard !live.isEmpty else { return r }       // nothing to judge against; leave the queue alone
+        let winners = SelfModelStore.shared.convergenceWinnerNames()
+        let overrides = Set(store.itemOwnerOverrides().keys.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        })
+        let cutoff = ISO8601DateFormatter().string(from: Date()
+            .addingTimeInterval(-Double(proposalMaxAgeDays) * 86400))
+
+        /// A workspace name as it stands today: itself if it is live, else whatever absorbed it.
+        func current(_ name: String) -> String? {
+            var n = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            for _ in 0..<6 {
+                if live.contains(n) { return n }
+                guard let next = winners[n], next != n else { return nil }
+                n = next
+            }
+            return live.contains(n) ? n : nil
+        }
+
+        var doomed: [String] = []
+        for p in pending {
+            guard let id = p["id"] as? String else { continue }
+            let from = (p["from_theme"] as? String) ?? ""
+            let to = (p["to_theme"] as? String) ?? ""
+            let content = ((p["content"] as? String) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+            if overrides.contains(content) { r.superseded += 1; doomed.append(id); continue }
+            guard let liveTo = current(to) else { r.deadTarget += 1; doomed.append(id); continue }
+            let liveFrom = current(from)
+            if let f = liveFrom, f == liveTo { r.collapsed += 1; doomed.append(id); continue }
+            // created_at is "YYYY-MM-DD HH:MM:SS" from SQLite; compare on the date alone.
+            let created = String(((p["created_at"] as? String) ?? "").prefix(10))
+            if !created.isEmpty, created < String(cutoff.prefix(10)) {
+                r.expired += 1; doomed.append(id); continue
+            }
+            // Survivor: carry its endpoints forward to the names that exist today, so the row
+            // the user reads names a workspace they can actually find.
+            let keptFrom = liveFrom ?? from.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if keptFrom != from.lowercased() || liveTo != to.lowercased() {
+                if store.updateItemMoveProposalThemes(id: id, fromTheme: keptFrom, toTheme: liveTo) {
+                    r.remapped += 1
+                }
+            }
+        }
+        _ = store.deleteItemMoveProposals(ids: doomed)
+        r.after = r.before - doomed.count
+        return r
+    }
+
     /// Run the detector and enqueue every proposal (INSERT OR IGNORE — resolved ones never return).
     /// Returns (scanned proposals, newly queued). Nothing is applied; the user decides each move.
     @discardableResult
     static func detectAndQueue(maxWorkspaces: Int = 12) async -> (found: Int, queued: Int) {
+        // Clear the dead wood before adding to the pile, so the cap below counts live proposals.
+        reconcileProposals()
         let props = await detectStrays(maxWorkspaces: maxWorkspaces)
+        // What each workspace already has waiting, and what the user has already settled. Both
+        // bound the queue: a backlog nobody is clearing is not improved by lengthening it.
+        var pendingByWorkspace: [String: Int] = [:]
+        for p in ReflectionStore.shared.getItemMoveProposals(status: "pending") {
+            pendingByWorkspace[((p["from_theme"] as? String) ?? "").lowercased(), default: 0] += 1
+        }
+        let overridden = Set(ReflectionStore.shared.itemOwnerOverrides().keys.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        })
         var queued = 0
         for p in props {
+            let ws = p.fromTheme.lowercased()
+            guard (pendingByWorkspace[ws] ?? 0) < pendingPerWorkspaceCap else { continue }
+            guard !overridden.contains(p.content.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+            else { continue }
             if ReflectionStore.shared.addItemMoveProposal(
                 id: p.id, reflectionId: p.reflectionId, itemType: p.itemType, content: p.content,
                 aux: p.aux, fromTheme: p.fromTheme, toTheme: p.toTheme,
-                rationale: p.rationale, confidence: p.confidence) { queued += 1 }
+                rationale: p.rationale, confidence: p.confidence) {
+                queued += 1
+                pendingByWorkspace[ws, default: 0] += 1
+            }
         }
         return (props.count, queued)
     }

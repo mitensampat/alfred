@@ -716,6 +716,65 @@ class SelfModelStore {
     /// merges themselves are recorded in `model_feedback` ("loser name → winner name"), so the
     /// mapping can be recovered rather than lost. Chains are followed, so a theme merged twice
     /// resolves to where it finally landed.
+    /// The live workspace names, lowercased — what a destination has to be one of to be real.
+    func liveThemeNames() -> Set<String> {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return [] }
+        var out: Set<String> = []
+        var stmt: OpaquePointer?
+        let sql = """
+        SELECT statement, user_statement FROM self_facet
+        WHERE kind = 'theme' AND status = 'active'
+          AND (user_verdict IS NULL OR user_verdict != 'dismissed')
+        """
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                for col in 0...1 {
+                    if let n = columnText(stmt, Int32(col))?
+                        .trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !n.isEmpty {
+                        out.insert(n)
+                    }
+                }
+            }
+        }
+        sqlite3_finalize(stmt)
+        return out
+    }
+
+    /// Convergence as names rather than ids: merged-away workspace → the one that absorbed it,
+    /// lowercased and chased through chains. `convergenceWinners` answers the same question in
+    /// facet ids, which is what the lineage graph needs; anything holding a workspace by NAME —
+    /// a queued move proposal, for one — needs this.
+    func convergenceWinnerNames(maxHops: Int = 5) -> [String: String] {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return [:] }
+        var direct: [String: String] = [:]
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, "SELECT detail FROM model_feedback WHERE kind = 'converge' ORDER BY ts",
+                              -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let detail = columnText(stmt, 0) else { continue }
+                let parts = detail.components(separatedBy: " → ")
+                guard parts.count == 2 else { continue }
+                let loser = parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let winner = parts[1].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                guard !loser.isEmpty, !winner.isEmpty, loser != winner else { continue }
+                direct[loser] = winner
+            }
+        }
+        sqlite3_finalize(stmt)
+
+        var resolved: [String: String] = [:]
+        for (loser, _) in direct {
+            var cur = loser, hops = 0
+            while let next = direct[cur], hops < maxHops { cur = next; hops += 1 }
+            if cur != loser { resolved[loser] = cur }
+        }
+        return resolved
+    }
+
     func convergenceWinners(maxHops: Int = 5) -> [String: String] {
         dbLock.lock()
         defer { dbLock.unlock() }

@@ -1306,7 +1306,12 @@ function viewModel() {
   const review = [];
   ((d.props && d.props.proposals) || []).forEach(p => review.push(srow(esc(p.decision), 'Evidence for: ' + esc(p.belief), `<span style="display:flex;gap:2px"><button type="button" class="ghost" onclick="smProposal(${ja(p.id)},'confirm')">Yes</button><button type="button" class="ghost" onclick="smProposal(${ja(p.id)},'reject')">No</button></span>`)));
   ((d.merges && d.merges.merges) || []).forEach(x => review.push(srow(esc(x.a_name) + ' and ' + esc(x.b_name), 'Same thing?', `<span style="display:flex;gap:2px"><button type="button" class="ghost" onclick="smMerge(${ja(x.a)},${ja(x.b)},'merge')">Merge</button><button type="button" class="ghost" onclick="smMerge(${ja(x.a)},${ja(x.b)},'reject')">Keep apart</button></span>`)));
-  ((d.strays && d.strays.groups) || []).forEach(g => (g.items || []).forEach(i => review.push(srow(esc(i.content), esc('Filed under ' + i.from_theme + ' · belongs in ' + i.to_theme + '?'), `<span style="display:flex;gap:2px"><button type="button" class="ghost" onclick="smStray(${ja(i.id)},'accept')">Move</button><button type="button" class="ghost" onclick="smStray(${ja(i.id)},'reject')">Keep</button></span>`))));
+  ((d.strays && d.strays.groups) || []).forEach(g => {
+    // One header per workspace, so a group you do not care about goes in one click rather than
+    // in eleven. Bulk is reject-only: accepting writes durable overrides, and those deserve eyes.
+    if ((g.count || 0) > 1) review.push(srow(esc(g.from_theme), esc(g.count + ' items may belong elsewhere'), `<button type="button" class="ghost" onclick="smStrayGroup(${ja(g.from_theme)})">None of these</button>`));
+    (g.items || []).forEach(i => review.push(srow(esc(i.content), esc('Filed under ' + i.from_theme + ' · belongs in ' + i.to_theme + '?'), `<span style="display:flex;gap:2px"><button type="button" class="ghost" onclick="smStray(${ja(i.id)},'accept')">Move</button><button type="button" class="ghost" onclick="smStray(${ja(i.id)},'reject')">Keep</button></span>`)));
+  });
   // Housekeeping is not self-knowledge. 36 stray-move proposals were pushing Beliefs, Values
   // and Open questions below the fold — the page opened on a chore list. Show a few; the rest
   // are one click away.
@@ -1338,6 +1343,10 @@ function smAdd(kind) { const t = document.getElementById('add-' + kind).value.tr
 function smAnswer(id) { const t = prompt('Your answer becomes a belief'); if (!t) return; smDo('/api/self-model/resolve?id=' + encodeURIComponent(id) + '&resolution=' + encodeURIComponent(t), 'Saved as a belief'); }
 const smProposal = (id, a) => smDo('/api/self-model/proposals/resolve?id=' + encodeURIComponent(id) + '&action=' + a, a === 'confirm' ? 'Linked' : 'Not linked');
 const smMerge = (a, b, act) => smDo('/api/self-model/merges/resolve?a=' + encodeURIComponent(a) + '&b=' + encodeURIComponent(b) + '&action=' + act, act === 'merge' ? 'Merged' : 'Kept apart');
+async function smStrayGroup(fromTheme) {
+  const r = await apiSend('/api/self-model/strays/reject-group', 'POST', { from_theme: fromTheme });
+  toast(r.success ? ('Cleared ' + (r.rejected || 0)) : (r.error || 'Could not save')); await loadModel();
+}
 async function smStray(id, action) { const r = await apiSend('/api/self-model/strays/resolve', 'POST', { id, action }); toast(r.success ? (action === 'accept' ? 'Moved' : 'Kept') : (r.error || 'Could not save')); await loadModel(); }
 async function openExport() {
   openSheet('export', null, null);

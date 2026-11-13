@@ -1055,6 +1055,67 @@ class ReflectionStore {
         return out
     }
 
+    /// Delete proposals outright, rather than marking them resolved.
+    ///
+    /// The pending queue is a cache of what the detector currently believes, not an inbox. A
+    /// proposal whose destination workspace no longer exists was written against a world that
+    /// has since changed; keeping it as "stale" would also block the detector from ever raising
+    /// that item again, because the proposal id is stable. Deleting lets the next run speak for
+    /// itself. Accepted and rejected rows are decisions and are never deleted.
+    @discardableResult
+    func deleteItemMoveProposals(ids: [String]) -> Int {
+        guard !ids.isEmpty else { return 0 }
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return 0 }
+        var n = 0
+        var stmt: OpaquePointer?
+        let sql = "DELETE FROM item_move_proposal WHERE id = ? AND status = 'pending'"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 0 }
+        for id in ids {
+            sqlite3_reset(stmt)
+            sqlite3_bind_text(stmt, 1, (id as NSString).utf8String, -1,
+                              unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            if sqlite3_step(stmt) == SQLITE_DONE { n += Int(sqlite3_changes(db)) }
+        }
+        sqlite3_finalize(stmt)
+        return n
+    }
+
+    /// Rewrite a pending proposal's endpoints after convergence renamed or merged a workspace.
+    @discardableResult
+    func updateItemMoveProposalThemes(id: String, fromTheme: String, toTheme: String) -> Bool {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return false }
+        let sql = "UPDATE item_move_proposal SET from_theme = ?, to_theme = ? WHERE id = ? AND status = 'pending'"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+        let T = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        sqlite3_bind_text(stmt, 1, (fromTheme as NSString).utf8String, -1, T)
+        sqlite3_bind_text(stmt, 2, (toTheme as NSString).utf8String, -1, T)
+        sqlite3_bind_text(stmt, 3, (id as NSString).utf8String, -1, T)
+        let ok = sqlite3_step(stmt) == SQLITE_DONE
+        sqlite3_finalize(stmt)
+        return ok
+    }
+
+    /// Reject every pending proposal out of one workspace, in one statement.
+    @discardableResult
+    func rejectItemMoveProposals(fromTheme: String) -> Int {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return 0 }
+        let sql = "UPDATE item_move_proposal SET status = 'rejected' WHERE status = 'pending' AND from_theme = ?"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return 0 }
+        sqlite3_bind_text(stmt, 1, (fromTheme as NSString).utf8String, -1,
+                          unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        let n = sqlite3_step(stmt) == SQLITE_DONE ? Int(sqlite3_changes(db)) : 0
+        sqlite3_finalize(stmt)
+        return n
+    }
+
     @discardableResult
     func setItemMoveProposalStatus(id: String, status: String) -> Bool {
         dbLock.lock()

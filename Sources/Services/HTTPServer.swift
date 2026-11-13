@@ -1621,6 +1621,11 @@ class HTTPServer {
         case ("GET", "/api/self-model/strays"):
             // Pending "this item may belong in another workspace" proposals, grouped by source
             // workspace for the triage surface. Nothing here has been applied.
+            //
+            // Reconciled on every read, which costs no model calls: a queue that still names
+            // workspaces convergence merged away months ago is not a decision list, it is a
+            // backlog of questions about a world that has moved on.
+            let gc = SelfModelHygiene.reconcileProposals()
             let pending = ReflectionStore.shared.getItemMoveProposals(status: "pending")
             var byFront: [String: [[String: Any]]] = [:]
             for p in pending { byFront[(p["from_theme"] as? String) ?? "", default: []].append(p) }
@@ -1628,7 +1633,10 @@ class HTTPServer {
                 ["from_theme": front, "count": items.count, "items": items]
             }.sorted { ($0["count"] as? Int ?? 0) > ($1["count"] as? Int ?? 0) }
             return HTTPResponse(statusCode: 200, body: [
-                "count": pending.count, "workspaces": groups.count, "groups": groups])
+                "count": pending.count, "workspaces": groups.count, "groups": groups,
+                "reconciled": ["before": gc.before, "dead_target": gc.deadTarget,
+                               "collapsed": gc.collapsed, "superseded": gc.superseded,
+                               "expired": gc.expired, "remapped": gc.remapped, "after": gc.after]])
 
         case ("POST", "/api/self-model/strays/detect"):
             // Run the detector now and queue proposals (the daily cadence also does this). Manual trigger.
@@ -1640,6 +1648,28 @@ class HTTPServer {
             return HTTPResponse(statusCode: 200, body: [
                 "found": r.found, "queued": r.queued,
                 "pending_total": ReflectionStore.shared.getItemMoveProposals(status: "pending").count])
+
+        case ("POST", "/api/self-model/strays/reject-group"):
+            // "None of these" for one workspace's proposals. Reject only — a bulk ACCEPT would
+            // write durable overrides for items nobody read, and the user's own hit rate on
+            // these is about half, so the cheap direction is the safe one.
+            let groupBody = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            let fromTheme = ((groupBody["from_theme"] as? String) ?? request.queryParams["from_theme"] ?? "")
+                .trimmingCharacters(in: .whitespaces)
+            guard !fromTheme.isEmpty else {
+                return HTTPResponse(statusCode: 400, body: ["error": "from_theme required"])
+            }
+            let rejected = ReflectionStore.shared.rejectItemMoveProposals(fromTheme: fromTheme)
+            return HTTPResponse(statusCode: 200, body: [
+                "success": true, "rejected": rejected, "from_theme": fromTheme])
+
+        case ("POST", "/api/self-model/strays/reconcile"):
+            // The garbage collector on demand. Read-only as far as the model is concerned.
+            let gc = SelfModelHygiene.reconcileProposals()
+            return HTTPResponse(statusCode: 200, body: [
+                "before": gc.before, "dead_target": gc.deadTarget, "collapsed": gc.collapsed,
+                "superseded": gc.superseded, "expired": gc.expired,
+                "remapped": gc.remapped, "after": gc.after])
 
         case ("POST", "/api/self-model/strays/resolve"):
             // Accept a proposed move (writes a durable override the rebuild honours) or reject it.
