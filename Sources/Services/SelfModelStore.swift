@@ -716,12 +716,17 @@ class SelfModelStore {
     /// merges themselves are recorded in `model_feedback` ("loser name → winner name"), so the
     /// mapping can be recovered rather than lost. Chains are followed, so a theme merged twice
     /// resolves to where it finally landed.
-    /// The live workspace names, lowercased — what a destination has to be one of to be real.
-    func liveThemeNames() -> Set<String> {
+    /// Every live workspace name → the ONE name that workspace is known by, all lowercased.
+    ///
+    /// A workspace has two names the moment the user renames it: the machine `statement` and
+    /// their own `user_statement`. Both are real — a queued move proposal may hold either —
+    /// but they are one workspace, and anything comparing workspaces by name has to collapse
+    /// them or it will happily keep a proposal to move an item from a workspace into itself.
+    func liveThemeCanon() -> [String: String] {
         dbLock.lock()
         defer { dbLock.unlock() }
-        guard let db = db else { return [] }
-        var out: Set<String> = []
+        guard let db = db else { return [:] }
+        var out: [String: String] = [:]
         var stmt: OpaquePointer?
         let sql = """
         SELECT statement, user_statement FROM self_facet
@@ -730,12 +735,15 @@ class SelfModelStore {
         """
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
             while sqlite3_step(stmt) == SQLITE_ROW {
-                for col in 0...1 {
-                    if let n = columnText(stmt, Int32(col))?
-                        .trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !n.isEmpty {
-                        out.insert(n)
-                    }
-                }
+                let machine = columnText(stmt, 0)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+                let chosen = columnText(stmt, 1)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+                // What the user called it wins as the canonical name; it is what the page shows.
+                let canon = chosen.isEmpty ? machine : chosen
+                guard !canon.isEmpty else { continue }
+                if !machine.isEmpty { out[machine] = canon }
+                if !chosen.isEmpty { out[chosen] = canon }
             }
         }
         sqlite3_finalize(stmt)
@@ -752,16 +760,37 @@ class SelfModelStore {
         guard let db = db else { return [:] }
         var direct: [String: String] = [:]
         var stmt: OpaquePointer?
-        if sqlite3_prepare_v2(db, "SELECT detail FROM model_feedback WHERE kind = 'converge' ORDER BY ts",
-                              -1, &stmt, nil) == SQLITE_OK {
+        // Both kinds: 'converge' is the automatic pass, 'merge' is the user accepting a merge on
+        // the Model page. They write the same "loser → winner" detail, and a queue holding a
+        // workspace by name has to follow either or a hand-merged workspace looks, to the
+        // reconciler, simply dead.
+        //
+        // The loser is taken from its facet id, not from the name in the detail string. A merge
+        // records the loser by whichever name it displays, so a renamed workspace is recorded
+        // under one name while everything queued earlier holds the other — the merge is then
+        // invisible to anything following names. Joining to the facet gets BOTH of its names.
+        let sql = """
+        SELECT f.statement, f.user_statement, m.detail
+        FROM model_feedback m LEFT JOIN self_facet f ON f.id = m.facet_id
+        WHERE m.kind IN ('converge', 'merge') ORDER BY m.ts
+        """
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
             while sqlite3_step(stmt) == SQLITE_ROW {
-                guard let detail = columnText(stmt, 0) else { continue }
+                guard let detail = columnText(stmt, 2) else { continue }
                 let parts = detail.components(separatedBy: " → ")
                 guard parts.count == 2 else { continue }
-                let loser = parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 let winner = parts[1].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                guard !loser.isEmpty, !winner.isEmpty, loser != winner else { continue }
-                direct[loser] = winner
+                guard !winner.isEmpty else { continue }
+                var losers = [parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()]
+                for col in 0...1 {
+                    if let n = columnText(stmt, Int32(col))?
+                        .trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !n.isEmpty {
+                        losers.append(n)
+                    }
+                }
+                for loser in losers where !loser.isEmpty && loser != winner {
+                    direct[loser] = winner
+                }
             }
         }
         sqlite3_finalize(stmt)

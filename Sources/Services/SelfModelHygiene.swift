@@ -140,7 +140,7 @@ enum SelfModelHygiene {
         r.before = pending.count
         guard !pending.isEmpty else { return r }
 
-        let live = SelfModelStore.shared.liveThemeNames()
+        let live = SelfModelStore.shared.liveThemeCanon()
         guard !live.isEmpty else { return r }       // nothing to judge against; leave the queue alone
         let winners = SelfModelStore.shared.convergenceWinnerNames()
         let overrides = Set(store.itemOwnerOverrides().keys.map {
@@ -149,15 +149,18 @@ enum SelfModelHygiene {
         let cutoff = ISO8601DateFormatter().string(from: Date()
             .addingTimeInterval(-Double(proposalMaxAgeDays) * 86400))
 
-        /// A workspace name as it stands today: itself if it is live, else whatever absorbed it.
+        /// The one name this workspace goes by today: its canonical name if it is live, else
+        /// the canonical name of whatever absorbed it. Resolving to the canonical name rather
+        /// than to "a name that happens to be live" is what makes the from == to test below
+        /// able to see that a workspace and its renamed self are the same place.
         func current(_ name: String) -> String? {
             var n = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             for _ in 0..<6 {
-                if live.contains(n) { return n }
+                if let canon = live[n] { return canon }
                 guard let next = winners[n], next != n else { return nil }
                 n = next
             }
-            return live.contains(n) ? n : nil
+            return live[n]
         }
 
         var doomed: [String] = []
