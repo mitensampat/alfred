@@ -28,7 +28,7 @@ enum SelfModelExportService {
     }
 
     private static var exportsDir: String {
-        (NSHomeDirectory() as NSString).appendingPathComponent(".alfred/exports")
+        AlfredPaths.data("exports")
     }
 
     /// Filename stem from the user's name: "Jane Doe" → "Jane_Doe".
@@ -49,7 +49,7 @@ enum SelfModelExportService {
         String(name.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: " ").first ?? "they")
     }
     private static var statePath: String {
-        (NSHomeDirectory() as NSString).appendingPathComponent(".alfred/self_model_export.json")
+        AlfredPaths.data("self_model_export.json")
     }
 
     // MARK: - Public entry

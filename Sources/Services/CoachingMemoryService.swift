@@ -34,7 +34,7 @@ class CoachingMemoryService {
 
     init() {
         let homeDir = NSHomeDirectory()
-        self.filePath = "\(homeDir)/.alfred/coaching_context.md"
+        self.filePath = AlfredPaths.data("coaching_context.md")
         ensureFileExists()
     }
 

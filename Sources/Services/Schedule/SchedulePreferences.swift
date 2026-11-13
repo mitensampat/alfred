@@ -375,7 +375,7 @@ final class SchedulePrefStore {
     private var cache: Stored?
 
     private var path: String {
-        let dir = ProcessInfo.processInfo.environment["ALFRED_DIR"] ?? (NSHomeDirectory() + "/.alfred")
+        let dir = AlfredPaths.dataDir
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         return dir + "/schedule_prefs.json"
     }

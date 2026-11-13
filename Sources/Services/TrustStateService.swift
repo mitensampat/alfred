@@ -10,8 +10,7 @@ struct TrustStateService {
     private let filePath: String
 
     init() {
-        self.filePath = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".alfred/trust_state.json").path
+        self.filePath = AlfredPaths.dataURL("trust_state.json").path
     }
 
     // MARK: - Load / Save

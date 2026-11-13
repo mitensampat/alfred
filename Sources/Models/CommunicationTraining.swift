@@ -97,7 +97,7 @@ class CommunicationTrainingLoader {
             // 1. Current directory
             configPath,
             // 2. User config directory
-            (NSString(string: "~/.config/alfred/communication_training.json").expandingTildeInPath),
+            AlfredPaths.config("communication_training.json"),
             // 3. Original project location
             (NSString(string: "~/Documents/Claude apps/Alfred/Config/communication_training.json").expandingTildeInPath)
         ]

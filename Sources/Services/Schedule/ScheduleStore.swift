@@ -20,7 +20,7 @@ final class ScheduleStore {
     }()
 
     init(path: String? = nil) {
-        let dir = ProcessInfo.processInfo.environment["ALFRED_DIR"] ?? (NSHomeDirectory() + "/.alfred")
+        let dir = AlfredPaths.dataDir
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         self.dbPath = path ?? (dir + "/schedule.db")
         if sqlite3_open(dbPath, &db) == SQLITE_OK {

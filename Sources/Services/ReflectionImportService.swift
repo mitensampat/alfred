@@ -10,8 +10,8 @@ class ReflectionImportService {
 
     init() {
         let homeDir = NSHomeDirectory()
-        self.importsDir = "\(homeDir)/.alfred/imports"
-        self.processedDir = "\(homeDir)/.alfred/imports/processed"
+        self.importsDir = AlfredPaths.data("imports")
+        self.processedDir = AlfredPaths.data("imports/processed")
 
         // Ensure directories exist
         try? fileManager.createDirectory(atPath: importsDir, withIntermediateDirectories: true)

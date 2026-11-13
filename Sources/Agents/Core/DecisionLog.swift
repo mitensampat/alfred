@@ -16,7 +16,7 @@ class DecisionLog {
     private init() throws {
         // Store decision log in user's home directory
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        let alfredDir = homeDir.appendingPathComponent(".alfred")
+        let alfredDir = AlfredPaths.dataURL
 
         // Create directory if it doesn't exist
         if !FileManager.default.fileExists(atPath: alfredDir.path) {

@@ -22,7 +22,7 @@ final class PinnedPeopleStore {
 
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        filePath = "\(home)/.alfred/pinned_people.json"
+        filePath = AlfredPaths.data("pinned_people.json")
         if let data = try? Data(contentsOf: URL(fileURLWithPath: filePath)),
            let loaded = try? JSONDecoder().decode(Pins.self, from: data) {
             pins = loaded

@@ -42,7 +42,7 @@ class ConversationHistoryService {
 
     init() {
         let homeDir = NSHomeDirectory()
-        self.filePath = "\(homeDir)/.alfred/conversations.json"
+        self.filePath = AlfredPaths.data("conversations.json")
         loadFromDisk()
     }
 

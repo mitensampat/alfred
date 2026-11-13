@@ -104,7 +104,7 @@ enum SelfModelSeeder {
     static func scanImports() -> SeedResult {
         let fm = FileManager.default
         let home = NSHomeDirectory()
-        let importsDir = "\(home)/.alfred/imports"
+        let importsDir = AlfredPaths.data("imports")
         let processedDir = "\(importsDir)/processed"
         try? fm.createDirectory(atPath: processedDir, withIntermediateDirectories: true)
 

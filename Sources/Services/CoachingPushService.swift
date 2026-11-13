@@ -41,7 +41,7 @@ class CoachingPushService {
     private var lastEventFetch: Date? = nil
 
     private init() {
-        self.nudgeStatePath = NSString(string: "~/.alfred/morning_nudge_state.json").expandingTildeInPath
+        self.nudgeStatePath = AlfredPaths.data("morning_nudge_state.json")
         loadNudgeState()
     }
 

@@ -18,7 +18,7 @@ class PushBudgetService {
     var suppressionWindowSeconds: TimeInterval = 600  // 10 min
 
     init() {
-        self.statePath = NSString(string: "~/.alfred/push_budget_state.json").expandingTildeInPath
+        self.statePath = AlfredPaths.data("push_budget_state.json")
         loadState()
     }
 

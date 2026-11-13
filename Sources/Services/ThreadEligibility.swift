@@ -92,7 +92,7 @@ struct ThreadEligibility {
     /// Load thresholds and exclusions from config without touching the typed model.
     static func fromConfig() -> ThreadEligibility {
         var e = ThreadEligibility()
-        let path = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
+        let path = AlfredPaths.config("config.json")
         guard let data = FileManager.default.contents(atPath: path),
               let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let r = root["reflection"] as? [String: Any] else { return e }

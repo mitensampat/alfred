@@ -54,7 +54,7 @@ class CadenceRunner {
     // MARK: - Notion diff sync
 
     private static var notionSyncStatePath: String {
-        (NSHomeDirectory() as NSString).appendingPathComponent(".alfred/notion_sync_state.json")
+        AlfredPaths.data("notion_sync_state.json")
     }
 
     /// Per-database sync watermarks, read from disk.
@@ -387,7 +387,7 @@ class CadenceRunner {
     /// Write opener to ~/.alfred/coaching_opener_today.json
     private func saveOpenerToDisk(_ opener: String) {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let path = "\(home)/.alfred/coaching_opener_today.json"
+        let path = AlfredPaths.data("coaching_opener_today.json")
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
         let payload: [String: Any] = [
@@ -514,7 +514,7 @@ class CadenceRunner {
 
         // 6. Save suggestions to ~/.alfred/group_suggestions.json
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
-        let suggestionsPath = "\(homeDir)/.alfred/group_suggestions.json"
+        let suggestionsPath = AlfredPaths.data("group_suggestions.json")
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
         let todayDate = dateFormatter.string(from: Date())

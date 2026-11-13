@@ -21,8 +21,7 @@ struct CoachingPromptBuilder {
 
     /// Path to tenets toggle state file
     private static var tenetsToggleStatePath: String {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".alfred/tenets_toggle_state.json").path
+        AlfredPaths.dataURL("tenets_toggle_state.json").path
     }
 
     /// Parse tenets markdown into sections by ## headings

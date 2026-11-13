@@ -19,7 +19,7 @@ class AttentionTracker {
             // 1. Current directory
             "Config/attention_preferences.json",
             // 2. User config directory
-            (NSString(string: "~/.config/alfred/attention_preferences.json").expandingTildeInPath),
+            AlfredPaths.config("attention_preferences.json"),
             // 3. Original project location
             (NSString(string: "~/Documents/Claude apps/Alfred/Config/attention_preferences.json").expandingTildeInPath)
         ]

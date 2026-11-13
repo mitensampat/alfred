@@ -23,7 +23,7 @@ struct AppConfig: Codable {
         // User's config directory takes highest priority (where they edit settings)
         var configPaths = [
             // 1. User config directory (standard location - highest priority)
-            (NSString(string: "~/.config/alfred/config.json").expandingTildeInPath),
+            AlfredPaths.config("config.json"),
             // 2. Old location for backwards compatibility
             (NSString(string: "~/.config/exec-assistant/config.json").expandingTildeInPath),
             // 3. Original project location (fallback)

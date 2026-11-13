@@ -11,12 +11,12 @@ class GmailReader {
 
         let tokenFilename = "gmail_tokens.json"
         let possiblePaths = [
-            (NSString(string: "~/.config/alfred/\(tokenFilename)").expandingTildeInPath),
+            AlfredPaths.config("\(tokenFilename)"),
             "Config/\(tokenFilename)"
         ]
 
         self.tokenStorePath = possiblePaths.first { FileManager.default.fileExists(atPath: $0) }
-            ?? (NSString(string: "~/.config/alfred/\(tokenFilename)").expandingTildeInPath)
+            ?? AlfredPaths.config("\(tokenFilename)")
 
         loadTokens()
     }

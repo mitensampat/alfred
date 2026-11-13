@@ -14,7 +14,7 @@ class TenetPackLoader {
     private let statePath: String
 
     private init() {
-        let alfredDir = NSString(string: "~/.alfred").expandingTildeInPath
+        let alfredDir = AlfredPaths.dataDir
         self.baseDirectory = alfredDir + "/tenets"
         self.userDirectory = alfredDir + "/tenets/user"
         self.installedDirectory = alfredDir + "/tenets/installed"

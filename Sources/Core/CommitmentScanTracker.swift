@@ -35,8 +35,7 @@ class CommitmentScanTracker {
     private let dbLock = NSLock()
 
     private init() {
-        let alfredDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".alfred")
+        let alfredDir = AlfredPaths.dataURL
 
         try? FileManager.default.createDirectory(at: alfredDir, withIntermediateDirectories: true)
 
@@ -615,7 +614,7 @@ class CommitmentScanTracker {
     /// One JSON line per sweep, so what it closed stays recoverable after the fact.
     private func appendStaleSweepLog(hashes: [String], titles: [String: String],
                                       olderThanDays: Int, closedAt: String) {
-        let path = (NSHomeDirectory() as NSString).appendingPathComponent(".alfred/stale_sweep_log.jsonl")
+        let path = AlfredPaths.data("stale_sweep_log.jsonl")
         let entry: [String: Any] = [
             "swept_at": closedAt,
             "older_than_days": olderThanDays,

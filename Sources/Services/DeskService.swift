@@ -772,7 +772,7 @@ enum DeskService {
     /// Where top-card act/skip events are persisted. Kept out of the self-model DB so a wipe of
     /// one never touches the other; small JSON, appended to on each interaction.
     static var topEventsPath: String {
-        let dir = ProcessInfo.processInfo.environment["ALFRED_DIR"] ?? (NSHomeDirectory() + "/.alfred")
+        let dir = AlfredPaths.dataDir
         return dir + "/desk_top_events.json"
     }
     /// Net signal per top-card id: +1 per act, −1 per skip/dismiss, decayed to the last 60 days.

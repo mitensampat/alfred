@@ -86,7 +86,7 @@ class HTTPServer {
         self.cache = QueryCacheService()
 
         // Setup sessions file path
-        let alfredDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".alfred")
+        let alfredDir = AlfredPaths.dataURL
         try? FileManager.default.createDirectory(at: alfredDir, withIntermediateDirectories: true)
         self.sessionsFilePath = alfredDir.appendingPathComponent("sessions.json").path
 
@@ -2024,7 +2024,12 @@ class HTTPServer {
             body: [
                 "status": "ok",
                 "version": AlfredApp.version,
-                "timestamp": Self.iso8601Formatter.string(from: Date())
+                "timestamp": Self.iso8601Formatter.string(from: Date()),
+                // Which instance is this? An eval harness has to be able to prove it is talking
+                // to a sandbox before it exercises a single write path, and "I passed the right
+                // port" is not proof — the port is a config value like any other.
+                "eval": AlfredPaths.isEval,
+                "data_dir": AlfredPaths.dataDir
             ]
         )
     }
@@ -2125,7 +2130,7 @@ class HTTPServer {
         for account in config.calendar.google {
             let tokenFilename = "google_tokens_\(account.name).json"
             let possiblePaths = [
-                (NSString(string: "~/.config/alfred/\(tokenFilename)").expandingTildeInPath),
+                AlfredPaths.config("\(tokenFilename)"),
                 (NSString(string: "~/.config/exec-assistant/\(tokenFilename)").expandingTildeInPath)
             ]
             let tokenExists = possiblePaths.contains { FileManager.default.fileExists(atPath: $0) }
@@ -2261,7 +2266,7 @@ class HTTPServer {
         if emailConfig.enabled && !smtpOk { warnings.append("SMTP configuration incomplete") }
 
         // 7. Commitment DB — check file exists
-        let commitmentDbPath = (NSString(string: "~/.alfred/commitment_scan.db").expandingTildeInPath)
+        let commitmentDbPath = AlfredPaths.data("commitment_scan.db")
         let commitmentDbExists = FileManager.default.fileExists(atPath: commitmentDbPath)
         services.append([
             "name": "Commitment DB",
@@ -2271,7 +2276,7 @@ class HTTPServer {
         if !commitmentDbExists { warnings.append("Commitment database not initialized") }
 
         // 8. Workflow Learning DB
-        let workflowDbPath = (NSString(string: "~/.alfred/workflow_learning.db").expandingTildeInPath)
+        let workflowDbPath = AlfredPaths.data("workflow_learning.db")
         let workflowDbExists = FileManager.default.fileExists(atPath: workflowDbPath)
         services.append([
             "name": "Workflow Learning DB",
@@ -3057,7 +3062,7 @@ class HTTPServer {
     // MARK: - Home Config
 
     private func handleGetHomeConfig() -> HTTPResponse {
-        let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
+        let configPath = AlfredPaths.config("config.json")
 
         guard FileManager.default.fileExists(atPath: configPath) else {
             return HTTPResponse(statusCode: 200, body: ["meeting_brief_prompt": ""] as [String: Any])
@@ -3082,7 +3087,7 @@ class HTTPServer {
             return HTTPResponse(statusCode: 400, body: ["error": "Invalid request body"])
         }
 
-        let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
+        let configPath = AlfredPaths.config("config.json")
 
         do {
             let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
@@ -3144,7 +3149,7 @@ class HTTPServer {
             return HTTPResponse(statusCode: 400, body: ["error": "Invalid JSON body"])
         }
 
-        let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
+        let configPath = AlfredPaths.config("config.json")
         do {
             let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
             var config = try JSONSerialization.jsonObject(with: data) as! [String: Any]
@@ -3200,7 +3205,7 @@ class HTTPServer {
     private func handlePushSetup() -> HTTPResponse {
         // Generate VAPID keys and store in config
         let keys = WebPushService.generateVAPIDKeys()
-        let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
+        let configPath = AlfredPaths.config("config.json")
 
         do {
             let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
@@ -4653,7 +4658,7 @@ The Commitment Check feature requires a properly configured Notion database.
         }
 
         // Read from config file
-        let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
+        let configPath = AlfredPaths.config("config.json")
 
         guard FileManager.default.fileExists(atPath: configPath) else {
             return HTTPResponse(
@@ -4788,7 +4793,7 @@ The Commitment Check feature requires a properly configured Notion database.
         }
 
         // Update in config file
-        let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
+        let configPath = AlfredPaths.config("config.json")
         do {
             if FileManager.default.fileExists(atPath: configPath) {
                 let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
@@ -4867,7 +4872,7 @@ The Commitment Check feature requires a properly configured Notion database.
         self.passcode = newPasscode
 
         // Persist to config file
-        let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
+        let configPath = AlfredPaths.config("config.json")
         do {
             if FileManager.default.fileExists(atPath: configPath) {
                 let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
@@ -4909,7 +4914,7 @@ The Commitment Check feature requires a properly configured Notion database.
             return HTTPResponse(statusCode: 200, body: cached)
         }
 
-        let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
+        let configPath = AlfredPaths.config("config.json")
 
         guard FileManager.default.fileExists(atPath: configPath) else {
             return HTTPResponse(statusCode: 200, body: [
@@ -4951,7 +4956,7 @@ The Commitment Check feature requires a properly configured Notion database.
             return HTTPResponse(statusCode: 400, body: ["error": "Invalid request body"])
         }
 
-        let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
+        let configPath = AlfredPaths.config("config.json")
 
         do {
             let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
@@ -4996,7 +5001,7 @@ The Commitment Check feature requires a properly configured Notion database.
     // MARK: - Theme Handlers
 
     private func handleGetTheme() -> HTTPResponse {
-        let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
+        let configPath = AlfredPaths.config("config.json")
 
         guard FileManager.default.fileExists(atPath: configPath) else {
             return HTTPResponse(statusCode: 200, body: ["theme": "light"])
@@ -5025,7 +5030,7 @@ The Commitment Check feature requires a properly configured Notion database.
             return HTTPResponse(statusCode: 400, body: ["error": "Invalid theme value. Must be \"light\" or \"dark\""])
         }
 
-        let configPath = NSString(string: "~/.config/alfred/config.json").expandingTildeInPath
+        let configPath = AlfredPaths.config("config.json")
 
         do {
             let data = try Data(contentsOf: URL(fileURLWithPath: configPath))
@@ -6789,8 +6794,7 @@ The Commitment Check feature requires a properly configured Notion database.
 
     /// Returns the coaching tenets content + Notion URL for editing
     private func handleGetCoachingTenets() -> HTTPResponse {
-        let tenetsPath = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".alfred/coaching_tenets.md").path
+        let tenetsPath = AlfredPaths.dataURL("coaching_tenets.md").path
 
         let content: String
         if let fileContent = try? String(contentsOfFile: tenetsPath, encoding: .utf8) {
@@ -6819,8 +6823,7 @@ The Commitment Check feature requires a properly configured Notion database.
             return HTTPResponse(statusCode: 400, body: ["error": "Missing 'content' in request body"])
         }
 
-        let tenetsPath = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".alfred/coaching_tenets.md").path
+        let tenetsPath = AlfredPaths.dataURL("coaching_tenets.md").path
 
         do {
             try content.write(toFile: tenetsPath, atomically: true, encoding: .utf8)
@@ -6962,7 +6965,7 @@ The Commitment Check feature requires a properly configured Notion database.
         ]
 
         // Append to feedback log (JSONL format)
-        let alfredDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".alfred").path
+        let alfredDir = AlfredPaths.dataURL.path
         let feedbackPath = "\(alfredDir)/nudge_feedback.jsonl"
 
         if let data = try? JSONSerialization.data(withJSONObject: entry),
@@ -7042,8 +7045,7 @@ The Commitment Check feature requires a properly configured Notion database.
         }
 
         // Write to user skills directory
-        let skillsDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".alfred/skills/user")
+        let skillsDir = AlfredPaths.dataURL("skills/user")
         try? FileManager.default.createDirectory(at: skillsDir, withIntermediateDirectories: true)
 
         let skillPath = skillsDir.appendingPathComponent("\(templateId).md").path
@@ -7649,7 +7651,7 @@ The Commitment Check feature requires a properly configured Notion database.
     /// Disk path for pre-generated opener
     private var openerDiskPath: String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return "\(home)/.alfred/coaching_opener_today.json"
+        return AlfredPaths.data("coaching_opener_today.json")
     }
 
     /// Load a same-day opener from disk. Returns nil if absent, stale (>4h), or wrong day.
@@ -8200,7 +8202,7 @@ The Commitment Check feature requires a properly configured Notion database.
 
         // Source 2: Scheduled follow-up reminders (from ~/.alfred/followups.json)
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        let followupsPath = homeDir.appendingPathComponent(".alfred/followups.json")
+        let followupsPath = AlfredPaths.dataURL("followups.json")
         if FileManager.default.fileExists(atPath: followupsPath.path) {
             if let data = try? Data(contentsOf: followupsPath),
                let followups = try? JSONDecoder().decode([FollowupReminder].self, from: data) {
@@ -10489,7 +10491,7 @@ extension HTTPServer {
     /// Update keys in ~/.alfred/scheduler_state.json (used by cadence handlers to record last-run time)
     private func updateSchedulerState(_ updates: [String: String]) {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
-        let statePath = "\(homeDir)/.alfred/scheduler_state.json"
+        let statePath = AlfredPaths.data("scheduler_state.json")
         var stateJson: [String: Any] = [:]
         if let data = try? Data(contentsOf: URL(fileURLWithPath: statePath)),
            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -10506,7 +10508,7 @@ extension HTTPServer {
     /// Read scheduler state as raw dictionary (no struct decoding, preserves all keys)
     private func loadSchedulerStateRaw() -> [String: Any] {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
-        let statePath = "\(homeDir)/.alfred/scheduler_state.json"
+        let statePath = AlfredPaths.data("scheduler_state.json")
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: statePath)),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return [:]
@@ -10744,7 +10746,7 @@ extension HTTPServer {
 
     private func handleGetGroupSuggestions() -> HTTPResponse {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
-        let suggestionsPath = "\(homeDir)/.alfred/group_suggestions.json"
+        let suggestionsPath = AlfredPaths.data("group_suggestions.json")
 
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: suggestionsPath)),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -10796,7 +10798,7 @@ extension HTTPServer {
 
             // 5. Save suggestions to ~/.alfred/group_suggestions.json
             let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
-            let suggestionsPath = "\(homeDir)/.alfred/group_suggestions.json"
+            let suggestionsPath = AlfredPaths.data("group_suggestions.json")
             let todayDate = {
                 let fmt = DateFormatter()
                 fmt.dateFormat = "yyyy-MM-dd"
@@ -12931,6 +12933,7 @@ extension HTTPServer {
     /// POST to the local whatsmeow bridge (tools/wa-bridge on 127.0.0.1:8790). Returns a
     /// friendly error when the bridge isn't running or the account isn't paired.
     private func sendViaWhatsAppBridge(jid: String, message: String) async -> (ok: Bool, error: String) {
+        guard !AlfredPaths.isEval else { return (false, "blocked: ALFRED_EVAL") }
         let addr = ProcessInfo.processInfo.environment["WA_BRIDGE_ADDR"] ?? "127.0.0.1:8790"
         guard let url = URL(string: "http://\(addr)/send") else { return (false, "bad bridge url") }
         var req = URLRequest(url: url)

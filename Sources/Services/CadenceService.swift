@@ -10,7 +10,7 @@ class CadenceService {
 
     init() {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
-        filePath = "\(homeDir)/.alfred/cadences.json"
+        filePath = AlfredPaths.data("cadences.json")
 
         // Try loading existing cadences
         let decoder = JSONDecoder()
@@ -197,7 +197,7 @@ class CadenceService {
         // Load old scheduler state for last-run dates
         var lastRuns: [String: String] = [:]       // key → date
         var lastTimestamps: [String: String] = [:]  // key → ISO timestamp
-        let statePath = "\(homeDir)/.alfred/scheduler_state.json"
+        let statePath = AlfredPaths.data("scheduler_state.json")
         if let stateData = try? Data(contentsOf: URL(fileURLWithPath: statePath)),
            let stateDict = try? JSONSerialization.jsonObject(with: stateData) as? [String: Any] {
             lastRuns["briefing"] = stateDict["lastBriefingDate"] as? String

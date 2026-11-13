@@ -16,7 +16,7 @@ class AgentMemoryService {
     init() {
         // Use ~/.alfred/agents/ as the base directory
         let homeDir = NSHomeDirectory()
-        self.baseDirectory = "\(homeDir)/.alfred/agents"
+        self.baseDirectory = AlfredPaths.data("agents")
         ensureDirectoryStructure()
     }
 
@@ -948,7 +948,7 @@ extension AgentMemoryService {
         print("🧠 Starting learning consolidation...")
 
         let homeDir = NSHomeDirectory()
-        let learningDbPath = "\(homeDir)/.alfred/learning.db"
+        let learningDbPath = AlfredPaths.data("learning.db")
 
         guard fileManager.fileExists(atPath: learningDbPath) else {
             print("  No learning database found at \(learningDbPath)")
@@ -1091,7 +1091,7 @@ extension AgentMemoryService {
     /// Get a summary of learnings that could be consolidated
     func getConsolidationSummary() -> ConsolidationSummary {
         let homeDir = NSHomeDirectory()
-        let learningDbPath = "\(homeDir)/.alfred/learning.db"
+        let learningDbPath = AlfredPaths.data("learning.db")
 
         guard fileManager.fileExists(atPath: learningDbPath) else {
             return ConsolidationSummary(

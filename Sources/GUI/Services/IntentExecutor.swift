@@ -339,7 +339,7 @@ class IntentExecutor {
 
     private func fetchDrafts() async throws -> [MessageDraft] {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        let draftsFile = homeDir.appendingPathComponent(".alfred/message_drafts.json")
+        let draftsFile = AlfredPaths.dataURL("message_drafts.json")
 
         guard FileManager.default.fileExists(atPath: draftsFile.path) else {
             return []

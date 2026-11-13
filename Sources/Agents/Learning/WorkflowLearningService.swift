@@ -33,7 +33,7 @@ class WorkflowLearningService {
 
     private init() {
         let homeDir = NSHomeDirectory()
-        let alfredDir = "\(homeDir)/.alfred"
+        let alfredDir = AlfredPaths.dataDir
 
         // Ensure directory exists
         try? fileManager.createDirectory(atPath: alfredDir, withIntermediateDirectories: true)

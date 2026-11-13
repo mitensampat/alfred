@@ -18,7 +18,7 @@ class MemoryNotionSyncService {
 
     init() {
         let homeDir = NSHomeDirectory()
-        self.cacheFilePath = URL(fileURLWithPath: "\(homeDir)/.alfred/memory_notion_cache.json")
+        self.cacheFilePath = URL(fileURLWithPath: AlfredPaths.data("memory_notion_cache.json"))
 
         if let config = AppConfig.load() {
             self.notionApiKey = config.notion.apiKey

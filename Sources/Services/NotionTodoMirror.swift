@@ -37,6 +37,11 @@ enum NotionTodoMirror {
 
     /// Start the background push/pull loop. Safe to call more than once.
     static func start(notion: @escaping () async -> NotionService?, importFrom: @escaping () -> [String]) {
+        // Two-way sync writes to the user's real Notion. A sandbox never gets to do that.
+        guard !AlfredPaths.isEval else {
+            print("🔁 Notion mirror not started — ALFRED_EVAL is set")
+            return
+        }
         guard !started else { return }
         started = true
         Task {

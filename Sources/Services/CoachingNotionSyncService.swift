@@ -18,7 +18,7 @@ class CoachingNotionSyncService {
 
     init() {
         let homeDir = NSHomeDirectory()
-        self.cacheFilePath = URL(fileURLWithPath: "\(homeDir)/.alfred/coaching_notion_cache.json")
+        self.cacheFilePath = URL(fileURLWithPath: AlfredPaths.data("coaching_notion_cache.json"))
 
         if let config = AppConfig.load() {
             self.notionApiKey = config.notion.apiKey
@@ -179,7 +179,7 @@ class CoachingNotionSyncService {
 
         // Write to local file
         let homeDir = NSHomeDirectory()
-        let filePath = "\(homeDir)/.alfred/coaching_context.md"
+        let filePath = AlfredPaths.data("coaching_context.md")
         try fullContent.write(toFile: filePath, atomically: true, encoding: .utf8)
 
         lastLoadFromNotionTimestamp = Date()

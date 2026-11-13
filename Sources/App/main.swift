@@ -18,33 +18,14 @@ struct AlfredApp {
     static var menuBarController: MenuBarController?  // Keep reference to prevent deallocation
 
     static func main() async {
+        // Line-buffered: when stdout is a file (the LaunchAgent's log, a sandbox run) the default
+        // block buffering means the log stays empty until the process exits, which is precisely
+        // when you no longer need it.
+        setvbuf(stdout, nil, _IOLBF, 0)
         print("alfred v\(version) starting...")
 
         // Install graceful shutdown handler for SIGTERM/SIGINT
         installSignalHandlers()
-
-        // Guard: retry with backoff if port is busy (handles deploy race conditions)
-        let port: UInt16 = 8080
-        let maxRetries = 3
-        var portReady = false
-        for attempt in 1...maxRetries {
-            if !isPortInUse(port: port) {
-                portReady = true
-                break
-            }
-            if attempt < maxRetries {
-                print("⏳ Port \(port) in use — waiting for previous instance to release (attempt \(attempt)/\(maxRetries))...")
-                try? await Task.sleep(nanoseconds: UInt64(attempt) * 2_000_000_000) // 2s, 4s backoff
-            }
-        }
-        if !portReady {
-            print("ℹ️ Alfred is already running — opening web UI...")
-            openWebUI()
-            Foundation.exit(0)
-        }
-
-        // Install LaunchAgent if not present (for DMG installs)
-        installLaunchAgentIfNeeded()
 
         // Load configuration — or boot into setup mode if first run
         var isSetupMode = false
@@ -68,6 +49,38 @@ struct AlfredApp {
             await runSetupMode(config)
             return
         }
+
+        // Guard the port this process is actually going to bind — which is the one in the
+        // config it just loaded, not a constant. A second instance pointed at another port
+        // (an eval sandbox, say) is not a duplicate of the first and must not exit as one.
+        let port = UInt16(config.api?.port ?? 8080)
+        let maxRetries = 3
+        var portReady = false
+        for attempt in 1...maxRetries {
+            if !isPortInUse(port: port) {
+                portReady = true
+                break
+            }
+            if attempt < maxRetries {
+                print("⏳ Port \(port) in use — waiting for previous instance to release (attempt \(attempt)/\(maxRetries))...")
+                try? await Task.sleep(nanoseconds: UInt64(attempt) * 2_000_000_000) // 2s, 4s backoff
+            }
+        }
+        if !portReady {
+            print("ℹ️ Alfred is already running on port \(port) — opening web UI...")
+            openWebUI()
+            Foundation.exit(0)
+        }
+
+        // Install LaunchAgent if not present (for DMG installs). Never from a sandbox: it would
+        // rewrite the real service's plist to point at whatever this process happens to be.
+        if !AlfredPaths.isEval { installLaunchAgentIfNeeded() }
+
+        // Say where this process reads and writes, every time. A sandbox instance pointed at a
+        // copy of the data looks exactly like the real one in the log otherwise, and the first
+        // time that matters is the time it has already written something.
+        AlfredPaths.ensureDataDir()
+        print("📁 \(AlfredPaths.describe)")
 
         // Initialize orchestrator
         let orchestrator = BriefingOrchestrator(config: config)
@@ -917,7 +930,7 @@ struct AlfredApp {
         // Find the config file
         let paths = [
             (NSString(string: "~/Documents/Claude apps/Alfred/Config/attention_preferences.json").expandingTildeInPath),
-            (NSString(string: "~/.config/alfred/attention_preferences.json").expandingTildeInPath)
+            AlfredPaths.config("attention_preferences.json")
         ]
 
         var configPath: String?
@@ -1154,7 +1167,7 @@ struct AlfredApp {
         print("\n📍 File location:")
         let paths = [
             (NSString(string: "~/Documents/Claude apps/Alfred/Config/attention_preferences.json").expandingTildeInPath),
-            (NSString(string: "~/.config/alfred/attention_preferences.json").expandingTildeInPath)
+            AlfredPaths.config("attention_preferences.json")
         ]
         for path in paths {
             if FileManager.default.fileExists(atPath: path) {
@@ -1576,7 +1589,7 @@ struct AlfredApp {
         print(String(repeating: "=", count: 60))
 
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        let draftsFile = homeDir.appendingPathComponent(".alfred/message_drafts.json")
+        let draftsFile = AlfredPaths.dataURL("message_drafts.json")
 
         guard FileManager.default.fileExists(atPath: draftsFile.path) else {
             print("\nNo drafts found. Agents will create drafts when they detect messages needing responses.\n")
@@ -1620,7 +1633,7 @@ struct AlfredApp {
 
     static func runClearDrafts() async {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        let draftsFile = homeDir.appendingPathComponent(".alfred/message_drafts.json")
+        let draftsFile = AlfredPaths.dataURL("message_drafts.json")
 
         guard FileManager.default.fileExists(atPath: draftsFile.path) else {
             print("No drafts to clear.\n")
@@ -2617,7 +2630,7 @@ struct AlfredApp {
         for account in config.calendar.google {
             let tokenFilename = "google_tokens_\(account.name).json"
             let possiblePaths = [
-                (NSString(string: "~/.config/alfred/\(tokenFilename)").expandingTildeInPath),
+                AlfredPaths.config("\(tokenFilename)"),
                 (NSString(string: "~/.config/exec-assistant/\(tokenFilename)").expandingTildeInPath)
             ]
             if possiblePaths.contains(where: { FileManager.default.fileExists(atPath: $0) }) {
@@ -2928,7 +2941,7 @@ struct AlfredApp {
         do {
             // Ensure ~/.alfred/ exists for log file
             try FileManager.default.createDirectory(
-                atPath: "\(homeDir)/.alfred",
+                atPath: AlfredPaths.dataDir,
                 withIntermediateDirectories: true
             )
             try plistContent.write(toFile: plistPath, atomically: true, encoding: .utf8)

@@ -38,7 +38,7 @@ class WebPushService {
     }
 
     init() {
-        self.subscriptionsPath = NSString(string: "~/.alfred/push_subscriptions.json").expandingTildeInPath
+        self.subscriptionsPath = AlfredPaths.data("push_subscriptions.json")
         loadSubscriptions()
     }
 
@@ -78,6 +78,7 @@ class WebPushService {
 
     /// Send a push notification to all subscribers
     func sendToAll(_ payload: PushPayload, vapidPublicKey: String, vapidPrivateKey: String, vapidSubject: String) async {
+        guard !AlfredPaths.isEval else { return }
         for i in subscriptions.indices {
             do {
                 try await sendSingle(

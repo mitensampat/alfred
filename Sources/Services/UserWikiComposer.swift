@@ -155,7 +155,7 @@ enum UserWikiComposer {
     @discardableResult
     static func write() -> String {
         let md = markdown()
-        let path = (NSHomeDirectory() as NSString).appendingPathComponent(".alfred/user-wiki.md")
+        let path = AlfredPaths.data("user-wiki.md")
         try? md.write(toFile: path, atomically: true, encoding: .utf8)
         return path
     }

@@ -20,7 +20,7 @@ class SelfModelStore {
 
     private init() {
         let homeDir = NSHomeDirectory()
-        let alfredDir = "\(homeDir)/.alfred"
+        let alfredDir = AlfredPaths.dataDir
 
         try? fileManager.createDirectory(atPath: alfredDir, withIntermediateDirectories: true)
 

@@ -80,7 +80,7 @@ class SetupStatusService {
         }
 
         // Check Google OAuth (look for tokens file)
-        let tokensPath = (NSString(string: "~/.alfred/google_tokens.json").expandingTildeInPath)
+        let tokensPath = AlfredPaths.data("google_tokens.json")
         if FileManager.default.fileExists(atPath: tokensPath) {
             completedSteps.append("googleOauth")
         } else {
@@ -101,7 +101,7 @@ class SetupStatusService {
         }
 
         // Permissions are hard to verify programmatically, so we check for a marker
-        let permissionsMarker = (NSString(string: "~/.alfred/permissions_acknowledged").expandingTildeInPath)
+        let permissionsMarker = AlfredPaths.data("permissions_acknowledged")
         if FileManager.default.fileExists(atPath: permissionsMarker) {
             completedSteps.append("permissions")
         }
@@ -115,7 +115,7 @@ class SetupStatusService {
         let hasAllRequired = requiredSteps.allSatisfy { completedSteps.contains($0) }
 
         // Also check for explicit completion marker
-        let completionMarker = (NSString(string: "~/.alfred/setup_complete").expandingTildeInPath)
+        let completionMarker = AlfredPaths.data("setup_complete")
         let hasCompletionMarker = FileManager.default.fileExists(atPath: completionMarker)
 
         return SetupStatus(
@@ -164,7 +164,7 @@ class SetupStatusService {
 
     /// Mark setup as complete
     func completeSetup() {
-        let completionMarker = (NSString(string: "~/.alfred/setup_complete").expandingTildeInPath)
+        let completionMarker = AlfredPaths.data("setup_complete")
         FileManager.default.createFile(atPath: completionMarker, contents: Data(), attributes: nil)
 
         // Clean up progress file
@@ -175,7 +175,7 @@ class SetupStatusService {
 
     /// Mark permissions as acknowledged
     func acknowledgePermissions() {
-        let permissionsMarker = (NSString(string: "~/.alfred/permissions_acknowledged").expandingTildeInPath)
+        let permissionsMarker = AlfredPaths.data("permissions_acknowledged")
         FileManager.default.createFile(atPath: permissionsMarker, contents: Data(), attributes: nil)
     }
 

@@ -42,7 +42,7 @@ class ExecutionEngine {
     private func executeDraftResponse(_ draft: MessageDraft) async throws -> ExecutionResult {
         // Save to drafts file for CLI approval
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        let alfredDir = homeDir.appendingPathComponent(".alfred")
+        let alfredDir = AlfredPaths.dataURL
         let draftsFile = alfredDir.appendingPathComponent("message_drafts.json")
 
         // Create directory if needed
@@ -85,7 +85,7 @@ class ExecutionEngine {
         // Create a calendar event or Notion task for meeting prep
         // For now, save to a prep tasks file
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        let alfredDir = homeDir.appendingPathComponent(".alfred")
+        let alfredDir = AlfredPaths.dataURL
         let prepsFile = alfredDir.appendingPathComponent("meeting_preps.json")
 
         var existingPreps: [MeetingPrepTask] = []
@@ -106,7 +106,7 @@ class ExecutionEngine {
 
     private func executeCreateFollowup(_ followup: FollowupReminder) async throws -> ExecutionResult {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        let alfredDir = homeDir.appendingPathComponent(".alfred")
+        let alfredDir = AlfredPaths.dataURL
         let followupsFile = alfredDir.appendingPathComponent("followups.json")
 
         // Create directory if needed

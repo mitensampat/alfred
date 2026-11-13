@@ -26,7 +26,7 @@ class MenuBarController: NSObject, NSMenuDelegate {
     // Persistent storage for last run dates (to support catch-up after app restart)
     private var schedulerStatePath: String {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
-        return "\(homeDir)/.alfred/scheduler_state.json"
+        return AlfredPaths.data("scheduler_state.json")
     }
 
     init(config: AppConfig, alfredService: AlfredService, orchestrator: BriefingOrchestrator? = nil) {
@@ -101,7 +101,7 @@ class MenuBarController: NSObject, NSMenuDelegate {
             showNotification(title: title, body: body)
 
             // Log to scheduler log
-            let logPath = "\(homeDir)/.alfred/scheduler.log"
+            let logPath = AlfredPaths.data("scheduler.log")
             logToFile("PERMISSION WARNING: \(missingPermissions.joined(separator: ", "))", path: logPath)
 
             print("⚠️ PERMISSION WARNING: \(missingPermissions.joined(separator: ", "))")
@@ -314,11 +314,18 @@ class MenuBarController: NSObject, NSMenuDelegate {
     // MARK: - Scheduler
 
     private func startScheduler() {
+        // A sandbox instance scores a build against a copy of the data. If its scheduler ran,
+        // the copy would be the only thing that was a copy: the briefing would still be emailed,
+        // the cadences would still write to Notion, the nudges would still go out over WhatsApp.
+        guard !AlfredPaths.isEval else {
+            print("📅 Scheduler not started — ALFRED_EVAL is set")
+            return
+        }
         guard let config = config else { return }
 
         // Log scheduler start
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
-        let logPath = "\(homeDir)/.alfred/scheduler.log"
+        let logPath = AlfredPaths.data("scheduler.log")
         logToFile("Scheduler started (unified cadence loop)", path: logPath)
 
         let enabledCadences = CadenceService.shared.getEnabled()
@@ -439,7 +446,7 @@ class MenuBarController: NSObject, NSMenuDelegate {
         let todayDate = todayDateString()
 
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
-        let logPath = "\(homeDir)/.alfred/scheduler.log"
+        let logPath = AlfredPaths.data("scheduler.log")
 
         // ===============================================
         // UNIFIED CADENCE LOOP (single scheduling system)

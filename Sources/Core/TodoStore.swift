@@ -82,7 +82,7 @@ final class TodoStore {
     static func nowISO() -> String { iso.string(from: Date()) }
 
     private init() {
-        let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".alfred")
+        let dir = AlfredPaths.dataURL
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let path = dir.appendingPathComponent("todos.db").path
         guard sqlite3_open(path, &db) == SQLITE_OK else {

@@ -507,6 +507,7 @@ final class ScheduleService {
     }
 
     private func sendBridge(_ jid: String, _ text: String) async {
+        guard !AlfredPaths.isEval else { return }
         guard !jid.isEmpty, let url = URL(string: bridgeBase() + "/send") else { return }
         var req = URLRequest(url: url); req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -541,7 +542,7 @@ final class ScheduleService {
     }
 
     private func watcherLockPath() -> String {
-        let dir = ProcessInfo.processInfo.environment["ALFRED_DIR"] ?? (NSHomeDirectory() + "/.alfred")
+        let dir = AlfredPaths.dataDir
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         return dir + "/schedule-watcher.lock"
     }

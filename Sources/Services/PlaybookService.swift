@@ -27,7 +27,7 @@ class PlaybookService {
 
     init() {
         let homeDir = NSHomeDirectory()
-        self.cacheFilePath = URL(fileURLWithPath: "\(homeDir)/.alfred/playbook_cache.json")
+        self.cacheFilePath = URL(fileURLWithPath: AlfredPaths.data("playbook_cache.json"))
 
         // Load config
         if let config = AppConfig.load() {

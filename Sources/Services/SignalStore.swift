@@ -9,7 +9,7 @@ class SignalStore {
     private let baseDirectory: String
 
     private init() {
-        let alfredDir = NSString(string: "~/.alfred").expandingTildeInPath
+        let alfredDir = AlfredPaths.dataDir
         self.baseDirectory = alfredDir + "/signal_history"
         try? FileManager.default.createDirectory(atPath: baseDirectory, withIntermediateDirectories: true)
     }

@@ -71,7 +71,7 @@ class CoachingEngine {
     // MARK: - Disk Cache
 
     private var alfredDataDir: String {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".alfred").path
+        AlfredPaths.dataURL.path
     }
 
     private var cardsDiskPath: String {

@@ -12,7 +12,7 @@ class DecisionLoader {
     private let installedDirectory: String
 
     private init() {
-        let alfredDir = NSString(string: "~/.alfred").expandingTildeInPath
+        let alfredDir = AlfredPaths.dataDir
         self.userDirectory = alfredDir + "/decisions/user"
         self.installedDirectory = alfredDir + "/decisions/installed"
 

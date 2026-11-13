@@ -14,7 +14,7 @@ class AnalysisLensLoader {
     private let statePath: String
 
     private init() {
-        let alfredDir = NSString(string: "~/.alfred").expandingTildeInPath
+        let alfredDir = AlfredPaths.dataDir
         self.baseDirectory = alfredDir + "/analyses"
         self.userDirectory = alfredDir + "/analyses/user"
         self.installedDirectory = alfredDir + "/analyses/installed"

@@ -638,7 +638,7 @@ class AlfredService: ObservableObject {
 
     func fetchDrafts() async throws -> [MessageDraft] {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        let draftsFile = homeDir.appendingPathComponent(".alfred/message_drafts.json")
+        let draftsFile = AlfredPaths.dataURL("message_drafts.json")
 
         guard FileManager.default.fileExists(atPath: draftsFile.path) else {
             return []
@@ -651,7 +651,7 @@ class AlfredService: ObservableObject {
 
     func clearDrafts() async throws {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        let draftsFile = homeDir.appendingPathComponent(".alfred/message_drafts.json")
+        let draftsFile = AlfredPaths.dataURL("message_drafts.json")
 
         try "[]".write(to: draftsFile, atomically: true, encoding: .utf8)
     }
@@ -662,7 +662,7 @@ class AlfredService: ObservableObject {
         drafts.remove(at: index)
 
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        let draftsFile = homeDir.appendingPathComponent(".alfred/message_drafts.json")
+        let draftsFile = AlfredPaths.dataURL("message_drafts.json")
         let data = try JSONEncoder().encode(drafts)
         try data.write(to: draftsFile)
     }

@@ -11,7 +11,7 @@ class QueryCacheService {
     init() {
         // Store cache in persistent ~/.alfred directory (survives reboots)
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        let alfredDir = homeDir.appendingPathComponent(".alfred")
+        let alfredDir = AlfredPaths.dataURL
 
         // Create directory if needed
         if !FileManager.default.fileExists(atPath: alfredDir.path) {

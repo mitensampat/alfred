@@ -14,7 +14,7 @@ class SkillLoader {
     private let statePath: String
 
     private init() {
-        let alfredDir = NSString(string: "~/.alfred").expandingTildeInPath
+        let alfredDir = AlfredPaths.dataDir
         self.baseDirectory = alfredDir + "/skills"
         self.userDirectory = alfredDir + "/skills/user"
         self.installedDirectory = alfredDir + "/skills/installed"
@@ -401,7 +401,7 @@ class SkillLoader {
         }
 
         // 2b. Same rewrites for the user's coaching_tenets.md if it has stale labels
-        let coachingTenetsPath = NSString(string: "~/.alfred/coaching_tenets.md").expandingTildeInPath
+        let coachingTenetsPath = AlfredPaths.data("coaching_tenets.md")
         if var tenetsContent = try? String(contentsOfFile: coachingTenetsPath, encoding: .utf8) {
             var changed = false
             let tenetsReplacements: [(old: String, new: String)] = [

@@ -16,7 +16,7 @@ class GoogleCalendarService {
         // Try to find token file in multiple locations
         let tokenFilename = "google_tokens_\(accountName).json"
         let possiblePaths = [
-            (NSString(string: "~/.config/alfred/\(tokenFilename)").expandingTildeInPath),
+            AlfredPaths.config("\(tokenFilename)"),
             (NSString(string: "~/.config/exec-assistant/\(tokenFilename)").expandingTildeInPath),
             (NSString(string: "~/Documents/Claude apps/Alfred/Config/\(tokenFilename)").expandingTildeInPath),
             "Config/\(tokenFilename)"
@@ -24,7 +24,7 @@ class GoogleCalendarService {
 
         // Find the first existing token file or use the standard location
         self.tokenStorePath = possiblePaths.first { FileManager.default.fileExists(atPath: $0) }
-            ?? (NSString(string: "~/.config/alfred/\(tokenFilename)").expandingTildeInPath)
+            ?? AlfredPaths.config("\(tokenFilename)")
 
         loadTokens()
     }

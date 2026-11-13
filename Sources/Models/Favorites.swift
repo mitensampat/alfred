@@ -106,7 +106,7 @@ class FavoritesService {
 
     init() {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
-        filePath = "\(homeDir)/.alfred/favorites.json"
+        filePath = AlfredPaths.data("favorites.json")
 
         // Load existing favorites or create empty
         let decoder = JSONDecoder()

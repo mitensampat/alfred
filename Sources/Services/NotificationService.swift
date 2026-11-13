@@ -145,6 +145,10 @@ class NotificationService {
     // MARK: - Email
 
     private func sendEmail(subject: String, body: String, toAddress: String? = nil) async throws {
+        guard !AlfredPaths.isEval else {
+            print("✉️  Email suppressed (ALFRED_EVAL): \(subject)")
+            return
+        }
         guard config.email.enabled else {
             print("Email disabled in config")
             return

@@ -599,7 +599,7 @@ class IntentExecutor {
 
     private func fetchDrafts() async throws -> [MessageDraft] {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        let draftsFile = homeDir.appendingPathComponent(".alfred/message_drafts.json")
+        let draftsFile = AlfredPaths.dataURL("message_drafts.json")
 
         guard FileManager.default.fileExists(atPath: draftsFile.path) else {
             return []
@@ -1880,7 +1880,7 @@ class IntentExecutor {
 
     private func handleGetFocusPin() async throws -> IntentExecutionResult {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        let pinFile = homeDir.appendingPathComponent(".alfred/focus_pin.json")
+        let pinFile = AlfredPaths.dataURL("focus_pin.json")
 
         guard FileManager.default.fileExists(atPath: pinFile.path),
               let data = try? Data(contentsOf: pinFile),
@@ -1972,7 +1972,7 @@ class IntentExecutor {
         ]
 
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        let pinFile = homeDir.appendingPathComponent(".alfred/focus_pin.json")
+        let pinFile = AlfredPaths.dataURL("focus_pin.json")
         let jsonData = try JSONSerialization.data(withJSONObject: pinData, options: .prettyPrinted)
         try jsonData.write(to: pinFile)
 
@@ -1985,7 +1985,7 @@ class IntentExecutor {
 
     private func handleUnpinFocus() async throws -> IntentExecutionResult {
         let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        let pinFile = homeDir.appendingPathComponent(".alfred/focus_pin.json")
+        let pinFile = AlfredPaths.dataURL("focus_pin.json")
 
         if FileManager.default.fileExists(atPath: pinFile.path) {
             try FileManager.default.removeItem(at: pinFile)

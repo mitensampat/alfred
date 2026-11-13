@@ -15,8 +15,7 @@ class TaskLifecycleTracker {
     private var lastScanTime: Date?
 
     private init() {
-        let alfredDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".alfred")
+        let alfredDir = AlfredPaths.dataURL
 
         try? FileManager.default.createDirectory(at: alfredDir, withIntermediateDirectories: true)
 
