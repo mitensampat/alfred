@@ -1636,7 +1636,8 @@ class HTTPServer {
                 "count": pending.count, "workspaces": groups.count, "groups": groups,
                 "reconciled": ["before": gc.before, "dead_target": gc.deadTarget,
                                "collapsed": gc.collapsed, "superseded": gc.superseded,
-                               "expired": gc.expired, "remapped": gc.remapped, "after": gc.after]])
+                               "answered": gc.answered, "expired": gc.expired,
+                               "remapped": gc.remapped, "after": gc.after]])
 
         case ("POST", "/api/self-model/strays/detect"):
             // Run the detector now and queue proposals (the daily cadence also does this). Manual trigger.
@@ -1668,7 +1669,7 @@ class HTTPServer {
             let gc = SelfModelHygiene.reconcileProposals()
             return HTTPResponse(statusCode: 200, body: [
                 "before": gc.before, "dead_target": gc.deadTarget, "collapsed": gc.collapsed,
-                "superseded": gc.superseded, "expired": gc.expired,
+                "superseded": gc.superseded, "answered": gc.answered, "expired": gc.expired,
                 "remapped": gc.remapped, "after": gc.after])
 
         case ("POST", "/api/self-model/strays/resolve"):

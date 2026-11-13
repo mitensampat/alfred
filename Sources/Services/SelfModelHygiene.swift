@@ -118,6 +118,7 @@ enum SelfModelHygiene {
         var deadTarget = 0      // destination workspace no longer exists
         var collapsed = 0       // source and destination merged into each other
         var superseded = 0      // the item already carries an override
+        var answered = 0        // the item is a question Alfred has since answered
         var expired = 0         // nobody answered it for proposalMaxAgeDays
         var remapped = 0        // endpoints rewritten through convergence
         var after = 0
@@ -146,6 +147,10 @@ enum SelfModelHygiene {
         let overrides = Set(store.itemOwnerOverrides().keys.map {
             $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         })
+        // Questions the synthesis pass has answered. Where to file a question nobody is asking
+        // any more is not a question either — and now that questions actually get closed, this
+        // is no longer a theoretical case.
+        let answeredQuestions = SelfModelStore.shared.resolvedQuestionTexts()
         let cutoff = ISO8601DateFormatter().string(from: Date()
             .addingTimeInterval(-Double(proposalMaxAgeDays) * 86400))
 
@@ -172,6 +177,9 @@ enum SelfModelHygiene {
                 .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
             if overrides.contains(content) { r.superseded += 1; doomed.append(id); continue }
+            if (p["item_type"] as? String) == "question", answeredQuestions.contains(content) {
+                r.answered += 1; doomed.append(id); continue
+            }
             guard let liveTo = current(to) else { r.deadTarget += 1; doomed.append(id); continue }
             let liveFrom = current(from)
             if let f = liveFrom, f == liveTo { r.collapsed += 1; doomed.append(id); continue }

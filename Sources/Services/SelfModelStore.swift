@@ -716,6 +716,29 @@ class SelfModelStore {
     /// merges themselves are recorded in `model_feedback` ("loser name → winner name"), so the
     /// mapping can be recovered rather than lost. Chains are followed, so a theme merged twice
     /// resolves to where it finally landed.
+    /// The text of every question that has been answered, lowercased.
+    ///
+    /// Archived rows included: a question that was closed and later aged out of the active set
+    /// is still answered, and the queue should not go on asking where to file it.
+    func resolvedQuestionTexts() -> Set<String> {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        guard let db = db else { return [] }
+        var out: Set<String> = []
+        var stmt: OpaquePointer?
+        let sql = "SELECT statement FROM self_facet WHERE kind = 'question' AND user_verdict = 'resolved'"
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let t = columnText(stmt, 0)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !t.isEmpty {
+                    out.insert(t)
+                }
+            }
+        }
+        sqlite3_finalize(stmt)
+        return out
+    }
+
     /// Every live workspace name → the ONE name that workspace is known by, all lowercased.
     ///
     /// A workspace has two names the moment the user renames it: the machine `statement` and
