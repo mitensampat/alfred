@@ -367,7 +367,7 @@
       "value": 11
     },
     "people.shown": {
-      "value": 12
+      "value": 23
     },
     "questions.open": {
       "value": 86
@@ -379,13 +379,13 @@
       "value": 5
     },
     "todos.open": {
-      "value": 146
+      "value": 104
     },
     "values.active": {
       "value": 22
     }
   },
   "overall": 93.4,
-  "saved_at": "2026-11-13T15:06:10Z",
+  "saved_at": "2026-11-13T15:12:40Z",
   "version": "6.1.1"
 }
