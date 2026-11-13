@@ -4,7 +4,7 @@
 
 ![macOS](https://img.shields.io/badge/macOS-13%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9%2B-orange)
-![Version](https://img.shields.io/badge/version-6.1.0-green)
+![Version](https://img.shields.io/badge/version-6.1.1-green)
 
 ---
 
@@ -23,6 +23,24 @@ Most productivity tools make you do the organizing. Alfred flips that. It runs c
 Underneath both sits **the self-model** — a durable, portable portrait of how *you* operate: your fronts, the principles you actually run on, the people in your world, and the patterns Alfred has noticed. It gets sharper the longer Alfred watches, and you can read the whole thing as a living **You-Wiki**.
 
 ---
+
+## What's new in 6.1.1
+
+Fixes to the interpret stage shipped in 6.1.0, found by using it.
+
+- **The "to review" queue reconciles itself.** Proposed item moves used to accumulate without
+  limit — the queue on one install had grown to 365 against 57 the user had ever answered, and two
+  thirds of them proposed moving something into a workspace that had since been merged away. The
+  queue is now reconciled on every read: dead destinations, moves already applied, and anything
+  unanswered for 60 days are dropped, survivors are rewritten to the names that exist today, and
+  the detector stops adding to a workspace that already has ten waiting. Each workspace's
+  suggestions also get a "None of these".
+- **A renamed or merged workspace is followed properly.** A workspace has two names once you
+  rename it, and anything comparing workspaces by name treated them as two places — which let a
+  proposal to move an item into its own workspace survive. Merges accepted on the Model page are
+  now followed as well as automatic ones.
+- **A question Alfred has answered leaves the queue.** Where to file a question nobody is asking
+  any more is not a decision worth your attention.
 
 ## What's new in 6.1.0
 
