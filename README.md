@@ -4,7 +4,7 @@
 
 ![macOS](https://img.shields.io/badge/macOS-13%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9%2B-orange)
-![Version](https://img.shields.io/badge/version-6.0.0-green)
+![Version](https://img.shields.io/badge/version-6.1.0-green)
 
 ---
 
@@ -23,6 +23,44 @@ Most productivity tools make you do the organizing. Alfred flips that. It runs c
 Underneath both sits **the self-model** — a durable, portable portrait of how *you* operate: your fronts, the principles you actually run on, the people in your world, and the patterns Alfred has noticed. It gets sharper the longer Alfred watches, and you can read the whole thing as a living **You-Wiki**.
 
 ---
+
+## What's new in 6.1.0
+
+**Your model concludes things now, instead of filing them.**
+
+Until this release the pipeline was extract → store → display. Every belief on the Model page was
+one conversation's raw artifact shown verbatim, open questions accumulated and were never closed,
+values could only be typed in by hand, and nothing the model held ever reached a prompt. 6.1.0 adds
+the missing middle.
+
+- **Claims, not fragments.** A weekly pass reads each workspace's decisions and shifts in thinking
+  together and concludes what you believe. A claim needs support from at least two evidence items
+  on two different days — one thread never gets to be a belief. Claims are recomputed every run, so
+  wording sharpens and dead claims fade. Anything you confirmed, kept or re-worded is left alone.
+- **Values Alfred works out for itself.** A value is what you protect when two good things conflict,
+  visible in what lost. The pass proposes them from your decision record, marked as Alfred's read
+  rather than something you declared.
+- **Questions get closed.** Questions now attach to the subject they were asked in, so the pass can
+  line them up against the decisions taken afterwards. Ones the evidence settles close silently with
+  the answer and its references; near-duplicates fold together; anything with no new evidence in 60
+  days ages out. An **Answered** list shows every close, with one click to reopen it.
+- **Tensions.** A new block names where the model disagrees with itself — two beliefs that cannot
+  both be honoured in one decision, or something you say you value against what your decisions show
+  — each with what it costs you.
+- **The model is an input.** The curated registers are injected into the chat and coaching prompts,
+  so what Alfred understands about you shapes what it says, and wrong claims get corrected in the
+  flow of use instead of in a curation session.
+- **Confidence means something** — evidence count, independence and recency, instead of a near
+  constant that made every ordering arbitrary.
+
+### People
+
+Pin anyone, rescan one person, and dismiss something you are waiting on, with a real undo. Fixes a
+silent bug that discarded anyone who only owed *you* something and had been in touch recently: they
+matched neither bucket and never appeared.
+
+Nothing to migrate. The first weekly pass does the conversion, and everything it supersedes is
+archived rather than deleted.
 
 ## What's new in 6.0.0
 
