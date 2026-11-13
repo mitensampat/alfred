@@ -164,7 +164,7 @@ works; the scorecard proves nothing else broke.
 | Phase | What | Why here |
 |---|---|---|
 | **0** | `AlfredPaths` + `ALFRED_DIR` everywhere; snapshot/restore script; second instance on 8081 — **done, Nov 13** (see below) | nothing below is trustworthy without it |
-| **1** | Tier 1 invariants for all 16 features + the runner, baseline format, delta report | the cheapest 80% of the value |
+| **1** | Tier 1 invariants for all 16 features + the runner, baseline format, delta report — **done, Nov 13** (see below) | the cheapest 80% of the value |
 | **2** | Golden Path integration + noise-band calibration | makes it a habit rather than a tool |
 | **3** | Tier 2 replay for claims, questions, extraction, intents (generalising `evals/learning/run.py`) | the content regressions Tier 1 cannot see |
 | **4** | Tier 3 judged rows for claims, tensions, briefing, injection | the quality questions rules cannot express |
@@ -211,3 +211,46 @@ Two things turned up on the way, both now fixed:
 Measured on the real install: a fresh sandbox run and the next one return identical state (22
 values, same counts), and a write made inside the sandbox left `~/.alfred/self_model.db`
 byte-identical. That is the property everything above depends on.
+
+---
+
+## Phase 1, as built (Nov 13)
+
+`evals/scorecard/` holds **73 checks across all 16 features**, run by `./scripts/eval.sh`. A full
+run takes about five seconds, makes no model calls and costs nothing. Exit status is 0 clean,
+1 a regression or metric drift, 2 a check that broke.
+
+The design departs from the proposal above in one place, and it matters. A check reports a
+**violation count** rather than pass/fail, and a violation that predates the baseline is recorded
+as **known** rather than failed. Real databases carry scars: this install has fourteen commitments
+with more than one closure row, every one of them from March and April, none since the November
+fix. Calling those a failure on every run is how a tool gets muted in a week. They still lower the
+score — the absolute number should be honest — but only an increase is a regression, and only an
+increase sets a non-zero exit. The first run has no baseline and therefore reports no regressions
+at all; it is the reference.
+
+Tier 1 reads state rather than generating it. Tensions, for instance, are produced by a POST that
+costs a model call, so the check reads the tensions that exist and asserts both sides are live
+facets. That keeps the whole tier free, which is what makes it runnable on every build.
+
+Five checks are source-level (`checks/source.py`) and these are the clearest demonstration of the
+idea. CLAUDE.md asks for four files to be kept in step when a chat capability is added, and
+nothing enforces it; the failure mode is a new intent the classifier can emit and the executor
+silently drops into generic chat, which the user experiences as a vague answer rather than an
+error. Reading four files catches it.
+
+Measured today: **93.4 overall**, identical across a restart of the sandbox, including all 29
+metrics. Five open issues recorded as the baseline — three open questions with no workspace, and
+the four historical closure-integrity scars. Deliberately injecting a thin claim, a duplicate
+closure and eighty orphaned to-do links produced exactly five named regressions and one metric
+drift, and left the production database byte-identical.
+
+One change to Phase 0 came out of this: databases are now read from a **copy** rather than opened
+read-only in place. A read-only connection to a WAL database cannot create the shared-memory file
+it needs, so reads failed until the instance under test happened to open that database itself —
+and a read that did succeed saw whatever had been flushed at that instant, so two checks in the
+same run could disagree. Copying once at first use gives every check one consistent view and makes
+writing to the original structurally impossible.
+
+Decisions 2–5 are still open. Nothing blocks a merge yet; `eval.sh` is a tool you run, not a step
+in the Golden Path, which is Phase 2.

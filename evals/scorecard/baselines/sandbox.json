@@ -1,0 +1,391 @@
+{
+  "checks": {
+    "briefing.cadence_present": {
+      "feature": "briefing",
+      "violations": 0
+    },
+    "briefing.last_run_recorded": {
+      "feature": "briefing",
+      "violations": 0
+    },
+    "cadences.action_vocabulary": {
+      "feature": "cadences",
+      "violations": 0
+    },
+    "cadences.builtins_present": {
+      "feature": "cadences",
+      "violations": 0
+    },
+    "cadences.schedule_vocabulary": {
+      "feature": "cadences",
+      "violations": 0
+    },
+    "cadences.state_file_parses": {
+      "feature": "cadences",
+      "violations": 0
+    },
+    "cadences.well_formed": {
+      "feature": "cadences",
+      "violations": 0
+    },
+    "claims.confidence_range": {
+      "feature": "claims",
+      "violations": 0
+    },
+    "claims.distinct_days": {
+      "feature": "claims",
+      "violations": 0
+    },
+    "claims.evidence_floor": {
+      "feature": "claims",
+      "violations": 0
+    },
+    "claims.lineage": {
+      "feature": "claims",
+      "violations": 0
+    },
+    "claims.no_duplicates": {
+      "feature": "claims",
+      "violations": 0
+    },
+    "claims.non_empty": {
+      "feature": "claims",
+      "violations": 0
+    },
+    "closure.ask_band": {
+      "feature": "closure",
+      "violations": 11
+    },
+    "closure.auto_threshold": {
+      "feature": "closure",
+      "violations": 9
+    },
+    "closure.confidence_range": {
+      "feature": "closure",
+      "violations": 0
+    },
+    "closure.no_double_count": {
+      "feature": "closure",
+      "violations": 14
+    },
+    "closure.no_orphans": {
+      "feature": "closure",
+      "violations": 1
+    },
+    "connectors.health_shape": {
+      "feature": "connectors",
+      "violations": 0
+    },
+    "connectors.reflections_flowing": {
+      "feature": "connectors",
+      "violations": 0
+    },
+    "desk.first_move_resolves": {
+      "feature": "desk",
+      "violations": 0
+    },
+    "desk.fronts_named": {
+      "feature": "desk",
+      "violations": 0
+    },
+    "desk.no_duplicate_fronts": {
+      "feature": "desk",
+      "violations": 0
+    },
+    "desk.queue_items_complete": {
+      "feature": "desk",
+      "violations": 0
+    },
+    "desk.responds": {
+      "feature": "desk",
+      "violations": 0
+    },
+    "desk.top_fronts_are_fronts": {
+      "feature": "desk",
+      "violations": 0
+    },
+    "extraction.closed_have_dates": {
+      "feature": "extraction",
+      "violations": 0
+    },
+    "extraction.confidence_range": {
+      "feature": "extraction",
+      "violations": 0
+    },
+    "extraction.has_hash": {
+      "feature": "extraction",
+      "violations": 0
+    },
+    "extraction.has_title": {
+      "feature": "extraction",
+      "violations": 0
+    },
+    "extraction.open_age_cap": {
+      "feature": "extraction",
+      "violations": 0
+    },
+    "hygiene.age_cap": {
+      "feature": "hygiene",
+      "violations": 0
+    },
+    "hygiene.no_overridden": {
+      "feature": "hygiene",
+      "violations": 0
+    },
+    "hygiene.not_self_move": {
+      "feature": "hygiene",
+      "violations": 0
+    },
+    "hygiene.reconcile_idempotent": {
+      "feature": "hygiene",
+      "violations": 0
+    },
+    "hygiene.targets_live": {
+      "feature": "hygiene",
+      "violations": 0
+    },
+    "hygiene.workspace_cap": {
+      "feature": "hygiene",
+      "violations": 0
+    },
+    "injection.budget_matches_source": {
+      "feature": "injection",
+      "violations": 0
+    },
+    "injection.has_sections": {
+      "feature": "injection",
+      "violations": 0
+    },
+    "injection.non_empty": {
+      "feature": "injection",
+      "violations": 0
+    },
+    "injection.within_budget": {
+      "feature": "injection",
+      "violations": 0
+    },
+    "intents.executor_handles_every_target": {
+      "feature": "intents",
+      "violations": 0
+    },
+    "intents.model_mirrored": {
+      "feature": "intents",
+      "violations": 0
+    },
+    "intents.paths_agree_on_notion_search": {
+      "feature": "intents",
+      "violations": 0
+    },
+    "intents.recognizer_knows_every_target": {
+      "feature": "intents",
+      "violations": 0
+    },
+    "intents.router_assigns_a_posture": {
+      "feature": "intents",
+      "violations": 0
+    },
+    "learning.archived_stay_hidden": {
+      "feature": "learning",
+      "violations": 0
+    },
+    "learning.confidence_range": {
+      "feature": "learning",
+      "violations": 0
+    },
+    "learning.direct_instructions_are_certain": {
+      "feature": "learning",
+      "violations": 0
+    },
+    "learning.events_typed": {
+      "feature": "learning",
+      "violations": 0
+    },
+    "learning.reviews_resolve": {
+      "feature": "learning",
+      "violations": 0
+    },
+    "people.counts_sane": {
+      "feature": "people",
+      "violations": 0
+    },
+    "people.named": {
+      "feature": "people",
+      "violations": 0
+    },
+    "people.pinned_subset": {
+      "feature": "people",
+      "violations": 0
+    },
+    "questions.answer_support": {
+      "feature": "questions",
+      "violations": 0
+    },
+    "questions.answered_have_answers": {
+      "feature": "questions",
+      "violations": 0
+    },
+    "questions.duplicate_targets_exist": {
+      "feature": "questions",
+      "violations": 0
+    },
+    "questions.lineage": {
+      "feature": "questions",
+      "violations": 3
+    },
+    "tensions.confidence_is_weaker_side": {
+      "feature": "tensions",
+      "violations": 0
+    },
+    "tensions.not_self": {
+      "feature": "tensions",
+      "violations": 0
+    },
+    "tensions.sides_live": {
+      "feature": "tensions",
+      "violations": 0
+    },
+    "todos.done_have_dates": {
+      "feature": "todos",
+      "violations": 0
+    },
+    "todos.has_source": {
+      "feature": "todos",
+      "violations": 0
+    },
+    "todos.has_title": {
+      "feature": "todos",
+      "violations": 0
+    },
+    "todos.no_duplicate_dedupe_key": {
+      "feature": "todos",
+      "violations": 0
+    },
+    "todos.sources_resolve": {
+      "feature": "todos",
+      "violations": 0
+    },
+    "todos.status_vocabulary": {
+      "feature": "todos",
+      "violations": 0
+    },
+    "values.confidence_range": {
+      "feature": "values",
+      "violations": 0
+    },
+    "values.inferred_are_marked": {
+      "feature": "values",
+      "violations": 0
+    },
+    "values.no_duplicates": {
+      "feature": "values",
+      "violations": 0
+    }
+  },
+  "features": {
+    "briefing": 100.0,
+    "cadences": 100.0,
+    "claims": 100.0,
+    "closure": 20.0,
+    "connectors": 100.0,
+    "desk": 100.0,
+    "extraction": 100.0,
+    "hygiene": 100.0,
+    "injection": 100.0,
+    "intents": 100.0,
+    "learning": 100.0,
+    "people": 100.0,
+    "questions": 75.0,
+    "tensions": 100.0,
+    "todos": 100.0,
+    "values": 100.0
+  },
+  "metrics": {
+    "cadences.builtin": {
+      "value": 18
+    },
+    "cadences.enabled": {
+      "value": 16
+    },
+    "cadences.total": {
+      "value": 19
+    },
+    "claims.active": {
+      "value": 49
+    },
+    "closure.auto_closed": {
+      "value": 685
+    },
+    "closure.pending": {
+      "value": 86
+    },
+    "connectors.reflections": {
+      "value": 1051
+    },
+    "connectors.services": {
+      "value": 10
+    },
+    "connectors.themes": {
+      "value": 60
+    },
+    "desk.fronts": {
+      "value": 14
+    },
+    "desk.queue": {
+      "value": 19
+    },
+    "extraction.open": {
+      "value": 62
+    },
+    "extraction.total": {
+      "value": 2454
+    },
+    "hygiene.groups": {
+      "value": 0
+    },
+    "hygiene.pending": {
+      "value": 0
+    },
+    "injection.chars": {
+      "value": 2522
+    },
+    "injection.sections": {
+      "value": 2
+    },
+    "intents.targets": {
+      "value": 19
+    },
+    "learning.active": {
+      "value": 14
+    },
+    "learning.direct": {
+      "value": 44
+    },
+    "learning.events": {
+      "value": 114
+    },
+    "learning.pending_reviews": {
+      "value": 11
+    },
+    "people.shown": {
+      "value": 12
+    },
+    "questions.open": {
+      "value": 86
+    },
+    "questions.resolved": {
+      "value": 7
+    },
+    "tensions.active": {
+      "value": 5
+    },
+    "todos.open": {
+      "value": 146
+    },
+    "values.active": {
+      "value": 22
+    }
+  },
+  "overall": 93.4,
+  "saved_at": "2026-11-13T15:06:10Z",
+  "version": "6.1.1"
+}
