@@ -760,13 +760,24 @@ class HTTPServer {
             // `sweep=1` also retires the fragments no live workspace claims — a one-shot, meant
             // for right after a full backfill, never on the cadence.
             let sweep = (request.queryParams["sweep"] ?? "0") == "1"
+            // Questions can only be answered where they have a workspace to be answered in.
+            let qLinked = SelfModelSynthesizer.backfillQuestionLineage()
             let r = await ClaimSynthesizer.run(maxClusters: max(1, min(clusters, 120)),
                                                migrate: migrate, sweepLegacy: sweep)
             UserWikiComposer.write()
             return HTTPResponse(statusCode: 200, body: [
                 "clusters": r.clusters, "beliefs": r.beliefs, "values": r.values,
                 "kept": r.kept, "updated": r.updated, "thin": r.thin, "retired": r.retired,
-                "superseded": r.legacyRetired, "failures": r.failures, "model": r.model])
+                "superseded": r.legacyRetired, "failures": r.failures, "model": r.model,
+                "questions_linked": qLinked, "questions_read": r.questionsRead,
+                "questions_answered": r.questionsAnswered, "questions_merged": r.questionsMerged])
+
+        case ("POST", "/api/model/tensions"):
+            // Claim-against-claim, on demand (it also runs after the weekly synthesis).
+            let t = await TensionFinder.run()
+            return HTTPResponse(statusCode: 200, body: [
+                "read": t.read, "found": t.found, "kept": t.kept,
+                "retired": t.retired, "failures": t.failures, "model": t.model])
 
         case ("POST", "/api/model/tag-durability"):
             // On-demand belief-durability pass (also runs nightly): tag durable/tactical/fact/action

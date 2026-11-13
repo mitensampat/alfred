@@ -173,9 +173,48 @@ enum SelfModelSynthesizer {
 
         // ---- Lineage ----
         backfillLineage()
+        backfillQuestionLineage()
 
         lastCounts = facets.counts()
         return lastCounts
+    }
+
+    /// Link each open question back to the workspace it was asked inside.
+    ///
+    /// Questions were the one item type with no lineage at all, which is why nothing could ever
+    /// answer one: a question sat in a flat list of 456 with no way to line it up against the
+    /// decisions taken in the same subject afterwards. The extractor already tags each question
+    /// with its one owning theme (`item_themes`); this just makes that edge real.
+    @discardableResult
+    static func backfillQuestionLineage() -> Int {
+        let store = SelfModelStore.shared
+        let themeIds = Set(store.getFacets(kind: "theme", includeArchived: true).compactMap { $0["id"] as? String })
+        let questionIds = Set(store.getFacets(kind: "question", includeArchived: true).compactMap { $0["id"] as? String })
+        guard !themeIds.isEmpty, !questionIds.isEmpty else { return 0 }
+
+        let reflections = ReflectionStore.shared.getRecentReflections(limit: 2000, days: 400)
+        let canon = canonicalThemeMap()
+        let overrides = ReflectionStore.shared.itemOwnerOverrides()
+        _ = store.clearLineage(facetKind: "question")
+        var linked = 0
+        for r in reflections {
+            guard let questions = r["open_questions"] as? [String], !questions.isEmpty,
+                  let themes = r["themes"] as? [String], !themes.isEmpty else { continue }
+            let itemThemes = (r["item_themes"] as? [String: String]) ?? [:]
+            for q in questions {
+                let text = q.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { continue }
+                let qid = "question_" + fnv1a(text)
+                guard questionIds.contains(qid) else { continue }
+                guard let owner = owningTheme(text, itemThemes: itemThemes, among: themes,
+                                              overrides: overrides).map({ canon[$0] ?? $0 }) else { continue }
+                let themeId = stableId("theme", owner)
+                if themeIds.contains(themeId), store.linkFacetToTheme(facetId: qid, themeId: themeId) {
+                    linked += 1
+                }
+            }
+        }
+        return linked
     }
 
     /// Tag each active belief by durability and prune the non-beliefs. The belief set is

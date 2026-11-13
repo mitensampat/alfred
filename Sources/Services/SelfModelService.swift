@@ -126,6 +126,47 @@ enum SelfModelService {
              "verdict": verdict(f), "evidence": evidenceLabel(f)]
         }
 
+        // ---- Questions Alfred closed ----
+        // The resolved list: what the pass answered from the evidence, with the answer it
+        // concluded. Shown because a silent close you cannot see is indistinguishable from
+        // losing the question — this is the receipt, and reopening is one click.
+        let closedQuestions: [[String: Any]] = store.getFacets(kind: "question", includeArchived: true)
+            .filter { f in
+                let meta = (f["metadata"] as? [String: String]) ?? [:]
+                return verdict(f) == "resolved" && meta["answered_by"] == "synthesis"
+                    && (meta["duplicate_of"] ?? "").isEmpty
+            }
+            .sorted { a, b in
+                let ma = (a["metadata"] as? [String: String])?["answered_at"] ?? ""
+                let mb = (b["metadata"] as? [String: String])?["answered_at"] ?? ""
+                return ma > mb
+            }
+            .prefix(8)
+            .map { f in
+                let meta = (f["metadata"] as? [String: String]) ?? [:]
+                return ["id": f["id"] as? String ?? "",
+                        "text": f["statement"] as? String ?? "",
+                        "answer": meta["answer"] ?? "",
+                        "workspace": meta["workspace"] ?? "",
+                        "when": String((meta["answered_at"] ?? "").prefix(10))]
+            }
+
+        // ---- Tensions ----
+        // Claim against claim. The one thing on this page no amount of filing could produce.
+        let tensionsOut: [[String: Any]] = store.getFacets(kind: "tension")
+            .filter { verdict($0) != "dismissed" }
+            .sorted { (($0["confidence"] as? Double) ?? 0) > (($1["confidence"] as? Double) ?? 0) }
+            .map { f in
+                let meta = (f["metadata"] as? [String: String]) ?? [:]
+                return ["id": f["id"] as? String ?? "",
+                        "statement": f["statement"] as? String ?? "",
+                        "cost": meta["cost"] ?? "",
+                        "left": meta["left_text"] ?? "",
+                        "right": meta["right_text"] ?? "",
+                        "verdict": verdict(f),
+                        "renamed": (f["renamed"] as? Bool) ?? false]
+            }
+
         // ---- Support: what holds a belief up (lenses and decisions, both directions) ----
         var lensIdsByBelief: [String: [String]] = [:]
         var beliefIdsByLens: [String: [String]] = [:]
@@ -263,7 +304,9 @@ enum SelfModelService {
             "patterns": patternsOut.count,
             "themes": workspacesTop.count,
             "beliefs": beliefsOut.count,
-            "questions": questions.count
+            "questions": questions.count,
+            "questions_closed": closedQuestions.count,
+            "tensions": tensionsOut.count
         ]
 
         // Every belief (not just the surfaced 6) so the assign/move picker can offer them all.
@@ -298,6 +341,8 @@ enum SelfModelService {
             "workspaces": workspacesTop,
             "workspaces_total": workspacesTotal,
             "questions": questions,
+            "questions_closed": closedQuestions,
+            "tensions": tensionsOut,
             "lenses": ["patterns": patternsOut, "belief_shifts": beliefsOut],
             "values": valuesOut,
             "all_beliefs": allBeliefs

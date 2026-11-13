@@ -32,6 +32,9 @@ enum ClaimSynthesizer {
         var thin = 0            // claims rejected for lack of independent support
         var retired = 0         // stored claims this run no longer makes
         var legacyRetired = 0   // old one-thread beliefs archived by the migration
+        var questionsRead = 0   // open questions handed to the pass
+        var questionsAnswered = 0  // questions the evidence closed
+        var questionsMerged = 0 // questions folded into a near-duplicate
         var failures = 0        // clusters where the model call failed
         var model = ""
     }
@@ -106,6 +109,21 @@ enum ClaimSynthesizer {
             }
             .prefix(max(0, maxClusters))
 
+        // ---- Open questions, by workspace ----
+        // A question only becomes answerable once it sits next to the decisions taken in the
+        // same subject afterwards; `backfillQuestionLineage` is what makes that edge exist.
+        var questionsByTheme: [String: [[String: Any]]] = [:]
+        let openQuestions = store.getFacets(kind: "question").filter { q in
+            let v = (q["user_verdict"] as? String) ?? ""
+            return v != "resolved" && v != "dismissed"
+        }
+        let questionById = Dictionary(openQuestions.map { (($0["id"] as? String) ?? "", $0) },
+                                      uniquingKeysWith: { a, _ in a })
+        for l in store.allLineage() {
+            guard let q = questionById[l.facet] else { continue }
+            questionsByTheme[winners[l.theme] ?? l.theme, default: []].append(q)
+        }
+
         let existing = store.getFacets(kind: "belief") + store.getFacets(kind: "value")
         var claimsByTheme: [String: [[String: Any]]] = [:]
         var themeOfClaim: [String: String] = [:]
@@ -125,8 +143,12 @@ enum ClaimSynthesizer {
             out.clusters += 1
 
             let standing = claimsByTheme[cluster.themeId] ?? []
-            let (prompt, refs, claimRefs) = buildPrompt(
-                workspace: name, items: cluster.items, standing: standing)
+            let questions = Array((questionsByTheme[cluster.themeId] ?? []).sorted {
+                (($0["last_seen"] as? String) ?? "") > (($1["last_seen"] as? String) ?? "")
+            }.prefix(10))
+            out.questionsRead += questions.count
+            let (prompt, refs, claimRefs, qRefs) = buildPrompt(
+                workspace: name, items: cluster.items, standing: standing, questions: questions)
             var parsed = await ask(ai, prompt: prompt, model: preferred)
             if parsed == nil, preferred != fallbackModel {
                 // The preferred model may not exist on this account; don't let the whole pass
@@ -307,6 +329,63 @@ enum ClaimSynthesizer {
                 }
             }
 
+            // ---- Questions: close what the evidence has since answered ----
+            // Silently, by choice: a question Alfred can answer from the decisions you took is
+            // not a question to put back in front of you. The answer and its evidence are kept
+            // on the row, and the page lists what was closed, so a wrong close is visible and
+            // one click away from being reopened.
+            for q in answer.questions {
+                guard let qid = resolveRef(q["ref"] as? String, qRefs), !qid.isEmpty else { continue }
+                switch ((q["status"] as? String) ?? "open").lowercased() {
+                case "answered":
+                    let text = ((q["answer"] as? String) ?? "")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard text.count >= 12 else { continue }
+                    var cited: [[String: Any]] = []
+                    var seen = Set<String>()
+                    for raw in ((q["evidence"] as? [String]) ?? []) {
+                        for token in raw.lowercased()
+                            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                            .filter({ !$0.isEmpty }) {
+                            guard let item = refs[token], seen.insert(token).inserted else { continue }
+                            cited.append(item)
+                        }
+                    }
+                    // An answer with nothing behind it is a guess, and a guess is not grounds
+                    // for closing something the person wrote down as unsettled. Two refs, the
+                    // same independence rule the claims live under: the first live run closed
+                    // nine questions and every bad close was a single-reference one — "should I
+                    // be thinking about what comes after CRED?" was closed with "yes, taking a
+                    // company public is worth pursuing", which answers a different question.
+                    guard cited.count >= minSupport else {
+                        print("[ClaimSynthesizer] answer too thin (\(cited.count) ref): "
+                            + "\(text.prefix(60))")
+                        continue
+                    }
+                    let snippet = cited.compactMap { $0["statement"] as? String }.first ?? ""
+                    _ = store.mergeFacetMetadata(id: qid, [
+                        "answer": String(text.prefix(400)),
+                        "answered_at": ISO8601DateFormatter().string(from: Date()),
+                        "answered_by": "synthesis",
+                        "answer_support": String(cited.count),
+                        "answer_evidence": String(snippet.prefix(220)),
+                        "workspace": name
+                    ])
+                    if store.setVerdict(id: qid, verdict: "resolved") { out.questionsAnswered += 1 }
+                case "duplicate":
+                    guard let other = resolveRef(q["same_as"] as? String, qRefs),
+                          !other.isEmpty, other != qid else { continue }
+                    _ = store.mergeFacetMetadata(id: qid, [
+                        "duplicate_of": other,
+                        "answered_at": ISO8601DateFormatter().string(from: Date()),
+                        "workspace": name
+                    ])
+                    if store.setVerdict(id: qid, verdict: "resolved") { out.questionsMerged += 1 }
+                default:
+                    break
+                }
+            }
+
             if migrate {
                 out.legacyRetired += retireLegacyBeliefs(
                     themeId: cluster.themeId, store: store, winners: winners)
@@ -337,7 +416,8 @@ enum ClaimSynthesizer {
     // MARK: - The ask
 
     private static func buildPrompt(workspace: String, items: [[String: Any]],
-                                    standing: [[String: Any]]) -> (String, [String: [String: Any]], [String: String]) {
+                                    standing: [[String: Any]], questions: [[String: Any]])
+        -> (String, [String: [String: Any]], [String: String], [String: String]) {
         // Newest first, decisions and shifts kept separate so the model can see which is which.
         let sorted = items.sorted { (($0["last_seen"] as? String) ?? "") > (($1["last_seen"] as? String) ?? "") }
         let decisions = sorted.filter { ($0["kind"] as? String) == "decision" }.prefix(30)
@@ -376,6 +456,17 @@ enum ClaimSynthesizer {
             standingLines.append("[\(ref)] (\(kind)\(dur)) \((c["statement"] as? String) ?? "")")
         }
 
+        // The open questions asked inside this subject. Handed over with the evidence so the
+        // pass can close the ones the evidence has since answered — 456 questions had
+        // accumulated and not one had ever been closed, because nothing ever looked.
+        var qRefs: [String: String] = [:]      // q-ref → facet id
+        var questionLines: [String] = []
+        for (i, q) in questions.enumerated() {
+            let ref = "q\(i + 1)"
+            qRefs[ref] = (q["id"] as? String) ?? ""
+            questionLines.append("[\(ref)] \((q["statement"] as? String) ?? "")")
+        }
+
         var prompt = """
         Workspace: \(workspace)
 
@@ -390,7 +481,15 @@ enum ClaimSynthesizer {
             \(standingLines.joined(separator: "\n"))
             """
         }
-        return (prompt, refs, claimRefs)
+        if !questionLines.isEmpty {
+            prompt += """
+
+
+            Open questions recorded in this workspace:
+            \(questionLines.joined(separator: "\n"))
+            """
+        }
+        return (prompt, refs, claimRefs, qRefs)
     }
 
     private static let system = """
@@ -431,6 +530,19 @@ enum ClaimSynthesizer {
     its ref. Only when the meaning changed, not the phrasing.
     - A claim the evidence no longer supports at all: leave it out entirely. It will be retired.
     - Then add claims for anything the evidence shows that the standing set does not already cover.
+
+    When the input lists open questions, sort them out in "questions". These were recorded as \
+    things the person had not settled, and nothing has ever closed one:
+
+    - "answered": the evidence here settles it. Give the answer in one sentence, in their own \
+    terms, and cite at least two evidence refs that settle it. Only when the evidence decides \
+    the question that was actually asked: if your answer would not make the question disappear \
+    for them, it is still open. A decision taken nearby, on a related matter, is not an answer.
+    - "duplicate": another question in this list asks the same thing. Name that one in "same_as" \
+    and keep the clearer wording as the survivor.
+    - "open": still live. Say nothing else about it.
+    Judge the question on its substance, not its phrasing: a decision taken is an answer even if \
+    nobody wrote it as one.
     """
 
     private static func schema() -> [String: Any] {
@@ -457,19 +569,35 @@ enum ClaimSynthesizer {
                     "type": "array",
                     "items": ["type": "string"],
                     "description": "refs of already-concluded claims that still stand, unchanged"
+                ],
+                "questions": [
+                    "type": "array",
+                    "items": [
+                        "type": "object",
+                        "properties": [
+                            "ref": ["type": "string"],
+                            "status": ["type": "string", "enum": ["open", "answered", "duplicate"]],
+                            "answer": ["type": "string"],
+                            "evidence": ["type": "array", "items": ["type": "string"]],
+                            "same_as": ["type": "string"]
+                        ],
+                        "required": ["ref", "status"],
+                        "additionalProperties": false
+                    ]
                 ]
             ],
-            "required": ["claims", "keep"],
+            "required": ["claims", "keep", "questions"],
             "additionalProperties": false
         ]
     }
 
-    private static func ask(_ ai: ClaudeAIService, prompt: String,
-                            model: String) async -> (claims: [[String: Any]], keep: [String])? {
+    private static func ask(_ ai: ClaudeAIService, prompt: String, model: String)
+        async -> (claims: [[String: Any]], keep: [String], questions: [[String: Any]])? {
         do {
             let obj = try await ai.generateStructured(
-                prompt: prompt, system: system, schema: schema(), maxTokens: 2600, useModel: model)
-            return ((obj["claims"] as? [[String: Any]]) ?? [], (obj["keep"] as? [String]) ?? [])
+                prompt: prompt, system: system, schema: schema(), maxTokens: 3200, useModel: model)
+            return ((obj["claims"] as? [[String: Any]]) ?? [], (obj["keep"] as? [String]) ?? [],
+                    (obj["questions"] as? [[String: Any]]) ?? [])
         } catch {
             print("[ClaimSynthesizer] cluster failed on \(model): \(error)")
             return nil
@@ -536,6 +664,18 @@ enum ClaimSynthesizer {
             if store.archiveFacet(id: id) { n += 1 }
         }
         return n
+    }
+
+    /// The model writes a ref as "[q3]", "q3" or "q3 (the duplicate)" depending on the day.
+    /// A strict lookup threw away eleven good claims in the first run over a pair of brackets,
+    /// so every ref is resolved the same tolerant way.
+    private static func resolveRef(_ raw: String?, _ map: [String: String]) -> String? {
+        guard let raw = raw?.lowercased() else { return nil }
+        for token in raw.components(separatedBy: CharacterSet.alphanumerics.inverted)
+            where !token.isEmpty {
+            if let id = map[token] { return id }
+        }
+        return nil
     }
 
     private static func fnv1a(_ s: String) -> String {

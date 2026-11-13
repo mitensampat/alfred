@@ -257,7 +257,12 @@ class SelfModelStore {
         // materialize() doesn't drop the durability tag and force a re-classification.
         "durability", "durability_hash", "durability_source",
         // When this workspace was last read by the claim-synthesis pass (drives its rotation).
-        "claims_at", "workspace", "support", "support_days", "rationale", "proposed", "superseded"
+        "claims_at", "workspace", "support", "support_days", "rationale", "proposed", "superseded",
+        // A closed question's answer, and what it was folded into. The daily materialize()
+        // re-upserts the top open questions with empty metadata, so without these the answer
+        // Alfred concluded would be wiped the next morning and the row would read as closed
+        // with nothing to show for it.
+        "answer", "answered_at", "answered_by", "answer_support", "answer_evidence", "duplicate_of"
     ]
 
     /// Insert a facet, or replace it if the id already exists.

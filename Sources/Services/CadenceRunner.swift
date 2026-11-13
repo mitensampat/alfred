@@ -249,11 +249,17 @@ class CadenceRunner {
         let clusters = 40
         // The weekly run migrates: by the time it runs, its claims replace that workspace's
         // one-thread fragments (anything the user confirmed, kept or re-worded is left alone).
+        _ = SelfModelSynthesizer.backfillQuestionLineage()
         let r = await ClaimSynthesizer.run(maxClusters: clusters, migrate: true)
+        // Tensions read the claims, so they are found after the claims are written, never before.
+        let t = await TensionFinder.run()
         UserWikiComposer.write()
         return "Claims: \(r.beliefs) beliefs + \(r.values) values across \(r.clusters) workspaces "
             + "(\(r.kept) reaffirmed, \(r.updated) restated, \(r.thin) too thin, \(r.retired) retired, "
-            + "\(r.legacyRetired) fragments superseded, \(r.failures) failed) on \(r.model)"
+            + "\(r.legacyRetired) fragments superseded, \(r.failures) failed); "
+            + "questions: \(r.questionsAnswered) answered, \(r.questionsMerged) merged "
+            + "of \(r.questionsRead) read; "
+            + "tensions: \(t.found) (\(t.kept) standing, \(t.retired) retired) — on \(r.model)"
     }
 
     // MARK: - Individual Runners
