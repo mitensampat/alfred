@@ -59,6 +59,14 @@ class CorrectionTracker {
         print("📝 Recorded false positive: \(title)")
     }
 
+    /// Take back the most recent false positive recorded for a title — the user undid the
+    /// dismissal, so it must not go on telling the extractor that this was not a real item.
+    func withdrawFalsePositive(title: String) {
+        guard let i = store.corrections.lastIndex(where: { $0.type == .falsePositive && $0.title == title }) else { return }
+        store.corrections.remove(at: i)
+        scheduleSave()
+    }
+
     /// Record when user edits an item's title or description
     func recordEdit(
         itemType: String,

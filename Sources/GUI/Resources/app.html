@@ -130,6 +130,28 @@ h1{margin:0;font-family:var(--serif);font-weight:400;font-size:30px}
 .rowmain .t{margin-top:2px;font-size:15px;line-height:1.38}
 .due{flex:0 0 auto;font-size:12px;color:var(--quiet);padding-right:2px}
 .due.today{color:var(--warmtext)}
+.ev{margin-top:3px;font-size:13px;line-height:1.35;color:var(--quiet);display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.ev.two{-webkit-line-clamp:2}
+@media (max-width: 899px){ .ev{-webkit-line-clamp:2} }
+.row .icon{flex:0 0 auto;margin-right:-8px}
+.strip{margin-top:16px;display:flex;align-items:center;gap:12px;padding:12px 14px 12px 16px;background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:16px}
+.grp{width:100%;min-height:48px;display:flex;align-items:center;gap:8px;border:none;border-bottom:1px solid var(--hair);background:none;padding:0;font-size:15px;text-align:left}
+.grp .n{color:var(--quiet);font-size:13px}
+.grp .c{margin-left:auto;color:var(--faint);display:inline-flex;transition:transform .12s ease}
+.grp.open .c{transform:rotate(90deg)}
+.quote{margin-top:12px;border-left:3px solid var(--accent-line);padding:4px 0 4px 12px}
+.quote .q{margin-top:2px;font-size:15px;line-height:1.45;overflow-wrap:anywhere}
+.msgs{margin-top:8px;display:flex;flex-direction:column;gap:6px}
+.msg{max-width:88%;padding:7px 11px;border-radius:14px;background:var(--sunk);border:1px solid var(--hair2);font-size:14px;line-height:1.4;align-self:flex-start;overflow-wrap:anywhere}
+.msg.me{align-self:flex-end;background:var(--accent-soft);border-color:var(--accent-line)}
+.msg.src{border:1.5px solid var(--accent)}
+.msg .mm{font-size:11px;color:var(--quiet);margin-bottom:1px}
+.prog{margin-top:8px;height:3px;background:var(--hair);border-radius:2px;overflow:hidden}
+.prog i{display:block;height:100%;background:var(--accent)}
+.kbd{display:none;margin-left:6px;min-width:18px;padding:0 4px;height:18px;border-radius:5px;border:1px solid currentColor;font-size:11px;line-height:16px;text-align:center;opacity:.6;font-weight:400}
+@media (min-width: 900px){ .kbd{display:inline-block} .swipehint{display:none} }
+.optbtn{width:100%;min-height:50px;display:flex;align-items:center;justify-content:space-between;border:none;border-bottom:1px solid var(--hair2);background:none;padding:0;font-size:16px;text-align:left}
+.optbtn span:last-child{color:var(--quiet);font-size:14px}
 
 .more-toggle{margin-top:8px;width:100%;min-height:52px;display:flex;align-items:center;justify-content:space-between;border:none;border-bottom:1px solid var(--hair);background:none;padding:0;color:var(--quiet);font-size:15px;text-align:left}
 .more-list{display:none;flex-direction:column;gap:8px;padding-top:10px}
@@ -268,6 +290,7 @@ const S = {
   tab: 'now', token: null, me: '',
   now: null, todos: null, fronts: null, people: null, status: null,
   filter: 'all', pfilter: 'all', addPerson: false, addPersonName: '', showMore: false, replyId: null,
+  q: '', openGroups: {}, showWaiting: false, review: null,
   sheet: null,           // { kind, id, data }
   showLog: false,
   chat: [], chatSession: null,
@@ -415,7 +438,12 @@ function renderView() {
   if (S.page) { el.innerHTML = viewPage(); return; }
   document.getElementById('dateLabel').textContent = (S.now && S.now.date_label) || '';
   if (S.tab === 'now') el.innerHTML = S.now ? viewNow() : '<div class="loading">Loading…</div>';
-  if (S.tab === 'todos') el.innerHTML = S.todos ? viewTodos() : '<div class="loading">Loading…</div>';
+  if (S.tab === 'todos') {
+    const typing = document.activeElement && document.activeElement.id === 'todoQ';
+    el.innerHTML = S.todos ? viewTodos() : '<div class="loading">Loading…</div>';
+    const q = document.getElementById('todoQ');
+    if (typing && q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+  }
   if (S.tab === 'fronts') el.innerHTML = S.fronts ? viewFronts() : '<div class="loading">Loading…</div>';
   if (S.tab === 'people') el.innerHTML = S.people ? viewPeople() : '<div class="loading">Loading…</div>';
   // A background refresh (every two minutes, and on every visibilitychange) rebuilds this view
@@ -439,6 +467,7 @@ function postCard(t) {
     ${whoLine(t)}
     <div class="meta ${t.urgent?'urgent':''}">${t.urgent?'<span class="wdot"></span>':''}${esc(meta)}</div>
     <div class="body">${esc(t.title)}</div>
+    ${evLine(t, true)}
     ${compose}
     <div class="actions">
       <button type="button" class="btn" onclick="primary('${esc(t.id)}')">${primaryLabel(t)}</button>
@@ -448,18 +477,40 @@ function postCard(t) {
       <button type="button" class="icon" aria-label="Open details" onclick="openTodo('${esc(t.id)}')">${icon('chev')}</button>
     </div></article>`;
 }
+// ── the words a to-do came from, and who owes whom ──
+function byLabel(t) {
+  const b = t.evidence_by || ''; if (!b) return '';
+  return (b === 'You' || (S.me && firstName(b).toLowerCase() === S.me.toLowerCase())) ? 'You' : firstName(b);
+}
+function shortDate(iso) {
+  if (!iso) return ''; const d = new Date(iso); if (isNaN(d)) return '';
+  const n = new Date(), days = Math.round((new Date(n.getFullYear(), n.getMonth(), n.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+  return days === 0 ? 'today' : days === 1 ? 'yesterday' : d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+}
+function evHead(t) { return [byLabel(t), shortDate(t.evidence_at)].filter(Boolean).join(', '); }
+function evLine(t, two) {
+  if (!t.evidence) return ''; const head = evHead(t);
+  return `<div class="ev ${two ? 'two' : ''}">${head ? esc(head) + ': ' : ''}“${esc(t.evidence)}”</div>`;
+}
+function dirLabel(t) { return !t.person ? '' : (t.direction === 'they_owe' ? 'owes you' : (t.direction === 'i_owe' ? 'you owe' : '')); }
+function whoHtml(t) {
+  const who = t.person || t.front_name || ''; if (!who) return '';
+  const bits = [dirLabel(t), t.person && t.front_name ? t.front_name : ''].filter(Boolean).join(' · ');
+  return `<div class="who"><b>${esc(who)}</b>${bits ? ` <span style="color:var(--quiet)">· ${esc(bits)}</span>` : ''}</div>`;
+}
 function rowCard(t) {
+  const waiting = t.kind === 'waiting' || t.status === 'suggested';
   const due = t.snoozed_until && t.bucket === 'upcoming' ? dayLabel(t.snoozed_until) : (t.due ? dayLabel(t.due) : '');
   const isToday = t.due && t.due <= todayISO();
-  const who = t.person || t.front_name || '';
-  const sub = t.person && t.front_name ? '· ' + t.front_name : '';
   return `<div class="card row">
-    <button type="button" class="check" aria-label="Mark done" onclick="done('${esc(t.id)}')"><span></span></button>
-    <button type="button" class="rowmain" onclick="openTodo('${esc(t.id)}')">
-      ${who ? `<div class="who"><b>${esc(who)}</b> <span style="color:var(--quiet)">${esc(sub)}</span></div>` : ''}
+    ${waiting ? '<span style="flex:0 0 12px"></span>' : `<button type="button" class="check" aria-label="Mark done" onclick="done(${ja(t.id)})"><span></span></button>`}
+    <button type="button" class="rowmain" onclick="openTodo(${ja(t.id)})">
+      ${whoHtml(t)}
       <div class="t">${esc(t.title)}</div>
+      ${evLine(t)}
     </button>
-    <div class="due ${isToday?'today':''}">${esc(due)}</div></div>`;
+    ${due ? `<div class="due ${isToday?'today':''}">${esc(due)}</div>` : ''}
+    ${waiting ? '' : `<button type="button" class="icon" aria-label="Move or drop: ${esc(t.title)}" onclick="openSnooze(${ja(t.id)})">${icon('clock')}</button>`}</div>`;
 }
 
 function viewNow() {
@@ -503,26 +554,72 @@ function viewNow() {
   return h;
 }
 
+// To-dos: your own work first. What needs a decision (suggestions, closures Alfred thinks it saw)
+// is one strip that opens a one-at-a-time review, not a wall above the list.
+function reviewItems() {
+  const cl = ((S.closures && S.closures.pendingClosures) || []).map(c => ({ type: 'closure', c }));
+  const sg = ((S.todos && S.todos.suggested) || []).map(t => ({ type: 'suggest', t }));
+  return sg.concat(cl);   // suggestions first: they are new work, closures are bookkeeping
+}
+function todoMatch(t) {
+  const q = (S.q || '').trim().toLowerCase(); if (!q) return true;
+  return [t.title, t.person, t.front_name, t.evidence].some(v => v && String(v).toLowerCase().includes(q));
+}
 function viewTodos() {
   const d = S.todos; let h = `<h1 style="padding-top:18px">To-dos</h1><div class="chips">`;
   h += (d.chips || []).map(c => `<button type="button" class="chipbtn ${S.filter===c.key?'on':''}" onclick="setFilter('${esc(c.key)}')">${esc(c.label)}</button>`).join('') + '</div>';
-  h += viewClosures();
-  if ((d.suggested || []).length) {
-    h += `<div class="section"><div class="label">Suggested by Alfred · ${d.suggested.length} waiting for you</div><div class="stack">`;
-    h += d.suggested.map(g => `<article class="card dashed post" style="display:flex;gap:12px">
-        ${g.person ? `<span class="avatar" aria-hidden="true" style="width:40px;height:40px">${esc(initials(g.person))}</span>` : ''}
-        <div style="flex:1 1 auto;min-width:0">
-          <div class="who"><b>${esc(g.person || 'You')}</b><span style="color:var(--quiet)">· suggested</span></div>
-          <div class="body" style="font-size:16px;margin-top:4px">${esc(g.title)}</div>
-          <div class="label" style="font-size:12px;margin-top:4px">${esc(g.source_note || '')}</div>
-          <div class="actions"><button type="button" class="btn outline" onclick="accept('${esc(g.id)}')">Accept</button><button type="button" class="ghost" onclick="dismissTodo('${esc(g.id)}')">Dismiss</button></div>
-        </div></article>`).join('') + '</div></div>';
+  h += `<input id="todoQ" class="field" type="search" placeholder="Search to-dos" aria-label="Search to-dos" autocomplete="off" style="margin-top:12px;padding:10px 14px;font-size:16px" value="${esc(S.q || '')}" oninput="S.q=this.value;paintTodos()">`;
+  return h + `<div id="todoBody">${todoBody()}</div>`;
+}
+function paintTodos() { const el = document.getElementById('todoBody'); if (el) el.innerHTML = todoBody(); }
+function grpBtn(key, label, n, open, call) {
+  return `<button type="button" class="grp ${open ? 'open' : ''}" aria-expanded="${open ? 'true' : 'false'}" onclick="${call}"><span>${esc(label)}</span><span class="n">${n}</span><span class="c">${icon('chev', 16)}</span></button>`;
+}
+function toggleGroup(k) { S.openGroups[k] = !S.openGroups[k]; paintTodos(); }
+function somedayHtml(rows, searching) {
+  if (!rows.length) return '<div class="empty">Nothing here.</div>';
+  // A short list reads fine flat. A long one is grouped by person, closed, so it is a page of
+  // names with counts rather than a hundred rows to scroll past.
+  if (rows.length <= 12 || searching) return `<div class="stack tight">${rows.map(rowCard).join('')}</div>`;
+  const g = {}; rows.forEach(t => (g[t.person || ''] = g[t.person || ''] || []).push(t));
+  const keys = Object.keys(g).sort((a, b) => a === '' ? 1 : b === '' ? -1 : (g[b].length - g[a].length || a.localeCompare(b)));
+  return `<div style="padding-top:4px">` + keys.map(k => {
+    const open = !!S.openGroups[k];
+    return grpBtn(k, k || 'No person', g[k].length, open, `toggleGroup(${ja(k)})`) + (open ? `<div class="stack tight" style="padding:8px 0 10px">${g[k].map(rowCard).join('')}</div>` : '');
+  }).join('') + '</div>';
+}
+function todoBody() {
+  const d = S.todos; let h = '';
+  const searching = !!(S.q || '').trim();
+  const rv = reviewItems();
+  if (rv.length && !searching) {
+    const nc = rv.filter(x => x.type === 'closure').length, ns = rv.length - nc;
+    h += `<div class="strip"><div style="flex:1 1 auto;min-width:0"><b style="font-weight:600">${rv.length} to review</b>
+      <div class="label">${[ns ? ns + ' suggested' : '', nc ? nc + ' may be finished' : ''].filter(Boolean).join(' · ')}</div></div>
+      <button type="button" class="btn" onclick="openReview()">Review<span class="kbd">R</span></button></div>`;
   }
-  h += viewHidden();
+  let shown = 0;
+  // A search looks through the suggestions too, so something Alfred picked up but you have not
+  // accepted yet can still be found by a word in it.
+  const sug = searching ? (d.suggested || []).filter(todoMatch) : [];
+  if (sug.length) {
+    shown += sug.length;
+    h += `<div class="section"><div class="label">Suggested, not accepted yet</div><div class="stack tight">${sug.map(rowCard).join('')}</div></div>`;
+  }
   for (const [k, label] of [['today','Today'],['upcoming','Upcoming'],['someday','Someday']]) {
-    const rows = d[k] || [];
-    h += `<div class="section"><div class="label">${label}</div>${rows.length ? `<div class="stack tight">${rows.map(rowCard).join('')}</div>` : '<div class="empty">Nothing here.</div>'}</div>`;
+    const rows = (d[k] || []).filter(todoMatch); shown += rows.length;
+    if (searching && !rows.length) continue;
+    h += `<div class="section"><div class="label">${label}${rows.length > 8 ? ' · ' + rows.length : ''}</div>` +
+      (k === 'someday' ? somedayHtml(rows, searching) : (rows.length ? `<div class="stack tight">${rows.map(rowCard).join('')}</div>` : '<div class="empty">Nothing here.</div>')) + '</div>';
   }
+  const wait = (d.waiting || []).filter(todoMatch); shown += wait.length;
+  if (wait.length) {
+    const open = S.showWaiting || searching;
+    h += `<div class="section">` + grpBtn('', 'Waiting on others', wait.length, open, 'S.showWaiting=!S.showWaiting;paintTodos()') +
+      (open ? `<div class="stack tight" style="padding:8px 0 10px">${wait.map(rowCard).join('')}</div>` : '') + '</div>';
+  }
+  if (searching && !shown) h += `<div class="empty" style="margin-top:16px">Nothing matches “${esc(S.q.trim())}”.</div>`;
+  if (!searching) h += viewHidden();
   return h;
 }
 
@@ -651,7 +748,7 @@ function renderAside() {
 function findTodo(id) {
   const pools = [];
   if (S.now) pools.push(S.now.top || [], S.now.more || [], S.now.pinned ? [S.now.pinned] : []);
-  if (S.todos) pools.push(S.todos.today || [], S.todos.upcoming || [], S.todos.someday || [], S.todos.suggested || []);
+  if (S.todos) pools.push(S.todos.today || [], S.todos.upcoming || [], S.todos.someday || [], S.todos.suggested || [], S.todos.waiting || []);
   if (S.sheet && S.sheet.data) pools.push(S.sheet.data.todos || [], S.sheet.data.owe || []);
   for (const p of pools) { const t = p.find(x => x.id === id); if (t) return t; }
   return null;
@@ -674,7 +771,15 @@ function primary(id) {
 const done = id => act('/api/v2/todos/done', { id }, () => act('/api/v2/todos/undo', { id }));
 const notNow = id => act('/api/v2/todos/snooze', { id }, () => act('/api/v2/todos/unsnooze', { id }));
 const accept = id => act('/api/v2/todos/accept', { id });
-const dismissTodo = id => act('/api/v2/todos/dismiss', { id });
+// Dropping is undoable: the to-do goes back where it was (the tray or the list) and the dismissal
+// stops counting as something Alfred should learn from.
+const dismissTodo = id => {
+  const t = findTodo(id), to = t && t.status === 'suggested' ? 'suggested' : 'open';
+  return act('/api/v2/todos/dismiss', { id }, () => act('/api/v2/todos/undismiss', { id, to }));
+};
+function isoPlus(n) { const d = new Date(); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+function nextDow(dow) { const n = (dow - new Date().getDay() + 7) % 7; return isoPlus(n === 0 ? 7 : n); }
+function snoozeTo(id, day) { if (!day) return; closeSheet(); act('/api/v2/todos/snooze', { id, until: day }, () => act('/api/v2/todos/unsnooze', { id })); }
 // Something you are waiting on that was never real, or no longer matters. Undo restores it:
 // /todos/undo reopens the to-do AND reopens the commitment in the tracker and in Notion, so the
 // tracker's closure flow-back does not quietly close it again on the next load.
@@ -715,7 +820,7 @@ function renderSheet() {
   const s = S.sheet, host = document.getElementById('sheetHost');
   if (!s) { host.innerHTML = ''; return; }
   const mode = sheetMode(s.kind);
-  const inner = ({ add: sheetAdd, you: sheetYou, front: sheetFront, person: sheetPerson, todo: sheetTodo, activate: sheetActivate, migrate: sheetMigrate, newfront: sheetNewFront, chat: sheetChat, wa: sheetWa, mirror: sheetMirror, skill: sheetSkill, export: sheetExport, capture: sheetCapture })[s.kind](s);
+  const inner = ({ add: sheetAdd, you: sheetYou, front: sheetFront, person: sheetPerson, todo: sheetTodo, snooze: sheetSnooze, review: sheetReview, activate: sheetActivate, migrate: sheetMigrate, newfront: sheetNewFront, chat: sheetChat, wa: sheetWa, mirror: sheetMirror, skill: sheetSkill, export: sheetExport, capture: sheetCapture })[s.kind](s);
   host.innerHTML = `${mode !== 'm-side' ? '<button type="button" class="scrim" aria-label="Close" onclick="closeSheet()"></button>' : ''}
     <div class="sheet ${mode}" role="dialog" aria-modal="${mode !== 'm-side'}">${mode === 'm-sheet' ? '<div class="grab"><span></span></div>' : ''}
       <div class="close"><button type="button" onclick="closeSheet()">Close</button></div>${inner}</div>`;
@@ -724,6 +829,18 @@ function renderSheet() {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && S.sheet) closeSheet();
   if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); openAdd(); }
+  if (e.metaKey || e.ctrlKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) return;
+  const k = e.key.toLowerCase();
+  if (S.sheet && S.sheet.kind === 'review') {
+    if (k === 'a' || k === 'y') { e.preventDefault(); rvYes(); }
+    else if (k === 'd' || k === 'n') { e.preventDefault(); rvNo(); }
+    else if (k === 's' || e.key === 'ArrowRight') { e.preventDefault(); rvStep(1); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); rvStep(-1); }
+    else if (k === 'e') { e.preventDefault(); rvEdit(); }
+  } else if (!S.sheet && !S.page && S.tab === 'todos') {
+    if (e.key === '/') { const q = document.getElementById('todoQ'); if (q) { e.preventDefault(); q.focus(); } }
+    else if (k === 'r' && reviewItems().length) { e.preventDefault(); openReview(); }
+  }
 });
 
 // ── add ──
@@ -828,32 +945,158 @@ async function askAlfred(q) {
 }
 
 // ── a to-do ──
-function openTodo(id) { const t = findTodo(id); if (t) openSheet('todo', id, t); }
+function openTodo(id) { const t = findTodo(id); if (!t) return; openSheet('todo', id, t); loadTodoContext(id, t); }
+// The conversation is painted into its own box when it arrives, never by re-rendering the sheet:
+// a re-render would throw away whatever is half-typed in the fields above it.
+async function loadTodoContext(id, t) {
+  const box = () => document.getElementById('tdCtx');
+  if (!t.thread_id) return;
+  try {
+    const c = await api('/api/v2/todos/context?id=' + encodeURIComponent(id));
+    if (!S.sheet || S.sheet.kind !== 'todo' || S.sheet.id !== id || !box()) return;
+    box().innerHTML = ctxHtml(c, t);
+  } catch (e) { if (box()) box().innerHTML = ''; }
+}
+function msgTime(iso) { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ', ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+function ctxHtml(c, t) {
+  const m = c.messages || [];
+  const wa = String(t.thread_id || '').includes('@');
+  let h = '';
+  if (m.length) {
+    h += `<div class="label" style="margin-top:20px">${m.some(x => x.source) ? 'The conversation around it' : 'What was being said at the time'}</div><div class="msgs">` +
+      m.map(x => `<div class="msg ${x.me ? 'me' : ''} ${x.source ? 'src' : ''}"><div class="mm">${esc(x.me ? 'You' : firstName(x.from))} · ${esc(msgTime(x.at))}</div>${esc(x.text)}</div>`).join('') + '</div>';
+    if (c.latest) h += `<div class="label" style="margin-top:14px">Latest in this thread · ${esc(msgTime(c.latest.at))}</div><div class="msgs"><div class="msg ${c.latest.me ? 'me' : ''}"><div class="mm">${esc(c.latest.me ? 'You' : firstName(c.latest.from))}</div>${esc(c.latest.text)}</div></div>`;
+  } else if (wa) {
+    h += `<div class="label" style="margin-top:20px">The messages from that time are no longer in Alfred's WhatsApp history.</div>`;
+  }
+  if (wa && t.person) {
+    const mine = t.kind !== 'waiting';
+    h += `<div class="compose"><div class="label" style="font-size:12px">To ${esc(firstName(t.person))} · WhatsApp</div>
+      <textarea id="tdReply" rows="3" aria-label="Message">${esc(t.draft || ('Hi ' + firstName(t.person) + ', '))}</textarea>
+      <div style="margin-top:6px"><button type="button" class="btn" onclick="sheetSend(${ja(t.id)})">${mine ? 'Send and mark done' : 'Send nudge'}</button></div></div>`;
+  }
+  return h;
+}
+async function sheetSend(id) {
+  const ta = document.getElementById('tdReply'); const text = ta ? ta.value.trim() : ''; if (!text) return;
+  const r = await act('/api/v2/todos/reply', { id, text });
+  if (r && r.ok !== false) closeSheet();
+}
+function quoteHtml(t) {
+  if (!t.evidence) return '';
+  const head = evHead(t);
+  return `<div class="quote">${head ? `<div class="label" style="font-size:12px">${esc(head)}</div>` : ''}<div class="q">“${esc(t.evidence)}”</div></div>`;
+}
 function sheetTodo(s) {
   const t = s.data;
   const fronts = (S.fronts && S.fronts.fronts) || (S.now && S.now.fronts_glance) || [];
   const opts = ['<option value="">No front</option>'].concat(fronts.map(f => `<option value="${esc(f.id)}" ${t.front_id===f.id?'selected':''}>${esc(f.name)}</option>`)).join('');
-  return `<div class="label" style="padding-top:6px">${esc(t.source_note || '')}</div>
+  const dir = t.person ? (t.direction === 'they_owe' ? firstName(t.person) + ' owes you this' : (t.direction === 'i_owe' ? 'You owe ' + firstName(t.person) + ' this' : '')) : '';
+  const waiting = t.kind === 'waiting', sug = t.status === 'suggested';
+  return `<div class="label" style="padding-top:6px;padding-right:56px">${esc([t.source_note, dir].filter(Boolean).join(' · '))}</div>
     <label for="tdTitle" class="label" style="display:block;margin-top:14px">To-do</label>
     <textarea id="tdTitle" class="field" rows="2">${esc(t.title)}</textarea>
+    ${quoteHtml(t)}
     <div style="margin-top:12px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
       <label class="label">Front<select id="tdFront" class="field" style="padding:10px 12px;font-size:15px">${opts}</select></label>
       <label class="label">Person<input id="tdPerson" class="field" style="padding:10px 12px;font-size:15px" value="${esc(t.person || '')}"></label>
       <label class="label">Due<input id="tdDue" type="date" class="field" style="padding:10px 12px;font-size:15px" value="${esc(t.due || '')}"></label>
     </div>
-    <div style="margin-top:18px;display:flex;gap:8px;flex-wrap:wrap">
-      <button type="button" class="btn" onclick="saveTodo('${esc(t.id)}')">Save</button>
-      ${t.status === 'suggested' ? `<button type="button" class="btn outline" onclick="closeSheet();accept('${esc(t.id)}')">Accept</button>` : `<button type="button" class="btn outline" onclick="closeSheet();done('${esc(t.id)}')">Done</button>`}
-      <button type="button" class="ghost" onclick="closeSheet();pin('${esc(t.id)}')">${icon('pin')}Pin</button>
-      <button type="button" class="ghost" onclick="closeSheet();notNow('${esc(t.id)}')">${icon('clock')}Tomorrow</button>
+    <div style="margin-top:18px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      ${sug ? `<button type="button" class="btn" onclick="saveTodo(${ja(t.id)},true)">Save and accept</button>`
+            : `<button type="button" class="btn" onclick="saveTodo(${ja(t.id)})">Save</button>
+               <button type="button" class="btn outline" onclick="closeSheet();done(${ja(t.id)})">${waiting ? 'Received' : 'Done'}</button>`}
+      ${sug || waiting ? '' : `<button type="button" class="ghost" onclick="closeSheet();pin(${ja(t.id)})">${icon('pin')}Pin</button>
+      <button type="button" class="ghost" onclick="openSnooze(${ja(t.id)})">${icon('clock')}Later</button>`}
       <span class="spacer"></span>
-      <button type="button" class="ghost" onclick="closeSheet();dismissTodo('${esc(t.id)}')">Drop it</button>
-    </div>`;
+      <button type="button" class="ghost" onclick="closeSheet();dismissTodo(${ja(t.id)})">${sug ? 'Dismiss' : 'Drop it'}</button>
+    </div>
+    <div id="tdCtx">${t.thread_id ? '<div class="label" style="margin-top:20px">Loading the conversation…</div>' : ''}</div>`;
 }
-async function saveTodo(id) {
+async function saveTodo(id, accept) {
   const body = { id, title: document.getElementById('tdTitle').value.trim(), front_id: document.getElementById('tdFront').value || '',
                  person: document.getElementById('tdPerson').value.trim(), due: document.getElementById('tdDue').value || '' };
-  closeSheet(); const r = await post('/api/v2/todos/update', body); toast(r.ok ? 'Saved' : 'Could not save'); refresh();
+  closeSheet(); const r = await post('/api/v2/todos/update', body);
+  if (accept && r.ok) return act('/api/v2/todos/accept', { id });
+  toast(r.ok ? 'Saved' : 'Could not save'); refresh();
+}
+
+// ── later, or not at all ──
+function openSnooze(id) { const t = findTodo(id) || (S.sheet && S.sheet.kind === 'todo' && S.sheet.id === id ? S.sheet.data : null); if (t) openSheet('snooze', id, t); }
+function sheetSnooze(s) {
+  const t = s.data, seen = {};
+  const opts = [['Tomorrow', isoPlus(1)], ['Saturday', nextDow(6)], ['Monday', nextDow(1)], ['In two weeks', isoPlus(14)]]
+    .filter(o => !seen[o[1]] && (seen[o[1]] = 1));
+  const fmt = iso => new Date(iso + 'T12:00:00').toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+  return `<div class="label" style="padding-top:6px;padding-right:56px">Move it to</div>
+    <div class="serif" style="font-size:20px;line-height:1.3;margin-top:2px">${esc(t.title)}</div>
+    <div style="margin-top:12px">${opts.map(o => `<button type="button" class="optbtn" onclick="snoozeTo(${ja(t.id)},'${o[1]}')"><span>${o[0]}</span><span>${esc(fmt(o[1]))}</span></button>`).join('')}
+      <label class="optbtn" style="cursor:pointer"><span>Pick a day</span><input type="date" class="field mini" style="width:auto;margin:0" min="${isoPlus(1)}" aria-label="Pick a day" onchange="snoozeTo(${ja(t.id)},this.value)"></label></div>
+    <div style="margin-top:14px;display:flex"><span class="spacer"></span><button type="button" class="ghost" onclick="closeSheet();dismissTodo(${ja(t.id)})">Drop it instead</button></div>`;
+}
+
+// ── review: one decision at a time ──
+function openReview() { S.review = { q: reviewItems(), i: 0, edit: false }; if (S.review.q.length) openSheet('review', null, null); }
+function rvCur() { const r = S.review; return r && r.q[r.i]; }
+function rvStep(n) { const r = S.review; if (!r) return; r.i = Math.max(0, Math.min(r.q.length, r.i + n)); r.edit = false; if (S.sheet && S.sheet.kind === 'review') renderSheet(); }
+function rvEdit() { const it = rvCur(); if (!it || it.type !== 'suggest') return; S.review.edit = !S.review.edit; renderSheet(); if (S.review.edit) setTimeout(() => { const f = document.getElementById('rvTitle'); if (f) f.focus(); }, 40); }
+async function rvYes() {
+  const it = rvCur(); if (!it) return;
+  if (it.type === 'closure') { closure(it.c.hash, true); return rvStep(1); }
+  const id = it.t.id;
+  if (S.review.edit) {
+    const body = { id, title: document.getElementById('rvTitle').value.trim(), person: document.getElementById('rvPerson').value.trim(), due: document.getElementById('rvDue').value || '' };
+    if (!body.title) return;
+    rvStep(1); await post('/api/v2/todos/update', body);
+  } else rvStep(1);
+  act('/api/v2/todos/accept', { id });
+}
+function rvNo() {
+  const it = rvCur(); if (!it) return;
+  if (it.type === 'closure') closure(it.c.hash, false); else dismissTodo(it.t.id);
+  rvStep(1);
+}
+let _rvX = null;
+function rvTS(e) { _rvX = e.touches && e.touches.length === 1 ? e.touches[0].clientX : null; }
+function rvTE(e) {
+  if (_rvX == null || (S.review && S.review.edit)) return;
+  const dx = (e.changedTouches[0] || {}).clientX - _rvX; _rvX = null;
+  if (dx > 90) rvYes(); else if (dx < -90) rvNo();
+}
+function sheetReview() {
+  const r = S.review, n = r.q.length;
+  if (r.i >= n) return `<div class="serif" style="font-size:24px;padding-top:6px">All reviewed</div>
+    <p style="font-size:15px;line-height:1.5;color:var(--body)">Nothing else is waiting for a decision.</p>
+    <button type="button" class="btn big" style="width:100%" data-autofocus onclick="closeSheet()">Back to your list</button>`;
+  const it = r.q[r.i];
+  let h = `<div class="label" style="padding-top:6px;padding-right:56px">${r.i + 1} of ${n}</div><div class="prog"><i style="width:${Math.round(r.i / n * 100)}%"></i></div>
+    <div ontouchstart="rvTS(event)" ontouchend="rvTE(event)" style="min-height:190px">`;
+  if (it.type === 'closure') {
+    const c = it.c;
+    h += `<div class="label" style="margin-top:18px">Did you finish this?</div>
+      <div class="serif" style="font-size:22px;line-height:1.3;margin-top:4px">${esc(c.title)}</div>
+      <div class="quote"><div class="label" style="font-size:12px">What Alfred saw · ${Math.round((c.confidence || 0) * 100)}% sure</div><div class="q">${esc(c.signal || '')}</div></div></div>
+      <div style="margin-top:18px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button type="button" class="btn big" onclick="rvYes()">Yes, done<span class="kbd">Y</span></button>
+        <button type="button" class="btn big plain" onclick="rvNo()">Still open<span class="kbd">N</span></button>
+        <span class="spacer"></span><button type="button" class="ghost" onclick="rvStep(1)">Skip<span class="kbd">S</span></button></div>`;
+  } else {
+    const t = it.t;
+    h += `<div class="label" style="margin-top:18px">${esc(t.source_note || 'Suggested by Alfred')}</div>
+      <div style="margin-top:6px">${whoHtml(t)}</div>` +
+      (r.edit ? `<textarea id="rvTitle" class="field" rows="2" aria-label="To-do">${esc(t.title)}</textarea>
+        <div style="margin-top:8px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
+          <label class="label">Person<input id="rvPerson" class="field" style="padding:10px 12px;font-size:15px" value="${esc(t.person || '')}"></label>
+          <label class="label">Due<input id="rvDue" type="date" class="field" style="padding:10px 12px;font-size:15px" value="${esc(t.due || '')}"></label></div>`
+        : `<div class="serif" style="font-size:22px;line-height:1.3;margin-top:4px">${esc(t.title)}</div>`) +
+      quoteHtml(t) + `</div>
+      <div style="margin-top:18px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button type="button" class="btn big" onclick="rvYes()">${r.edit ? 'Save and accept' : 'Accept'}${r.edit ? '' : '<span class="kbd">A</span>'}</button>
+        <button type="button" class="btn big plain" onclick="rvNo()">Dismiss${r.edit ? '' : '<span class="kbd">D</span>'}</button>
+        <button type="button" class="ghost" onclick="rvEdit()">${r.edit ? 'Cancel edit' : 'Edit'}${r.edit ? '' : '<span class="kbd">E</span>'}</button>
+        <span class="spacer"></span><button type="button" class="ghost" onclick="rvStep(1)">Skip<span class="kbd">S</span></button></div>`;
+  }
+  return h + `<div class="label swipehint" style="margin-top:12px;font-size:12px">Swipe right for yes, left for no.</div>`;
 }
 
 // ── a front ──

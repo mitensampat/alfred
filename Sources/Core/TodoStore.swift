@@ -45,6 +45,19 @@ final class TodoStore {
         var notionPageId: String?
         var dirty: Bool
         var draft: String?
+        /// Who owes whom, when a person is involved: "i_owe" | "they_owe". Stored when a source
+        /// states it (an arrow-prefixed Notion title); otherwise read off `kind` and `source`.
+        var direction: String?
+        /// The message this to-do came from: the words, who said them, and when (ISO 8601).
+        var evidence: String?
+        var evidenceAt: String?
+        var evidenceBy: String?
+
+        var resolvedDirection: String? {
+            if let d = direction { return d }
+            if kind == .waiting { return "they_owe" }
+            return (person != nil && source == "commitment") ? "i_owe" : nil
+        }
 
         var dict: [String: Any] {
             var d: [String: Any] = [
@@ -63,6 +76,10 @@ final class TodoStore {
             d["notion_page_id"] = notionPageId as Any? ?? NSNull()
             d["thread_id"] = threadId as Any? ?? NSNull()
             if let draft = draft { d["draft"] = draft }
+            d["direction"] = resolvedDirection as Any? ?? NSNull()
+            d["evidence"] = evidence as Any? ?? NSNull()
+            d["evidence_at"] = evidenceAt as Any? ?? NSNull()
+            d["evidence_by"] = evidenceBy as Any? ?? NSNull()
             return d
         }
     }
@@ -146,6 +163,11 @@ final class TodoStore {
         exec("CREATE INDEX IF NOT EXISTS idx_feedback_event ON todo_feedback(event, at)")
         // Suggestions Alfred hid on its own (learned from dismissals), with the reason it gives.
         exec("ALTER TABLE todos ADD COLUMN hidden_reason TEXT")
+        // Direction and source evidence (the message a to-do came from).
+        exec("ALTER TABLE todos ADD COLUMN direction TEXT")
+        exec("ALTER TABLE todos ADD COLUMN evidence TEXT")
+        exec("ALTER TABLE todos ADD COLUMN evidence_at TEXT")
+        exec("ALTER TABLE todos ADD COLUMN evidence_by TEXT")
         exec("CREATE INDEX IF NOT EXISTS idx_todos_status ON todos(status, kind)")
         exec("CREATE INDEX IF NOT EXISTS idx_todos_dedupe ON todos(dedupe_key)")
         exec("CREATE INDEX IF NOT EXISTS idx_todos_dirty ON todos(dirty)")
@@ -175,7 +197,7 @@ final class TodoStore {
 
     // MARK: - Reads
 
-    private static let columns = "id, title, status, kind, due, front_id, front_name, person, source, source_ref, source_note, thread_id, confidence, pinned, snoozed_until, skip_count, created_at, updated_at, done_at, notion_page_id, dirty, draft"
+    private static let columns = "id, title, status, kind, due, front_id, front_name, person, source, source_ref, source_note, thread_id, confidence, pinned, snoozed_until, skip_count, created_at, updated_at, done_at, notion_page_id, dirty, draft, direction, evidence, evidence_at, evidence_by"
 
     func all(where clause: String = "1=1", args: [String] = [], order: String = "created_at DESC", limit: Int = 2000) -> [Todo] {
         lock.lock(); defer { lock.unlock() }
@@ -305,6 +327,17 @@ final class TodoStore {
         sqlite3_step(stmt)
     }
 
+    /// Point every source link of one to-do at another (used when two rows turn out to be the
+    /// same promise). `todo_sources` is unique on (source, source_ref), so a link moves, never doubles.
+    func relinkSources(from loser: String, to winner: String) {
+        lock.lock(); defer { lock.unlock() }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, "UPDATE todo_sources SET todo_id = ? WHERE todo_id = ?", -1, &stmt, nil) == SQLITE_OK else { return }
+        bind(stmt, 1, winner); bind(stmt, 2, loser)
+        sqlite3_step(stmt)
+    }
+
     /// Update named fields. `nil` in `fields` clears a column (pass NSNull()).
     /// Every user-visible change marks the row dirty for the Notion mirror unless `markDirty` is false
     /// (used when the change itself came FROM Notion).
@@ -312,7 +345,8 @@ final class TodoStore {
     func update(_ id: String, _ fields: [String: Any?], markDirty: Bool = true, touch: Bool = true) -> Bool {
         let allowed: Set<String> = ["title", "status", "kind", "due", "front_id", "front_name", "person", "pinned",
                                     "snoozed_until", "skip_count", "done_at", "notion_page_id", "dirty", "draft",
-                                    "source_note", "updated_at", "hidden_reason"]
+                                    "source_note", "updated_at", "hidden_reason",
+                                    "thread_id", "direction", "evidence", "evidence_at", "evidence_by", "created_at"]
         var sets: [String] = []
         var vals: [Any?] = []
         for (k, v) in fields where allowed.contains(k) {
@@ -391,6 +425,18 @@ final class TodoStore {
         sqlite3_step(stmt)
     }
 
+    /// Take back the latest feedback row of one kind for a to-do (an undone dismissal must not
+    /// keep teaching Alfred to hide things like it).
+    func removeLatestFeedback(event: String, todoId: String) {
+        lock.lock(); defer { lock.unlock() }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        let sql = "DELETE FROM todo_feedback WHERE id = (SELECT id FROM todo_feedback WHERE event = ? AND todo_id = ? ORDER BY id DESC LIMIT 1)"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        bind(stmt, 1, event); bind(stmt, 2, todoId)
+        sqlite3_step(stmt)
+    }
+
     /// Feedback of the given events within the last `days`, newest first.
     func feedback(events: [String], days: Int = 120, limit: Int = 2000) -> [Feedback] {
         lock.lock(); defer { lock.unlock() }
@@ -461,6 +507,7 @@ final class TodoStore {
             snoozedUntil: col(s, 14),
             skipCount: Int(sqlite3_column_int64(s, 15)),
             createdAt: col(s, 16) ?? "", updatedAt: col(s, 17) ?? "", doneAt: col(s, 18),
-            notionPageId: col(s, 19), dirty: sqlite3_column_int64(s, 20) == 1, draft: col(s, 21))
+            notionPageId: col(s, 19), dirty: sqlite3_column_int64(s, 20) == 1, draft: col(s, 21),
+            direction: col(s, 22), evidence: col(s, 23), evidenceAt: col(s, 24), evidenceBy: col(s, 25))
     }
 }

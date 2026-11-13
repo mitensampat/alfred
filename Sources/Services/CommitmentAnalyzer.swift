@@ -95,7 +95,7 @@ class CommitmentAnalyzer {
             }
             let context = relevantMessages.map { "\($0.sender): \($0.content)" }.joined(separator: "\n")
 
-            return Commitment(
+            let commitment = Commitment(
                 type: type,
                 status: .open,
                 title: extracted.title,
@@ -110,6 +110,16 @@ class CommitmentAnalyzer {
                 // Carry the model's own confidence through instead of dropping it here.
                 confidence: extracted.confidence
             )
+            // Keep the words this came from, with who said them and when. Every caller of this
+            // analyzer records the extraction under the same hash, so storing the evidence here
+            // covers all of them at once.
+            let source = relevantMessages.last
+            CommitmentScanTracker.shared.recordEvidence(
+                hash: commitment.uniqueHash,
+                quote: source?.content ?? extracted.commitmentText,
+                saidBy: source.map { $0.direction == .outgoing ? userInfo.name : ($0.senderName ?? committedBy) } ?? committedBy,
+                saidAt: source?.timestamp)
+            return commitment
         }
 
         let dateRange = CommitmentExtraction.SourceInfo.DateRange(

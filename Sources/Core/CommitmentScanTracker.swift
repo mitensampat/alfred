@@ -112,6 +112,17 @@ class CommitmentScanTracker {
         sqlite3_exec(db, "ALTER TABLE commitment_extractions ADD COLUMN snooze_until DATETIME", nil, nil, nil)
 
         // Performance indexes
+        // The words a commitment was extracted from. Kept beside the extraction, keyed by the same
+        // hash, so every later surface can show its source instead of a bare title.
+        sqlite3_exec(db, """
+        CREATE TABLE IF NOT EXISTS commitment_evidence (
+            commitment_hash TEXT PRIMARY KEY,
+            quote TEXT,
+            said_by TEXT,
+            said_at TEXT,
+            recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+        """, nil, nil, nil)
         sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_ce_thread_open ON commitment_extractions(thread_id, was_closed)", nil, nil, nil)
         sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_ce_was_closed ON commitment_extractions(was_closed)", nil, nil, nil)
         sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_cd_commitment_hash ON closure_detections(commitment_hash)", nil, nil, nil)
@@ -285,6 +296,56 @@ class CommitmentScanTracker {
         sqlite3_bind_double(stmt, 6, confidence)
 
         sqlite3_step(stmt)
+    }
+
+    /// Keep the message a commitment came from. First writer wins: a rescan must not replace the
+    /// original words with a later paraphrase.
+    func recordEvidence(hash: String, quote: String, saidBy: String?, saidAt: Date?) {
+        let q = quote.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return }
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        var stmt: OpaquePointer?
+        let sql = "INSERT OR IGNORE INTO commitment_evidence (commitment_hash, quote, said_by, said_at) VALUES (?, ?, ?, ?)"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+        bindText(stmt, 1, hash)
+        bindText(stmt, 2, String(q.prefix(600)))
+        if let s = saidBy { bindText(stmt, 3, s) } else { sqlite3_bind_null(stmt, 3) }
+        if let d = saidAt { bindText(stmt, 4, Self.isoFormatter.string(from: d)) } else { sqlite3_bind_null(stmt, 4) }
+        sqlite3_step(stmt)
+    }
+
+    func evidence(hash: String) -> (quote: String, saidBy: String?, saidAt: String?)? {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT quote, said_by, said_at FROM commitment_evidence WHERE commitment_hash = ?", -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+        bindText(stmt, 1, hash)
+        guard sqlite3_step(stmt) == SQLITE_ROW, let q = sqlite3_column_text(stmt, 0) else { return nil }
+        return (String(cString: q), sqlite3_column_text(stmt, 1).map { String(cString: $0) },
+                sqlite3_column_text(stmt, 2).map { String(cString: $0) })
+    }
+
+    /// The extraction a title + counterparty came from, open or closed, newest first. Lets a to-do
+    /// that arrived by another road (the old Notion import) find its thread and its real age.
+    func findExtraction(title: String, counterparty: String) -> (hash: String, threadId: String, extractedAt: Date?)? {
+        dbLock.lock()
+        defer { dbLock.unlock() }
+        var stmt: OpaquePointer?
+        let sql = """
+        SELECT commitment_hash, thread_id, extracted_at FROM commitment_extractions
+        WHERE LOWER(TRIM(COALESCE(NULLIF(user_title,''), title))) = LOWER(TRIM(?))
+          AND LOWER(TRIM(counterparty)) = LOWER(TRIM(?)) AND thread_id IS NOT NULL AND thread_id != ''
+        ORDER BY extracted_at DESC LIMIT 1
+        """
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+        bindText(stmt, 1, title); bindText(stmt, 2, counterparty)
+        guard sqlite3_step(stmt) == SQLITE_ROW, let h = sqlite3_column_text(stmt, 0), let t = sqlite3_column_text(stmt, 1) else { return nil }
+        let at = sqlite3_column_text(stmt, 2).map { String(cString: $0) }.flatMap { Self.parseStoredTimestamp($0) }
+        return (String(cString: h), String(cString: t), at)
     }
 
     /// Reset all commitment extractions (used after hash algorithm changes)

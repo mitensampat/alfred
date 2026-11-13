@@ -14046,6 +14046,21 @@ extension HTTPServer {
             for h in hashes { try? await alfredService.closeCommitmentByHash(hash: h, reason: "Dismissed in Alfred") }
             return ok(["ok": true, "receipt": "Dismissed. Alfred will learn from this."])
 
+        case ("POST", "/api/v2/todos/undismiss"):
+            guard let id = v2Param(request, "id") else { return bad("id required") }
+            let r = TodoService.undismiss(id, to: v2Param(request, "to"))
+            await v2SyncCommitments(r)
+            return ok(["ok": r.ok, "receipt": r.receipt])
+
+        case ("GET", "/api/v2/todos/context"):
+            // The to-do with the conversation around the message it came from.
+            guard let id = request.queryParams["id"], let t = TodoStore.shared.get(id) else { return bad("id required") }
+            return ok(await TodoEvidence.context(for: t))
+
+        case ("POST", "/api/v2/todos/evidence/backfill"):
+            let r = await TodoEvidence.backfill()
+            return ok(["ok": true, "checked": r["checked"] ?? 0, "found": r["found"] ?? 0, "without_evidence": r["without_evidence"] ?? 0])
+
         case ("POST", "/api/v2/todos/snooze"):
             guard let id = v2Param(request, "id") else { return bad("id required") }
             let day = TodoService.snooze(id, until: v2Param(request, "until"))

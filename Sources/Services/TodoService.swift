@@ -53,11 +53,18 @@ enum TodoService {
             let person = c.counterparty.trimmingCharacters(in: .whitespaces).trimmedNonEmpty
             let status: TodoStore.Status = mine ? (firstRun ? .open : .suggested) : .open
             let platform = c.threadId.contains("@") ? "WhatsApp" : "a thread"
-            suggest(title: c.title, person: person, source: "commitment", sourceRef: c.hash,
+            let r = suggest(title: c.title, person: person, source: "commitment", sourceRef: c.hash,
                     sourceNote: person.map { "From \(platform) with \($0.split(separator: " ").first.map(String.init) ?? $0)" },
                     threadId: c.threadId, confidence: c.confidence, status: status, kind: mine ? .mine : .waiting, fronts: fronts)
+            // A new to-do arrives with the words it came from.
+            if r.created, let ev = CommitmentScanTracker.shared.evidence(hash: c.hash) {
+                store.update(r.id, ["evidence": ev.quote, "evidence_by": ev.saidBy ?? NSNull(), "evidence_at": ev.saidAt ?? NSNull()],
+                             markDirty: false, touch: false)
+            }
         }
         if firstRun { store.setMeta("commitments_imported", TodoStore.nowISO()) }
+        normalizeAndMerge()
+        TodoEvidence.backfillIfDue()
 
         // Closures that happened in the tracker flow back.
         let openHashes = Set(CommitmentScanTracker.shared.getOpenCommitmentHashes())
@@ -67,6 +74,94 @@ enum TodoService {
             store.update(t.id, ["status": TodoStore.Status.done.rawValue, "done_at": TodoStore.nowISO()])
             store.appendHistory(t.id, ["at": TodoStore.nowISO(), "event": "closed by the commitment tracker"])
         }
+    }
+
+    // MARK: - One to-do, one row
+
+    /// "→ Asha: Send the deck" / "← Asha: Review the proposal": the old commitment format, where
+    /// the arrow is the direction (→ you owe, ← they owe) and the name is the counterparty.
+    static func parseArrowTitle(_ raw: String) -> (direction: String, person: String, title: String)? {
+        let t = raw.trimmingCharacters(in: .whitespaces)
+        guard let arrow = t.first, arrow == "→" || arrow == "←" else { return nil }
+        let rest = t.dropFirst().trimmingCharacters(in: .whitespaces)
+        guard let colon = rest.firstIndex(of: ":") else { return nil }
+        let person = rest[..<colon].trimmingCharacters(in: .whitespaces)
+        let title = rest[rest.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+        guard !person.isEmpty, person.count <= 60, !title.isEmpty else { return nil }
+        return (arrow == "→" ? "i_owe" : "they_owe", person, title)
+    }
+
+    private static var normalizedThisProcess = false
+
+    /// Make each promise one row.
+    ///
+    /// The old Notion task database stored commitments as "→ Name: title", and the one-time import
+    /// took those titles whole. So the person and the direction sat inside the title where nothing
+    /// could use them: the same promise appeared twice (once from the commitment tracker, once from
+    /// Notion) because the two titles no longer matched, the person filters missed every import, and
+    /// what others owed the user sat in the user's own list.
+    ///
+    /// This parses the prefix into real fields, moves "they owe" items to `waiting` (the store's own
+    /// rule for them), recovers the thread and the true age from the extraction log where it can,
+    /// then merges any live rows that are now the same promise. Nothing is deleted: the losing row
+    /// is closed with a history entry naming the row it was merged into, and its source links move
+    /// to the survivor so a later scan does not recreate it.
+    static func normalizeAndMerge() {
+        if normalizedThisProcess { return }
+        normalizedThisProcess = true
+        let store = TodoStore.shared
+        let live = "status IN ('open', 'suggested')"
+        var parsed = 0, moved = 0, merged = 0
+        for t in store.all(where: live) {
+            guard let p = parseArrowTitle(t.title) else { continue }
+            let person = TodoLearning.canonicalPerson(p.person) ?? p.person
+            var f: [String: Any?] = ["title": p.title, "person": person, "direction": p.direction]
+            if p.direction == "they_owe", t.kind == .mine { f["kind"] = TodoStore.Kind.waiting.rawValue; moved += 1 }
+            // Never a group thread: a to-do with a person and a thread offers "reply", and that
+            // reply must go to the person, not to everyone in the group it was said in.
+            if t.threadId == nil, let ex = CommitmentScanTracker.shared.findExtraction(title: p.title, counterparty: p.person),
+               !DeskService.isGroupThread(ex.threadId) {
+                f["thread_id"] = ex.threadId
+                if let at = ex.extractedAt { f["created_at"] = ISO8601DateFormatter().string(from: at) }
+            }
+            store.update(t.id, f)
+            store.appendHistory(t.id, ["at": TodoStore.nowISO(), "event": "person and direction read from the title", "was": t.title])
+            parsed += 1
+        }
+        var groups: [String: [TodoStore.Todo]] = [:]
+        for t in store.all(where: live, order: "created_at ASC") {
+            groups[t.kind.rawValue + "|" + TodoStore.dedupeKey(title: t.title, person: t.person), default: []].append(t)
+        }
+        for (_, rows) in groups where rows.count > 1 {
+            // The tracker's row survives: it has the thread, the evidence and the closure machinery.
+            let winner = rows.first { $0.source == "commitment" } ?? rows.first { $0.threadId != nil } ?? rows[0]
+            for loser in rows where loser.id != winner.id { merge(loser, into: winner.id); merged += 1 }
+        }
+        if parsed + merged > 0 {
+            print("🧹 To-dos: \(parsed) titles parsed into person + direction, \(moved) moved to waiting, \(merged) duplicates merged")
+        }
+    }
+
+    /// Fold one row into another that is the same promise.
+    static func merge(_ loser: TodoStore.Todo, into winnerId: String) {
+        let store = TodoStore.shared
+        guard let winner = store.get(winnerId), winner.id != loser.id else { return }
+        var f: [String: Any?] = [:]
+        if winner.due == nil, let d = loser.due { f["due"] = d }
+        if winner.frontId == nil, let fr = loser.frontId { f["front_id"] = fr; f["front_name"] = loser.frontName ?? NSNull() }
+        if winner.threadId == nil, let th = loser.threadId { f["thread_id"] = th }
+        // A copy the user wrote themselves means it is on the list. A copy that came back from the
+        // old Notion database does not: that is Alfred's own extraction returning by another road,
+        // and an extraction waits in the tray until the user accepts it.
+        if winner.status == .suggested, loser.status == .open, ["capture", "notion_mirror"].contains(loser.source) {
+            f["status"] = TodoStore.Status.open.rawValue
+        }
+        if loser.pinned { f["pinned"] = true }
+        if !f.isEmpty { store.update(winner.id, f) }
+        store.relinkSources(from: loser.id, to: winner.id)
+        store.update(loser.id, ["status": TodoStore.Status.dismissed.rawValue, "done_at": TodoStore.nowISO(), "pinned": false])
+        store.appendHistory(loser.id, ["at": TodoStore.nowISO(), "event": "merged into \(winner.id)"])
+        store.appendHistory(winner.id, ["at": TodoStore.nowISO(), "event": "absorbed duplicate \(loser.id)", "was": loser.title])
     }
 
     /// A front a title belongs to: a distinctive word (>4 chars, not a stopword) of the front's name
@@ -103,8 +198,18 @@ enum TodoService {
                 continue
             }
             for p in pages {
-                let r = store.upsert(title: p.title, status: .open, due: p.due, source: "notion_import",
-                                     sourceRef: p.id, sourceNote: "Imported from Notion")
+                // Commitments in the old database are titled "→ Name: …": read the person and the
+                // direction out of the title instead of importing them as part of it.
+                let arrow = parseArrowTitle(p.title)
+                // A commitment the tracker extracted is written to that database by the scanner
+                // itself. Importing it back would put an extraction straight onto the list, past
+                // the suggestion tray, and a second time. The tracker is its way in.
+                if let a = arrow, CommitmentScanTracker.shared.findExtraction(title: a.title, counterparty: a.person) != nil { continue }
+                let r = store.upsert(title: arrow?.title ?? p.title, status: .open,
+                                     kind: arrow?.direction == "they_owe" ? .waiting : .mine, due: p.due,
+                                     person: arrow.map { TodoLearning.canonicalPerson($0.person) ?? $0.person },
+                                     source: "notion_import", sourceRef: p.id, sourceNote: "Imported from Notion")
+                if r.created, let a = arrow { store.update(r.id, ["direction": a.direction], markDirty: false, touch: false) }
                 if r.created { n += 1 }
             }
         }
@@ -150,6 +255,20 @@ enum TodoService {
         return hashes
     }
 
+    /// Take back a dismissal: the to-do returns to where it was (the suggestion tray or the list),
+    /// its commitments reopen, and the dismissal stops counting as a lesson.
+    static func undismiss(_ id: String, to: String?) -> ActionResult {
+        let store = TodoStore.shared
+        guard let t = store.get(id), t.status == .dismissed else { return ActionResult(ok: false, receipt: "Not found", closeHashes: [], reopenHashes: []) }
+        let status: TodoStore.Status = to == "suggested" ? .suggested : .open
+        store.update(id, ["status": status.rawValue, "done_at": NSNull(), "hidden_reason": NSNull()])
+        store.removeLatestFeedback(event: "dismissed", todoId: id)
+        CorrectionTracker.shared.withdrawFalsePositive(title: t.title)
+        TodoLearning.invalidate()
+        let hashes = store.sources(of: id).filter { $0.source == "commitment" }.map { $0.ref }
+        return ActionResult(ok: true, receipt: "Restored · " + t.title, closeHashes: [], reopenHashes: hashes)
+    }
+
     /// "Not now": move to tomorrow (or a given day) and count the skip, which lowers its rank.
     static func snooze(_ id: String, until: String?) -> String {
         let store = TodoStore.shared
@@ -180,7 +299,10 @@ enum TodoService {
         if t.pinned { return "today" }
         if let d = t.due { return d <= today ? "today" : "upcoming" }
         // Someone is waiting, or it is a front's decision: that is today's business.
-        if t.person != nil || t.source == "front_decision" || t.source == "commitment" { return "today" }
+        if t.source == "front_decision" || t.source == "commitment" { return "today" }
+        // A person on an undated item from the old Notion list is a label, not a deadline: those
+        // stay in someday (grouped by person) rather than flooding today.
+        if t.person != nil && t.source != "notion_import" { return "today" }
         return "someday"
     }
 
@@ -353,6 +475,10 @@ enum TodoService {
             "today": section("today"),
             "upcoming": section("upcoming"),
             "someday": section("someday"),
+            // What others owe you. Never ranked with your own work; listed so it stays in sight.
+            "waiting": TodoStore.shared.waiting().filter(pass)
+                .sorted { ($0.due ?? "9") == ($1.due ?? "9") ? $0.createdAt < $1.createdAt : ($0.due ?? "9") < ($1.due ?? "9") }
+                .map { t -> [String: Any] in var d = t.dict; d["age_days"] = ageDays(t.createdAt); d["bucket"] = "waiting"; return d },
             "chips": [["key": "all", "label": "All"]] + frontChips + topPeople,
             "filter": f
         ]
