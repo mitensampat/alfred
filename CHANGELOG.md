@@ -5,6 +5,53 @@ All notable changes to Alfred will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.1.0] - 2026-11-13
+
+The interpret stage. Your model concludes things now, instead of filing them. Until this release
+the pipeline was extract → store → display: every belief on the Model page was one conversation's
+raw artifact shown verbatim, open questions accumulated and were never closed, values could only
+be typed in by hand, and nothing the model held ever reached a prompt. 6.1.0 adds the missing
+middle. Nothing to migrate: the first weekly pass does the conversion, and everything it
+supersedes is archived rather than deleted.
+
+### Added
+
+- **Claims, not fragments** — a weekly pass reads each workspace's decisions and shifts in
+  thinking together and concludes what you believe. A claim needs support from at least two
+  evidence items on two different days, so one thread never gets to be a belief. Claims are
+  recomputed every run, so wording sharpens and dead claims fade. Anything you confirmed, kept or
+  re-worded is left alone.
+- **Values Alfred works out for itself** — a value is what you protect when two good things
+  conflict, visible in what lost. The pass proposes them from your decision record, marked as
+  Alfred's read rather than something you declared.
+- **Questions get closed** — questions attach to the subject they were asked in, so the pass can
+  line them up against the decisions taken afterwards. Ones the evidence settles close silently
+  with the answer and its references; near-duplicates fold together; anything with no new evidence
+  in 60 days ages out. An **Answered** list shows every close, with one click to reopen it.
+- **Tensions** — a new block names where the model disagrees with itself: two beliefs that cannot
+  both be honoured in one decision, or something you say you value against what your decisions
+  show, each with what it costs you.
+- **People** — pin anyone, rescan one person, and dismiss something you are waiting on, with a
+  real undo.
+
+### Changed
+
+- **The model is an input** — the curated registers are injected into the chat and coaching
+  prompts, so what Alfred understands about you shapes what it says, and wrong claims get
+  corrected in the flow of use instead of in a curation session.
+- **Confidence means something** — evidence count, independence and recency, instead of a near
+  constant that made every ordering arbitrary.
+
+### Fixed
+
+- **People who only owed you something were silently dropped** — anyone who owed *you* something
+  and had been in touch recently matched neither bucket and never appeared.
+- **A durability guess is no longer recorded as a verdict** — when the heuristic abstained, the
+  promotion path wrote the belief down as durable at full confidence and marked it classified, so
+  a coaching nudge could sit at the top of "what you believe" for ever. Alfred now asks the model
+  when the heuristic abstains, records a tag only when something actually decided it, and leaves a
+  fallback untagged so the next pass retries.
+
 ## [6.0.0] - 2026-11-06
 
 The most intelligent and easiest to use version of Alfred. Everything Alfred does is now reached
