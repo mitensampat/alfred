@@ -118,7 +118,10 @@ class CommitmentAnalyzer {
                 hash: commitment.uniqueHash,
                 quote: source?.content ?? extracted.commitmentText,
                 saidBy: source.map { $0.direction == .outgoing ? userInfo.name : ($0.senderName ?? committedBy) } ?? committedBy,
-                saidAt: source?.timestamp)
+                saidAt: source?.timestamp,
+                // Only a line whose names all appear in the messages it was written from.
+                because: TodoEvidence.grounded(extracted.context, corpus: ([extracted.title, committedBy, committedTo, userInfo.name, threadName]
+                    + messages.map { ($0.senderName ?? "") + " " + $0.content }).joined(separator: " ")) ? extracted.context : nil)
             return commitment
         }
 
@@ -321,7 +324,7 @@ class CommitmentAnalyzer {
         - committedTo: Name of person receiving the commitment. Same rule — real names only, "Unknown" if unresolvable.
         - dueDate: ISO8601 date if mentioned (e.g., "tomorrow", "Friday", "next week")
         - priority: "critical", "high", "medium", or "low" based on urgency indicators
-        - context: Surrounding context from the message
+        - context: ONE sentence (at most 25 words) that lets \(userName) read this commitment cold, weeks from now: what it is about and what prompted it. Address \(userName) as "you" and use first names for everyone else. Say first what the commitment actually is (the action and what it concerns), then what prompted it; background alone is not an answer. Unlike the title, this sentence is in your own words, and it should resolve "it", "this", "them" from the surrounding messages when the conversation makes the referent clear. Copy names exactly as spelled in the messages and do not add a date, weekday or place the messages do not state. Use only what the messages say; if the referent is genuinely unclear, say what is known and do not guess. Do not restate the title.
         - confidence: 0.0 to 1.0 score of how confident you are this is a real commitment. Lower confidence (0.6-0.7) when the commitment is vague or the subject is unclear. Higher confidence (0.8+) only when the commitment is specific and unambiguous.
 
         Only extract commitments with confidence >= 0.6.

@@ -58,7 +58,8 @@ enum TodoService {
                     threadId: c.threadId, confidence: c.confidence, status: status, kind: mine ? .mine : .waiting, fronts: fronts)
             // A new to-do arrives with the words it came from.
             if r.created, let ev = CommitmentScanTracker.shared.evidence(hash: c.hash) {
-                store.update(r.id, ["evidence": ev.quote, "evidence_by": ev.saidBy ?? NSNull(), "evidence_at": ev.saidAt ?? NSNull()],
+                store.update(r.id, ["evidence": ev.quote, "evidence_by": ev.saidBy ?? NSNull(), "evidence_at": ev.saidAt ?? NSNull(),
+                                    "because": ev.because ?? NSNull()],
                              markDirty: false, touch: false)
             }
         }

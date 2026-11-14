@@ -123,6 +123,8 @@ class CommitmentScanTracker {
             recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
         """, nil, nil, nil)
+        // One sentence saying what the commitment is about, written by the extractor.
+        sqlite3_exec(db, "ALTER TABLE commitment_evidence ADD COLUMN because TEXT", nil, nil, nil)
         sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_ce_thread_open ON commitment_extractions(thread_id, was_closed)", nil, nil, nil)
         sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_ce_was_closed ON commitment_extractions(was_closed)", nil, nil, nil)
         sqlite3_exec(db, "CREATE INDEX IF NOT EXISTS idx_cd_commitment_hash ON closure_detections(commitment_hash)", nil, nil, nil)
@@ -300,32 +302,34 @@ class CommitmentScanTracker {
 
     /// Keep the message a commitment came from. First writer wins: a rescan must not replace the
     /// original words with a later paraphrase.
-    func recordEvidence(hash: String, quote: String, saidBy: String?, saidAt: Date?) {
+    func recordEvidence(hash: String, quote: String, saidBy: String?, saidAt: Date?, because: String? = nil) {
         let q = quote.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return }
         dbLock.lock()
         defer { dbLock.unlock() }
         var stmt: OpaquePointer?
-        let sql = "INSERT OR IGNORE INTO commitment_evidence (commitment_hash, quote, said_by, said_at) VALUES (?, ?, ?, ?)"
+        let sql = "INSERT OR IGNORE INTO commitment_evidence (commitment_hash, quote, said_by, said_at, because) VALUES (?, ?, ?, ?, ?)"
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
         defer { sqlite3_finalize(stmt) }
         bindText(stmt, 1, hash)
         bindText(stmt, 2, String(q.prefix(600)))
         if let s = saidBy { bindText(stmt, 3, s) } else { sqlite3_bind_null(stmt, 3) }
         if let d = saidAt { bindText(stmt, 4, Self.isoFormatter.string(from: d)) } else { sqlite3_bind_null(stmt, 4) }
+        if let b = because?.trimmingCharacters(in: .whitespacesAndNewlines), !b.isEmpty { bindText(stmt, 5, String(b.prefix(300))) } else { sqlite3_bind_null(stmt, 5) }
         sqlite3_step(stmt)
     }
 
-    func evidence(hash: String) -> (quote: String, saidBy: String?, saidAt: String?)? {
+    func evidence(hash: String) -> (quote: String, saidBy: String?, saidAt: String?, because: String?)? {
         dbLock.lock()
         defer { dbLock.unlock() }
         var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, "SELECT quote, said_by, said_at FROM commitment_evidence WHERE commitment_hash = ?", -1, &stmt, nil) == SQLITE_OK else { return nil }
+        guard sqlite3_prepare_v2(db, "SELECT quote, said_by, said_at, because FROM commitment_evidence WHERE commitment_hash = ?", -1, &stmt, nil) == SQLITE_OK else { return nil }
         defer { sqlite3_finalize(stmt) }
         bindText(stmt, 1, hash)
         guard sqlite3_step(stmt) == SQLITE_ROW, let q = sqlite3_column_text(stmt, 0) else { return nil }
         return (String(cString: q), sqlite3_column_text(stmt, 1).map { String(cString: $0) },
-                sqlite3_column_text(stmt, 2).map { String(cString: $0) })
+                sqlite3_column_text(stmt, 2).map { String(cString: $0) },
+                sqlite3_column_text(stmt, 3).map { String(cString: $0) })
     }
 
     /// The extraction a title + counterparty came from, open or closed, newest first. Lets a to-do

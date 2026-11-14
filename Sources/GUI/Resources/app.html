@@ -130,6 +130,28 @@ h1{margin:0;font-family:var(--serif);font-weight:400;font-size:30px}
 .rowmain .t{margin-top:2px;font-size:15px;line-height:1.38}
 .due{flex:0 0 auto;font-size:12px;color:var(--quiet);padding-right:2px}
 .due.today{color:var(--warmtext)}
+.rowc{overflow:hidden}
+.rowbody{flex:1 1 auto;min-width:0}
+.rowbody .rowmain{display:block;width:100%;padding:4px 0 0}
+.bec{display:flex;align-items:flex-start;gap:6px;width:100%;min-height:30px;border:none;background:none;padding:3px 0 5px;text-align:left;font-size:13px;line-height:1.38;color:var(--body)}
+.bec .tx{flex:1 1 auto;min-width:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.bec.src .tx{color:var(--quiet)}
+.bec.open .tx{-webkit-line-clamp:unset;display:block}
+.bec .c{flex:0 0 auto;margin-top:1px;color:var(--faint);display:inline-flex;transition:transform .12s ease}
+.bec.open .c{transform:rotate(90deg)}
+.bec:hover .c{color:var(--accent)}
+.rowx{padding:2px 16px 14px 54px;border-top:1px solid var(--hair2)}
+@media (max-width: 899px){ .rowx{padding-left:16px} .bec{min-height:36px} }
+.because{margin-top:10px;font-size:15px;line-height:1.45;color:var(--ink)}
+.sheetfoot{position:sticky;bottom:-34px;z-index:2;margin:18px -24px -34px;padding:10px 24px calc(12px + env(safe-area-inset-bottom));background:var(--paper);border-top:1px solid var(--hair);display:flex;align-items:center;gap:4px}
+.sheetfoot .ghost{padding:0 8px;white-space:nowrap}
+.sheetfoot .btn{padding:0 16px;white-space:nowrap}
+.sheet .close.pin{position:sticky;top:-10px;z-index:2;background:var(--paper);margin:-10px -24px 0;padding:6px 24px 0;justify-content:space-between;align-items:center}
+/* A to-do opened beside the list: the list moves over instead of sitting half under the sheet. */
+@media (min-width: 900px){
+  body.side-open .aside{display:none}
+  body.side-reflow .app{justify-content:flex-start;padding-right:420px}
+}
 .ev{margin-top:3px;font-size:13px;line-height:1.35;color:var(--quiet);display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .ev.two{-webkit-line-clamp:2}
 @media (max-width: 899px){ .ev{-webkit-line-clamp:2} }
@@ -143,7 +165,7 @@ h1{margin:0;font-family:var(--serif);font-weight:400;font-size:30px}
 .quote .q{margin-top:2px;font-size:15px;line-height:1.45;overflow-wrap:anywhere}
 .msgs{margin-top:8px;display:flex;flex-direction:column;gap:6px}
 .msg{max-width:88%;padding:7px 11px;border-radius:14px;background:var(--sunk);border:1px solid var(--hair2);font-size:14px;line-height:1.4;align-self:flex-start;overflow-wrap:anywhere}
-.msg.me{align-self:flex-end;background:var(--accent-soft);border-color:var(--accent-line)}
+.msg.mine{align-self:flex-end;background:var(--accent-soft);border-color:var(--accent-line)}
 .msg.src{border:1.5px solid var(--accent)}
 .msg .mm{font-size:11px;color:var(--quiet);margin-bottom:1px}
 .prog{margin-top:8px;height:3px;background:var(--hair);border-radius:2px;overflow:hidden}
@@ -214,7 +236,8 @@ textarea.field{resize:none}
 .issue{margin-top:14px;width:100%;text-align:left;border:none;border-radius:14px;background:var(--warmbg);padding:14px 16px}
 .decision{margin-top:18px;background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:16px;padding:16px}
 .bubble{margin-top:10px;padding:10px 14px;border-radius:14px;font-size:15px;line-height:1.5;white-space:pre-wrap}
-.bubble.me{background:var(--chip);margin-left:40px}
+/* `.me` is also the avatar button (40x40, round, bold): undo that for a chat bubble. */
+.bubble.me{background:var(--chip);margin-left:40px;width:auto;height:auto;border:none;border-radius:14px;font-weight:400;font-size:15px;padding:10px 14px}
 .bubble.al{background:var(--card);border:1px solid var(--border);margin-right:20px}
 
 /* ── settings rows, switches ── */
@@ -291,6 +314,7 @@ const S = {
   now: null, todos: null, fronts: null, people: null, status: null,
   filter: 'all', pfilter: 'all', addPerson: false, addPersonName: '', showMore: false, replyId: null,
   q: '', openGroups: {}, showWaiting: false, review: null,
+  expanded: {}, ctx: {},   // rows opened in place, and the conversations already fetched (by to-do id)
   sheet: null,           // { kind, id, data }
   showLog: false,
   chat: [], chatSession: null,
@@ -467,7 +491,7 @@ function postCard(t) {
     ${whoLine(t)}
     <div class="meta ${t.urgent?'urgent':''}">${t.urgent?'<span class="wdot"></span>':''}${esc(meta)}</div>
     <div class="body">${esc(t.title)}</div>
-    ${evLine(t, true)}
+    <div class="ev two" style="color:var(--body)">${esc(t.because || '')}</div>
     ${compose}
     <div class="actions">
       <button type="button" class="btn" onclick="primary('${esc(t.id)}')">${primaryLabel(t)}</button>
@@ -498,19 +522,60 @@ function whoHtml(t) {
   const bits = [dirLabel(t), t.person && t.front_name ? t.front_name : ''].filter(Boolean).join(' · ');
   return `<div class="who"><b>${esc(who)}</b>${bits ? ` <span style="color:var(--quiet)">· ${esc(bits)}</span>` : ''}</div>`;
 }
+// The line under every title: why this to-do exists. Tapping it opens the proof in place
+// (the words it came from and the conversation around them) without leaving the list.
+function becBtn(t) {
+  const open = !!S.expanded[t.id];
+  return `<button type="button" class="bec ${t.because_written ? '' : 'src'} ${open ? 'open' : ''}" aria-expanded="${open ? 'true' : 'false'}" aria-label="${open ? 'Hide' : 'Show'} the context for: ${esc(t.title)}" onclick="toggleCtx(${ja(t.id)})"><span class="tx">${esc(t.because || '')}</span><span class="c">${icon('chev', 14)}</span></button>`;
+}
+function msgsHtml(c) {
+  const m = (c && c.messages) || []; if (!m.length) return '';
+  let h = `<div class="label" style="margin-top:14px">${m.some(x => x.source) ? 'The conversation around it' : 'What was being said at the time'}</div><div class="msgs">` +
+    m.map(x => `<div class="msg ${x.me ? 'mine' : ''} ${x.source ? 'src' : ''}"><div class="mm">${esc(x.me ? 'You' : firstName(x.from))} · ${esc(msgTime(x.at))}</div>${esc(x.text)}</div>`).join('') + '</div>';
+  if (c.latest) h += `<div class="label" style="margin-top:14px">Latest in this thread · ${esc(msgTime(c.latest.at))}</div><div class="msgs"><div class="msg ${c.latest.me ? 'mine' : ''}"><div class="mm">${esc(c.latest.me ? 'You' : firstName(c.latest.from))}</div>${esc(c.latest.text)}</div></div>`;
+  return h;
+}
+// The conversation block for a to-do, from what has been fetched so far.
+function ctxBlock(t) {
+  if (!t.thread_id) return '';
+  const c = S.ctx[t.id];
+  if (!c) return '<div class="label" style="margin-top:14px">Loading the conversation…</div>';
+  if (c.failed) return '<div class="label" style="margin-top:14px">Could not load the conversation.</div>';
+  return msgsHtml(c) || (String(t.thread_id).includes('@') ? `<div class="label" style="margin-top:14px">The messages from that time are no longer in Alfred's WhatsApp history.</div>` : '');
+}
+function rowExpand(t) {
+  const body = quoteHtml(t) + ctxBlock(t);
+  return `<div class="rowx">${body || `<div class="label" style="margin-top:12px">${esc(t.source_note || 'Nothing more is recorded for this one.')}</div>`}
+    <div style="margin-top:12px;display:flex;gap:6px;align-items:center">
+      ${canReply(t) ? `<button type="button" class="btn outline" onclick="openTodo(${ja(t.id)},true)">Reply</button>` : ''}
+      <button type="button" class="ghost" onclick="openTodo(${ja(t.id)})">Open</button></div></div>`;
+}
+const canReply = t => !!t.person && String(t.thread_id || '').includes('@') && !String(t.thread_id).endsWith('@g.us');
+async function ensureCtx(id) {
+  const t = findTodo(id); if (!t || !t.thread_id || (S.ctx[id] && !S.ctx[id].failed)) return;
+  try { S.ctx[id] = await api('/api/v2/todos/context?id=' + encodeURIComponent(id)); } catch (e) { S.ctx[id] = { messages: [], failed: true }; }
+}
+function repaintRows() { if (S.page) return; if (S.tab === 'todos') paintTodos(); else if (S.tab === 'now') renderView(); }
+function toggleCtx(id) {
+  S.expanded[id] = !S.expanded[id]; repaintRows();
+  if (S.expanded[id] && !S.ctx[id]) ensureCtx(id).then(() => { if (S.expanded[id]) repaintRows(); });
+}
 function rowCard(t) {
   const waiting = t.kind === 'waiting' || t.status === 'suggested';
   const due = t.snoozed_until && t.bucket === 'upcoming' ? dayLabel(t.snoozed_until) : (t.due ? dayLabel(t.due) : '');
   const isToday = t.due && t.due <= todayISO();
-  return `<div class="card row">
-    ${waiting ? '<span style="flex:0 0 12px"></span>' : `<button type="button" class="check" aria-label="Mark done" onclick="done(${ja(t.id)})"><span></span></button>`}
-    <button type="button" class="rowmain" onclick="openTodo(${ja(t.id)})">
-      ${whoHtml(t)}
-      <div class="t">${esc(t.title)}</div>
-      ${evLine(t)}
-    </button>
+  return `<div class="card rowc"><div class="row">
+    ${waiting ? '<span style="flex:0 0 12px"></span>' : `<button type="button" class="check" aria-label="Mark done: ${esc(t.title)}" onclick="done(${ja(t.id)})"><span></span></button>`}
+    <div class="rowbody">
+      <button type="button" class="rowmain" onclick="openTodo(${ja(t.id)})">
+        ${whoHtml(t)}
+        <div class="t">${esc(t.title)}</div>
+      </button>
+      ${becBtn(t)}
+    </div>
     ${due ? `<div class="due ${isToday?'today':''}">${esc(due)}</div>` : ''}
-    ${waiting ? '' : `<button type="button" class="icon" aria-label="Move or drop: ${esc(t.title)}" onclick="openSnooze(${ja(t.id)})">${icon('clock')}</button>`}</div>`;
+    ${waiting ? '' : `<button type="button" class="icon" aria-label="Move or drop: ${esc(t.title)}" onclick="openSnooze(${ja(t.id)})">${icon('clock')}</button>`}</div>
+    ${S.expanded[t.id] ? rowExpand(t) : ''}</div>`;
 }
 
 function viewNow() {
@@ -563,7 +628,7 @@ function reviewItems() {
 }
 function todoMatch(t) {
   const q = (S.q || '').trim().toLowerCase(); if (!q) return true;
-  return [t.title, t.person, t.front_name, t.evidence].some(v => v && String(v).toLowerCase().includes(q));
+  return [t.title, t.person, t.front_name, t.evidence, t.because].some(v => v && String(v).toLowerCase().includes(q));
 }
 function viewTodos() {
   const d = S.todos; let h = `<h1 style="padding-top:18px">To-dos</h1><div class="chips">`;
@@ -807,23 +872,47 @@ function keepTopic(id) { act('/api/v2/fronts/state', { id, state: 'topic' }, () 
 // ═══════════════════════════════════════════════════════════════════════
 // sheets
 // ═══════════════════════════════════════════════════════════════════════
-function sheetMode(kind) { if (!isWide()) return 'm-sheet'; return ['front','person','todo'].includes(kind) ? 'm-side' : 'm-dialog'; }
+function sheetMode(kind) {
+  if (!isWide()) return 'm-sheet';
+  // Beside the list a to-do needs 420px for itself and a readable column left over for the list;
+  // on a narrower wide screen it opens as a dialog instead of covering half the rows.
+  if (kind === 'todo') return window.innerWidth >= 1100 ? 'm-side' : 'm-dialog';
+  return ['front','person'].includes(kind) ? 'm-side' : 'm-dialog';
+}
 function openSheet(kind, id, data) { S.sheet = { kind, id, data }; S.showLog = false; renderSheet(); if (S.tab === 'fronts' || S.tab === 'people') renderView(); }
-function closeSheet() { const was = S.sheet; S.sheet = null; document.getElementById('sheetHost').innerHTML = ''; clearTimeout(_waT); if (was) renderView(); }
+function closeSheet() { const was = S.sheet; S.sheet = null; document.getElementById('sheetHost').innerHTML = ''; document.body.classList.remove('side-open', 'side-reflow'); clearTimeout(_waT); if (was) renderView(); }
 async function reopenSheet() {
   const s = S.sheet; if (!s) return;
   if (s.kind === 'front') s.data = await api('/api/v2/fronts/front?id=' + encodeURIComponent(s.id));
   if (s.kind === 'person') s.data = await api('/api/v2/people/person?name=' + encodeURIComponent(s.id));
   renderSheet();
 }
-function renderSheet() {
+// `keep`: the same sheet is being redrawn (a resize changed its mode), so whatever is typed in it,
+// its scroll position and the focused field must survive the redraw.
+function renderSheet(keep) {
   const s = S.sheet, host = document.getElementById('sheetHost');
-  if (!s) { host.innerHTML = ''; return; }
-  const mode = sheetMode(s.kind);
+  if (!s) { host.innerHTML = ''; document.body.classList.remove('side-open', 'side-reflow'); return; }
+  const mode = sheetMode(s.kind); s.mode = mode;
+  const vals = {}; let top = 0, focusId = '';
+  if (keep) {
+    host.querySelectorAll('input[id],textarea[id],select[id]').forEach(e => { vals[e.id] = e.value; });
+    const old = host.querySelector('.sheet'); top = old ? old.scrollTop : 0;
+    focusId = document.activeElement && host.contains(document.activeElement) ? document.activeElement.id : '';
+  }
   const inner = ({ add: sheetAdd, you: sheetYou, front: sheetFront, person: sheetPerson, todo: sheetTodo, snooze: sheetSnooze, review: sheetReview, activate: sheetActivate, migrate: sheetMigrate, newfront: sheetNewFront, chat: sheetChat, wa: sheetWa, mirror: sheetMirror, skill: sheetSkill, export: sheetExport, capture: sheetCapture })[s.kind](s);
+  const pinned = s.kind === 'todo';
   host.innerHTML = `${mode !== 'm-side' ? '<button type="button" class="scrim" aria-label="Close" onclick="closeSheet()"></button>' : ''}
     <div class="sheet ${mode}" role="dialog" aria-modal="${mode !== 'm-side'}">${mode === 'm-sheet' ? '<div class="grab"><span></span></div>' : ''}
-      <div class="close"><button type="button" onclick="closeSheet()">Close</button></div>${inner}</div>`;
+      ${pinned ? '' : '<div class="close"><button type="button" onclick="closeSheet()">Close</button></div>'}${inner}</div>`;
+  document.body.classList.toggle('side-open', mode === 'm-side');
+  document.body.classList.toggle('side-reflow', mode === 'm-side' && s.kind === 'todo');
+  if (keep) {
+    Object.keys(vals).forEach(id => { const e = document.getElementById(id); if (e) e.value = vals[id]; });
+    const now = host.querySelector('.sheet'); if (now) now.scrollTop = top;
+    const f = focusId && document.getElementById(focusId); if (f) f.focus();
+    tdDirty();
+    return;
+  }
   const auto = host.querySelector('[data-autofocus]'); if (auto) setTimeout(() => auto.focus(), 40);
 }
 document.addEventListener('keydown', e => {
@@ -945,38 +1034,19 @@ async function askAlfred(q) {
 }
 
 // ── a to-do ──
-function openTodo(id) { const t = findTodo(id); if (!t) return; openSheet('todo', id, t); loadTodoContext(id, t); }
-// The conversation is painted into its own box when it arrives, never by re-rendering the sheet:
-// a re-render would throw away whatever is half-typed in the fields above it.
-async function loadTodoContext(id, t) {
-  const box = () => document.getElementById('tdCtx');
-  if (!t.thread_id) return;
-  try {
-    const c = await api('/api/v2/todos/context?id=' + encodeURIComponent(id));
-    if (!S.sheet || S.sheet.kind !== 'todo' || S.sheet.id !== id || !box()) return;
-    box().innerHTML = ctxHtml(c, t);
-  } catch (e) { if (box()) box().innerHTML = ''; }
+// The sheet is drawn from S.ctx, so any redraw shows the conversation that was already fetched.
+function openTodo(id, reply) {
+  const t = findTodo(id); if (!t) return;
+  openSheet('todo', id, t);
+  const after = () => { if (reply) sheetReplyFocus(); };
+  if (t.thread_id && !S.ctx[id]) ensureCtx(id).then(() => { paintSheetCtx(id, t); after(); }); else after();
+}
+function paintSheetCtx(id, t) {
+  const box = document.getElementById('tdCtx');
+  if (box && S.sheet && S.sheet.kind === 'todo' && S.sheet.id === id) box.innerHTML = ctxBlock(t);
 }
 function msgTime(iso) { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ', ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
-function ctxHtml(c, t) {
-  const m = c.messages || [];
-  const wa = String(t.thread_id || '').includes('@');
-  let h = '';
-  if (m.length) {
-    h += `<div class="label" style="margin-top:20px">${m.some(x => x.source) ? 'The conversation around it' : 'What was being said at the time'}</div><div class="msgs">` +
-      m.map(x => `<div class="msg ${x.me ? 'me' : ''} ${x.source ? 'src' : ''}"><div class="mm">${esc(x.me ? 'You' : firstName(x.from))} · ${esc(msgTime(x.at))}</div>${esc(x.text)}</div>`).join('') + '</div>';
-    if (c.latest) h += `<div class="label" style="margin-top:14px">Latest in this thread · ${esc(msgTime(c.latest.at))}</div><div class="msgs"><div class="msg ${c.latest.me ? 'me' : ''}"><div class="mm">${esc(c.latest.me ? 'You' : firstName(c.latest.from))}</div>${esc(c.latest.text)}</div></div>`;
-  } else if (wa) {
-    h += `<div class="label" style="margin-top:20px">The messages from that time are no longer in Alfred's WhatsApp history.</div>`;
-  }
-  if (wa && t.person) {
-    const mine = t.kind !== 'waiting';
-    h += `<div class="compose"><div class="label" style="font-size:12px">To ${esc(firstName(t.person))} · WhatsApp</div>
-      <textarea id="tdReply" rows="3" aria-label="Message">${esc(t.draft || ('Hi ' + firstName(t.person) + ', '))}</textarea>
-      <div style="margin-top:6px"><button type="button" class="btn" onclick="sheetSend(${ja(t.id)})">${mine ? 'Send and mark done' : 'Send nudge'}</button></div></div>`;
-  }
-  return h;
-}
+function sheetReplyFocus() { const ta = document.getElementById('tdReply'); if (!ta) return; ta.scrollIntoView({ block: 'center' }); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
 async function sheetSend(id) {
   const ta = document.getElementById('tdReply'); const text = ta ? ta.value.trim() : ''; if (!text) return;
   const r = await act('/api/v2/todos/reply', { id, text });
@@ -992,26 +1062,38 @@ function sheetTodo(s) {
   const fronts = (S.fronts && S.fronts.fronts) || (S.now && S.now.fronts_glance) || [];
   const opts = ['<option value="">No front</option>'].concat(fronts.map(f => `<option value="${esc(f.id)}" ${t.front_id===f.id?'selected':''}>${esc(f.name)}</option>`)).join('');
   const dir = t.person ? (t.direction === 'they_owe' ? firstName(t.person) + ' owes you this' : (t.direction === 'i_owe' ? 'You owe ' + firstName(t.person) + ' this' : '')) : '';
-  const waiting = t.kind === 'waiting', sug = t.status === 'suggested';
-  return `<div class="label" style="padding-top:6px;padding-right:56px">${esc([t.source_note, dir].filter(Boolean).join(' · '))}</div>
-    <label for="tdTitle" class="label" style="display:block;margin-top:14px">To-do</label>
-    <textarea id="tdTitle" class="field" rows="2">${esc(t.title)}</textarea>
+  const waiting = t.kind === 'waiting', sug = t.status === 'suggested', reply = canReply(t);
+  return `<div class="close pin"><div class="label" style="min-width:0">${esc([t.source_note, dir].filter(Boolean).join(' · '))}</div><button type="button" onclick="closeSheet()">Close</button></div>
+    <label for="tdTitle" class="label" style="display:block;margin-top:10px">To-do</label>
+    <textarea id="tdTitle" class="field" rows="2" oninput="tdDirty()">${esc(t.title)}</textarea>
+    ${t.because_written ? `<div class="because">${esc(t.because)}</div>` : ''}
     ${quoteHtml(t)}
-    <div style="margin-top:12px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
-      <label class="label">Front<select id="tdFront" class="field" style="padding:10px 12px;font-size:15px">${opts}</select></label>
-      <label class="label">Person<input id="tdPerson" class="field" style="padding:10px 12px;font-size:15px" value="${esc(t.person || '')}"></label>
-      <label class="label">Due<input id="tdDue" type="date" class="field" style="padding:10px 12px;font-size:15px" value="${esc(t.due || '')}"></label>
+    <div style="margin-top:14px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
+      <label class="label">Front<select id="tdFront" class="field" style="padding:10px 12px;font-size:15px" onchange="tdDirty()">${opts}</select></label>
+      <label class="label">Person<input id="tdPerson" class="field" style="padding:10px 12px;font-size:15px" value="${esc(t.person || '')}" oninput="tdDirty()"></label>
+      <label class="label">Due<input id="tdDue" type="date" class="field" style="padding:10px 12px;font-size:15px" value="${esc(t.due || '')}" onchange="tdDirty()"></label>
     </div>
-    <div style="margin-top:18px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <div id="tdCtx">${ctxBlock(t)}</div>
+    ${reply ? `<div class="compose"><label for="tdReply" class="label" style="font-size:12px">To ${esc(firstName(t.person))} · WhatsApp</label>
+      <textarea id="tdReply" rows="3">${esc(t.draft || ('Hi ' + firstName(t.person) + ', '))}</textarea>
+      <div style="margin-top:6px"><button type="button" class="btn" onclick="sheetSend(${ja(t.id)})">${waiting ? 'Send nudge' : 'Send and mark done'}</button></div></div>` : ''}
+    <div class="sheetfoot">
       ${sug ? `<button type="button" class="btn" onclick="saveTodo(${ja(t.id)},true)">Save and accept</button>`
-            : `<button type="button" class="btn" onclick="saveTodo(${ja(t.id)})">Save</button>
+            : `<button type="button" class="btn" id="tdSave" style="display:none" onclick="saveTodo(${ja(t.id)})">Save</button>
                <button type="button" class="btn outline" onclick="closeSheet();done(${ja(t.id)})">${waiting ? 'Received' : 'Done'}</button>`}
-      ${sug || waiting ? '' : `<button type="button" class="ghost" onclick="closeSheet();pin(${ja(t.id)})">${icon('pin')}Pin</button>
-      <button type="button" class="ghost" onclick="openSnooze(${ja(t.id)})">${icon('clock')}Later</button>`}
+      ${reply ? `<button type="button" class="ghost" onclick="sheetReplyFocus()">Reply</button>` : ''}
+      ${sug || waiting ? '' : `<button type="button" class="ghost" onclick="openSnooze(${ja(t.id)})">${icon('clock')}Later</button>
+      <button type="button" class="ghost" aria-label="Pin to the top of Now" title="Pin to the top of Now" onclick="closeSheet();pin(${ja(t.id)})">${icon('pin')}</button>`}
       <span class="spacer"></span>
-      <button type="button" class="ghost" onclick="closeSheet();dismissTodo(${ja(t.id)})">${sug ? 'Dismiss' : 'Drop it'}</button>
-    </div>
-    <div id="tdCtx">${t.thread_id ? '<div class="label" style="margin-top:20px">Loading the conversation…</div>' : ''}</div>`;
+      <button type="button" class="ghost" onclick="closeSheet();dismissTodo(${ja(t.id)})">${sug ? 'Dismiss' : 'Drop'}</button>
+    </div>`;
+}
+// Save shows up when there is something to save, so the bar holds one line of actions.
+function tdDirty() {
+  const b = document.getElementById('tdSave'), t = S.sheet && S.sheet.kind === 'todo' && S.sheet.data; if (!b || !t) return;
+  const v = id => (document.getElementById(id) || {}).value || '';
+  const dirty = v('tdTitle').trim() !== (t.title || '') || v('tdFront') !== (t.front_id || '') || v('tdPerson').trim() !== (t.person || '') || v('tdDue') !== (t.due || '');
+  b.style.display = dirty ? '' : 'none';
 }
 async function saveTodo(id, accept) {
   const body = { id, title: document.getElementById('tdTitle').value.trim(), front_id: document.getElementById('tdFront').value || '',
@@ -1089,7 +1171,7 @@ function sheetReview() {
           <label class="label">Person<input id="rvPerson" class="field" style="padding:10px 12px;font-size:15px" value="${esc(t.person || '')}"></label>
           <label class="label">Due<input id="rvDue" type="date" class="field" style="padding:10px 12px;font-size:15px" value="${esc(t.due || '')}"></label></div>`
         : `<div class="serif" style="font-size:22px;line-height:1.3;margin-top:4px">${esc(t.title)}</div>`) +
-      quoteHtml(t) + `</div>
+      (t.because_written ? `<div class="because">${esc(t.because)}</div>` : '') + quoteHtml(t) + `</div>
       <div style="margin-top:18px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button type="button" class="btn big" onclick="rvYes()">${r.edit ? 'Save and accept' : 'Accept'}${r.edit ? '' : '<span class="kbd">A</span>'}</button>
         <button type="button" class="btn big plain" onclick="rvNo()">Dismiss${r.edit ? '' : '<span class="kbd">D</span>'}</button>
@@ -1747,7 +1829,9 @@ async function submitCapture() {
   toast(r.receipt || 'Saved'); refresh();
 }
 
-window.addEventListener('resize', () => { if (S.sheet) renderSheet(); });
+// Only a change of mode (side / dialog / bottom sheet) needs a redraw. Redrawing on every resize
+// threw away the loaded conversation and anything half-typed, on any window drag.
+window.addEventListener('resize', () => { if (S.sheet && S.sheet.mode !== sheetMode(S.sheet.kind)) renderSheet(true); });
 boot();
 </script>
 </body>

@@ -13995,6 +13995,7 @@ extension HTTPServer {
 
         // ── to-dos ──
         case ("GET", "/api/v2/todos"):
+            TodoEvidence.writeBecauseIfDue(ai: getConfig().map { ClaudeAIService(config: $0.ai) }, userName: getConfig()?.user.name ?? "")
             return ok(TodoService.list(filter: request.queryParams["filter"], schedules: await rewireSchedules()))
 
         case ("POST", "/api/v2/todos"):
@@ -14056,6 +14057,13 @@ extension HTTPServer {
             // The to-do with the conversation around the message it came from.
             guard let id = request.queryParams["id"], let t = TodoStore.shared.get(id) else { return bad("id required") }
             return ok(await TodoEvidence.context(for: t))
+
+        case ("POST", "/api/v2/todos/because/backfill"):
+            // Write the one-sentence context line for every to-do that has a conversation and no line yet.
+            guard let cfg = getConfig() else { return bad("no config") }
+            let r = await TodoEvidence.writeBecause(ai: ClaudeAIService(config: cfg.ai), userName: cfg.user.name)
+            return ok(["ok": true, "candidates": r["candidates"] ?? 0, "written": r["written"] ?? 0,
+                       "unclear": r["unclear"] ?? 0, "rejected": r["rejected"] ?? 0, "calls": r["calls"] ?? 0])
 
         case ("POST", "/api/v2/todos/evidence/backfill"):
             let r = await TodoEvidence.backfill()

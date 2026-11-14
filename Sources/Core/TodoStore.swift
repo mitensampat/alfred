@@ -52,6 +52,30 @@ final class TodoStore {
         var evidence: String?
         var evidenceAt: String?
         var evidenceBy: String?
+        /// One sentence saying what this is about and what prompted it, written from the
+        /// conversation. nil = not written yet; "" = tried, and the conversation did not say.
+        var because: String?
+
+        /// The line every to-do shows under its title. The written sentence when there is one;
+        /// otherwise the plain fact of where the to-do came from. Never invented, never empty.
+        var becauseLine: (text: String, written: Bool) {
+            if let b = because?.trimmingCharacters(in: .whitespacesAndNewlines), !b.isEmpty { return (b, true) }
+            let day: String = {
+                guard let d = ISO8601DateFormatter().date(from: createdAt) else { return "" }
+                let f = DateFormatter(); f.dateFormat = "d MMM"; f.locale = Locale(identifier: "en_US_POSIX")
+                return f.string(from: d)
+            }()
+            let on = day.isEmpty ? "" : " on \(day)"
+            switch source {
+            case "capture": return ("You added this\(on).", false)
+            case "notion_mirror": return ("You added this in Notion\(on).", false)
+            case "notion_import": return ("From your Notion task list.", false)
+            case "whatsapp_self": return ("From your WhatsApp notes to self\(on).", false)
+            default:
+                let note = sourceNote?.trimmingCharacters(in: .whitespaces) ?? ""
+                return (note.isEmpty ? "Added\(on)." : "\(note)\(on).", false)
+            }
+        }
 
         var resolvedDirection: String? {
             if let d = direction { return d }
@@ -80,6 +104,9 @@ final class TodoStore {
             d["evidence"] = evidence as Any? ?? NSNull()
             d["evidence_at"] = evidenceAt as Any? ?? NSNull()
             d["evidence_by"] = evidenceBy as Any? ?? NSNull()
+            let line = becauseLine
+            d["because"] = line.text
+            d["because_written"] = line.written
             return d
         }
     }
@@ -168,6 +195,7 @@ final class TodoStore {
         exec("ALTER TABLE todos ADD COLUMN evidence TEXT")
         exec("ALTER TABLE todos ADD COLUMN evidence_at TEXT")
         exec("ALTER TABLE todos ADD COLUMN evidence_by TEXT")
+        exec("ALTER TABLE todos ADD COLUMN because TEXT")
         exec("CREATE INDEX IF NOT EXISTS idx_todos_status ON todos(status, kind)")
         exec("CREATE INDEX IF NOT EXISTS idx_todos_dedupe ON todos(dedupe_key)")
         exec("CREATE INDEX IF NOT EXISTS idx_todos_dirty ON todos(dirty)")
@@ -197,7 +225,7 @@ final class TodoStore {
 
     // MARK: - Reads
 
-    private static let columns = "id, title, status, kind, due, front_id, front_name, person, source, source_ref, source_note, thread_id, confidence, pinned, snoozed_until, skip_count, created_at, updated_at, done_at, notion_page_id, dirty, draft, direction, evidence, evidence_at, evidence_by"
+    private static let columns = "id, title, status, kind, due, front_id, front_name, person, source, source_ref, source_note, thread_id, confidence, pinned, snoozed_until, skip_count, created_at, updated_at, done_at, notion_page_id, dirty, draft, direction, evidence, evidence_at, evidence_by, because"
 
     func all(where clause: String = "1=1", args: [String] = [], order: String = "created_at DESC", limit: Int = 2000) -> [Todo] {
         lock.lock(); defer { lock.unlock() }
@@ -346,7 +374,7 @@ final class TodoStore {
         let allowed: Set<String> = ["title", "status", "kind", "due", "front_id", "front_name", "person", "pinned",
                                     "snoozed_until", "skip_count", "done_at", "notion_page_id", "dirty", "draft",
                                     "source_note", "updated_at", "hidden_reason",
-                                    "thread_id", "direction", "evidence", "evidence_at", "evidence_by", "created_at"]
+                                    "thread_id", "direction", "evidence", "evidence_at", "evidence_by", "created_at", "because"]
         var sets: [String] = []
         var vals: [Any?] = []
         for (k, v) in fields where allowed.contains(k) {
@@ -508,6 +536,6 @@ final class TodoStore {
             skipCount: Int(sqlite3_column_int64(s, 15)),
             createdAt: col(s, 16) ?? "", updatedAt: col(s, 17) ?? "", doneAt: col(s, 18),
             notionPageId: col(s, 19), dirty: sqlite3_column_int64(s, 20) == 1, draft: col(s, 21),
-            direction: col(s, 22), evidence: col(s, 23), evidenceAt: col(s, 24), evidenceBy: col(s, 25))
+            direction: col(s, 22), evidence: col(s, 23), evidenceAt: col(s, 24), evidenceBy: col(s, 25), because: col(s, 26))
     }
 }

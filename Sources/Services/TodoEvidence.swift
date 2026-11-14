@@ -121,8 +121,9 @@ enum TodoEvidence {
             // Evidence recorded at extraction wins: it is the model's own pointer, not a guess.
             let hashes = store.sources(of: t.id).filter { $0.source == "commitment" }.map { $0.ref }
             if let ev = hashes.lazy.compactMap({ CommitmentScanTracker.shared.evidence(hash: $0) }).first {
-                store.update(t.id, ["evidence": ev.quote, "evidence_by": ev.saidBy ?? NSNull(), "evidence_at": ev.saidAt ?? NSNull()],
-                             markDirty: false, touch: false)
+                var f: [String: Any?] = ["evidence": ev.quote, "evidence_by": ev.saidBy ?? NSNull(), "evidence_at": ev.saidAt ?? NSNull()]
+                if t.because == nil, let b = ev.because { f["because"] = b }
+                store.update(t.id, f, markDirty: false, touch: false)
                 found += 1
                 continue
             }
@@ -145,6 +146,136 @@ enum TodoEvidence {
         return ["checked": checked, "found": found, "without_evidence": todos.count]
     }
 
+    // MARK: - The because line
+
+    /// Whether every proper noun in a written line appears in the text it was written from.
+    ///
+    /// A model asked to summarise will sometimes supply a detail the messages never gave: a name
+    /// spelled its own way, a month, a place. Those are the errors that matter in a line the user
+    /// reads as fact, and they are checkable without a second model: a capitalised word that is
+    /// not in the conversation did not come from the conversation. A line that fails is dropped,
+    /// and the to-do shows where it came from instead.
+    static func grounded(_ line: String, corpus: String) -> Bool {
+        let hay = corpus.lowercased()
+        let tokens = line.split(whereSeparator: { !($0.isLetter || $0.isNumber) }).map(String.init)
+        for (i, w) in tokens.enumerated() where i > 0 {
+            guard w.count >= 3, let f = w.first, f.isUppercase else { continue }
+            var base = w.lowercased()
+            if base.hasSuffix("s"), !hay.contains(base) { base.removeLast() }   // "Shreya's" splits to "Shreya", "s"; plurals
+            if !hay.contains(base) { return false }
+        }
+        return true
+    }
+
+    /// The messages a because line is written from: around the source message when it is known,
+    /// otherwise what was being said when the to-do was made.
+    private static func window(for t: TodoStore.Todo, in all: [Msg]) -> [Msg] {
+        if let at = t.evidenceAt.flatMap({ iso.date(from: $0) }),
+           let i = all.firstIndex(where: { abs($0.at.timeIntervalSince(at)) < 1 }) {
+            // The same sitting only: a day before the message and a few hours after it. Without the
+            // time bound, a quiet thread hands the model next week's unrelated messages as "context".
+            let near = all[max(0, i - 10)...min(all.count - 1, i + 3)]
+            return near.filter { $0.at >= at.addingTimeInterval(-86400) && $0.at <= at.addingTimeInterval(6 * 3600) }
+        }
+        let created = iso.date(from: t.createdAt) ?? Date()
+        return Array(all.filter { $0.at >= created.addingTimeInterval(-4 * 86400) && $0.at <= created.addingTimeInterval(86400) }.suffix(20))
+    }
+
+    private static var lastBecause: Date?
+    private static var becauseRunning = false
+
+    private static func claimBecauseRun() -> Bool {
+        gate.lock(); defer { gate.unlock() }
+        let due = !becauseRunning && (lastBecause.map { Date().timeIntervalSince($0) > 6 * 3600 } ?? true)
+        if due { becauseRunning = true }
+        return due
+    }
+    private static func releaseBecauseRun() { gate.lock(); becauseRunning = false; lastBecause = Date(); gate.unlock() }
+
+    /// Write missing because lines in the background, at most once every six hours per process.
+    /// New commitments get theirs at extraction; this catches whatever arrived another way.
+    static func writeBecauseIfDue(ai: ClaudeAIService?, userName: String) {
+        guard let ai = ai, claimBecauseRun() else { return }
+        Task.detached(priority: .utility) {
+            let r = await writeBecause(ai: ai, userName: userName)
+            if (r["written"] ?? 0) > 0 { print("🧾 To-do context: wrote \(r["written"] ?? 0) because lines (\(r["unclear"] ?? 0) left unclear)") }
+            releaseBecauseRun()
+        }
+    }
+
+    /// Give each live to-do that has a conversation, and no because line yet, one sentence saying
+    /// what it is about. One model call per conversation (six to-dos at most per call).
+    ///
+    /// The model is told to return an empty string when the messages do not make the subject
+    /// clear, and that answer is kept (as "") so the to-do is not asked about again: it then shows
+    /// the plain fact of where it came from, which is true, instead of a sentence that might not be.
+    @discardableResult
+    static func writeBecause(ai: ClaudeAIService, userName: String) async -> [String: Int] {
+        let store = TodoStore.shared
+        let todos = store.all(where: "status IN ('open', 'suggested') AND because IS NULL AND thread_id LIKE '%@%'")
+            .filter { !($0.threadId ?? "").hasSuffix("@g.us") }
+        var byThread: [String: [TodoStore.Todo]] = [:]
+        for t in todos { byThread[t.threadId ?? "", default: []].append(t) }
+        let me = userName.split(separator: " ").first.map(String.init) ?? "the user"
+        let tf = DateFormatter(); tf.dateFormat = "d MMM HH:mm"; tf.locale = Locale(identifier: "en_US_POSIX")
+        var written = 0, unclear = 0, calls = 0, rejected = 0
+        let schema: [String: Any] = [
+            "type": "object", "additionalProperties": false, "required": ["items"],
+            "properties": ["items": ["type": "array", "items": [
+                "type": "object", "additionalProperties": false, "required": ["n", "because"],
+                "properties": ["n": ["type": "integer"], "because": ["type": "string"]]]]]]
+        for (jid, rows) in byThread {
+            let all = await threadMessages(jid: jid, since: Date().addingTimeInterval(-90 * 86400))
+            guard !all.isEmpty else { continue }   // bridge down or history gone: try again another time
+            var start = 0
+            while start < rows.count {
+                let chunk = Array(rows[start..<min(rows.count, start + 6)]); start += 6
+                var body = ""
+                var asked: [Int: TodoStore.Todo] = [:]
+                var corpus: [Int: String] = [:]
+                for (i, t) in chunk.enumerated() {
+                    let w = window(for: t, in: all)
+                    guard !w.isEmpty else { store.update(t.id, ["because": ""], markDirty: false, touch: false); unclear += 1; continue }
+                    asked[i + 1] = t
+                    corpus[i + 1] = ([t.title, t.person ?? "", me, userName, t.evidence ?? ""] + w.map { $0.sender + " " + $0.text }).joined(separator: " ")
+                    let other = t.person ?? "the other person"
+                    body += "\nTO-DO \(i + 1)\nTitle: \(t.title)\n"
+                    body += "Who owes whom: " + (t.resolvedDirection == "they_owe" ? "\(other) owes \(me) this" : "\(me) owes \(other) this") + "\n"
+                    if let q = t.evidence { body += "Source message: \(String(q.prefix(400)))\n" }
+                    body += "Messages around it:\n" + w.map { "[\(tf.string(from: $0.at))] \($0.fromMe ? me : $0.sender): \(String($0.text.prefix(300)))" }.joined(separator: "\n") + "\n"
+                }
+                guard !asked.isEmpty else { continue }
+                let prompt = """
+                These to-dos were extracted from a WhatsApp conversation between \(me) and someone else. For each one, write ONE sentence (at most 25 words) that lets \(me) read the to-do cold, weeks from now: what it is about and what prompted it.
+
+                Rules:
+                - Address \(me) as "you". Use first names only for everyone else.
+                - Say first what the to-do actually is (the action and what it concerns), then what prompted it if the messages show that. Background alone is not an answer.
+                - The "Who owes whom" line says who has to act. If the messages plainly show it is the other way round, describe what the messages show.
+                - Resolve "it", "this", "them", "her" from the messages when the conversation makes the referent clear.
+                - Use only what the messages say. Never guess, and never add a fact that is not in them.
+                - Copy names exactly as they are spelled in the messages. Do not add a date, weekday or place the messages do not state.
+                - If the messages shown do not make clear what the to-do is about, return an empty string for it. An empty string is a good answer; a plausible guess is a bad one.
+                - Do not restate the title: say what the title leaves out.
+                - Plain sentence, no quotation marks, no preamble.
+                \(body)
+                Reply with one item per to-do: n is the to-do number.
+                """
+                calls += 1
+                guard let obj = try? await ai.generateStructured(prompt: prompt, schema: schema, maxTokens: 900),
+                      let items = obj["items"] as? [[String: Any]] else { continue }
+                for it in items {
+                    guard let n = it["n"] as? Int, let t = asked[n] else { continue }
+                    var line = ((it["because"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !line.isEmpty, !grounded(line, corpus: corpus[n] ?? "") { line = ""; rejected += 1 }
+                    store.update(t.id, ["because": String(line.prefix(300))], markDirty: false, touch: false)
+                    if line.isEmpty { unclear += 1 } else { written += 1 }
+                }
+            }
+        }
+        return ["candidates": todos.count, "written": written, "unclear": unclear, "calls": calls, "rejected": rejected]
+    }
+
     // MARK: - The conversation around a to-do
 
     /// The to-do with the messages around its source, for the detail sheet. With evidence, the
@@ -159,8 +290,11 @@ enum TodoEvidence {
         var picked: [Msg]
         var sourceIndex: Int? = nil
         if t.evidenceAt != nil, let i = all.firstIndex(where: { abs($0.at.timeIntervalSince(anchor)) < 1 }) {
-            let lo = max(0, i - 5), hi = min(all.count - 1, i + 3)
-            picked = Array(all[lo...hi]); sourceIndex = i - lo
+            // Neighbours in the same sitting, not whatever was said days later in a quiet thread.
+            let src = all[i]
+            let before = all[max(0, i - 5)..<i].filter { $0.at >= src.at.addingTimeInterval(-86400) }
+            let after = all[(i + 1)..<min(all.count, i + 4)].filter { $0.at <= src.at.addingTimeInterval(6 * 3600) }
+            picked = Array(before) + [src] + Array(after); sourceIndex = before.count
         } else {
             picked = Array(all.filter { $0.at <= anchor.addingTimeInterval(86400) }.suffix(8))
         }
