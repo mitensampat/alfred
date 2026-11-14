@@ -108,6 +108,7 @@ cmd_start() {
     for _ in $(seq 1 25); do
         sleep 0.4
         if curl -s "http://127.0.0.1:$PORT/api/health?passcode=$(passcode)" | grep -q '"ok"'; then
+            settle
             green "✓ sandbox up on $PORT (pid $(cat "$PIDFILE"))"
             dim "  data: $WORK"
             dim "  log:  $LOGFILE"
@@ -144,6 +145,20 @@ cmd_status() {
 }
 
 cmd_reset() { cmd_stop; rm -rf "$WORK"; cmd_start; }
+
+settle() {
+    # Answering health is not the same as being ready to measure.
+    #
+    # The first pass over a fresh corpus WRITES: it collapses duplicate promises and dismisses
+    # the rows it supersedes. Read the to-dos before that has happened and you get a half-settled
+    # number no later run will reproduce — which is exactly how a cold first run reported a
+    # 104 -> 146 regression that was nothing but the clock. Touching the two surfaces that
+    # trigger the pass, then waiting for it, makes "started" mean "settled".
+    for path in /api/v2/todos /api/desk; do
+        curl -s -m 60 "http://127.0.0.1:$PORT$path?passcode=$(passcode)" >/dev/null 2>&1 || true
+    done
+    sleep 4
+}
 
 is_running() {
     [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null

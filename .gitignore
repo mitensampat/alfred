@@ -46,18 +46,14 @@ support/access-pipeline.md
 # Old HTML versions
 Sources/GUI/Resources/home-v*.html
 
-# Test/temp scripts
-test_*.swift
-fix_*.swift
-create_*.swift
+# One-off scripts, named rather than globbed: `test_*.swift` would have swallowed any real
+# test file added later, which is the kind of rule you only discover the day it costs you.
+test_create_tasks.swift
+fix_tasks_database.swift
+create_tasks_database.swift
 
 # Notion database backups
 notion_backup/
-
-# Agent learning databases
-~/.alfred/decisions.db
-~/.alfred/learning.db
-~/.alfred/message_drafts.json
 
 # Cleanup directory
 .cleanup/
