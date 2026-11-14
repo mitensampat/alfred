@@ -6204,8 +6204,12 @@ The Commitment Check feature requires a properly configured Notion database.
         do {
             let intentResponse = try await intentService.recognizeIntent(query, sessionId: sessionId)
 
-            // If clarification needed, stream it as a question back to the user
-            if intentResponse.clarificationNeeded, let question = intentResponse.clarificationQuestion {
+            // If clarification needed, stream it as a question back to the user.
+            // A tagged message is the exception: the tag already says which person or front is
+            // meant and their records are in the prompt, so it goes on to an answer instead.
+            if intentResponse.clarificationNeeded && !tags.isEmpty {
+                print("💬 Chat: clarification skipped, message carries \(tags.people.count + tags.fronts.count) tag(s)")
+            } else if intentResponse.clarificationNeeded, let question = intentResponse.clarificationQuestion {
                 // Record the clarification exchange so follow-up messages have context
                 sharedContext.addTurn(sessionId: sessionId, query: query, intent: intentResponse.intent, result: nil)
                 ConversationHistoryService.shared.addTurn(sessionId: sessionId, role: "user", content: query)
@@ -6218,7 +6222,8 @@ The Commitment Check feature requires a properly configured Notion database.
             }
 
             // If high confidence structured intent, execute it and stream the result
-            if intentResponse.intent.confidence > 0.8 {
+            // (never an intent the recogniser itself flagged as needing clarification)
+            if intentResponse.intent.confidence > 0.8 && !intentResponse.clarificationNeeded {
                 if let orchestrator = alfredService.orchestrator {
                     let toolName = intentResponse.intent.target?.rawValue ?? "unknown"
 
