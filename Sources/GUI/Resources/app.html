@@ -242,7 +242,9 @@ textarea.field{resize:none}
 .bubble b{font-weight:600}
 /* the conversation: the composer stays in reach while the log scrolls behind it */
 #chatLog{min-height:32dvh}
-.composer{position:sticky;bottom:0;background:var(--paper);padding:10px 0 2px;margin-top:8px}
+/* it sticks to the sheet's content edge, so it reaches down over the sheet's own bottom padding
+   (34px, plus the safe area on a phone); otherwise the log shows through underneath it */
+.composer{position:sticky;bottom:calc(-34px - env(safe-area-inset-bottom,0px));background:var(--paper);padding:10px 0 calc(36px + env(safe-area-inset-bottom,0px));margin:8px 0 calc(-34px - env(safe-area-inset-bottom,0px))}
 .composer form{display:flex;gap:8px;align-items:flex-end}
 .composer textarea{margin-top:0;max-height:140px;flex:1 1 auto;min-width:0}
 .tagrow{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
