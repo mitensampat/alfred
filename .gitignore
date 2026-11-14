@@ -82,9 +82,6 @@ ftue-screenshots/
 # DMG distribution files (use GitHub Releases)
 *.dmg
 
-# Claude Code project context (contains local config details)
-CLAUDE.md
-
 # Local deployment script
 deploy.sh
 .claude/worktrees/
