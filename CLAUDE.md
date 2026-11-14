@@ -227,6 +227,8 @@ Each intent target maps to a coaching posture via `IntentCoachingRouter`. The po
 - `GET /api/messages/summary?platform=whatsapp&contact=Name&days=7` - Messages
 - `GET /api/attention-check` - Attention defense alert
 - `GET /api/commitments/dashboard` - Commitment dashboard
+- `GET /api/chat/stream?q=&sessionId=&mentions=` - Chat (SSE). `mentions` is a JSON list of `{type:"person",name}` / `{type:"front",id,name}` from @-tags; each tagged record is read fresh into the prompt
+- `GET /api/coaching/live` - Every coaching recommendation held right now (triggers + signals computed on request, skill cards from the last run). The chat prompt reads the same list
 - `POST /api/commitments/scan?contact=Name` - Scan for commitments
 - `GET /api/extract/todos?days=7` - Extract todos
 - `POST /api/todos/scan` - Formatted todo scan

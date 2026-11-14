@@ -835,31 +835,13 @@ class HTTPServer {
             return HTTPResponse(statusCode: ok ? 200 : 500, body: ["success": ok, "promoted": true, "id": fid])
 
         case ("GET", "/api/coaching/signals"):
-            // Deterministic coach signals (no LLM): front-neglect + relationship-pattern. These
-            // merge into the Coach surface + the Desk "◆ Coach" moment alongside the skill cards.
-            var signals: [[String: Any]] = []
-            let fronts = DeskService.buildFronts()
-            let neglectedFronts = fronts
-                .filter { (($0["owned_by_you"] as? Bool) ?? true) && (($0["days_since"] as? Int) ?? 0) >= 14 }
-                .sorted { (($0["days_since"] as? Int) ?? 0) > (($1["days_since"] as? Int) ?? 0) }
-            if let f = neglectedFronts.first {
-                let name = f["name"] as? String ?? "a front"
-                let d = f["days_since"] as? Int ?? 0
-                signals.append([
-                    "type": "front-neglect", "label": "🕰 Losing touch",
-                    "insight": "You haven't moved \(name) in \(d) days — it's yours and going quiet. A short push now keeps it from stalling."])
-            }
-            let reliability = Dictionary(
-                TaskLifecycleTracker.shared.getStatsByCounterparty().map { ($0.name.lowercased(), $0) },
-                uniquingKeysWith: { a, _ in a })
-            if let c = DeskService.buildGoingCold(reliability: reliability, onDesk: Set()).first {
-                let who = c["name"] as? String ?? "someone"
-                let reason = c["reason"] as? String ?? "has gone quiet."
-                signals.append([
-                    "type": "relationship", "label": "👥 Relationship",
-                    "insight": "\(who): \(reason)"])
-            }
-            return HTTPResponse(statusCode: 200, body: ["signals": signals])
+            return HTTPResponse(statusCode: 200, body: ["signals": coachSignals()])
+
+        case ("GET", "/api/coaching/live"):
+            // Every recommendation Alfred holds right now, from all three producers. The chat
+            // reads the same list into its prompt, so what the screen offers is what it knows.
+            let liveItems = await gatherLiveCoaching()
+            return HTTPResponse(statusCode: 200, body: ["items": liveItems])
 
         case ("GET", "/api/coaching/nudge"):
             // Dry-run of the proactive push content (what would we tell you tonight about tomorrow).
@@ -6127,11 +6109,16 @@ The Commitment Check feature requires a properly configured Notion database.
     private func handleChatStream(_ request: HTTPRequest, client: ClientSocket) async {
         client.beginSSE()
 
-        guard let query = request.queryParams["q"], !query.isEmpty else {
+        guard let rawQuery = request.queryParams["q"], !rawQuery.isEmpty else {
             client.sendSSEJSON(event: "error", json: ["error": "Missing 'q' parameter"])
             client.endSSE()
             return
         }
+
+        // @-tags name a person or a front outright. The "@" comes off before anything reads the
+        // message, so intent recognition and contact matching see an ordinary name.
+        let tags = parseChatTags(request.queryParams["mentions"])
+        let query = stripTagMarkers(rawQuery, tags: tags)
 
         let sessionId = request.queryParams["sessionId"] ?? "default"
 
@@ -6156,7 +6143,8 @@ The Commitment Check feature requires a properly configured Notion database.
         // Fast/cached calls — keep sequential
         let coachingContext = CoachingMemoryService.shared.getCoachingContext()
         let agentMemoryRules = gatherAgentMemoryRules()
-        let coachingInsights = gatherAllCoachingInsights()
+        let liveCoaching = await gatherLiveCoaching()
+        let coachingInsights = formatLiveCoaching(liveCoaching)
         let unifiedFollowups = gatherUnifiedFollowups()
         // Expensive calls — run in parallel
         async let liveContextTask = gatherLiveContext(config: config)
@@ -6167,9 +6155,12 @@ The Commitment Check feature requires a properly configured Notion database.
 
         // On-demand: detailed commitments + messages (only when topic/person is relevant)
         let knownContacts = getKnownContactNames()
-        let (needsCommitments, needsMessages, mentionedPerson) = ChatContextRouter.detectContext(
-            query: query, knownContacts: knownContacts
-        )
+        let detected = ChatContextRouter.detectContext(query: query, knownContacts: knownContacts)
+        // A tag outranks a guess: a tagged person is the mentioned person, and their commitments
+        // and messages are always fetched rather than waiting on a keyword to ask for them.
+        let mentionedPerson = tags.people.first ?? detected.2
+        let needsCommitments = detected.0 || !tags.people.isEmpty
+        let needsMessages = detected.1 || !tags.people.isEmpty
         let detailedCommitments = needsCommitments
             ? gatherDetailedCommitments(mentionedPerson: mentionedPerson)
             : ""
@@ -6179,6 +6170,13 @@ The Commitment Check feature requires a properly configured Notion database.
         if needsMessages, let person = mentionedPerson {
             recentMessages = await gatherRecentMessages(for: person, config: config)
         }
+        // A second and third tagged person get their messages too; beyond that the prompt is
+        // carrying more thread than any one answer can use.
+        for extra in tags.people.dropFirst().prefix(2) {
+            let more = await gatherRecentMessages(for: extra, config: config)
+            recentMessages += "\n\n" + more
+        }
+        let taggedContext = await buildTaggedContext(tags)
 
         let currentTrustLevel = TrustStateService.shared.getCurrentLevel()
         let reflectionContext = ReflectionStore.shared.getFormattedContextForCoaching(maxChars: 1200)
@@ -6196,7 +6194,7 @@ The Commitment Check feature requires a properly configured Notion database.
             trustLevel: currentTrustLevel,
             mentionedContact: mentionedPerson,
             reflectionContext: reflectionContext
-        )
+        ) + taggedContext
 
         // Use shared conversation context (persists across requests for same session)
         let sharedContext = ConversationContext.shared
@@ -6428,7 +6426,7 @@ The Commitment Check feature requires a properly configured Notion database.
                 activePosture: activePosture,
                 trustLevel: currentTrustLevel,
                 reflectionContext: reflectionContext
-            )
+            ) + taggedContext
         } else {
             chatSystemPrompt = systemPrompt
         }
@@ -8035,6 +8033,228 @@ The Commitment Check feature requires a properly configured Notion database.
     /// Gather ALL cached coaching card insights with reasoning data.
     /// Always-on: included in every chat message so Alfred is universally informed.
     /// Zero-cost: reads from CoachingEngine's 2h cache, no LLM calls.
+    // MARK: - Live coaching (every recommendation, for the chat)
+
+    /// Deterministic coach signals (no LLM): front-neglect + relationship-pattern. These
+    /// merge into the Coach surface alongside the skill cards.
+    private func coachSignals() -> [[String: Any]] {
+        var signals: [[String: Any]] = []
+        let fronts = DeskService.buildFronts()
+        let neglectedFronts = fronts
+            .filter { (($0["owned_by_you"] as? Bool) ?? true) && (($0["days_since"] as? Int) ?? 0) >= 14 }
+            .sorted { (($0["days_since"] as? Int) ?? 0) > (($1["days_since"] as? Int) ?? 0) }
+        if let f = neglectedFronts.first {
+            let name = f["name"] as? String ?? "a front"
+            let d = f["days_since"] as? Int ?? 0
+            signals.append([
+                "type": "front-neglect", "label": "🕰 Losing touch",
+                "insight": "You haven't moved \(name) in \(d) days — it's yours and going quiet. A short push now keeps it from stalling."])
+        }
+        let reliability = Dictionary(
+            TaskLifecycleTracker.shared.getStatsByCounterparty().map { ($0.name.lowercased(), $0) },
+            uniquingKeysWith: { a, _ in a })
+        if let c = DeskService.buildGoingCold(reliability: reliability, onDesk: Set()).first {
+            let who = c["name"] as? String ?? "someone"
+            let reason = c["reason"] as? String ?? "has gone quiet."
+            signals.append([
+                "type": "relationship", "label": "👥 Relationship",
+                "insight": "\(who): \(reason)"])
+        }
+        return signals
+    }
+
+    /// The skill cards from the last coaching run, wherever a copy survives: the engine's memory,
+    /// its same-day file, then the response cache. Reads only — a chat message never pays for a
+    /// fresh run of every skill.
+    private func cachedCoachingCards() -> [(label: String, insight: String, reasoning: [String])] {
+        if coachingEngine == nil, let config = getConfig() {
+            coachingEngine = CoachingEngine(config: config, alfredService: alfredService)
+        }
+        if let engine = coachingEngine {
+            if let live = engine.getCachedCardInsightsWithContext(), !live.isEmpty {
+                return live.map { item in
+                    let reasoning = item.contextData
+                        .filter { !$0.hasPrefix("===") && !$0.isEmpty }
+                        .prefix(3)
+                        .map { $0.trimmingCharacters(in: .whitespaces) }
+                    return (label: item.card.label, insight: item.card.insight, reasoning: Array(reasoning))
+                }
+            }
+            if let disk = engine.loadCardsFromDisk() {
+                return disk.map { (label: $0.label, insight: $0.insight, reasoning: []) }
+            }
+        }
+        if let raw = cache.getCached(endpoint: "/api/coaching/cards"),
+           let data = raw.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let cards = json["cards"] as? [[String: Any]] {
+            return cards.compactMap { c in
+                guard let insight = c["insight"] as? String, !insight.isEmpty else { return nil }
+                return (label: (c["label"] as? String) ?? "Coach", insight: insight, reasoning: [])
+            }
+        }
+        return []
+    }
+
+    /// Every coaching recommendation Alfred holds at this moment. Triggers and signals are
+    /// computed on the spot from the to-do list, fronts, calendar and threads; skill cards are
+    /// model-written, so they are as fresh as the last coaching run. Unlike the now tab, nothing
+    /// is capped or held back for a dismissal: a question in chat deserves the whole list.
+    private func gatherLiveCoaching() async -> [[String: Any]] {
+        var items: [[String: Any]] = []
+        let schedules = await rewireSchedules()
+        let todos = TodoStore.shared.all()
+        for line in CoachTriggerService.candidates(todos: todos, schedules: schedules) {
+            items.append(["source": "trigger", "label": "Right now", "text": line.text])
+        }
+        for s in coachSignals() {
+            guard let text = s["insight"] as? String, !text.isEmpty else { continue }
+            items.append(["source": "signal", "label": (s["label"] as? String) ?? "Signal", "text": text])
+        }
+        for c in cachedCoachingCards() {
+            items.append(["source": "card", "label": c.label, "text": c.insight, "reasoning": c.reasoning])
+        }
+        return items
+    }
+
+    /// The live list as prompt text, in the shape the coaching prompt already expects
+    /// ("[label] insight" with "→" reasoning lines underneath).
+    private func formatLiveCoaching(_ items: [[String: Any]]) -> String {
+        guard !items.isEmpty else { return "" }
+        var lines = ["Every coaching recommendation you hold right now (\(items.count)). \"Right now\" and signal lines were computed this minute; the rest come from the latest coaching run:"]
+        for item in items {
+            let text = (item["text"] as? String) ?? ""
+            let clipped = text.count > 400 ? String(text.prefix(400)) + "..." : text
+            lines.append("  [\((item["label"] as? String) ?? "Coach")] \(clipped)")
+            for r in (item["reasoning"] as? [String]) ?? [] { lines.append("    → \(r)") }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Tags (@person, @front) in a chat message
+
+    private struct ChatTags {
+        var people: [String] = []
+        var fronts: [FrontService.ThemeRow] = []
+        var markers: [String] = []      // every "@Name" spelling to turn back into plain words
+        var isEmpty: Bool { people.isEmpty && fronts.isEmpty }
+    }
+
+    /// The `mentions` parameter: a JSON list of {type: "person", name} and {type: "front", id, name}.
+    /// A front is looked up by id, so a tag can only ever point at a front that exists.
+    private func parseChatTags(_ raw: String?) -> ChatTags {
+        var out = ChatTags()
+        guard let raw = raw, let data = raw.data(using: .utf8),
+              let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return out }
+        for t in arr.prefix(6) {
+            let type = (t["type"] as? String) ?? ""
+            let name = (t["name"] as? String)?.trimmedNonEmpty
+            if type == "person", let n = name, !out.people.contains(where: { $0.lowercased() == n.lowercased() }) {
+                out.people.append(n)
+                out.markers.append("@" + n)
+            } else if type == "front", let id = t["id"] as? String,
+                      let row = FrontService.themes().first(where: { $0.id == id }),
+                      !out.fronts.contains(where: { $0.id == id }) {
+                out.fronts.append(row)
+                out.markers.append("@" + row.name)
+                if let n = name, n != row.name { out.markers.append("@" + n) }
+            }
+        }
+        return out
+    }
+
+    /// "@Asha Rao" back to "Asha Rao", longest spelling first so one name cannot cut another short.
+    private func stripTagMarkers(_ text: String, tags: ChatTags) -> String {
+        var out = text
+        for m in tags.markers.sorted(by: { $0.count > $1.count }) {
+            out = out.replacingOccurrences(of: m, with: String(m.dropFirst()))
+        }
+        return out
+    }
+
+    /// What Alfred holds on each tagged person and front, written into the prompt so the answer
+    /// is grounded in that record rather than in whatever the general context happened to carry.
+    private func buildTaggedContext(_ tags: ChatTags) async -> String {
+        guard !tags.isEmpty else { return "" }
+        let schedules = await rewireSchedules()
+        var out: [String] = []
+
+        for name in tags.people {
+            let p = TodoService.person(name, schedules: schedules)
+            var lines = ["### Person: \(name)"]
+            let owe = (p["owe"] as? [[String: Any]]) ?? []
+            let waiting = (p["waiting"] as? [[String: Any]]) ?? []
+            lines.append("You owe them (\(owe.count)):")
+            for t in owe.prefix(12) { lines.append("  - " + taggedTodoLine(t)) }
+            lines.append("You are waiting on them for (\(waiting.count)):")
+            for t in waiting.prefix(12) { lines.append("  - " + taggedTodoLine(t)) }
+            let fronts = ((p["fronts"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }
+            if !fronts.isEmpty { lines.append("Fronts you share: " + fronts.joined(separator: ", ")) }
+            if let next = p["next_meeting"] as? String { lines.append("Next meeting: \(next)") }
+            if let pct = p["on_time_pct"] as? Int { lines.append("They deliver on time \(pct)% of the time.") }
+            let key = name.lowercased()
+            let silent = ContactLearner.shared.getAllThreads()
+                .filter { !$0.isGroup && $0.threadName.trimmingCharacters(in: .whitespaces).lowercased() == key }
+                .map { DeskService.ageDaysPublic(from: $0.lastSeen) }
+                .min()
+            if let d = silent { lines.append("Last heard from: \(d == 0 ? "today" : "\(d) days ago")") }
+            out.append(lines.joined(separator: "\n"))
+        }
+
+        let todos = tags.fronts.isEmpty ? [] : TodoStore.shared.all()
+        for row in tags.fronts {
+            let card = FrontService.card(row, todos: todos)
+            var lines = ["### Front: \(row.name)"]
+            if let o = (card["outcome"] as? String)?.trimmedNonEmpty { lines.append("Outcome wanted: \(o)") }
+            if let d = (card["date_label"] as? String)?.trimmedNonEmpty { lines.append("Date: \(d)") }
+            if let d = (card["decision"] as? String)?.trimmedNonEmpty { lines.append("Open decision: \(d)") }
+            let state = row.meta["front_state"] ?? ""
+            let pulse = (card["pulse"] as? String) ?? ""
+            let stalledDays = (card["stalled_days"] as? Int) ?? 0
+            lines.append("State: \(state.isEmpty ? "not active" : state)" + (pulse == "stalled" ? ", stalled \(stalledDays) days" : ", moving"))
+            if let n = (card["next"] as? String)?.trimmedNonEmpty { lines.append(n) }
+            let people = (card["people"] as? [String]) ?? []
+            if !people.isEmpty { lines.append("People on it: " + people.joined(separator: ", ")) }
+            let open = todos.filter { $0.frontId == row.id && $0.status == .open }
+            let mine = open.filter { $0.kind == .mine }
+            let theirs = open.filter { $0.kind == .waiting }
+            lines.append("Your open to-dos on it (\(mine.count)):")
+            for t in mine.prefix(12) { lines.append("  - " + taggedTodoLine(t.dict)) }
+            if !theirs.isEmpty {
+                lines.append("Waiting on others (\(theirs.count)):")
+                for t in theirs.prefix(12) { lines.append("  - " + taggedTodoLine(t.dict)) }
+            }
+            let detail = ReflectionStore.shared.getThemeDetail(theme: row.name, days: 120)
+            let log = ((detail["timeline"] as? [[String: Any]]) ?? []).prefix(6)
+            if !log.isEmpty {
+                lines.append("Recent log:")
+                for e in log {
+                    let text = (e["content"] as? String) ?? ""
+                    lines.append("  - \((e["date"] as? String) ?? ""): \(text.count > 240 ? String(text.prefix(240)) + "..." : text)")
+                }
+            }
+            out.append(lines.joined(separator: "\n"))
+        }
+
+        return """
+
+
+        ## TAGGED IN THIS CONVERSATION
+        The user tagged these with @, which means: answer about exactly these, from the record below. This record is the same one the People and Fronts tabs show, read this minute. Where it is empty, say it is empty; the absolute rules above still hold.
+
+        \(out.joined(separator: "\n\n"))
+
+        """
+    }
+
+    private func taggedTodoLine(_ t: [String: Any]) -> String {
+        var line = (t["title"] as? String) ?? "Untitled"
+        if let p = t["person"] as? String, !p.isEmpty { line += " (\(p))" }
+        if let due = t["due"] as? String, !due.isEmpty { line += ", due \(due)" }
+        if let age = t["age_days"] as? Int, age > 0 { line += ", \(age) days old" }
+        return line
+    }
+
     private func gatherAllCoachingInsights() -> String {
         guard let engine = coachingEngine,
               let cardsWithContext = engine.getCachedCardInsightsWithContext(),
