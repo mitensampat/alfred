@@ -1,4 +1,5 @@
 {
+  "calibrated_over": 3,
   "checks": {
     "briefing.cadence_present": {
       "feature": "briefing",
@@ -301,91 +302,119 @@
   },
   "metrics": {
     "cadences.builtin": {
+      "band": 0,
       "value": 18
     },
     "cadences.enabled": {
+      "band": 0,
       "value": 16
     },
     "cadences.total": {
+      "band": 0,
       "value": 19
     },
     "claims.active": {
+      "band": 0,
       "value": 49
     },
     "closure.auto_closed": {
+      "band": 0,
       "value": 685
     },
     "closure.pending": {
+      "band": 0,
       "value": 86
     },
     "connectors.reflections": {
+      "band": 0,
       "value": 1051
     },
     "connectors.services": {
+      "band": 0,
       "value": 10
     },
     "connectors.themes": {
+      "band": 0,
       "value": 60
     },
     "desk.fronts": {
+      "band": 0,
       "value": 14
     },
     "desk.queue": {
+      "band": 0,
       "value": 19
     },
     "extraction.open": {
+      "band": 0,
       "value": 62
     },
     "extraction.total": {
+      "band": 0,
       "value": 2454
     },
     "hygiene.groups": {
+      "band": 0,
       "value": 0
     },
     "hygiene.pending": {
+      "band": 0,
       "value": 0
     },
     "injection.chars": {
+      "band": 0,
       "value": 2522
     },
     "injection.sections": {
+      "band": 0,
       "value": 2
     },
     "intents.targets": {
+      "band": 0,
       "value": 19
     },
     "learning.active": {
+      "band": 0,
       "value": 14
     },
     "learning.direct": {
+      "band": 0,
       "value": 44
     },
     "learning.events": {
+      "band": 0,
       "value": 114
     },
     "learning.pending_reviews": {
+      "band": 0,
       "value": 11
     },
     "people.shown": {
+      "band": 0,
       "value": 23
     },
     "questions.open": {
+      "band": 0,
       "value": 86
     },
     "questions.resolved": {
+      "band": 0,
       "value": 7
     },
     "tensions.active": {
+      "band": 0,
       "value": 5
     },
     "todos.open": {
+      "band": 0,
       "value": 104
     },
     "values.active": {
+      "band": 0,
       "value": 22
     }
   },
   "overall": 93.4,
-  "saved_at": "2026-11-13T15:12:40Z",
+  "saved_at": "2026-11-14T04:40:57Z",
   "version": "6.1.1"
 }

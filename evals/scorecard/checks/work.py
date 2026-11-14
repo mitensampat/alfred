@@ -46,7 +46,7 @@ def _(t: Target):
        f"nothing stays open past {OPEN_COMMITMENT_MAX_DAYS} days")
 def _(t: Target):
     n = t.one(CDB, "SELECT COUNT(*) FROM commitment_extractions WHERE was_closed=0 "
-                   f"AND extracted_at < datetime('now','-{OPEN_COMMITMENT_MAX_DAYS} day')")
+                   "AND extracted_at < ?", (t.ago(OPEN_COMMITMENT_MAX_DAYS),))
     openn = t.one(CDB, "SELECT COUNT(*) FROM commitment_extractions WHERE was_closed=0")
     f = bad(n, f"{n} commitment(s) past the auto-Done rule — the Desk queue grows if this drifts")
     f.metrics.update(metric("extraction.open", openn, tol=0.4, floor=10))

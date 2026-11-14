@@ -131,12 +131,22 @@ def metric(name: str, value: Any, tol: float = 0.25, floor: int = 2) -> dict:
 class Target:
     """The instance under test: its HTTP surface, its databases, and its source tree."""
 
-    def __init__(self, base: str, passcode: str, data_dir: Path, mode: str, timeout: int = 60):
+    def __init__(self, base: str, passcode: str, data_dir: Path, mode: str, timeout: int = 60,
+                 now: Optional[str] = None):
         self.base = base.rstrip("/")
         self.passcode = passcode
         self.data_dir = Path(data_dir)
         self.mode = mode            # "sandbox" | "live"
         self.timeout = timeout
+        # The clock a check should reckon against.
+        #
+        # A frozen corpus has a date, and it is not today. "No commitment has been open for more
+        # than 30 days" asked of a month-old snapshot answers a question about the calendar
+        # rather than about the build: rows cross the boundary on their own, the count creeps,
+        # and a creeping count reads as a regression nobody caused. Anchoring to the moment the
+        # snapshot was taken makes the answer a property of the data, which is the only thing a
+        # build can change.
+        self.now = now or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         self._http: dict[str, Any] = {}
         self._sql: dict[str, sqlite3.Connection] = {}
         self._src: dict[str, str] = {}
@@ -191,6 +201,12 @@ class Target:
         if conn is None:
             raise FileNotFoundError(f"{db} not present in {self.data_dir}")
         return conn.execute(query, args).fetchall()
+
+    def ago(self, days: int) -> str:
+        """An ISO timestamp `days` before this target's clock, for `... < ?` comparisons."""
+        import datetime as _dt
+        base = _dt.datetime.strptime(self.now, "%Y-%m-%dT%H:%M:%SZ")
+        return (base - _dt.timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
 
     def has_db(self, db: str) -> bool:
         return (self.data_dir / db).exists()
@@ -295,12 +311,21 @@ def score(results: list[CheckResult], baseline: dict) -> dict:
 
 
 def metric_drift(metrics: dict, baseline: dict) -> list[tuple[str, Any, Any, str]]:
-    """Metrics that moved further than their tolerance allows."""
+    """
+    Metrics that moved further than their band allows.
+
+    A metric declares a tolerance in code — a guess, written when the check was. Calibration
+    replaces that guess with a measurement: run the same build several times and the spread you
+    observe IS the band. Against a frozen corpus that spread is zero, so the measured band is far
+    tighter than any guess, and a single unexplained front disappearing is caught instead of
+    being absorbed by a 25% allowance nobody ever justified.
+    """
     base = (baseline or {}).get("metrics", {})
     out = []
     for name, spec in sorted(metrics.items()):
         now = spec["value"]
-        before = base.get(name, {}).get("value") if isinstance(base.get(name), dict) else base.get(name)
+        entry = base.get(name)
+        before = entry.get("value") if isinstance(entry, dict) else entry
         if before is None:
             out.append((name, None, now, "new"))
             continue
@@ -308,10 +333,45 @@ def metric_drift(metrics: dict, baseline: dict) -> list[tuple[str, Any, Any, str
             if now != before:
                 out.append((name, before, now, "changed"))
             continue
-        slack = max(abs(before) * spec.get("tol", 0.25), spec.get("floor", 2))
+        band = entry.get("band") if isinstance(entry, dict) else None
+        if band is None:
+            slack = max(abs(before) * spec.get("tol", 0.25), spec.get("floor", 2))
+        else:
+            # One unit of slack on top of the measured spread: an integer count that moves by
+            # exactly one is rarely worth a page, even on a frozen corpus.
+            slack = band + 1
         if abs(now - before) > slack:
             out.append((name, before, now, "drift"))
     return out
+
+
+def calibrate(runs: list[tuple[list[CheckResult], dict]]) -> tuple[dict, dict]:
+    """
+    Fold repeated runs of an unchanged build into measured bands.
+
+    Returns (metric bands, checks that did not hold still). A check whose violation count moves
+    between identical runs is not a usable check — it is measuring something other than the
+    build, and it says so here rather than by crying wolf later.
+    """
+    metric_values: dict[str, list] = {}
+    check_values: dict[str, list] = {}
+    for results, metrics in runs:
+        for name, spec in metrics.items():
+            metric_values.setdefault(name, []).append(spec["value"])
+        for r in results:
+            if not r.skipped and not r.error:
+                check_values.setdefault(r.check.id, []).append(r.violations)
+
+    bands = {}
+    for name, vals in metric_values.items():
+        nums = [v for v in vals if isinstance(v, (int, float))]
+        bands[name] = {
+            "band": (max(nums) - min(nums)) if len(nums) == len(vals) and nums else 0,
+            "observed": sorted(set(vals), key=str),
+            "runs": len(vals),
+        }
+    unstable = {cid: sorted(set(v)) for cid, v in check_values.items() if len(set(v)) > 1}
+    return bands, unstable
 
 
 def load_baseline(path: Path) -> dict:
@@ -324,7 +384,7 @@ def load_baseline(path: Path) -> dict:
 
 
 def save_baseline(path: Path, results: list[CheckResult], metrics: dict,
-                  scores: dict, version: str) -> None:
+                  scores: dict, version: str, bands: Optional[dict] = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -337,4 +397,17 @@ def save_baseline(path: Path, results: list[CheckResult], metrics: dict,
         },
         "metrics": {k: {"value": v["value"]} for k, v in metrics.items()},
     }
+    if bands:
+        for name, b in bands.items():
+            if name in payload["metrics"]:
+                payload["metrics"][name]["band"] = b["band"]
+        payload["calibrated_over"] = max((b.get("runs", 0) for b in bands.values()), default=0)
+    elif (existing := load_baseline(path)):
+        # Keep bands measured earlier; a routine --save-baseline should not silently discard
+        # calibration that cost real runs to produce.
+        for name, entry in (existing.get("metrics") or {}).items():
+            if isinstance(entry, dict) and "band" in entry and name in payload["metrics"]:
+                payload["metrics"][name]["band"] = entry["band"]
+        if existing.get("calibrated_over"):
+            payload["calibrated_over"] = existing["calibrated_over"]
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")

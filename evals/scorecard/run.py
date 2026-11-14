@@ -28,7 +28,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE / "checks"))
 
 from harness import (                                        # noqa: E402
-    FEATURES, FEATURE_NAMES, REGISTRY, Target,
+    FEATURES, FEATURE_NAMES, REGISTRY, Target, calibrate,
     load_baseline, metric_drift, run_checks, save_baseline, score,
 )
 
@@ -40,6 +40,9 @@ import checks.source     # noqa: F401,E402
 
 ROOT = HERE.parent.parent
 BASELINE_DIR = HERE / "baselines"
+
+# Below this, a live calibration is measuring the instrument rather than the system.
+LIVE_CALIBRATION_MIN_SPAN = 30 * 60
 
 C = {
     "dim": "\033[2m", "red": "\033[0;31m", "green": "\033[0;32m",
@@ -60,11 +63,16 @@ def read_config(config_dir: Path) -> dict:
 
 
 def build_target(mode: str, base_url: str | None) -> Target:
+    now = None
     if mode == "sandbox":
         sandbox = Path(os.environ.get("ALFRED_SANDBOX", Path.home() / ".alfred-sandbox"))
         data_dir = sandbox / "work"
         cfg = read_config(sandbox / "config")
         port = (cfg.get("api") or {}).get("port") or 8081
+        # The snapshot's own timestamp is the clock for a frozen corpus.
+        taken = sandbox / "snapshot" / ".taken_at"
+        if taken.exists():
+            now = taken.read_text().strip() or None
     else:
         data_dir = Path(os.environ.get("ALFRED_DIR", Path.home() / ".alfred"))
         cfg = read_config(Path(os.environ.get("ALFRED_CONFIG_DIR",
@@ -73,7 +81,7 @@ def build_target(mode: str, base_url: str | None) -> Target:
     passcode = ((cfg.get("api") or {}).get("passcode")
                 or (cfg.get("app") or {}).get("passcode") or "")
     base = base_url or f"http://127.0.0.1:{port}"
-    return Target(base, passcode, data_dir, mode)
+    return Target(base, passcode, data_dir, mode, now=now)
 
 
 def binary_version() -> str:
@@ -91,6 +99,8 @@ def report(results, metrics, sc, drift, baseline, target, quiet=False):
     saved = (baseline or {}).get("saved_at", "never")
     print()
     print(paint(f"Alfred scorecard · tier 1 · {target.mode} · v{binary_version()}", "bold"))
+    if target.mode == "sandbox":
+        print(paint(f"corpus frozen at {target.now} — ages are reckoned from there", "dim"))
     if sc.get("first_run"):
         print(paint("baseline: none yet — this run is the reference, nothing is a regression",
                     "dim"))
@@ -183,6 +193,121 @@ def report(results, metrics, sc, drift, baseline, target, quiet=False):
         print()
 
 
+def warm(args, seconds: float = 3.0) -> None:
+    """
+    Let a freshly started instance finish writing before anything is measured.
+
+    Reading /api/v2/todos and /api/desk is not passive: the first pass over a corpus collapses
+    duplicate promises and dismisses what it has superseded. Measuring before that has happened
+    records a halfway state that no later run will reproduce.
+    """
+    import time as _t
+    t = build_target(args.target, args.base_url)
+    for path in ("/api/v2/todos", "/api/desk"):
+        t.get(path)
+    _t.sleep(seconds)
+
+
+def do_calibrate(args, baseline_path: Path) -> int:
+    """
+    Measure the band rather than guess it.
+
+    The rule is simple and the discipline is the hard part: run the SAME build, unchanged, N
+    times. Whatever spread you see is noise by definition, because nothing causing it was under
+    your control. Against the sandbox that spread should be zero — a frozen corpus and a fixed
+    binary have nothing left to vary — and a zero band is the useful outcome, because it means
+    any later movement is signal. Against the live install it will not be zero, and runs taken
+    seconds apart measure the instrument rather than the system: space them with --interval.
+    """
+    import subprocess
+    import time as _t
+    started = _t.time()
+    runs = []
+    for i in range(args.calibrate):
+        if i and args.interval:
+            print(paint(f"  waiting {args.interval}s …", "dim"), flush=True)
+            _t.sleep(args.interval)
+        if args.target == "sandbox" and not args.no_reset:
+            # Each run starts from a fresh copy, because the instance under test WRITES to its
+            # own working copy — a first pass dedupes and dismisses to-dos before any check
+            # reads them. Calibrating against one long-lived instance measures a state that has
+            # already settled, calls the spread zero, and never exercises the path where that
+            # settling happens. Resetting is what makes the number mean "same build, same
+            # corpus, twice".
+            subprocess.run([str(ROOT / "scripts/eval-sandbox.sh"), "reset"],
+                           capture_output=True, check=False)
+            warm(args)
+        target = build_target(args.target, args.base_url)
+        results, metrics = run_checks(target, args.feature, args.check)
+        sc = score(results, {})
+        runs.append((results, metrics))
+        print(paint(f"  run {i + 1}/{args.calibrate}: overall {sc['overall']}", "dim"), flush=True)
+
+    bands, unstable = calibrate(runs)
+    moved = {k: v for k, v in bands.items() if v["band"]}
+
+    print()
+    print(paint(f"calibration · {args.target} · {args.calibrate} runs of an unchanged build",
+                "bold"))
+    print()
+    if unstable:
+        print(paint(f"{len(unstable)} check(s) did not hold still — these are not usable as "
+                    f"invariants until they do", "red"))
+        for cid, vals in sorted(unstable.items()):
+            print(f"    {cid}  {vals}")
+        print()
+    if moved:
+        print(paint(f"{len(moved)} metric(s) with a measurable band", "yellow"))
+        for name, b in sorted(moved.items(), key=lambda kv: -kv[1]["band"]):
+            print(f"    {name:<28} ±{b['band']}   observed {b['observed']}")
+        print()
+    else:
+        print(paint(f"every one of {len(bands)} metrics returned the same value every time — "
+                    f"measured noise is zero", "green"))
+        print(paint("  so any later movement is the build, not the weather", "dim"))
+        print()
+
+    results, metrics = runs[-1]
+    sc = score(results, {})
+
+    # A live band measured in one sitting is worse than no band at all. The thing it is supposed
+    # to capture — the corpus moving as messages arrive and passes run — happens over hours, so
+    # three runs ninety seconds apart record a near-zero spread, write it down as the truth, and
+    # then cry regression on the first honest run tomorrow. The sandbox has no such problem: its
+    # corpus is frozen by construction, so a short calibration measures the whole of the noise.
+    span = _t.time() - started
+    if args.target == "live" and span < LIVE_CALIBRATION_MIN_SPAN and not args.accept_short:
+        print(paint(f"not writing live bands: these {args.calibrate} runs spanned "
+                    f"{span / 60:.0f} min", "yellow"))
+        print(paint(f"  live noise is a question about hours, not minutes. Re-run with, say,"
+                    f"\n    ./scripts/eval.sh --live --calibrate 4 --interval 900"
+                    f"\n  or pass --accept-short if you really want this spread recorded.",
+                    "dim"))
+        save_baseline(baseline_path, results, metrics, sc, binary_version())
+        print(paint(f"baseline values updated (bands left alone) → "
+                    f"{baseline_path.relative_to(ROOT)}", "green"))
+        return 0 if not unstable else 1
+
+    save_baseline(baseline_path, results, metrics, sc, binary_version(), bands=bands)
+    print(paint(f"bands written → {baseline_path.relative_to(ROOT)}", "green"))
+    return 0 if not unstable else 1
+
+
+def gate_line(sc, drift, baseline) -> str:
+    real = [d for d in drift if d[3] != "new"]
+    before = (baseline or {}).get("overall")
+    arrow = f"{before} → {sc['overall']}" if before is not None else f"{sc['overall']}"
+    bits = [f"scorecard {arrow}"]
+    bits.append(f"{len(sc['regressions'])} regression(s)" if sc["regressions"] else "no regressions")
+    if real:
+        bits.append(f"{len(real)} metric drift")
+    if sc["fixed"]:
+        bits.append(f"{len(sc['fixed'])} fixed")
+    if sc["errors"]:
+        bits.append(f"{len(sc['errors'])} broken check(s)")
+    return " · ".join(bits)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Alfred tier-1 scorecard")
     ap.add_argument("--target", choices=("sandbox", "live"), default="sandbox")
@@ -194,6 +319,16 @@ def main() -> int:
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--quiet", action="store_true", help="hide known issues and new metrics")
     ap.add_argument("--list", action="store_true", help="list the checks and exit")
+    ap.add_argument("--calibrate", type=int, metavar="N", default=0,
+                    help="run N times against an unchanged build and measure the noise band")
+    ap.add_argument("--interval", type=int, default=0, metavar="SECONDS",
+                    help="wait between calibration runs (live noise needs spacing to appear)")
+    ap.add_argument("--accept-short", action="store_true",
+                    help="write live bands even from a short calibration")
+    ap.add_argument("--no-reset", action="store_true",
+                    help="calibrate without resetting between runs (measures a settled instance)")
+    ap.add_argument("--gate", action="store_true",
+                    help="one line, for the Golden Path: verdict only")
     args = ap.parse_args()
 
     if args.list:
@@ -205,16 +340,30 @@ def main() -> int:
                 print(f"    {c.id:<42} {c.title}{extra}")
         return 0
 
-    target = build_target(args.target, args.base_url)
     baseline_path = Path(args.baseline) if args.baseline else BASELINE_DIR / f"{args.target}.json"
     baseline = load_baseline(baseline_path)
 
+    if args.calibrate:
+        return do_calibrate(args, baseline_path)
+
+    target = build_target(args.target, args.base_url)
     results, metrics = run_checks(target, args.feature, args.check)
     if not results:
         print("no checks matched", file=sys.stderr)
         return 2
     sc = score(results, baseline)
     drift = metric_drift(metrics, baseline)
+
+    if args.gate:
+        line = gate_line(sc, drift, baseline)
+        clean = not sc["regressions"] and not [d for d in drift if d[3] != "new"] and not sc["errors"]
+        print(paint(line, "green" if clean else "red"))
+        for r, was in sc["regressions"]:
+            print(f"    {r.check.id}  {'new' if was is None else was} → {r.violations}  "
+                  f"{r.check.title}")
+        for name, before, now, _ in [d for d in drift if d[3] != "new"]:
+            print(f"    {name}  {before} → {now}")
+        return 0 if clean else 1
 
     if args.json:
         print(json.dumps({

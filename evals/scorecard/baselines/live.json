@@ -54,7 +54,7 @@
     },
     "closure.ask_band": {
       "feature": "closure",
-      "violations": 11
+      "violations": 12
     },
     "closure.auto_threshold": {
       "feature": "closure",
@@ -70,7 +70,7 @@
     },
     "closure.no_orphans": {
       "feature": "closure",
-      "violations": 1
+      "violations": 0
     },
     "connectors.bridge_fresh": {
       "feature": "connectors",
@@ -142,7 +142,7 @@
     },
     "hygiene.no_overridden": {
       "feature": "hygiene",
-      "violations": 0
+      "violations": 1
     },
     "hygiene.not_self_move": {
       "feature": "hygiene",
@@ -297,11 +297,11 @@
     "briefing": 100.0,
     "cadences": 100.0,
     "claims": 100.0,
-    "closure": 20.0,
+    "closure": 40.0,
     "connectors": 100.0,
     "desk": 100.0,
     "extraction": 100.0,
-    "hygiene": 100.0,
+    "hygiene": 83.3,
     "injection": 100.0,
     "intents": 100.0,
     "learning": 100.0,
@@ -328,37 +328,37 @@
       "value": 685
     },
     "closure.pending": {
-      "value": 86
+      "value": 84
     },
     "connectors.reflections": {
-      "value": 1051
+      "value": 1059
     },
     "connectors.services": {
       "value": 10
     },
     "connectors.themes": {
-      "value": 60
+      "value": 68
     },
     "connectors.wa_messages": {
-      "value": 147806
+      "value": 147949
     },
     "desk.fronts": {
       "value": 14
     },
     "desk.queue": {
-      "value": 19
+      "value": 10
     },
     "extraction.open": {
-      "value": 62
+      "value": 29
     },
     "extraction.total": {
-      "value": 2454
+      "value": 2456
     },
     "hygiene.groups": {
-      "value": 0
+      "value": 7
     },
     "hygiene.pending": {
-      "value": 0
+      "value": 10
     },
     "injection.chars": {
       "value": 2522
@@ -382,7 +382,7 @@
       "value": 11
     },
     "people.shown": {
-      "value": 23
+      "value": 22
     },
     "questions.open": {
       "value": 86
@@ -394,13 +394,13 @@
       "value": 5
     },
     "todos.open": {
-      "value": 104
+      "value": 92
     },
     "values.active": {
       "value": 22
     }
   },
-  "overall": 93.4,
-  "saved_at": "2026-11-13T15:07:44Z",
+  "overall": 93.6,
+  "saved_at": "2026-11-14T04:41:41Z",
   "version": "6.1.1"
 }

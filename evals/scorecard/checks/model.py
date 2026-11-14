@@ -254,7 +254,7 @@ def _(t: Target):
     if not t.has_db(RDB):
         return skip("no reflection.db")
     n = t.one(RDB, "SELECT COUNT(*) FROM item_move_proposal WHERE status='pending' "
-                   f"AND created_at < datetime('now', '-{PROPOSAL_MAX_AGE_DAYS} day')")
+                   "AND created_at < ?", (t.ago(PROPOSAL_MAX_AGE_DAYS),))
     return bad(n, f"{n} proposal(s) past the expiry the reconciler promises to apply")
 
 

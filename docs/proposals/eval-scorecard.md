@@ -165,7 +165,7 @@ works; the scorecard proves nothing else broke.
 |---|---|---|
 | **0** | `AlfredPaths` + `ALFRED_DIR` everywhere; snapshot/restore script; second instance on 8081 — **done, Nov 13** (see below) | nothing below is trustworthy without it |
 | **1** | Tier 1 invariants for all 16 features + the runner, baseline format, delta report — **done, Nov 13** (see below) | the cheapest 80% of the value |
-| **2** | Golden Path integration + noise-band calibration | makes it a habit rather than a tool |
+| **2** | Golden Path integration + noise-band calibration — **done, Nov 14** (see below) | makes it a habit rather than a tool |
 | **3** | Tier 2 replay for claims, questions, extraction, intents (generalising `evals/learning/run.py`) | the content regressions Tier 1 cannot see |
 | **4** | Tier 3 judged rows for claims, tensions, briefing, injection | the quality questions rules cannot express |
 
@@ -254,3 +254,47 @@ writing to the original structurally impossible.
 
 Decisions 2–5 are still open. Nothing blocks a merge yet; `eval.sh` is a tool you run, not a step
 in the Golden Path, which is Phase 2.
+
+---
+
+## Phase 2, as built (Nov 14)
+
+The scorecard is now **step 7 of the Golden Path**, between verifying the change and merging it,
+run as `./scripts/eval.sh --gate` — one line, exit 1 on a regression. The bar is the one this
+document proposed and nothing stronger: an unexplained regression is a stop; an explained one is
+accepted deliberately by re-taking the baseline. Nothing is enforced by machinery, because this
+repository has no CI to enforce it with, and a gate that only a person can apply should say so
+rather than pretend.
+
+**Calibration replaced the guessed tolerances with measured ones.** `--calibrate N` runs the same
+build N times and the observed spread becomes the band. In the sandbox that spread is **zero** —
+28 metrics, 73 checks, three runs — so the band is 1 rather than the 25% a check had declared in
+code. The difference is not cosmetic: three well-formed claims appearing, breaking no invariant,
+is now caught, where the guessed tolerance would have absorbed anything up to twelve.
+
+Two findings came out of doing this properly, and both would have quietly undermined the numbers:
+
+**The instance under test writes to its own working copy.** On a fresh corpus the first pass over
+the to-dos collapses duplicate promises and dismisses 42 of them before any check reads anything
+— behaviour from `c23c38c`, reproduced identically by the production instance, so real rather
+than a sandbox artefact. A calibration run against one long-lived instance measures a state that
+has already settled, reports zero spread, and never exercises the path where the settling
+happens. Calibration now resets between runs. The spread is still zero, which now means the write
+path is deterministic too — a much stronger claim than the first measurement was making.
+
+**Two checks reckoned age against the wall clock.** `extracted_at < datetime('now','-30 day')`
+asked of a frozen corpus answers a question about the calendar: rows cross the boundary on their
+own as the snapshot ages, the count creeps, and a creeping count reads as a regression nobody
+caused. Both now reckon from the snapshot's own timestamp. Neither was producing a false positive
+yet — this corpus has nothing near either boundary — so this is a latent fault removed rather
+than a bug caught.
+
+**A live band cannot be measured in one sitting**, and the runner now refuses to try. The corpus
+moves as messages arrive, so runs ninety seconds apart record a near-zero spread and then cry
+regression on the first honest run the next day; below a thirty-minute span the bands are not
+written. That `hygiene.pending` moved 10 → 27 between two back-to-back live runs — reading the
+stray queue is also what repopulates it — is the clearest argument for the refusal.
+
+Decisions 3, 4 and 5 are settled by what got built: all 16 features are covered, the scorecard
+runs on every deploy because it is in the Golden Path and costs five seconds, and Tier 3 remains
+unbuilt and unjudged. Decision 2 is answered as advisory-with-an-exit-code, as above.

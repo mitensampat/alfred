@@ -3,12 +3,18 @@
 *Changing feature A should not quietly regress feature B. This is the layer that notices.*
 
 ```bash
-./scripts/eval.sh                     # sandbox on 8081, diff against the baseline
+./scripts/eval.sh --gate              # one line, for the Golden Path. Exit 1 = regression.
+./scripts/eval.sh                     # sandbox on 8081, the full table and the delta
 ./scripts/eval.sh --live              # read-only against the running install on 8080
 ./scripts/eval.sh --feature claims    # one row, while iterating
 ./scripts/eval.sh --save-baseline     # accept these numbers as the new floor
+./scripts/eval.sh --calibrate 3       # measure the noise band instead of guessing it
 ./scripts/eval.sh --list              # everything that is checked, in English
 ```
+
+It is **step 7 of the Golden Path**, between verifying your change and merging. The post-deploy
+checklist proves the thing you changed works; this is the only step that says anything about the
+fifteen features you did not touch.
 
 A full run is **73 checks across 16 features in about five seconds**, with no model calls and no
 API cost. Exit status is `0` clean, `1` a regression or metric drift, `2` a check itself broke.
@@ -37,8 +43,46 @@ but only an *increase* is reported as a regression and only an increase sets a n
 
 **Numbers with no right answer are metrics, not checks.** There is no correct number of fronts.
 There is a correct way for that number to behave: it should not halve because someone changed the
-self-model. Metrics carry a tolerance (a fraction of the baseline, with an absolute floor so that
-3 → 4 is not an incident) and are reported as drift.
+self-model. Metrics are reported as drift against a band — see below, because the band is
+measured rather than guessed.
+
+## The band is measured, not guessed
+
+```bash
+./scripts/eval.sh --calibrate 3
+```
+
+Runs the same build three times and records the spread. Whatever moves between identical runs is
+noise by definition, and that spread becomes the tolerance; a check whose violation count moves
+is reported as unusable rather than quietly tolerated.
+
+**In the sandbox the measured spread is zero** — all 28 metrics, all 73 checks, across three runs.
+That is the useful outcome: the band is 1 instead of the 25% a check declared in code, so three
+new claims appearing with no invariant broken is caught instead of absorbed.
+
+Calibration **resets the sandbox between runs**, and that detail is the whole value of doing it
+properly. The instance under test writes to its own working copy: on a fresh corpus, the first
+pass over the to-dos collapses duplicate promises and dismisses 42 of them before any check reads
+anything. Calibrating against one long-lived instance measures a state that has already settled,
+reports zero, and never exercises the path where the settling happens. With resets in place the
+spread is still zero, which now means something much stronger — the write path is deterministic
+too.
+
+**Live bands need hours, not minutes.** The corpus moves as messages arrive, so three runs ninety
+seconds apart record a near-zero spread and then cry regression on the first honest run tomorrow.
+The runner refuses to write a live band from a sitting shorter than thirty minutes; use
+`--interval 900` and give it real time, or pass `--accept-short` if you know what you are doing.
+One live metric already shows this: `hygiene.pending` moved 10 → 27 between two back-to-back
+runs, because reading the stray queue is also what repopulates it.
+
+## Time is reckoned from the corpus, not the clock
+
+A frozen snapshot has a date, and it is not today. "No commitment has been open for more than 30
+days" asked of a month-old snapshot answers a question about the calendar rather than about the
+build — rows cross the boundary on their own, the count creeps, and a creeping count reads as a
+regression nobody caused. In sandbox mode `t.now` is the snapshot's own timestamp and `t.ago(n)`
+is reckoned from there, so the answer is a property of the data. Use them instead of SQLite's
+`datetime('now')`.
 
 ## Sandbox or live
 
