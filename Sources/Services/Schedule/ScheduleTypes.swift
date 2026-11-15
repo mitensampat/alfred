@@ -91,6 +91,12 @@ struct ScheduleSession: Codable {
     var durationMin: Int = 0
     var format: String = ""          // "call", "video", "in-person"
     var window: String = ""          // freeform, e.g. "this week"
+    // The window resolved to dates and a time of day, when the command was read by the model.
+    // They outrank the phrase above, and are cleared whenever the phrase is replaced.
+    var windowFrom: Date?
+    var windowTo: Date?
+    var earliestMin: Int?
+    var latestMin: Int?
     var requestedDays: String = ""   // weekdays the counterpart asked for ("Tue/Wed")
     var preferenceMet: Bool = true   // false when nothing was free on the requested days
 

@@ -41,6 +41,12 @@ struct ScheduleDraftRequest {
 protocol ScheduleDrafting {
     func inferContext(contactName: String, thread: [ScheduleThreadMsg], cmd: ScheduleCommand?) async -> ScheduleInferredContext
     func generateDraft(_ req: ScheduleDraftRequest) async -> String
+    /// Read a loosely phrased "@schedule …" line. nil = could not be read (no model, bad output);
+    /// the caller falls back to the exact-form parser.
+    func interpretCommand(_ rest: String, now: Date, tz: TimeZone) async -> ScheduleCommandReading?
+}
+extension ScheduleDrafting {
+    func interpretCommand(_ rest: String, now: Date, tz: TimeZone) async -> ScheduleCommandReading? { nil }
 }
 
 /// Claude-backed drafter — writes the proposal in the user's texting style; timezone assumptions
@@ -78,6 +84,12 @@ final class LLMDrafter: ScheduleDrafting {
         }
         if ic.durationMin <= 0 { ic.durationMin = 30 }
         return ic
+    }
+
+    func interpretCommand(_ rest: String, now: Date, tz: TimeZone) async -> ScheduleCommandReading? {
+        guard let raw = try? await ai.generateText(prompt: ScheduleCommandReader.prompt(rest, now: now, tz: tz),
+                                                   maxTokens: 300, useModel: model) else { return nil }
+        return ScheduleCommandReader.reading(fromModel: raw, now: now, tz: tz)
     }
 
     func generateDraft(_ req: ScheduleDraftRequest) async -> String {

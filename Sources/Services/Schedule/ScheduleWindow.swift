@@ -53,6 +53,16 @@ enum ScheduleWindow {
         return (addDays(sod(n), 1, tz), addDays(sod(n), 8, tz))   // default
     }
 
+    /// "morning" / "afternoon" / "evening" in a window phrase, as time-of-day bounds (minutes from
+    /// midnight). The phrase used to carry these words without anything reading them.
+    static func partOfDay(_ window: String) -> (earliest: Int?, latest: Int?) {
+        let words = Set(window.lowercased().split(whereSeparator: { !$0.isLetter }).map(String.init))
+        if words.contains("morning") { return (nil, 12 * 60) }
+        if words.contains("afternoon") { return (12 * 60, 17 * 60) }
+        if words.contains("evening") { return (17 * 60, nil) }
+        return (nil, nil)
+    }
+
     // Sun=0 … Sat=6
     private static let weekdayWords: [String: Int] = [
         "sun": 0, "sunday": 0, "sundays": 0,

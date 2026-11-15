@@ -8,7 +8,8 @@ enum ScheduleDryRun {
     final class FakeCal: ScheduleCalendaring {
         var connected = true
         var bookings: [(String, Date)] = []
-        func computeSlots(from: Date, to: Date, durationMin: Int, inPerson: Bool, requestedDays: [Int]) async throws -> [ScheduleSlot] {
+        func computeSlots(from: Date, to: Date, durationMin: Int, inPerson: Bool, requestedDays: [Int],
+                          earliestMin: Int?, latestMin: Int?) async throws -> [ScheduleSlot] {
             let base = Date().addingTimeInterval(86400)   // tomorrow
             return [10, 14, 16].map { h in
                 let s = base.addingTimeInterval(Double(h) * 3600)

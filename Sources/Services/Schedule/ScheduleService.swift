@@ -169,7 +169,7 @@ final class ScheduleService {
     /// The only other way to see a proposal was to run a real @schedule against a real person, which
     /// makes availability bugs expensive to find and preference tuning impossible. It reports the
     /// busy set it used and which calendars fed it, so "why did it offer that?" has an answer.
-    func previewSlots(days: Int, durationMin: Int, inPerson: Bool) async -> [String: Any] {
+    func previewSlots(days: Int, durationMin: Int, inPerson: Bool, earliestMin: Int? = nil, latestMin: Int? = nil) async -> [String: Any] {
         guard let config = AppConfig.load(), !config.calendar.google.isEmpty else {
             return ["ok": false, "error": "No Google Calendar configured."]
         }
@@ -182,7 +182,8 @@ final class ScheduleService {
         let to = from.addingTimeInterval(Double(max(1, days)) * 86400)
         let fmt = ISO8601DateFormatter()
         do {
-            let slots = try await cal.computeSlots(from: from, to: to, durationMin: durationMin, inPerson: inPerson)
+            let slots = try await cal.computeSlots(from: from, to: to, durationMin: durationMin, inPerson: inPerson,
+                                                  earliestMin: earliestMin, latestMin: latestMin)
             let busy = try await cal.busyPreview(from: from, to: to)
             return [
                 "ok": true,
@@ -409,6 +410,14 @@ final class ScheduleService {
     }
 
     struct DirectBlockPlan { let title: String; let start: Date; let end: Date; let email: String?; let name: String?; let location: String? }
+
+    /// How the text after "@schedule" would be read, with no side effects (/api/schedule/interpret).
+    func interpretDryRun(_ rest: String) async -> [String: Any] {
+        guard let config = AppConfig.load() else { return ["ok": false, "error": "Configuration not loaded"] }
+        let tz = Self.prefs().timezone
+        let r = await ScheduleCommandReader.read(rest, drafter: LLMDrafter(ai: ClaudeAIService(config: config.ai)), now: Date(), tz: tz)
+        return ScheduleCommandReader.describe(r, tz: tz)
+    }
 
     /// LLM-parse the instruction into a concrete plan (no side effects). Used by both the live
     /// booking and the /api/schedule/parse-block dry-run.

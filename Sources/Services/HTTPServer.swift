@@ -1456,6 +1456,10 @@ class HTTPServer {
             } catch {
                 return HTTPResponse(statusCode: 200, body: ["ok": false, "error": "\(error)"])
             }
+        case ("GET", "/api/schedule/interpret"):
+            // Dry-run of how the text after "@schedule" is read: the exact-form parser, or the
+            // model for anything looser. Opens no session, reads no calendar, sends nothing.
+            return HTTPResponse(statusCode: 200, body: await ScheduleService.shared.interpretDryRun(request.queryParams["q"] ?? ""))
         case ("GET", "/api/schedule/preferences"):
             return HTTPResponse(statusCode: 200, body: ScheduleService.shared.preferences())
         case ("POST", "/api/schedule/preferences"):
@@ -1469,8 +1473,12 @@ class HTTPServer {
             let days = Int(request.queryParams["days"] ?? "7") ?? 7
             let dur = Int(request.queryParams["duration"] ?? "30") ?? 30
             let inPerson = (request.queryParams["in_person"] ?? "false") == "true"
+            // `earliest` / `latest` ("HH:MM") narrow the hours, as "after 3pm" or "afternoon" would.
             return HTTPResponse(statusCode: 200,
-                                body: await ScheduleService.shared.previewSlots(days: days, durationMin: dur, inPerson: inPerson))
+                                body: await ScheduleService.shared.previewSlots(
+                                    days: days, durationMin: dur, inPerson: inPerson,
+                                    earliestMin: ScheduleCommandReader.minutes(request.queryParams["earliest"] ?? ""),
+                                    latestMin: ScheduleCommandReader.minutes(request.queryParams["latest"] ?? "")))
         case ("POST", "/api/schedule/say"):
             // Drive the scheduler with a self-chat line ("@schedule samir 30m tomorrow", "propose",
             // "yes", "edit", "leave it"). `session` names the session it acts on (the Desk sends the

@@ -68,11 +68,26 @@ final class ScheduleCalendar {
 
     /// Propose meeting slots. `requestedDays` (Go weekdays, Sun=0…Sat=6) narrows the search within
     /// the user's own workdays; an empty result means the preference can't be met (caller falls back).
+    /// `earliestMin` / `latestMin` (minutes from midnight) narrow the hours searched — "after 3pm",
+    /// "thursday afternoon". They are applied here rather than to the result because the finder
+    /// returns three slots: filtering afterwards would discard the ones that were asked for.
     func computeSlots(from: Date, to: Date, durationMin: Int, inPerson: Bool,
-                      requestedDays: [Int] = []) async throws -> [ScheduleSlot] {
+                      requestedDays: [Int] = [], earliestMin: Int? = nil, latestMin: Int? = nil) async throws -> [ScheduleSlot] {
         let events = try await fetchRange(from, to)
         var p = prefs
         if inPerson { p.buffer = TimeInterval(travelBufferMin * 60) }
+        if earliestMin != nil || latestMin != nil {
+            let lo = max(p.dayStartMin, earliestMin ?? p.dayStartMin)
+            let hi = min(p.dayEndMin, latestMin ?? p.dayEndMin)
+            if hi - lo >= durationMin {
+                p.dayStartMin = lo; p.dayEndMin = hi
+            } else {
+                // What was asked for lies outside the usual meeting hours ("after 7pm"). The user
+                // typed it, so it wins over the default hours.
+                p.dayStartMin = earliestMin ?? p.dayStartMin
+                p.dayEndMin = latestMin ?? max(p.dayEndMin, min(22 * 60, p.dayStartMin + 180))
+            }
+        }
         if !requestedDays.isEmpty {
             let base = p.workdays
             let narrowed = Set(requestedDays.filter { base.isEmpty || base.contains($0) })

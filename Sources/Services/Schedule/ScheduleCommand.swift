@@ -8,6 +8,13 @@ struct ScheduleCommand: Equatable, Codable {
     var durationMin: Int = 0        // 0 = infer
     var format: String = ""         // "", "call", "video", "in-person"
     var window: String = ""         // freeform ("this week", "tomorrow", "mon"…)
+    // Filled only when the line was read by the model (ScheduleCommandReader). Optional, so
+    // commands stored before these existed still decode.
+    var topic: String?              // what the meeting is about, when the user said
+    var windowFrom: Date?           // first instant the meeting may fall on
+    var windowTo: Date?             // exclusive end of the last day it may fall on
+    var earliestMin: Int?           // time-of-day bounds, minutes from midnight in the user's timezone
+    var latestMin: Int?
 }
 
 enum ScheduleParseError: Error, CustomStringConvertible {

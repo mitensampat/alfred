@@ -3,7 +3,8 @@ import Foundation
 // Injectable surfaces so the dry-run harness can swap in fakes (as Commit's manager tests do).
 protocol ScheduleCalendaring {
     var connected: Bool { get }
-    func computeSlots(from: Date, to: Date, durationMin: Int, inPerson: Bool, requestedDays: [Int]) async throws -> [ScheduleSlot]
+    func computeSlots(from: Date, to: Date, durationMin: Int, inPerson: Bool, requestedDays: [Int],
+                      earliestMin: Int?, latestMin: Int?) async throws -> [ScheduleSlot]
     func verifyFree(start: Date, end: Date) async throws -> Bool
     func book(summary: String, description: String, start: Date, end: Date, withMeet: Bool) async throws -> (eventID: String, htmlLink: String, meetLink: String?)
     func cancel(eventID: String) async throws
@@ -90,17 +91,24 @@ actor ScheduleManager {
     private func computeSlotsFor(_ s: inout ScheduleSession) async throws -> [ScheduleSlot] {
         let now = Date()
         var (from, to) = ScheduleWindow.range(s.window, now: now, tz: tz)
+        // Dates the model resolved from the user's own words outrank the phrase.
+        if let wf = s.windowFrom, let wt = s.windowTo, wt > now { from = wf; to = wt }
+        let hours = (s.earliestMin != nil || s.latestMin != nil)
+            ? (earliest: s.earliestMin, latest: s.latestMin)
+            : ScheduleWindow.partOfDay(s.window)
         if from < now { from = now }
         if !(to > from) { from = now; to = Calendar.current.date(byAdding: .day, value: 7, to: now) ?? now.addingTimeInterval(7 * 86400) }
         let dur = s.durationMin == 0 ? 30 : s.durationMin
         let prefDays = ScheduleWindow.preferredDays(s.window)
         let inPerson = s.format == "in-person"
-        var slots = try await d.cal.computeSlots(from: from, to: to, durationMin: dur, inPerson: inPerson, requestedDays: prefDays)
+        var slots = try await d.cal.computeSlots(from: from, to: to, durationMin: dur, inPerson: inPerson, requestedDays: prefDays,
+                                                 earliestMin: hours.earliest, latestMin: hours.latest)
         s.requestedDays = ScheduleWindow.formatDays(prefDays)
         s.preferenceMet = true
         if slots.isEmpty && !prefDays.isEmpty {
             s.preferenceMet = false
-            slots = try await d.cal.computeSlots(from: from, to: to, durationMin: dur, inPerson: inPerson, requestedDays: [])
+            slots = try await d.cal.computeSlots(from: from, to: to, durationMin: dur, inPerson: inPerson, requestedDays: [],
+                                                 earliestMin: hours.earliest, latestMin: hours.latest)
         }
         return slots.filter { $0.start > now }
     }
@@ -175,8 +183,14 @@ actor ScheduleManager {
     // MARK: - @schedule command
 
     private func handleCommand(_ rest: String, _ ts: Date) async {
+        // The exact form ("rohini 30m video this week") is parsed in place; anything looser is read
+        // by the model. Either way the result is only a request: the options and the draft still
+        // come back for 'propose' / 'yes N' / 'edit' / 'leave it' before anything is sent or booked.
         let cmd: ScheduleCommand
-        do { cmd = try ScheduleCommandParser.parse(rest) } catch { await sendSelfPlain("\(error)"); return }
+        switch await ScheduleCommandReader.read(rest, drafter: d.drafter, now: ts, tz: tz) {
+        case .ask(let question): await sendSelfPlain(question); return
+        case .command(let c, _): cmd = c
+        }
 
         await sendSelfPlain("on it — checking your calendar…")
 
@@ -331,6 +345,10 @@ actor ScheduleManager {
         let thread = await recentThread(contact.jid, 10)
         let ic = await d.drafter.inferContext(contactName: contact.name, thread: thread, cmd: cmd)
         s.topic = ic.topic; s.durationMin = ic.durationMin; s.format = ic.format; s.window = ic.window
+        // What the user typed outranks what the thread suggests.
+        if let t = cmd.topic, !t.isEmpty { s.topic = t }
+        s.windowFrom = cmd.windowFrom; s.windowTo = cmd.windowTo
+        s.earliestMin = cmd.earliestMin; s.latestMin = cmd.latestMin
 
         let override = d.contactTZOverride(contact.jid)
         if !override.isEmpty { s.contactTZ = override; s.contactTZNote = "you told me they're in " + override }

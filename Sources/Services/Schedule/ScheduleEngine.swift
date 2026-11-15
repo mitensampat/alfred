@@ -384,7 +384,10 @@ enum ScheduleEngine {
             return ScheduleDecision(.replaceDraft, reply: "Draft updated. It'll go out on your next 'propose' or 'yes'.", text: text)
         }
         // Instruction: act on it.
-        if !cls2.window.isEmpty { s.window = cls2.window }
+        if !cls2.window.isEmpty {
+            s.window = cls2.window
+            s.windowFrom = nil; s.windowTo = nil; s.earliestMin = nil; s.latestMin = nil
+        }
         if cls2.durationMin > 0 { s.durationMin = cls2.durationMin }
         if !cls2.format.isEmpty { s.format = cls2.format }
         if !cls2.toneNote.isEmpty { s.toneNote = cls2.toneNote }
